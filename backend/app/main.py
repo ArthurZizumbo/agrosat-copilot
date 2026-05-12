@@ -11,8 +11,8 @@ Routers se montan progresivamente conforme cierran las US:
 - /jobs                         — EPIC 8 (inferencia asíncrona vía Pub/Sub)
 """
 
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
 
 import structlog
 from fastapi import FastAPI

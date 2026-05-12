@@ -24,17 +24,13 @@ class Settings(BaseSettings):
     env: Literal["dev", "staging", "prod"] = "dev"
     log_level: str = "INFO"
 
-    database_url: str = Field(
-        default="postgresql+asyncpg://agrosat:agrosat@localhost:5432/agrosat"
-    )
+    database_url: str = Field(default="postgresql+asyncpg://agrosat:agrosat@localhost:5432/agrosat")
     redis_url: str = Field(default="redis://localhost:6379/0")
 
     gcp_project_id: str = "agrosat-prod"
     gcp_region: str = "europe-west1"
 
-    cors_allow_origins: list[str] = Field(
-        default_factory=lambda: ["http://localhost:3000"]
-    )
+    cors_allow_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
 
 
 @lru_cache(maxsize=1)
