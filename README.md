@@ -34,7 +34,7 @@
 # Setup
 cp .env.example .env.local
 poetry install --with dev,test,ml,geo
-pnpm install --filter frontend
+pnpm install --filter agrosatcopilot-frontend
 
 # Dev local (8 servicios)
 make dev
