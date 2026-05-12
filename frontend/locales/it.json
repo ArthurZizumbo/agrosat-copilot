@@ -1,0 +1,26 @@
+{
+  "app": {
+    "name": "AgroSatCopilot",
+    "tagline": "Copilota agricolo satellitare conversazionale"
+  },
+  "nav": {
+    "home": "Home",
+    "chat": "Chat",
+    "map": "Mappa",
+    "settings": "Impostazioni"
+  },
+  "chat": {
+    "placeholder": "Chiedi qualcosa sulle tue colture...",
+    "send": "Invia",
+    "thinking": "Sto ragionando...",
+    "switch_llm": "Cambia LLM"
+  },
+  "llm": {
+    "gemini": "Gemini 3.1 Pro (cloud)",
+    "qwen": "Qwen3.5-35B-A3B (on-prem)"
+  },
+  "errors": {
+    "generic": "Si è verificato un errore. Riprova.",
+    "unauthorized": "Non autorizzato. Effettua l'accesso."
+  }
+}

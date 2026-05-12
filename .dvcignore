@@ -1,0 +1,7 @@
+# Datos que NO se versionan con DVC
+.git
+.gitignore
+__pycache__/
+*.pyc
+.mypy_cache/
+.ruff_cache/

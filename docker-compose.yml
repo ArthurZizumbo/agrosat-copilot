@@ -1,0 +1,84 @@
+services:
+  postgres:
+    image: postgis/postgis:15-3.4
+    environment:
+      POSTGRES_USER: agrosat
+      POSTGRES_PASSWORD: agrosat
+      POSTGRES_DB: agrosat
+    ports: ["5432:5432"]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agrosat"]
+      interval: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: ../infrastructure/docker/backend.Dockerfile
+      target: dev
+    ports: ["8000:8000"]
+    env_file: .env.local
+    volumes: ["./backend:/app/backend", "./ml:/app/ml"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: ../infrastructure/docker/frontend.Dockerfile
+      target: dev
+    ports: ["3000:3000"]
+    env_file: .env.local
+    volumes: ["./frontend:/app"]
+    command: pnpm dev
+
+  titiler:
+    image: ghcr.io/developmentseed/titiler:latest
+    ports: ["8001:8000"]
+    environment:
+      GDAL_DISABLE_READDIR_ON_OPEN: EMPTY_DIR
+      VSI_CACHE: "TRUE"
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.16.2
+    ports: ["5000:5000"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    command: >
+      mlflow server
+      --backend-store-uri postgresql://agrosat:agrosat@postgres:5432/agrosat
+      --default-artifact-root /mlruns
+      --host 0.0.0.0 --port 5000
+    volumes: ["mlflow_data:/mlruns"]
+
+  dagster:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/dagster.Dockerfile
+    ports: ["3001:3000"]
+    env_file: .env.local
+    depends_on:
+      postgres: { condition: service_healthy }
+    volumes: ["./dagster_project:/app/dagster_project"]
+    command: dagster dev -m dagster_project.definitions -h 0.0.0.0
+
+  ollama:
+    image: ollama/ollama:latest
+    ports: ["11434:11434"]
+    volumes: ["ollama_data:/root/.ollama"]
+
+volumes:
+  postgres_data:
+  mlflow_data:
+  ollama_data:

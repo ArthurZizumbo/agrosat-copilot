@@ -1,0 +1,33 @@
+# Geometrías de los 3 ROI italianos + control PASTIS-R francés
+rois:
+  - name: pianura_padana
+    region: Italy
+    bbox: [9.0, 44.5, 12.0, 46.0]
+    crs: EPSG:4326
+    preferred_crs_projection: EPSG:32633
+    crops: [arroz, maíz, soja, trigo]
+    geometry_path: data/reference/rois/pianura_padana.geojson
+
+  - name: toscana_centrale
+    region: Italy
+    bbox: [10.5, 43.0, 12.0, 44.0]
+    crs: EPSG:4326
+    preferred_crs_projection: EPSG:32633
+    crops: [olivo, vid, girasol, trigo_duro]
+    geometry_path: data/reference/rois/toscana_centrale.geojson
+
+  - name: apulia
+    region: Italy
+    bbox: [15.0, 40.5, 17.5, 42.0]
+    crs: EPSG:4326
+    preferred_crs_projection: EPSG:32633
+    crops: [olivo, vid, hortalizas]
+    geometry_path: data/reference/rois/apulia.geojson
+
+  - name: pastis_r_control
+    region: France
+    bbox: [-0.5, 43.0, 5.0, 46.0]
+    crs: EPSG:4326
+    preferred_crs_projection: EPSG:2154
+    crops: [maíz, trigo, colza, cebada]
+    geometry_path: data/reference/rois/pastis_control.geojson

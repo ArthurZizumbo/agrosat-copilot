@@ -1,0 +1,26 @@
+# Configuración de variantes LLM A/B del agente Google ADK
+variants:
+  gemini:
+    backend: vertex_ai
+    model: gemini-3.1-pro
+    region: us-central1
+    max_tokens: 8192
+    temperature: 0.2
+    timeout_s: 30
+    rate_limit_per_minute: 60
+
+  qwen35:
+    backend: vllm_openai
+    model: agrosat-qwen35
+    base_url: http://vllm-qwen35.internal:8000/v1
+    max_tokens: 8192
+    temperature: 0.2
+    timeout_s: 30
+    vllm_args:
+      dtype: bfloat16
+      max_model_len: 65536
+      gpu_memory_utilization: 0.92
+      enable_prefix_caching: true
+
+default_variant: gemini
+fallback_variant: qwen35

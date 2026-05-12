@@ -1,0 +1,4 @@
+migrations_dir: db/migrations
+migrations_table: schema_migrations
+schema_file: db/schema.sql
+no_dump_schema: false

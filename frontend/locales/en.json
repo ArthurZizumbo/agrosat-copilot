@@ -1,0 +1,26 @@
+{
+  "app": {
+    "name": "AgroSatCopilot",
+    "tagline": "Conversational satellite agriculture copilot"
+  },
+  "nav": {
+    "home": "Home",
+    "chat": "Chat",
+    "map": "Map",
+    "settings": "Settings"
+  },
+  "chat": {
+    "placeholder": "Ask anything about your crops...",
+    "send": "Send",
+    "thinking": "Thinking...",
+    "switch_llm": "Switch LLM"
+  },
+  "llm": {
+    "gemini": "Gemini 3.1 Pro (cloud)",
+    "qwen": "Qwen3.5-35B-A3B (on-prem)"
+  },
+  "errors": {
+    "generic": "Something went wrong. Please try again.",
+    "unauthorized": "Unauthorized. Please sign in."
+  }
+}

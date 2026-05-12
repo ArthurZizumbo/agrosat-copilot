@@ -1,0 +1,252 @@
+# ── Claude Code ───────────────────────────────────────────────────────────────
+.claude/worktrees/
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+
+# ── Secrets & Environment ─────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.p12
+service-account*.json
+gcp-credentials*.json
+azure-credentials*.json
+gee-service-account*.json
+huggingface_token
+keys/
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Poetry — keep poetry.lock in version control
+# poetry.lock
+
+# ── Node / pnpm ───────────────────────────────────────────────────────────────
+node_modules/
+.pnpm-store/
+.npm/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ── Nuxt 4 ────────────────────────────────────────────────────────────────────
+frontend/.nuxt/
+frontend/.output/
+frontend/.data/
+frontend/dist/
+frontend/.cache/
+.nuxt/
+.output/
+.data/
+
+# ── Docker ────────────────────────────────────────────────────────────────────
+docker-compose.override.yml
+
+# ── Terraform ─────────────────────────────────────────────────────────────────
+infrastructure/terraform/**/.terraform/
+infrastructure/terraform/**/terraform.tfstate
+infrastructure/terraform/**/terraform.tfstate.backup
+infrastructure/terraform/**/terraform.tfvars
+infrastructure/terraform/**/.terraform.lock.hcl
+infrastructure/terraform/**/backend.hcf
+*.tfplan
+crash.log
+crash.*.log
+
+# ── IDEs ──────────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── Engram (local dev-time memory, never commit DB or local cache) ────────────
+.engram/
+*.engram.db
+*.engram.db-wal
+*.engram.db-shm
+.engram-export/
+# Sí se trackean chunks exportados y revisados:
+!docs/engram/*.engram
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── DVC (data version control) ────────────────────────────────────────────────
+# Track DVC config but never raw data
+data/raw/**
+data/processed/**
+data/interim/**
+data/external/**
+data/cache/**
+!data/.gitkeep
+!data/README.md
+!data/example/*.geojson
+/data/example/*.tif
+# DVC metadata files (.dvc) MUST be tracked — they point to remote
+!*.dvc
+.dvc/cache/
+.dvc/tmp/
+.dvc/plots/
+.dvc/config.local
+
+# ── MLflow ────────────────────────────────────────────────────────────────────
+mlruns/
+mlflow.db
+mlartifacts/
+
+# ── Dagster ───────────────────────────────────────────────────────────────────
+dagster_project/.dagster/
+dagster_home/
+$DAGSTER_HOME/
+tmp_dagster_home_*/
+schedules/
+storage/
+history/
+compute_logs/
+
+# ── HuggingFace / model checkpoints ───────────────────────────────────────────
+.cache/huggingface/
+~/.cache/huggingface/
+hf_cache/
+models/checkpoints/
+models/lora_adapters/
+models/weights/
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.ckpt
+*.onnx
+
+# ── Geospatial raster / vector data ───────────────────────────────────────────
+*.tif
+*.tiff
+*.cog
+*.cog.tif
+*.geotiff
+*.jp2
+*.nc
+*.h5
+*.hdf
+*.hdf5
+*.zarr/
+*.gpkg
+*.shp
+*.shx
+*.dbf
+*.prj
+*.qix
+*.sbn
+*.sbx
+*.cpg
+# Exceptions: small reference geometries & demo data
+!config/rois.yaml
+!data/reference/**/*.geojson
+!data/example/demo_parcel.geojson
+!frontend/public/maps/*.geojson
+!backend/tests/fixtures/**/*.geojson
+!ml/tests/fixtures/**/*.tif
+
+# ── Earth Engine cache ────────────────────────────────────────────────────────
+.earthengine/
+gee_exports/
+gee_tasks.json
+
+# ── COG / TiTiler caches ──────────────────────────────────────────────────────
+.titiler_cache/
+*.cog.tmp
+
+# ── Parquet / Polars / Arrow caches ───────────────────────────────────────────
+*.parquet
+*.feather
+*.arrow
+!data/reference/**/*.parquet
+!backend/tests/fixtures/**/*.parquet
+!ml/tests/fixtures/**/*.parquet
+
+# ── Notebooks: strip outputs but keep .ipynb files ────────────────────────────
+# nbstripout se ejecuta en CI (`make notebooks-strip`) — large outputs out of git
+notebooks/*.html
+notebooks/.virtual_documents/
+notebooks/_export/
+
+# ── Media / large binaries ────────────────────────────────────────────────────
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.mp4
+*.mov
+*.avi
+*.pdf
+*.zip
+*.tar.gz
+*.tar
+*.7z
+# Exceptions for frontend & docs assets
+!frontend/public/icons/*.png
+!frontend/public/images/*.png
+!frontend/public/images/*.jpg
+!frontend/assets/**/*.png
+!frontend/assets/**/*.svg
+!docs/architecture/*.png
+!docs/architecture/*.svg
+!paper/figures/*.pdf
+!paper/figures/*.png
+
+# Context & academic PDFs needed for reference
+!context/*.pdf
+
+# ── docs/general: solo se versiona la rúbrica oficial del curso ──────────────
+# Resto (planteamientos personales, PDFs de avances, papers de referencia,
+# .docx con comentarios) queda fuera del repo. La rúbrica sí porque está
+# referenciada desde AGENTS.md / CLAUDE.md / skills / notebooks.
+docs/general/*
+!docs/general/Rubricas Integrador.html
+
+# ── Lighthouse / Playwright ───────────────────────────────────────────────────
+docs/auditoria_lh/*.json
+.playwright-mcp/
+playwright-report/
+test-results/
+
+# ── Coverage reports ──────────────────────────────────────────────────────────
+coverage/
+coverage.xml
+.nyc_output/
+
+# ── Internal docs not shipped ─────────────────────────────────────────────────
+.scratch/
+.notes/
+
+# ── Misc ──────────────────────────────────────────────────────────────────────
+*.bak
+*.tmp
+*.orig
+.env.bak
