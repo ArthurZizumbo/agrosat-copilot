@@ -34,8 +34,8 @@
 
 ```bash
 # 1) Clonar
-git clone https://github.com/arthurzizumbo/agro_sat_copilot.git
-cd agro_sat_copilot
+git clone https://github.com/ArthurZizumbo/agrosat-copilot.git
+cd agrosat-copilot
 
 # 2) Configurar env local (editar GCP_PROJECT_ID, CLERK_*, HF_TOKEN, etc.)
 cp .env.example .env.local

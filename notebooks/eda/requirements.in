@@ -12,4 +12,6 @@ ipywidgets>=8.1
 tqdm>=4.66
 python-dotenv>=1.0
 pyyaml>=6.0
+requests
 statsmodels>=0.14
+tifffile
