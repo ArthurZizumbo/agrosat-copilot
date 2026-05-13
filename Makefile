@@ -1,4 +1,4 @@
-.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip notebooks-check i18n-check db-migrate db-rollback db-new db-status db-seed train-l4 train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eda-sentinel2 eda-alphaearth eda-bivariado eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate
+.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip notebooks-check i18n-check db-migrate db-rollback db-new db-status db-seed train-l4 train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eda-sentinel2 eda-alphaearth eda-bivariado eda-pdf eda-dashboard eda-dashboard-test eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate
 
 help:
 	@echo "AgroSatCopilot — comandos disponibles:"
@@ -138,6 +138,15 @@ eda-alphaearth:  ## Ejecuta el notebook US-011 con papermill (sample_size=100000
 
 eda-bivariado:  ## Ejecuta el notebook US-012 bivariado/multivariado/temporal (n_parcels=200)
 	poetry run papermill notebooks/02c_eda_bivariado_temporal.ipynb /tmp/02c_out.ipynb -p n_parcels 200
+
+eda-pdf:  ## Genera el reporte PDF del Avance 1 (US-013 AC-8 + AC-9 CRISP-ML(Q))
+	poetry run python -m ml.report.export_pdf --output paper/avance1_eda_report.pdf
+
+eda-dashboard:  ## Arranca el dashboard Streamlit del Avance 1 (US-013 AC-1 a AC-7)
+	poetry run streamlit run app/eda_dashboard.py --server.port 8501 --server.headless true
+
+eda-dashboard-test:  ## Smoke test opcional con Playwright para el dashboard (US-013 AC-11 bonus)
+	@echo "Playwright smoke optional (AC-11)"
 
 # === Eval ===
 eval-agromind:  ## make eval-agromind variant=gemini

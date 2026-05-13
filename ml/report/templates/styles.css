@@ -1,0 +1,234 @@
+/* Estilos paper-grade para el reporte PDF Avance 1 EDA.
+ * Layout A4 portrait con margenes 2cm, tipografia serif legible,
+ * imagenes con avoid page-break, headings color institucional.
+ */
+
+@page {
+    size: A4 portrait;
+    margin: 2cm 2cm 2.5cm 2cm;
+
+    @bottom-center {
+        content: "AgroSatCopilot - Avance 1 EDA - pagina " counter(page) " de " counter(pages);
+        font-family: "DejaVu Sans", sans-serif;
+        font-size: 9pt;
+        color: #555;
+    }
+
+    @top-right {
+        content: "MNA Tec de Monterrey - 2026";
+        font-family: "DejaVu Sans", sans-serif;
+        font-size: 9pt;
+        color: #777;
+    }
+}
+
+@page :first {
+    @bottom-center {
+        content: "";
+    }
+    @top-right {
+        content: "";
+    }
+}
+
+html {
+    font-family: "DejaVu Serif", "Liberation Serif", Georgia, serif;
+    font-size: 11pt;
+    line-height: 1.45;
+    color: #1a1a1a;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+}
+
+h1, h2, h3, h4 {
+    font-family: "DejaVu Sans", "Liberation Sans", Arial, sans-serif;
+    color: #1a3a5c;
+    page-break-after: avoid;
+}
+
+h1 {
+    font-size: 24pt;
+    margin-top: 1.2em;
+    margin-bottom: 0.5em;
+    border-bottom: 2px solid #1a3a5c;
+    padding-bottom: 0.2em;
+}
+
+h2 {
+    font-size: 16pt;
+    margin-top: 1em;
+    margin-bottom: 0.4em;
+    border-bottom: 1px solid #c0c8d2;
+    padding-bottom: 0.15em;
+}
+
+h3 {
+    font-size: 13pt;
+    margin-top: 0.9em;
+    margin-bottom: 0.3em;
+    color: #2c4f78;
+}
+
+h4 {
+    font-size: 11pt;
+    margin-top: 0.7em;
+    margin-bottom: 0.2em;
+    color: #34557b;
+}
+
+p {
+    margin: 0.4em 0 0.6em 0;
+    text-align: justify;
+    orphans: 3;
+    widows: 3;
+}
+
+ul, ol {
+    margin: 0.3em 0 0.6em 1.2em;
+    padding: 0;
+}
+
+li {
+    margin-bottom: 0.2em;
+}
+
+img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 0.6em auto;
+    page-break-inside: avoid;
+}
+
+.figure {
+    page-break-inside: avoid;
+    margin: 0.8em 0;
+    text-align: center;
+}
+
+.figure .caption {
+    font-family: "DejaVu Sans", sans-serif;
+    font-size: 9pt;
+    color: #555;
+    margin-top: 0.2em;
+}
+
+.cover {
+    text-align: center;
+    margin-top: 5cm;
+    page-break-after: always;
+}
+
+.cover h1 {
+    font-size: 28pt;
+    border: none;
+    margin-bottom: 0.5em;
+}
+
+.cover .subtitle {
+    font-size: 14pt;
+    color: #34557b;
+    margin-bottom: 2em;
+}
+
+.cover .meta {
+    font-family: "DejaVu Sans", sans-serif;
+    font-size: 11pt;
+    color: #333;
+    margin-top: 3em;
+}
+
+.cover .meta p {
+    text-align: center;
+    margin: 0.3em 0;
+}
+
+.toc {
+    page-break-after: always;
+}
+
+.toc h2 {
+    border-bottom: 2px solid #1a3a5c;
+}
+
+.toc ol {
+    counter-reset: section;
+    list-style: none;
+    padding-left: 0;
+}
+
+.toc ol li {
+    counter-increment: section;
+    margin: 0.3em 0;
+    font-family: "DejaVu Sans", sans-serif;
+}
+
+.toc ol li::before {
+    content: counter(section) ". ";
+    color: #1a3a5c;
+    font-weight: bold;
+}
+
+section.crisp-phase {
+    page-break-before: auto;
+    margin-bottom: 1em;
+}
+
+.subblock {
+    margin-left: 0.5em;
+    margin-bottom: 0.8em;
+    padding-left: 0.6em;
+    border-left: 3px solid #c0c8d2;
+}
+
+.placeholder {
+    font-style: italic;
+    color: #888;
+    background-color: #f5f5f5;
+    padding: 0.4em 0.6em;
+    border-left: 3px solid #ccc;
+}
+
+table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 0.6em 0;
+    page-break-inside: avoid;
+}
+
+th, td {
+    border: 1px solid #c0c8d2;
+    padding: 4pt 6pt;
+    font-size: 10pt;
+    text-align: left;
+}
+
+th {
+    background-color: #eef2f7;
+    color: #1a3a5c;
+    font-family: "DejaVu Sans", sans-serif;
+}
+
+.footer-attributions {
+    font-size: 9pt;
+    color: #444;
+    margin-top: 2em;
+    padding-top: 0.6em;
+    border-top: 1px solid #c0c8d2;
+    page-break-before: auto;
+}
+
+.footer-attributions h3 {
+    font-size: 11pt;
+    color: #1a3a5c;
+}
+
+code {
+    font-family: "DejaVu Sans Mono", "Courier New", monospace;
+    font-size: 10pt;
+    background-color: #f0f0f0;
+    padding: 1pt 3pt;
+}

@@ -52,6 +52,14 @@ Documenta TODOS los datasets y modelos usados durante el proyecto. Sin esto, el 
 - Use scope US-011: labels proxy para AlphaEarth × LULC sobre Italia (Seccion 1
   del notebook 02b). Sustituye temporalmente al GSAA italiano hasta US-008.
 
+### EuroCrops / HCAT3 — TUM (Schneider et al.)
+- Source: [EuroCrops project](https://www.eurocrops.tum.de/) · HuggingFace `Lobster/EuroCrops`
+- License: CC-BY-4.0
+- Citation: Schneider, M., Schelte, T., Schmitz, F., Korner, M. (2023). _EuroCrops: The largest harmonized open crop dataset across the European Union_. Scientific Data.
+- Contents: Hierarchical Crop and Agriculture Taxonomy v3 (HCAT3) con ~270 clases canónicas armonizadas + parcelas vectoriales por país EU. Italia y Francia disponibles.
+- Attribution required: "EuroCrops / HCAT3 (Schneider et al. 2023, CC-BY-4.0, TUM)" en figuras y reportes derivados.
+- Use scope US-013/EPIC 8: taxonomía HCAT3 como referencia para alinear PASTIS-R (Francia) ↔ futuros labels GSAA (Italia, US-006/007 diferidos) bajo un sistema canónico común.
+
 ### AgroMind Benchmark
 - Source: HuggingFace `AgroMind/AgroMind`
 - License: CC-BY

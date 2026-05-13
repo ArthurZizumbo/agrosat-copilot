@@ -153,6 +153,15 @@ seaborn = "^0.13.2"
 # plotly pinneado a 5.x por conflicto transitivo con evidently 0.7.21 (grupo geo)
 # que requiere plotly >=5.10,<6. Subir a 6.x cuando evidently lance 0.8+ con soporte.
 plotly = "^5.24.0"
+# US-013 — dashboard Streamlit `app/eda_dashboard.py` + reporte PDF weasyprint.
+# Streamlit >=1.50 trae AppTest estable (1.28+) y st.tabs/st.columns/st.dataframe
+# de la API moderna. streamlit-folium 0.27 alinea con folium 0.19 (grupo geo).
+# weasyprint 65.x: cambios de paginación; jinja2 3.1 para los templates HTML.
+# Lock se regenera local con `poetry lock --no-update` (no incluido en commit).
+streamlit = "^1.50"
+streamlit-folium = "^0.27"
+weasyprint = "^65.0"
+jinja2 = "^3.1"
 
 [tool.poetry.group.dagster]
 optional = true
