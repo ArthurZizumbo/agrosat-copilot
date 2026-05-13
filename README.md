@@ -8,7 +8,7 @@
 
 ## Equipo
 
-- Arthur Jared Zizumbo Velasco — MLOps / Platform Engineer (lead)
+- Arthur Jafed Zizumbo Velasco — MLOps / Platform Engineer (lead)
 - Carlos Aaron Bocanegra Buitrón — Full-Stack / Backend Lead
 - Carlos Isaac Ávila Gutiérrez — ML Engineer / Data Scientist
 
