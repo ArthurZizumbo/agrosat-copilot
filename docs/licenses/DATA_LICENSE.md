@@ -32,6 +32,16 @@ Documenta TODOS los datasets y modelos usados durante el proyecto. Sin esto, el 
 - Contents: 2,433 patches Sentinel-2 multitemporales (T,10,128,128) + S1 ascending/descending + anotaciones panopticas + metadata.geojson EPSG:2154 (Lambert-93 Francia) + NORM_*.json por fold. 20 clases canónicas (0 background + 1-18 cultivos + 19 void).
 - Use scope US-010: PASTIS-R sirve como dataset de control con labels semánticos verificados, dado que los GSAA italianos aún no están en disco (US-006/007 diferidos).
 
+### ERA5-Land Daily Aggregates — Copernicus Climate Change Service (C3S)
+- Source: GEE `ECMWF/ERA5_LAND/DAILY_AGGR`
+- License: Copernicus C3S Climate Data Store ToS (free, full, open)
+- Attribution required: "Contains modified Copernicus Climate Change Service information 2024"
+- Citation: Munoz Sabater, J., (2019). ERA5-Land hourly data from 1950 to present. Copernicus Climate Change Service (C3S) Climate Data Store (CDS). DOI: 10.24381/cds.e2161bac
+- Use scope US-012: variable `total_precipitation_sum` agregada anualmente
+  por ROI (bbox PASTIS-R) para detectar anomalias climaticas (anos secos /
+  cantidos) y cruzarlas con NDVI maximo anual derivado de Sentinel-2 (AC-8).
+  Cache parquet local en `data/cache/gee/` (gitignored).
+
 ### Dynamic World — Google + WRI
 - Source: GEE `GOOGLE/DYNAMICWORLD/V1`
 - License: CC-BY-4.0

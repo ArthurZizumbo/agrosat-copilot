@@ -24,6 +24,7 @@ _log = structlog.get_logger(__name__)
 
 ALPHAEARTH_COLLECTION = "GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL"
 DYNAMIC_WORLD_COLLECTION = "GOOGLE/DYNAMICWORLD/V1"
+ERA5_COLLECTION = "ECMWF/ERA5_LAND/DAILY_AGGR"
 DYNAMIC_WORLD_CLASSES: dict[int, str] = {
     0: "water",
     1: "trees",
@@ -642,3 +643,81 @@ def fetch_s2_ndvi_rgb_for_parcel(
     rgb = np.stack([_stretch(b4), _stretch(b3), _stretch(b2)], axis=-1)
     _ = max_pixels
     return {"rgb": rgb.astype(np.float32), "ndvi": ndvi.astype(np.float32), "date_used": date}
+
+
+def era5_annual_precip(
+    roi: Any,
+    years: list[int],
+    cache_path: Path | None = None,
+    roi_name: str = "roi",
+    scale: int = 11132,
+) -> pl.DataFrame:
+    """Acumula precipitacion total anual ERA5-Land sobre una ROI con cache parquet.
+
+    Agrega `total_precipitation_sum` (metros) sobre el ano completo via
+    `reduceRegion(ee.Reducer.mean())` en el axis temporal y luego multiplica
+    por 1000 para reportar en mm. Resolucion nativa ERA5-Land ~11132 m.
+
+    Args:
+        roi: `ee.Geometry` que delimita la region.
+        years: Lista de anos enteros a procesar (e.g. `[2018, 2019, 2020]`).
+        cache_path: Carpeta cache local (default `data/cache/gee/`).
+        roi_name: Nombre logico de la ROI usado en cache y columna `roi_name`.
+        scale: Resolucion en metros para `reduceRegion` (default 11132 = nativa).
+
+    Returns:
+        DataFrame Polars con columnas `year, roi_name, precip_mm`. Si EE no
+        esta disponible o falla, devuelve DataFrame vacio con esquema valido
+        para degradar el notebook sin romper la cadena Polars.
+    """
+    schema: dict[str, Any] = {
+        "year": pl.Int64,
+        "roi_name": pl.Utf8,
+        "precip_mm": pl.Float64,
+    }
+    cache_dir = cache_path or DEFAULT_CACHE_DIR
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    years_key = "-".join(str(y) for y in sorted(years)) if years else "none"
+    cache_file = cache_dir / f"era5_precip_{roi_name}_{years_key}.parquet"
+    if cache_file.exists():
+        return pl.read_parquet(cache_file)
+
+    if ee is None or not years:
+        return pl.DataFrame(schema=schema)
+
+    rows: list[dict[str, Any]] = []
+    try:
+        for year in years:
+            collection = (
+                ee.ImageCollection(ERA5_COLLECTION)
+                .filterDate(f"{year}-01-01", f"{year + 1}-01-01")
+                .select(["total_precipitation_sum"])
+            )
+            # ee.Reducer.sum sobre el axis temporal acumula la precipitacion
+            # diaria del ano completo (metros). Luego reducimos espacialmente.
+            annual_img = collection.sum()
+            stat = annual_img.reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=roi,
+                scale=scale,
+                maxPixels=1_000_000_000,
+            )
+            info = stat.getInfo() or {}
+            precip_m = info.get("total_precipitation_sum")
+            if precip_m is None:
+                continue
+            rows.append(
+                {
+                    "year": int(year),
+                    "roi_name": roi_name,
+                    "precip_mm": float(precip_m) * 1000.0,
+                }
+            )
+    except Exception:  # noqa: BLE001
+        return pl.DataFrame(schema=schema)
+
+    if not rows:
+        return pl.DataFrame(schema=schema)
+    df = pl.DataFrame(rows, schema=schema)
+    df.write_parquet(cache_file)
+    return df
