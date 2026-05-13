@@ -11,14 +11,18 @@ Documenta TODOS los datasets y modelos usados durante el proyecto. Sin esto, el 
 - Citation: Brown et al. (2024). AlphaEarth Foundations. Google DeepMind.
 
 ### Sentinel-2 L2A & Sentinel-1 GRD — Copernicus
-- Source: Copernicus Data Space Ecosystem
-- License: Copernicus Open Access
-- Attribution required: "Contains modified Copernicus Sentinel data [year]"
+- Source: Copernicus Data Space Ecosystem · Google Earth Engine `COPERNICUS/S2_SR_HARMONIZED`
+- License: Copernicus Open Access (free, full, open)
+- Attribution required: "Contains modified Copernicus Sentinel data 2017-2025"
+- Use scope US-010/011/012: muestreo on-the-fly desde GEE para EDA univariado de las 3 ROIs italianas (Pianura Padana, Toscana centrale, Apulia).
 
-### PASTIS-R — INRAE
-- Source: HuggingFace `INRAE/PASTIS-R`
+### PASTIS-R — INRAE / Sainte-Fare-Garnot et al. 2021
+- Source: Zenodo · HuggingFace `INRAE/PASTIS-R`
 - License: CC-BY-SA 4.0
-- Attribution: INRAE Francia
+- Citation: Sainte-Fare-Garnot, V., Landrieu, L. (2021). _Panoptic Segmentation of Satellite Image Time Series with Convolutional Temporal Attention Networks_. ICCV 2021.
+- Companion paper (Radar): Sainte-Fare-Garnot, V., Landrieu, L., Chehata, N. (2022). _Multi-modal temporal attention models for crop mapping from satellite time series_. ISPRS Journal.
+- Contents: 2,433 patches Sentinel-2 multitemporales (T,10,128,128) + S1 ascending/descending + anotaciones panopticas + metadata.geojson EPSG:2154 (Lambert-93 Francia) + NORM_*.json por fold. 20 clases canónicas (0 background + 1-18 cultivos + 19 void).
+- Use scope US-010: PASTIS-R sirve como dataset de control con labels semánticos verificados, dado que los GSAA italianos aún no están en disco (US-006/007 diferidos).
 
 ### Dynamic World — Google + WRI
 - Source: GEE `GOOGLE/DYNAMICWORLD/V1`

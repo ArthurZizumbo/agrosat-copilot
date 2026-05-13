@@ -1,0 +1,103 @@
+{
+  "_meta": {
+    "source": "Figure 2, Sainte-Fare-Garnot & Landrieu (2021), PASTIS Dataset Documentation",
+    "url": "https://github.com/VSainteuf/pastis-benchmark/blob/main/documentation/pastis-documentation.pdf",
+    "nomenclature": "20 semantic classes: background (0) + 18 crop types (1-18) + void (19)",
+    "raw_source": "Derived from FLPIS (French Land Parcel Identification System), 73 raw crop codes collapsed into 18 classes with at least 400 parcels and presence in at least 2 of 4 Sentinel-2 tiles",
+    "void_definition": "Parcels whose crop type is not in the 18-class nomenclature, or whose overlap with the patch is too small (surface < 50%)",
+    "background_definition": "Pixels not within any declared parcel (non-agricultural land uses, 'stuff')",
+    "cmap": "matplotlib tab20 (cells 1..19), black for 0 (background), white for 20 (reserved/unused)",
+    "tile_coverage": ["T30UXV", "T31TFM", "T31TFM", "T32ULU"],
+    "temporal_coverage": {"start": "2018-09", "end": "2019-11"},
+    "n_patches": 2433,
+    "n_parcels_total": 124422,
+    "retrieval_date": "2026-05-12"
+  },
+  "classes": {
+    "0":  {"name": "Background",                 "n_parcels": null,  "is_crop": false, "notes": "Non-agricultural land, 'stuff' label"},
+    "1":  {"name": "Meadow",                     "n_parcels": 31292, "is_crop": true},
+    "2":  {"name": "Soft winter wheat",          "n_parcels": 8206,  "is_crop": true},
+    "3":  {"name": "Corn",                       "n_parcels": 13123, "is_crop": true},
+    "4":  {"name": "Winter barley",              "n_parcels": 2766,  "is_crop": true},
+    "5":  {"name": "Winter rapeseed",            "n_parcels": 1769,  "is_crop": true},
+    "6":  {"name": "Spring barley",              "n_parcels": 908,   "is_crop": true},
+    "7":  {"name": "Sunflower",                  "n_parcels": 1355,  "is_crop": true},
+    "8":  {"name": "Grapevine",                  "n_parcels": 10640, "is_crop": true},
+    "9":  {"name": "Beet",                       "n_parcels": 871,   "is_crop": true},
+    "10": {"name": "Winter triticale",           "n_parcels": 1208,  "is_crop": true},
+    "11": {"name": "Winter durum wheat",         "n_parcels": 1704,  "is_crop": true},
+    "12": {"name": "Fruits, vegetables, flowers","n_parcels": 2619,  "is_crop": true},
+    "13": {"name": "Potatoes",                   "n_parcels": 551,   "is_crop": true},
+    "14": {"name": "Leguminous fodder",          "n_parcels": 3174,  "is_crop": true},
+    "15": {"name": "Soybeans",                   "n_parcels": 1212,  "is_crop": true},
+    "16": {"name": "Orchard",                    "n_parcels": 2998,  "is_crop": true},
+    "17": {"name": "Mixed cereal",               "n_parcels": 848,   "is_crop": true},
+    "18": {"name": "Sorghum",                    "n_parcels": 707,   "is_crop": true},
+    "19": {"name": "Void label",                 "n_parcels": 35924, "is_crop": false, "notes": "Out-of-scope parcels (crop type not in nomenclature, or <50% overlap with patch)"}
+  },
+  "_groupings_meta": {
+    "rationale": "FLPIS publishes 73 raw codes but the authors filtered to 18 (>=400 parcels AND present in >=2 of 4 tiles). The 55 discarded codes were collapsed into 'void' without preserving their original code, so no finer granularity is recoverable from TARGET_*.npy alone (would require re-joining with the raw IGN FLPIS shapefile geographically). These derived groupings are agronomically motivated VIEWS over the 18 canonical classes, useful for EDA when 18 classes saturate t-SNE/UMAP visualizations or when the question of interest is at a higher abstraction level."
+  },
+  "groupings": {
+    "phenological_cycle": {
+      "description": "4 super-classes by phenological cycle. Useful to ask: does AlphaEarth / Sentinel-2 separate by growing cycle?",
+      "map": {
+        "1":  "other",
+        "2":  "winter_crops",
+        "3":  "spring_summer_crops",
+        "4":  "winter_crops",
+        "5":  "winter_crops",
+        "6":  "spring_summer_crops",
+        "7":  "spring_summer_crops",
+        "8":  "permanent_crops",
+        "9":  "spring_summer_crops",
+        "10": "winter_crops",
+        "11": "winter_crops",
+        "12": "other",
+        "13": "other",
+        "14": "other",
+        "15": "spring_summer_crops",
+        "16": "permanent_crops",
+        "17": "other",
+        "18": "spring_summer_crops"
+      }
+    },
+    "agronomic_group": {
+      "description": "5 super-classes by agronomic / commercial use. Useful for baseline US-017 to evaluate whether the model fails on 18 classes but succeeds on agronomic groups.",
+      "map": {
+        "1":  "permanent_long_cycle",
+        "2":  "cereals",
+        "3":  "cereals",
+        "4":  "cereals",
+        "5":  "oilseeds_legumes",
+        "6":  "cereals",
+        "7":  "oilseeds_legumes",
+        "8":  "permanent_long_cycle",
+        "9":  "root_crops",
+        "10": "cereals",
+        "11": "cereals",
+        "12": "special_crops",
+        "13": "root_crops",
+        "14": "oilseeds_legumes",
+        "15": "oilseeds_legumes",
+        "16": "permanent_long_cycle",
+        "17": "cereals",
+        "18": "special_crops"
+      }
+    },
+    "cereals_winter_vs_spring": {
+      "description": "Binary view restricted to cereal classes (9 classes -> 2 groups). Useful for AC-7 US-012 (DTW mono- vs double-cycle).",
+      "filter": "class_id in [2, 3, 4, 6, 10, 11, 17]",
+      "map": {
+        "2":  "winter_cereal",
+        "4":  "winter_cereal",
+        "10": "winter_cereal",
+        "11": "winter_cereal",
+        "3":  "spring_cereal",
+        "6":  "spring_cereal",
+        "17": "spring_cereal"
+      },
+      "notes": "Sorghum (18) excluded from this view because it is a summer cereal but not directly comparable to spring/winter in the same axis."
+    }
+  }
+}

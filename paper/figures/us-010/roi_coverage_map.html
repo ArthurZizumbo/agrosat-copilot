@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html>
+<head>
+    
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8" />
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.js"></script>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css"/>
+    <link rel="stylesheet" href="https://netdna.bootstrapcdn.com/bootstrap/3.0.0/css/bootstrap-glyphicons.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.2.0/css/all.min.css"/>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/python-visualization/folium/folium/templates/leaflet.awesome.rotate.min.css"/>
+    
+            <meta name="viewport" content="width=device-width,
+                initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+            <style>
+                #map_ae66f786fa37a5fde0de49c5c31bdd3a {
+                    position: relative;
+                    width: 100.0%;
+                    height: 100.0%;
+                    left: 0.0%;
+                    top: 0.0%;
+                }
+                .leaflet-container { font-size: 1rem; }
+            </style>
+
+            <style>html, body {
+                width: 100%;
+                height: 100%;
+                margin: 0;
+                padding: 0;
+            }
+            </style>
+
+            <style>#map {
+                position:absolute;
+                top:0;
+                bottom:0;
+                right:0;
+                left:0;
+                }
+            </style>
+
+            <script>
+                L_NO_TOUCH = false;
+                L_DISABLE_3D = false;
+            </script>
+
+        
+</head>
+<body>
+    
+    
+            <div class="folium-map" id="map_ae66f786fa37a5fde0de49c5c31bdd3a" ></div>
+        
+</body>
+<script>
+    
+    
+            var map_ae66f786fa37a5fde0de49c5c31bdd3a = L.map(
+                "map_ae66f786fa37a5fde0de49c5c31bdd3a",
+                {
+                    center: [43.625, 10.0625],
+                    crs: L.CRS.EPSG3857,
+                    ...{
+  "zoom": 5,
+  "zoomControl": true,
+  "preferCanvas": false,
+}
+
+                }
+            );
+
+            
+
+        
+    
+            var tile_layer_36a2cdbd977e0c3a32e045acd1f14d8d = L.tileLayer(
+                "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                {
+  "minZoom": 0,
+  "maxZoom": 19,
+  "maxNativeZoom": 19,
+  "noWrap": false,
+  "attribution": "\u0026copy; \u003ca href=\"https://www.openstreetmap.org/copyright\"\u003eOpenStreetMap\u003c/a\u003e contributors",
+  "subdomains": "abc",
+  "detectRetina": false,
+  "tms": false,
+  "opacity": 1,
+}
+
+            );
+        
+    
+            tile_layer_36a2cdbd977e0c3a32e045acd1f14d8d.addTo(map_ae66f786fa37a5fde0de49c5c31bdd3a);
+        
+    
+            var rectangle_a28750fa68adc0b2cdfd066b178f8e84 = L.rectangle(
+                [[44.5, 9.0], [46.0, 12.0]],
+                {"bubblingMouseEvents": true, "color": "#1f77b4", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#1f77b4", "fillOpacity": 0.15, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 1.0, "smoothFactor": 1.0, "stroke": true, "weight": 2}
+            ).addTo(map_ae66f786fa37a5fde0de49c5c31bdd3a);
+        
+    
+        var popup_12e093b9679465dade7f2cc8206b9686 = L.popup({
+  "maxWidth": 300,
+});
+
+        
+            
+                var html_4b53477266fe5ee5ade8b0544e472226 = $(`<div id="html_4b53477266fe5ee5ade8b0544e472226" style="width: 100.0%; height: 100.0%;"><b>pianura_padana</b><br>region: Italy<br>crops: arroz, maíz, soja, trigo</div>`)[0];
+                popup_12e093b9679465dade7f2cc8206b9686.setContent(html_4b53477266fe5ee5ade8b0544e472226);
+            
+        
+
+        rectangle_a28750fa68adc0b2cdfd066b178f8e84.bindPopup(popup_12e093b9679465dade7f2cc8206b9686)
+        ;
+
+        
+    
+    
+            var rectangle_c727ee44ca37215c689aaca4bee48806 = L.rectangle(
+                [[43.0, 10.5], [44.0, 12.0]],
+                {"bubblingMouseEvents": true, "color": "#ff7f0e", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#ff7f0e", "fillOpacity": 0.15, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 1.0, "smoothFactor": 1.0, "stroke": true, "weight": 2}
+            ).addTo(map_ae66f786fa37a5fde0de49c5c31bdd3a);
+        
+    
+        var popup_574e0d35294c436abdbf4f60498cb00e = L.popup({
+  "maxWidth": 300,
+});
+
+        
+            
+                var html_39b736eb98e02883e52a6a7da867fdb8 = $(`<div id="html_39b736eb98e02883e52a6a7da867fdb8" style="width: 100.0%; height: 100.0%;"><b>toscana_centrale</b><br>region: Italy<br>crops: olivo, vid, girasol, trigo_duro</div>`)[0];
+                popup_574e0d35294c436abdbf4f60498cb00e.setContent(html_39b736eb98e02883e52a6a7da867fdb8);
+            
+        
+
+        rectangle_c727ee44ca37215c689aaca4bee48806.bindPopup(popup_574e0d35294c436abdbf4f60498cb00e)
+        ;
+
+        
+    
+    
+            var rectangle_fb619947336493661fec6940a0bc3397 = L.rectangle(
+                [[40.5, 15.0], [42.0, 17.5]],
+                {"bubblingMouseEvents": true, "color": "#2ca02c", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#2ca02c", "fillOpacity": 0.15, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 1.0, "smoothFactor": 1.0, "stroke": true, "weight": 2}
+            ).addTo(map_ae66f786fa37a5fde0de49c5c31bdd3a);
+        
+    
+        var popup_9a5ce007de6cc95c6fcaf43238a40f28 = L.popup({
+  "maxWidth": 300,
+});
+
+        
+            
+                var html_886c000c7fbfdbb99585efffa3003826 = $(`<div id="html_886c000c7fbfdbb99585efffa3003826" style="width: 100.0%; height: 100.0%;"><b>apulia</b><br>region: Italy<br>crops: olivo, vid, hortalizas</div>`)[0];
+                popup_9a5ce007de6cc95c6fcaf43238a40f28.setContent(html_886c000c7fbfdbb99585efffa3003826);
+            
+        
+
+        rectangle_fb619947336493661fec6940a0bc3397.bindPopup(popup_9a5ce007de6cc95c6fcaf43238a40f28)
+        ;
+
+        
+    
+    
+            var rectangle_8f71d19406b5f71ec696a2ceed01bd91 = L.rectangle(
+                [[43.0, -0.5], [46.0, 5.0]],
+                {"bubblingMouseEvents": true, "color": "#d62728", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#d62728", "fillOpacity": 0.15, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 1.0, "smoothFactor": 1.0, "stroke": true, "weight": 2}
+            ).addTo(map_ae66f786fa37a5fde0de49c5c31bdd3a);
+        
+    
+        var popup_4611eb78025f9dcb1796d9f91393aab4 = L.popup({
+  "maxWidth": 300,
+});
+
+        
+            
+                var html_c934bc07be64738553b0c92d6d6e7185 = $(`<div id="html_c934bc07be64738553b0c92d6d6e7185" style="width: 100.0%; height: 100.0%;"><b>pastis_r_control</b><br>region: France<br>crops: maíz, trigo, colza, cebada</div>`)[0];
+                popup_4611eb78025f9dcb1796d9f91393aab4.setContent(html_c934bc07be64738553b0c92d6d6e7185);
+            
+        
+
+        rectangle_8f71d19406b5f71ec696a2ceed01bd91.bindPopup(popup_4611eb78025f9dcb1796d9f91393aab4)
+        ;
+
+        
+    
+</script>
+</html>
