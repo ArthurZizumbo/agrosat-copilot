@@ -14,7 +14,7 @@
 
 | Integrante | Matrícula | Rol |
 |------------|-----------|-----|
-| Arthur Jared Zizumbo Velasco | **MLOps / Platform Engineer (lead)** — Terraform mono-cloud GCP + Azure H100, CI/CD, DVC, MLflow, Dagster, dbmate, observabilidad, FinOps, comunicación con sponsor |
+| Arthur Jafed Zizumbo Velasco | **MLOps / Platform Engineer (lead)** — Terraform mono-cloud GCP + Azure H100, CI/CD, DVC, MLflow, Dagster, dbmate, observabilidad, FinOps, comunicación con sponsor |
 | Carlos Aaron Bocanegra Buitrón | **Full-Stack / Backend Lead** — FastAPI, TiTiler, integración con Nuxt 4 SSR, endpoints del agente con Google ADK, seguridad |
 | Carlos Isaac Ávila Gutiérrez | **ML Engineer / Data Scientist** — modelos baseline y avanzados, fine-tuning Gemma 4 y Qwen3-VL, ingesta AlphaEarth, EDA con Polars, feature engineering |
 

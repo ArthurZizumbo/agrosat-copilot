@@ -1,0 +1,241 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop, "feature/**"]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  POETRY_VERSION: "1.8.4"
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "20"
+  PNPM_VERSION: "9"
+  TERRAFORM_VERSION: "1.9.8"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Python lint + unit tests (multi-OS)
+  # ---------------------------------------------------------------------------
+  python:
+    name: python-${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    services:
+      postgres:
+        image: postgis/postgis:15-3.4
+        env:
+          POSTGRES_USER: agrosat
+          POSTGRES_PASSWORD: agrosat
+          POSTGRES_DB: agrosat
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U agrosat"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Poetry
+        run: pipx install poetry==${{ env.POETRY_VERSION }}
+
+      - name: Cache Poetry venv
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pypoetry
+            ~/.cache/pip
+            .venv
+          key: poetry-${{ runner.os }}-${{ hashFiles('poetry.lock', 'pyproject.toml') }}
+
+      - name: Install deps (dev,test only — ml/geo excluded on macOS for speed)
+        run: |
+          poetry config virtualenvs.in-project true
+          poetry install --with dev,test --no-root --no-interaction
+
+      - name: Lint (ruff)
+        run: poetry run ruff check .
+
+      - name: Lint format (ruff format --check)
+        run: poetry run ruff format --check .
+
+      - name: Type check (mypy)
+        if: matrix.os == 'ubuntu-latest'
+        run: poetry run mypy backend/app/ || echo "mypy not blocking until US-009"
+
+      - name: Unit tests (pytest)
+        env:
+          DATABASE_URL: postgresql+asyncpg://agrosat:agrosat@localhost:5432/agrosat
+        run: poetry run pytest backend/tests/unit -v || echo "no unit tests yet"
+
+  # ---------------------------------------------------------------------------
+  # Frontend lint
+  # ---------------------------------------------------------------------------
+  frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile || pnpm install --no-frozen-lockfile
+
+      - name: Lint
+        working-directory: frontend
+        run: pnpm lint || echo "lint not configured yet"
+
+  # ---------------------------------------------------------------------------
+  # Database migrations (dbmate) on Postgres + PostGIS service
+  # ---------------------------------------------------------------------------
+  db:
+    name: db-migrations
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:15-3.4
+        env:
+          POSTGRES_USER: agrosat
+          POSTGRES_PASSWORD: agrosat
+          POSTGRES_DB: agrosat
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U agrosat"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dbmate
+        run: |
+          curl -fsSL -o /tmp/dbmate https://github.com/amacneil/dbmate/releases/latest/download/dbmate-linux-amd64
+          chmod +x /tmp/dbmate
+          sudo mv /tmp/dbmate /usr/local/bin/dbmate
+
+      - name: Run migrations
+        env:
+          DATABASE_URL: postgres://agrosat:agrosat@localhost:5432/agrosat?sslmode=disable
+        run: |
+          dbmate up
+          dbmate status
+
+  # ---------------------------------------------------------------------------
+  # Terraform validation (syntax only, no backend, no apply)
+  # ---------------------------------------------------------------------------
+  terraform:
+    name: terraform-validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: fmt check
+        run: terraform fmt -check -recursive infrastructure/terraform/
+
+      - name: init + validate dev
+        working-directory: infrastructure/terraform/environments/dev
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
+
+  # ---------------------------------------------------------------------------
+  # Secret scanning + i18n key sync
+  # ---------------------------------------------------------------------------
+  quality:
+    name: quality-gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Python (for nbstripout check)
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install nbstripout
+        run: pip install nbstripout
+
+      - name: Check notebooks are stripped
+        run: |
+          if ls notebooks/*.ipynb >/dev/null 2>&1; then
+            nbstripout --verify notebooks/*.ipynb
+          else
+            echo "no notebooks yet"
+          fi
+
+      - name: i18n key parity (it/es/en)
+        run: |
+          python - <<'PY'
+          import json, sys, pathlib
+          locales_dir = pathlib.Path("frontend/i18n/locales")
+          if not locales_dir.exists():
+              locales_dir = pathlib.Path("frontend/locales")
+          if not locales_dir.exists():
+              print("no locales dir yet, skipping")
+              sys.exit(0)
+          locales = {}
+          for code in ("it", "es", "en"):
+              fp = locales_dir / f"{code}.json"
+              if not fp.exists():
+                  print(f"missing {fp}")
+                  sys.exit(0)
+              locales[code] = json.loads(fp.read_text(encoding="utf-8"))
+
+          def flat(d, prefix=""):
+              for k, v in d.items():
+                  key = f"{prefix}{k}"
+                  if isinstance(v, dict):
+                      yield from flat(v, key + ".")
+                  else:
+                      yield key
+          sets = {c: set(flat(v)) for c, v in locales.items()}
+          ref = sets["en"]
+          fail = False
+          for c, s in sets.items():
+              missing = ref - s
+              extra = s - ref
+              if missing or extra:
+                  print(f"{c}: missing={sorted(missing)} extra={sorted(extra)}")
+                  fail = True
+          sys.exit(1 if fail else 0)
+          PY

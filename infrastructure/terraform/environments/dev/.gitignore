@@ -1,0 +1,10 @@
+# Local Terraform artifacts
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+crash.log
+
+# Sensitive values — never commit
+terraform.tfvars
+*.auto.tfvars

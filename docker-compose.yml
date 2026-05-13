@@ -5,7 +5,7 @@ services:
       POSTGRES_USER: agrosat
       POSTGRES_PASSWORD: agrosat
       POSTGRES_DB: agrosat
-    ports: ["5432:5432"]
+    ports: ["${POSTGRES_HOST_PORT:-55432}:5432"]
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -15,17 +15,17 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports: ["6379:6379"]
+    ports: ["${REDIS_HOST_PORT:-63790}:6379"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
 
   api:
     build:
-      context: ./backend
-      dockerfile: ../infrastructure/docker/backend.Dockerfile
+      context: .
+      dockerfile: infrastructure/docker/backend.Dockerfile
       target: dev
-    ports: ["8000:8000"]
+    ports: ["${API_HOST_PORT:-8010}:8000"]
     env_file: .env.local
     volumes: ["./backend:/app/backend", "./ml:/app/ml"]
     depends_on:
@@ -38,21 +38,21 @@ services:
       context: ./frontend
       dockerfile: ../infrastructure/docker/frontend.Dockerfile
       target: dev
-    ports: ["3000:3000"]
+    ports: ["${FRONTEND_HOST_PORT:-3010}:3000"]
     env_file: .env.local
     volumes: ["./frontend:/app"]
     command: pnpm dev
 
   titiler:
     image: ghcr.io/developmentseed/titiler:latest
-    ports: ["8001:8000"]
+    ports: ["${TITILER_HOST_PORT:-8011}:8000"]
     environment:
       GDAL_DISABLE_READDIR_ON_OPEN: EMPTY_DIR
       VSI_CACHE: "TRUE"
 
   mlflow:
     image: ghcr.io/mlflow/mlflow:v2.16.2
-    ports: ["5000:5000"]
+    ports: ["${MLFLOW_HOST_PORT:-5010}:5000"]
     depends_on:
       postgres: { condition: service_healthy }
     command: >
@@ -66,7 +66,7 @@ services:
     build:
       context: .
       dockerfile: infrastructure/docker/dagster.Dockerfile
-    ports: ["3001:3000"]
+    ports: ["${DAGSTER_HOST_PORT:-3011}:3000"]
     env_file: .env.local
     depends_on:
       postgres: { condition: service_healthy }
@@ -75,7 +75,7 @@ services:
 
   ollama:
     image: ollama/ollama:latest
-    ports: ["11434:11434"]
+    ports: ["${OLLAMA_HOST_PORT:-11434}:11434"]
     volumes: ["ollama_data:/root/.ollama"]
 
 volumes:

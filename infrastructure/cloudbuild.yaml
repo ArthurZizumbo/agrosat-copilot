@@ -1,0 +1,220 @@
+# AgroSatCopilot — Cloud Build pipeline
+# Build (parallel) -> Push -> Migrate DB -> Deploy 4 Cloud Run services
+#
+# Trigger: push to main (deploy dev). Submit manually with:
+#   gcloud builds submit --config=infrastructure/cloudbuild.yaml \
+#     --substitutions=_ENV=dev,_PROJECT_ID=agrosat-prod,_REGION=europe-west1
+
+substitutions:
+  _ENV: dev
+  _PROJECT_ID: agrosat-prod
+  _REGION: europe-west1
+  _AR_REPO: agrosat
+  _DB_INSTANCE: agrosat-pg-dev
+  _DB_NAME: agrosat
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8
+  dynamic_substitutions: true
+
+timeout: 1800s
+
+images:
+  - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/api:${SHORT_SHA}"
+  - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/frontend:${SHORT_SHA}"
+  - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/tiling:${SHORT_SHA}"
+  - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/inference-worker:${SHORT_SHA}"
+
+steps:
+  # --------------------------------------------------------------------------
+  # 1) Build 3 images in parallel (buildx multi-platform amd64)
+  # --------------------------------------------------------------------------
+  - id: build-api
+    name: gcr.io/cloud-builders/docker
+    waitFor: ["-"]
+    args:
+      - build
+      - -f
+      - infrastructure/docker/backend.Dockerfile
+      - --target=runtime
+      - -t
+      - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/api:${SHORT_SHA}
+      - -t
+      - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/api:latest
+      - .
+
+  - id: build-frontend
+    name: gcr.io/cloud-builders/docker
+    waitFor: ["-"]
+    dir: frontend
+    args:
+      - build
+      - -f
+      - ../infrastructure/docker/frontend.Dockerfile
+      - --target=runtime
+      - -t
+      - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/frontend:${SHORT_SHA}
+      - -t
+      - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/frontend:latest
+      - .
+
+  - id: build-tiling
+    name: gcr.io/cloud-builders/docker
+    waitFor: ["-"]
+    args:
+      - build
+      - -f
+      - infrastructure/docker/backend.Dockerfile
+      - --target=runtime
+      - -t
+      - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/tiling:${SHORT_SHA}
+      - -t
+      - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/tiling:latest
+      - .
+
+  - id: build-inference-worker
+    name: gcr.io/cloud-builders/docker
+    waitFor: ["-"]
+    args:
+      - build
+      - -f
+      - infrastructure/docker/inference-worker.Dockerfile
+      - --target=runtime
+      - -t
+      - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/inference-worker:${SHORT_SHA}
+      - -t
+      - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/inference-worker:latest
+      - .
+
+  # --------------------------------------------------------------------------
+  # 2) Push (auto via images:, plus explicit for migrate step dependency)
+  # --------------------------------------------------------------------------
+  - id: push-api
+    name: gcr.io/cloud-builders/docker
+    waitFor: ["build-api"]
+    args: ["push", "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/api:${SHORT_SHA}"]
+
+  - id: push-frontend
+    name: gcr.io/cloud-builders/docker
+    waitFor: ["build-frontend"]
+    args: ["push", "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/frontend:${SHORT_SHA}"]
+
+  - id: push-tiling
+    name: gcr.io/cloud-builders/docker
+    waitFor: ["build-tiling"]
+    args: ["push", "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/tiling:${SHORT_SHA}"]
+
+  - id: push-inference-worker
+    name: gcr.io/cloud-builders/docker
+    waitFor: ["build-inference-worker"]
+    args: ["push", "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/inference-worker:${SHORT_SHA}"]
+
+  # --------------------------------------------------------------------------
+  # 3) Run dbmate migrations via Cloud SQL Auth Proxy sidecar
+  # --------------------------------------------------------------------------
+  - id: db-migrate
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    waitFor: ["push-api"]
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -eo pipefail
+        # NOTE: el Cloud Run Job `agrosat-dbmate-${_ENV}` se provisiona en
+        # US-003/US-005 (modulo Terraform GCP). Hasta entonces este step
+        # degrada con `|| true` para no romper la pipeline.
+        # Smoke connectivity check (siempre soft-fail mientras la instancia no exista).
+        gcloud sql connect ${_DB_INSTANCE} --project=${_PROJECT_ID} --user=agrosat --quiet <<EOF || true
+        SELECT 1;
+        EOF
+        # Ejecutar la Job dbmate si existe; soft-fail si todavia no fue creada.
+        gcloud run jobs execute agrosat-dbmate-${_ENV} \
+          --region=${_REGION} \
+          --project=${_PROJECT_ID} \
+          --wait || echo "WARN: Cloud Run Job agrosat-dbmate-${_ENV} aun no provisionado (US-003/US-005)."
+
+  # --------------------------------------------------------------------------
+  # 4) Deploy Cloud Run services (api, frontend, tiling, inference-worker)
+  # --------------------------------------------------------------------------
+  - id: deploy-api
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    waitFor: ["db-migrate"]
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - agrosat-api-${_ENV}
+      - --image=${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/api:${SHORT_SHA}
+      - --region=${_REGION}
+      - --project=${_PROJECT_ID}
+      - --platform=managed
+      - --min-instances=0
+      - --max-instances=10
+      - --memory=512Mi
+      - --cpu=1
+      - --port=8000
+      - --service-account=agrosat-api-sa@${_PROJECT_ID}.iam.gserviceaccount.com
+      - --allow-unauthenticated
+
+  - id: deploy-frontend
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    waitFor: ["push-frontend"]
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - agrosat-frontend-${_ENV}
+      - --image=${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/frontend:${SHORT_SHA}
+      - --region=${_REGION}
+      - --project=${_PROJECT_ID}
+      - --platform=managed
+      - --min-instances=0
+      - --max-instances=10
+      - --memory=256Mi
+      - --cpu=1
+      - --port=3000
+      - --service-account=agrosat-frontend-sa@${_PROJECT_ID}.iam.gserviceaccount.com
+      - --allow-unauthenticated
+
+  - id: deploy-tiling
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    waitFor: ["push-tiling"]
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - agrosat-tiling-${_ENV}
+      - --image=${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/tiling:${SHORT_SHA}
+      - --region=${_REGION}
+      - --project=${_PROJECT_ID}
+      - --platform=managed
+      - --min-instances=0
+      - --max-instances=5
+      - --memory=512Mi
+      - --cpu=1
+      - --port=8000
+      - --service-account=agrosat-tiling-sa@${_PROJECT_ID}.iam.gserviceaccount.com
+      - --allow-unauthenticated
+
+  - id: deploy-inference-worker
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    waitFor: ["push-inference-worker"]
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - agrosat-inference-worker-${_ENV}
+      - --image=${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/inference-worker:${SHORT_SHA}
+      - --region=${_REGION}
+      - --project=${_PROJECT_ID}
+      - --platform=managed
+      - --min-instances=0
+      - --max-instances=3
+      - --memory=16Gi
+      - --cpu=4
+      - --gpu=1
+      - --gpu-type=nvidia-l4
+      - --port=8000
+      - --service-account=agrosat-worker-sa@${_PROJECT_ID}.iam.gserviceaccount.com
+      - --no-allow-unauthenticated

@@ -1,16 +1,32 @@
-.PHONY: help dev test lint format check secrets-scan notebooks-strip i18n-check db-migrate db-rollback db-new db-status db-seed train-l4 train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-plan tf-apply
+.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip i18n-check db-migrate db-rollback db-new db-status db-seed train-l4 train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate
 
 help:
 	@echo "AgroSatCopilot — comandos disponibles:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-25s\033[0m %s\n", $$1, $$2}'
 
+# === Bootstrap (reemplaza el hook post_gen_project.py de cookiecutter) ===
+bootstrap:  ## Instala deps Python + Node (poetry + pnpm) — sin GPU
+	poetry install --with dev,test,ml,geo,dagster,paper
+	cd frontend && pnpm install
+
+bootstrap-gpu:  ## Como bootstrap + torch CUDA 13.0 + bitsandbytes (Win/Linux con GPU NVIDIA)
+	poetry install --with dev,test,ml,ml-gpu,geo,dagster,paper
+	cd frontend && pnpm install
+
+bootstrap-gpu-linux:  ## Como bootstrap-gpu + flash-attn + vllm (solo Linux, replica cloud)
+	poetry install --with dev,test,ml,ml-gpu,ml-gpu-linux,geo,dagster,paper
+	cd frontend && pnpm install
+
+verify-structure:  ## Valida estructura de directorios (AC-4 de US-001)
+	@bash scripts/verify_structure.sh
+
 # === Dev ===
-dev:  ## Levanta docker-compose con 8 servicios
-	docker compose up -d
-	@echo "API: http://localhost:8000  Frontend: http://localhost:3000  Dagster: http://localhost:3001  MLflow: http://localhost:5000"
+dev:  ## Levanta docker-compose con 8 servicios (carga puertos desde .env.local)
+	docker compose --env-file .env.local up -d
+	@echo "API: http://localhost:$${API_HOST_PORT:-8010}  Frontend: http://localhost:$${FRONTEND_HOST_PORT:-3010}  Dagster: http://localhost:$${DAGSTER_HOST_PORT:-3011}  MLflow: http://localhost:$${MLFLOW_HOST_PORT:-5010}"
 
 stop:  ## Detiene docker-compose
-	docker compose down
+	docker compose --env-file .env.local down
 
 # === Lint & format ===
 lint:  ## ruff + ruff format check + mypy

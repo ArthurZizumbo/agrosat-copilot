@@ -1,4 +1,11 @@
-# Dagster instance config
+# Configuracion de la instancia Dagster (Dagster 1.9+).
+# Notas:
+# - `dagster_postgres.*` viene del paquete `dagster-postgres` (poetry group `dagster`).
+# - `dagster.core.*` es la ruta publica documentada para `run_launcher` y
+#   `run_coordinator` en `dagster.yaml`. `dagster._core.*` es interno y no debe
+#   usarse en configuracion declarativa.
+# - `DATABASE_URL` se inyecta desde `.env.local` (dev) o Secret Manager (prod).
+
 run_storage:
   module: dagster_postgres.run_storage
   class: PostgresRunStorage
