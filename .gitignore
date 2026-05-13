@@ -104,6 +104,13 @@ data/processed/**
 data/interim/**
 data/external/**
 data/cache/**
+# Raw datasets locales (PASTIS-R, Dynamic World subsets, GSAA, etc.) — fuera del repo
+# Se versionan vía DVC cuando se cierre US-006/US-007/US-008. Hasta entonces, viven
+# solo en la máquina de Isaac y se documentan en data/README.md.
+data/PASTIS-R/
+data/dynamic_world/
+data/gsaa_italia/
+data/reference/spectral_library.parquet
 !data/.gitkeep
 !data/README.md
 !data/example/*.geojson

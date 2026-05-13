@@ -30,4 +30,6 @@ rois:
     crs: EPSG:4326
     preferred_crs_projection: EPSG:2154
     crops: [maíz, trigo, colza, cebada]
-    geometry_path: data/reference/rois/pastis_control.geojson
+    # PASTIS-R no expone polígono único de cobertura; usamos el metadata.geojson
+    # con 2,433 features (1 por patch) como proxy hasta que se cierre US-006.
+    geometry_path: data/PASTIS-R/metadata.geojson

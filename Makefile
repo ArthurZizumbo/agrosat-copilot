@@ -1,4 +1,4 @@
-.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip i18n-check db-migrate db-rollback db-new db-status db-seed train-l4 train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate
+.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip i18n-check db-migrate db-rollback db-new db-status db-seed train-l4 train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eda-sentinel2 eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate
 
 help:
 	@echo "AgroSatCopilot — comandos disponibles:"
@@ -122,6 +122,10 @@ mlflow-ui:
 
 dagster-ui:
 	dagster dev -m dagster_project.definitions
+
+# === EDA / Notebooks ===
+eda-sentinel2:  ## Ejecuta el notebook US-010 con papermill (sample_size=100000)
+	poetry run papermill notebooks/02a_eda_sentinel2.ipynb /tmp/02a_out.ipynb -p sample_size 100000
 
 # === Eval ===
 eval-agromind:  ## make eval-agromind variant=gemini
