@@ -1,8 +1,0 @@
-{
-  "name": "agrosatcopilot",
-  "private": true,
-  "version": "0.1.0",
-  "packageManager": "pnpm@9.12.0",
-  "workspaces": ["frontend"],
-  "engines": { "node": ">=20", "pnpm": ">=9" }
-}

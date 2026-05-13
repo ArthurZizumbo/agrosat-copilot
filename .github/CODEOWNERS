@@ -1,0 +1,39 @@
+# AgroSatCopilot — CODEOWNERS
+#
+# Sintaxis: https://docs.github.com/articles/about-code-owners
+# Cada PR a develop/main requiere review del owner del directorio tocado.
+
+# Default fallback — MLOps Lead
+* @arthurzizumbo
+
+# Backend, frontend, security
+/backend/                @aaronbocanegra
+/frontend/               @aaronbocanegra
+/backend/app/auth/       @aaronbocanegra @arthurzizumbo
+/backend/app/security/   @aaronbocanegra @arthurzizumbo
+
+# ML / Data Science / Agente
+/ml/                     @isaacavila
+/ml/agent/               @isaacavila @aaronbocanegra
+/notebooks/              @isaacavila
+
+# Infra + MLOps + DB
+/infrastructure/         @arthurzizumbo
+/dagster_project/        @arthurzizumbo
+/db/                     @arthurzizumbo
+/scripts/                @arthurzizumbo
+/.github/                @arthurzizumbo
+/Makefile                @arthurzizumbo
+/.dvc/                   @arthurzizumbo
+/.dbmate.yaml            @arthurzizumbo
+/pyproject.toml          @arthurzizumbo
+
+# Docs orchestration + decisiones
+/AGENTS.md               @arthurzizumbo @aaronbocanegra @isaacavila
+/CLAUDE.md               @arthurzizumbo @aaronbocanegra @isaacavila
+/docs/orchestration/     @arthurzizumbo
+/docs/decisions/         @arthurzizumbo @aaronbocanegra @isaacavila
+/docs/licenses/          @arthurzizumbo
+
+# Paper Track
+/paper/                  @isaacavila @arthurzizumbo

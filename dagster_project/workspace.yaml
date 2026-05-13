@@ -1,0 +1,4 @@
+# Workspace de Dagster — apunta al paquete `dagster_project` que expone `defs`.
+# Permite arrancar con `dagster dev` desde la raiz del repo sin la bandera `-m`.
+load_from:
+  - python_package: dagster_project

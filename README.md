@@ -28,22 +28,45 @@
 | MLOps | DVC + MLflow + **Dagster** asset-oriented + Evidently AI drift |
 | Infra | Terraform mono-cloud GCP + Azure H100 NVL 96GB spot puntual |
 
-## Quickstart
+[![CI](https://github.com/arthurzizumbo/agro_sat_copilot/actions/workflows/ci.yml/badge.svg)](https://github.com/arthurzizumbo/agro_sat_copilot/actions/workflows/ci.yml)
+
+## Setup (5 pasos)
 
 ```bash
-# Setup
+# 1) Clonar
+git clone https://github.com/arthurzizumbo/agro_sat_copilot.git
+cd agro_sat_copilot
+
+# 2) Configurar env local (editar GCP_PROJECT_ID, CLERK_*, HF_TOKEN, etc.)
 cp .env.example .env.local
-poetry install --with dev,test,ml,geo
-pnpm install --filter frontend
 
-# Dev local (8 servicios)
+# 3) Instalar deps (poetry + pnpm)
+make bootstrap                  # CPU only (Mac, Win/Linux sin GPU, CI)
+# make bootstrap-gpu            # +torch CUDA 13.0 +bitsandbytes (Win/Linux con GPU NVIDIA)
+# make bootstrap-gpu-linux      # +flash-attn +vllm (solo Linux, replica cloud)
+
+# 4) Levantar 8 servicios + aplicar migraciones
 make dev
-
-# Migraciones
 make db-migrate
 
-# Tests
-make test
+# 5) Abrir UI (puertos por defecto +10 sobre canónico para evitar choques con
+#    otros stacks Docker locales; override en .env.local si los conflictos son
+#    otros).
+open http://localhost:3010     # Nuxt 4 frontend
+# API:     http://localhost:8010/docs
+# Dagster: http://localhost:3011
+# MLflow:  http://localhost:5010
+# TiTiler: http://localhost:8011
+# Postgres: localhost:55432  ·  Redis: localhost:63790
+```
+
+## Quickstart adicional
+
+```bash
+# Tests + lint
+make check                            # ruff + secrets-scan + nbstripout + i18n-check
+make test                             # pytest backend
+make verify-structure                 # chequea AC-4 de US-001
 
 # Entrenamiento
 make train-l4 epic=E4                 # baselines en L4 spot
@@ -51,9 +74,18 @@ make azure-h100-start
 make train-h100 window=V3 script=train_gemma4_lora.py
 make azure-h100-stop
 
-# Deploy
-make deploy-staging
+# Infra
+make tf-plan env=dev
+make tf-apply env=dev
+make deploy-staging                   # solo si entornos reactivados (ver ADR-002)
 ```
+
+## Decisiones arquitectónicas (ADRs)
+
+- [ADR-001](docs/decisions/ADR-001-no-cookiecutter-externo.md) — Monorepo en lugar de cookiecutter externo
+- [ADR-002](docs/decisions/ADR-002-single-env-dev.md) — Único entorno `dev` durante el curso
+- [ADR-003](docs/decisions/ADR-003-upstash-redis.md) — Upstash Redis serverless en lugar de GCP Memorystore
+- [ADR-004](docs/decisions/ADR-004-poetry-optional-groups-and-aiplatform-ml.md) — Grupos Poetry opcionales + Vertex AI Agent Engine fuera del backend
 
 ## Documentación
 

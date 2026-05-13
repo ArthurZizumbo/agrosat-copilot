@@ -1,0 +1,59 @@
+# Vertex AI Custom Job — L4 Spot 24GB
+#
+# Uso:
+#   gcloud ai custom-jobs create \
+#     --region=$GCP_REGION \
+#     --display-name=train-$EPIC-$US \
+#     --config=ml/configs/l4_spot.yaml \
+#     --args="--epic=$EPIC,--us=$US"
+#
+# Spot instance: hasta -70% costo vs on-demand. Vertex AI reintenta una vez si
+# el spot es preempted. Para entrenamientos largos (>4h) preferir Azure H100
+# (ver scripts/azure_h100_start.sh).
+#
+# NOTA (TODO US-003/US-005):
+# - La imagen `ml-train:latest` aun NO se construye en infrastructure/cloudbuild.yaml.
+#   Mientras tanto este job referencia la imagen `inference-worker:latest`
+#   (mismo base CUDA + grupo `ml` de poetry). Cuando exista una imagen dedicada
+#   `ml-train` con extras de training (mlflow client, wandb, etc.) actualizar.
+# - Bucket de salida usa sufijo `-dev` consistente con el modulo Terraform GCP
+#   que crea `agrosat-artifacts-dev`. Para staging/prod ajustar via override.
+# - MLFLOW_TRACKING_URI se pasa via --args, no hardcoded.
+
+workerPoolSpecs:
+  - machineSpec:
+      machineType: g2-standard-8         # 8 vCPU, 32GB RAM, 1x L4 24GB
+      acceleratorType: NVIDIA_L4
+      acceleratorCount: 1
+    replicaCount: 1
+    diskSpec:
+      bootDiskType: pd-balanced
+      bootDiskSizeGb: 200
+    containerSpec:
+      imageUri: europe-west1-docker.pkg.dev/agrosat-prod/agrosat/inference-worker:latest
+      command: ["bash", "-c"]
+      args:
+        - |
+          set -euo pipefail
+          poetry run python -u ml/train/${TRAIN_SCRIPT:-train_baseline.py} \
+            --epic=${EPIC:-E4} \
+            --us=${US:-US-000} \
+            --data-version=${DATA_VERSION:-latest} \
+            --mlflow-uri=${MLFLOW_TRACKING_URI}
+      env:
+        - name: MLFLOW_TRACKING_URI
+          value: "http://mlflow.internal:5000"   # override via --args, ver TODO arriba
+        - name: HUGGINGFACE_TOKEN
+          value: "$(gcloud secrets versions access latest --secret=agrosat-hf-token)"
+        - name: PYTHONUNBUFFERED
+          value: "1"
+
+scheduling:
+  timeoutSeconds: 14400                  # 4h cap (override si necesario)
+  restartJobOnWorkerRestart: false
+  strategy: SPOT                         # spot instance
+
+baseOutputDirectory:
+  outputUriPrefix: gs://agrosat-artifacts-dev/vertex-jobs/
+
+serviceAccount: agrosat-ci-sa@agrosat-prod.iam.gserviceaccount.com

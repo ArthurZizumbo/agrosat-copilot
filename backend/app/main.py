@@ -11,8 +11,8 @@ Routers se montan progresivamente conforme cierran las US:
 - /jobs                         — EPIC 8 (inferencia asíncrona vía Pub/Sub)
 """
 
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
 
 import structlog
 from fastapi import FastAPI
@@ -43,12 +43,22 @@ def create_app() -> FastAPI:
         description="SaaS conversacional agrícola con Foundation Models satelitales.",
         lifespan=lifespan,
     )
+    # CORS con allow_headers explicito (SEC hardening): combinar allow_credentials=True
+    # con allow_headers=["*"] expone la API a abuso. Whitelist los headers minimos
+    # que el frontend Nuxt + cliente SSE realmente envia.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_allow_origins,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        allow_headers=["*"],
+        allow_headers=[
+            "Authorization",
+            "Content-Type",
+            "Accept",
+            "X-Request-ID",
+            "X-Session-ID",
+        ],
+        expose_headers=["X-Request-ID", "X-RateLimit-Remaining", "X-RateLimit-Reset"],
     )
     app.include_router(health.router)
     return app

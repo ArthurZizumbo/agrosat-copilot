@@ -95,7 +95,7 @@ infrastructure/
 | Cloud Run `tiling` | 0 | 5 | TiTiler, 512 MB |
 | Cloud Run `inference-worker` GPU L4 | 0 | 3 | inferencia ML pesada |
 | Cloud SQL | — | — | db-f1-micro, 20 GB, PITR |
-| Redis Memorystore | — | — | Basic 1 GB |
+| Upstash Redis (externo) | — | — | Pay-as-you-go serverless · ADR-003 · secretos en Secret Manager (`agrosat-upstash-rest-url`, `agrosat-upstash-rest-token`) |
 
 ## Comandos
 
