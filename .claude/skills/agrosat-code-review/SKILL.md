@@ -13,7 +13,8 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 - [ ] Sin emojis en código, commits ni logs
 - [ ] Idioma: código en inglés, docstrings/UI en es/it/en según corresponda
 - [ ] Sin secretos hardcodeados (`make secrets-scan` con gitleaks)
-- [ ] `make check` limpio (lint + secrets + nbstripout + i18n)
+- [ ] `make check` limpio (lint + secrets + i18n)
+- [ ] Si tocó notebook: ejecutado end-to-end con papermill, commit con outputs poblados
 - [ ] Tests con cobertura mínima
 - [ ] Sin archivos binarios (>1 MB) en Git
 
@@ -43,7 +44,7 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 - [ ] MLflow run con tags
 - [ ] DVC para data nueva
 - [ ] VRAM validada si tocó H100
-- [ ] `make notebooks-strip` ejecutado en notebooks tocados
+- [ ] Notebooks tocados ejecutados end-to-end (papermill) y commiteados con outputs poblados
 - [ ] Atribución de licencia
 
 ## Checklist Agente

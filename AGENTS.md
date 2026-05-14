@@ -103,16 +103,17 @@ Training único $262 spot — $602 on-demand USD. Operativo **~$115 USD/mes** co
 9. **Inferencia pesada (>2 s) o entrenamiento**: Pub/Sub + Cloud Run GPU L4 worker, nunca síncrono.
 10. **Versionado**: DVC para datos, MLflow para experimentos (tags `data_version` + `code_version`), Conventional Commits con scope de epica (`feat(E6): ...`).
 11. **Migraciones**: solo `dbmate up` / `dbmate new`. Jamás `SQLModel.metadata.create_all()` en prod ni modificar migraciones aplicadas.
-12. **Reproducibilidad notebooks**: `make notebooks-strip` antes de commitear · papermill end-to-end en CI · **sin `.pre-commit-config.yaml`**.
+12. **Reproducibilidad notebooks**: notebooks se commitean **ejecutados end-to-end con todas sus salidas** (tablas HTML, figuras PNG inline, plots interactivos) para entregable visual del curso. Papermill end-to-end en CI valida que sigan ejecutables. **Sin `.pre-commit-config.yaml`** ni `nbstripout` en quality gates — el `.ipynb` es un artefacto reproducible, no fuente "limpia".
 13. **i18n obligatorio**: todo texto visible en `frontend/i18n/locales/{it,es,en}.json` simultáneamente.
 14. **Atribuciones licencia**: documentadas en [`docs/licenses/DATA_LICENSE.md`](docs/licenses/DATA_LICENSE.md).
 
 ## Quality Gates (sin pre-commit)
 
 ```bash
-make check       # lint + secrets-scan + notebooks-strip + i18n-check (obligatorio antes de PR)
+make check       # lint + secrets-scan + i18n-check (obligatorio antes de PR)
 make lint        # ruff + mypy + pnpm lint
-make secrets-scan ; make notebooks-strip ; make i18n-check
+make secrets-scan ; make i18n-check
+make notebooks-check  # papermill end-to-end (notebooks ejecutables, con outputs preservados)
 ```
 
 CI replica `make check` en cada PR a `develop` y `main`. Comandos completos en [`docs/orchestration/commands.md`](docs/orchestration/commands.md).
@@ -132,6 +133,8 @@ CI replica `make check` en cada PR a `develop` y `main`. Comandos completos en [
 - Endpoints `/chat`, `/aois`, `/llm/switch` sin guard de auth ni rate limit.
 - Agregar dependencias fuera del stack aprobado.
 - Reintroducir `.pre-commit-config.yaml` — quality gates viven en Makefile + CI.
+- Reintroducir `nbstripout` en quality gates — los notebooks se commitean **con sus outputs poblados** (entregable visual). Strip solo on-demand si Isaac lo pide explicitamente para un commit puntual.
+- Crear scripts ad-hoc `scripts/_*.py` para smoke / debug / diagnose — la validacion va en `tests/ml/` (pytest) o inline en el notebook con `display()`. `scripts/` solo aloja operativos permanentes (`azure_h100_*.sh`, `cost_audit.sh`, `verify_structure.sh`, etc.).
 
 ## Autonomía de Claude
 
@@ -177,7 +180,8 @@ CI replica `make check` en cada PR a `develop` y `main`. Comandos completos en [
 - [ ] Conventional Commit `feat(EX): ...`
 - [ ] Código en inglés; docstrings Google style en español con type hints
 - [ ] Tests cobertura ≥70 % backend, ≥50 % frontend
-- [ ] `make check` limpio (lint + secrets + nbstripout + i18n)
+- [ ] `make check` limpio (lint + secrets + i18n)
+- [ ] Si la US incluye notebook: ejecutado end-to-end con papermill + commiteado con outputs poblados (HTML tables + PNG inline)
 - [ ] Migraciones con `dbmate up` si tocó schema
 - [ ] Secrets vía `.env.local` / Secret Manager
 - [ ] Si entrenó modelo: MLflow con `data_version` + `code_version`

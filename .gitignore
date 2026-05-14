@@ -197,8 +197,10 @@ gee_tasks.json
 !backend/tests/fixtures/**/*.parquet
 !ml/tests/fixtures/**/*.parquet
 
-# ── Notebooks: strip outputs but keep .ipynb files ────────────────────────────
-# nbstripout se ejecuta en CI (`make notebooks-strip`) — large outputs out of git
+# ── Notebooks: SE COMMITEAN con outputs poblados ──────────────────────────────
+# Los .ipynb son entregable visual del curso: outputs (HTML tables, PNG inline,
+# plots) se preservan en Git. nbstripout es opt-in via `make notebooks-strip`
+# solo cuando Isaac lo pide explicitamente.
 notebooks/*.html
 notebooks/.virtual_documents/
 notebooks/_export/

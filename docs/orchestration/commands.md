@@ -12,12 +12,13 @@ make stop
 ## Quality gates (reemplaza pre-commit)
 
 ```bash
-make check                  # lint + secrets-scan + notebooks-strip + i18n-check (obligatorio antes de PR)
+make check                  # lint + secrets-scan + i18n-check (obligatorio antes de PR)
 make lint                   # ruff check + ruff format --check + mypy (backend + ml) + pnpm lint
 make format                 # ruff format
 make secrets-scan           # gitleaks detect --no-banner --redact
-make notebooks-strip        # nbstripout sobre notebooks/*.ipynb
 make i18n-check             # valida claves it/es/en sincronizadas
+make notebooks-check        # papermill end-to-end (valida reproducibilidad, outputs preservados)
+make notebooks-strip        # nbstripout on-demand (NO usar en quality gates - notebooks commitean con outputs poblados)
 ```
 
 ## Base de datos (dbmate)

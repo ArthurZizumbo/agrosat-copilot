@@ -187,21 +187,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Setup Python (for nbstripout check)
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install nbstripout
-        run: pip install nbstripout
-
-      - name: Check notebooks are stripped
-        run: |
-          if ls notebooks/*.ipynb >/dev/null 2>&1; then
-            nbstripout --verify notebooks/*.ipynb
-          else
-            echo "no notebooks yet"
-          fi
+      # Notebooks: NO stripping enforced - se commitean con outputs poblados
+      # (entregable visual del curso). La reproducibilidad se valida via
+      # `make notebooks-check` con papermill (job aparte, no quality gate
+      # bloqueante en cada PR porque requiere data PASTIS-R + auth GEE).
 
       - name: i18n key parity (it/es/en)
         run: |
