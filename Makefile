@@ -1,4 +1,4 @@
-.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip i18n-check db-migrate db-rollback db-new db-status db-seed train-l4 train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eda-sentinel2 eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate
+.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip notebooks-check i18n-check db-migrate db-rollback db-new db-status db-seed train-l4 train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eda-sentinel2 eda-alphaearth eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate
 
 help:
 	@echo "AgroSatCopilot — comandos disponibles:"
@@ -43,13 +43,19 @@ format:  ## ruff format
 secrets-scan:  ## gitleaks secret scanning (reemplazo del hook pre-commit)
 	gitleaks detect --no-banner --redact
 
-notebooks-strip:  ## nbstripout sobre todos los notebooks (reemplazo del hook pre-commit)
-	poetry run nbstripout notebooks/*.ipynb
+notebooks-strip:  ## nbstripout on-demand (NO usar en quality gates - notebooks commitean con outputs)
+	poetry run nbstripout notebooks/*.ipynb notebooks/eda/*.ipynb
+
+notebooks-check:  ## papermill end-to-end (smoke modo degradado, ~3 min)
+	poetry run papermill notebooks/02b_eda_alphaearth.ipynb /tmp/02b_check.ipynb \
+		-p sample_size 1000 -p n_pastis_patches 2 -p tsne_subsample 500 --no-progress-bar
+	poetry run papermill notebooks/eda/02a_eda_sentinel2.ipynb /tmp/02a_check.ipynb \
+		-p n_patches 3 -p sample_size 2000 -p use_gee False --no-progress-bar
 
 i18n-check:  ## valida que las claves i18n existan en it/es/en
 	cd frontend && pnpm i18n:check
 
-check: lint secrets-scan notebooks-strip i18n-check  ## suite local previa a PR (reemplaza pre-commit)
+check: lint secrets-scan i18n-check  ## suite local previa a PR (reemplaza pre-commit)
 
 # === Tests ===
 test:  ## pytest backend con cobertura
@@ -126,6 +132,9 @@ dagster-ui:
 # === EDA / Notebooks ===
 eda-sentinel2:  ## Ejecuta el notebook US-010 con papermill (sample_size=100000)
 	poetry run papermill notebooks/02a_eda_sentinel2.ipynb /tmp/02a_out.ipynb -p sample_size 100000
+
+eda-alphaearth:  ## Ejecuta el notebook US-011 con papermill (sample_size=100000, year=2024)
+	poetry run papermill notebooks/02b_eda_alphaearth.ipynb /tmp/02b_out.ipynb -p sample_size 100000 -p year 2024
 
 # === Eval ===
 eval-agromind:  ## make eval-agromind variant=gemini

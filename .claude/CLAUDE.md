@@ -12,4 +12,4 @@ Claude Code carga `../CLAUDE.md` y otros agentes de código (Codex, Cursor, etc.
 - `agents/` — 9 subagentes profundos (Task tool).
 - `settings.json` — configuración Claude Code (plugins).
 
-> **Quality gates sin pre-commit**: el proyecto no usa `.pre-commit-config.yaml`. Las garantías (ruff, gitleaks, nbstripout, i18n-check) viven en `make check` y en GitHub Actions. Ver §"Quality Gates" en `../AGENTS.md`.
+> **Quality gates sin pre-commit**: el proyecto no usa `.pre-commit-config.yaml`. Las garantías (ruff, gitleaks, i18n-check) viven en `make check` y en GitHub Actions. Notebooks NO se strippean — se commitean con outputs poblados (entregable visual del curso). Reproducibilidad via `make notebooks-check` (papermill). Ver §"Quality Gates" en `../AGENTS.md`.

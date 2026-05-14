@@ -48,7 +48,7 @@
 - **ALWAYS**: Checkpoint cada 30 min a Azure Blob durante training H100
 - **ALWAYS**: LoRA rank 16 BF16 con FSDP + FlashAttention-2 + gradient checkpointing en H100
 - **ALWAYS**: Validar VRAM presupuesto ANTES de lanzar training (Gemma 4: ~82 GB / 96; Qwen3.5: ~91 GB / 96)
-- **ALWAYS**: `make notebooks-strip` antes de commitear notebooks (nbstripout en CI)
+- **ALWAYS**: Notebooks se commitean **con outputs poblados** (ejecutados end-to-end via papermill). Reproducibilidad se valida con `make notebooks-check`. NO usar `nbstripout` salvo on-demand.
 - **ALWAYS**: Documentar licencia de cada dataset/modelo usado en `docs/licenses/`
 - **NEVER**: Entrenar Foundation Model propio (AlphaEarth ya lo provee)
 - **NEVER**: Modificar pesos DINOv3 (extractor frozen)
@@ -136,7 +136,7 @@ Cualquier cambio de modelo o config requiere recalcular el presupuesto. Si exced
 - [ ] Stratified split por clase Y por región
 - [ ] Datos versionados en DVC (.dvc files commiteados)
 - [ ] Notebook ejecutable secuencialmente con papermill
-- [ ] `make notebooks-strip` aplicado antes del commit
+- [ ] Notebook ejecutado end-to-end con papermill + commiteado con outputs poblados (HTML tables + PNG inline)
 - [ ] Tests unitarios para extractors, features y métricas
 - [ ] Plots interpretados (matriz confusión, ROC, PR, residuos espaciales)
 - [ ] Atribución de licencia en `docs/licenses/DATA_LICENSE.md`
