@@ -90,9 +90,10 @@ El proyecto NO usa `pre-commit`. Las garantías que antes vivían como hooks aho
 ```bash
 make lint              # ruff check + ruff format --check + mypy (backend + ml) + pnpm lint
 make secrets-scan      # gitleaks detect --no-banner --redact
-make notebooks-strip   # nbstripout sobre notebooks/*.ipynb
 make i18n-check        # valida claves it/es/en sincronizadas
-make check             # corre los 4 anteriores
+make check             # corre los 3 anteriores
+make notebooks-check   # papermill end-to-end opcional - valida que .ipynb sigan ejecutables
+make notebooks-strip   # nbstripout on-demand (NO en quality gates, solo si Isaac lo pide)
 ```
 
 Todos estos comandos son obligatorios en CI (`.github/workflows/ci.yml`) sobre cada PR a `develop` y `main`.

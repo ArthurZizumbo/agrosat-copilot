@@ -9,6 +9,14 @@ Documenta TODOS los datasets y modelos usados durante el proyecto. Sin esto, el 
 - License: [GEE Terms of Service](https://earthengine.google.com/terms/)
 - Use: research + commercial with attribution
 - Citation: Brown et al. (2024). AlphaEarth Foundations. Google DeepMind.
+- Attribution required: "Google AlphaEarth Foundations" en figuras y reportes
+  derivados. Cada query a `GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL` debe cumplir
+  con los limites de cuota EE para uso no-comercial; uso comercial requiere
+  contrato con Google Earth Engine for Business.
+- Use scope US-011: muestreo on-the-fly de 64 dims via `sample()` y
+  `reduceRegions()` sobre las 3 ROIs italianas (Pianura Padana, Toscana,
+  Apulia) y sobre los 2,433 patches PASTIS-R en Francia. Cache parquet local
+  en `data/cache/gee/` (gitignored).
 
 ### Sentinel-2 L2A & Sentinel-1 GRD — Copernicus
 - Source: Copernicus Data Space Ecosystem · Google Earth Engine `COPERNICUS/S2_SR_HARMONIZED`
@@ -27,6 +35,12 @@ Documenta TODOS los datasets y modelos usados durante el proyecto. Sin esto, el 
 ### Dynamic World — Google + WRI
 - Source: GEE `GOOGLE/DYNAMICWORLD/V1`
 - License: CC-BY-4.0
+- Attribution required: "Dynamic World near real-time LULC, Google + World
+  Resources Institute, 2022" en figuras derivadas.
+- 9 clases LULC (water, trees, grass, flooded_vegetation, crops,
+  shrub_and_scrub, built, bare, snow_and_ice).
+- Use scope US-011: labels proxy para AlphaEarth × LULC sobre Italia (Seccion 1
+  del notebook 02b). Sustituye temporalmente al GSAA italiano hasta US-008.
 
 ### AgroMind Benchmark
 - Source: HuggingFace `AgroMind/AgroMind`

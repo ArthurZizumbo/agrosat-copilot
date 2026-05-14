@@ -64,7 +64,8 @@ open http://localhost:3010     # Nuxt 4 frontend
 
 ```bash
 # Tests + lint
-make check                            # ruff + secrets-scan + nbstripout + i18n-check
+make check                            # ruff + secrets-scan + i18n-check (notebooks NO se strippean, se commitean con outputs)
+make notebooks-check                  # papermill end-to-end opcional - valida que los .ipynb sigan ejecutables
 make test                             # pytest backend
 make verify-structure                 # chequea AC-4 de US-001
 

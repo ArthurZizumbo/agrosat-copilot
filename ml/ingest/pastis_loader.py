@@ -38,8 +38,9 @@ PASTIS_S2_BANDS: list[str] = [
 Las bandas atmosféricas B01, B09, B10 se excluyen en el dataset original.
 """
 
-_DEFAULT_ROOT = Path("data/PASTIS-R")
-_CLASS_MAP_PATH = Path("data/reference/pastis_class_mapping.json")
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_DEFAULT_ROOT = _REPO_ROOT / "data" / "PASTIS-R"
+_CLASS_MAP_PATH = _REPO_ROOT / "data" / "reference" / "pastis_class_mapping.json"
 
 
 def _load_class_mapping(path: Path = _CLASS_MAP_PATH) -> dict[int, str]:
@@ -60,8 +61,36 @@ def _load_class_mapping(path: Path = _CLASS_MAP_PATH) -> dict[int, str]:
     return {int(k): v["name"] for k, v in classes.items()}
 
 
+def _load_groupings(path: Path = _CLASS_MAP_PATH) -> dict[str, dict[int, str]]:
+    """Carga las agrupaciones derivadas (phenological_cycle, agronomic_group, etc.).
+
+    Args:
+        path: Ruta al `pastis_class_mapping.json`.
+
+    Returns:
+        Diccionario `{nombre_agrupacion: {class_id: nombre_grupo}}`. Vacío si no existe.
+    """
+    if not path.exists():
+        return {}
+    with path.open(encoding="utf-8") as fh:
+        raw = json.load(fh)
+    groupings = raw.get("groupings", {})
+    out: dict[str, dict[int, str]] = {}
+    for name, payload in groupings.items():
+        mp = payload.get("map", {}) if isinstance(payload, dict) else {}
+        if mp:
+            out[name] = {int(k): v for k, v in mp.items()}
+    return out
+
+
 PASTIS_CLASS_MAP: dict[int, str] = _load_class_mapping()
 """Mapeo `class_id -> nombre legible` cargado desde `data/reference/pastis_class_mapping.json`."""
+
+PASTIS_R_CLASSES: dict[int, str] = PASTIS_CLASS_MAP
+"""Alias semantico requerido por US-011 (signature publica del plan)."""
+
+PASTIS_R_GROUPINGS: dict[str, dict[int, str]] = _load_groupings()
+"""Agrupaciones derivadas (`phenological_cycle`, `agronomic_group`, `cereals_winter_vs_spring`)."""
 
 
 def load_pastis_patch(
@@ -119,10 +148,7 @@ def load_pastis_patch(
                 dates_raw = props.get("dates-S2", {})
                 if isinstance(dates_raw, dict):
                     dates_s2 = [
-                        int(v)
-                        for _, v in sorted(
-                            dates_raw.items(), key=lambda kv: int(kv[0])
-                        )
+                        int(v) for _, v in sorted(dates_raw.items(), key=lambda kv: int(kv[0]))
                     ]
                 fold_val = props.get("Fold")
                 if fold_val is not None:
@@ -207,9 +233,7 @@ def pastis_to_polars(
         for t in range(T):
             for bi, bname in zip(band_idx, selected, strict=True):
                 vals = s2[t, bi, ys[:, None], xs[None, :]].ravel().astype(np.int32)
-                date_val = (
-                    int(dates[t]) if include_dates and t < len(dates) else 0
-                )
+                date_val = int(dates[t]) if include_dates and t < len(dates) else 0
                 cls_arr: np.ndarray | None = None
                 if include_labels and patch.get("semantic") is not None:
                     cls_arr = patch["semantic"][ys[:, None], xs[None, :]].ravel()
@@ -257,3 +281,294 @@ def pastis_to_polars(
             .alias("class_name")
         )
     return df
+
+
+def _multipolygon_centroid_2154(coordinates: list[Any]) -> tuple[float, float]:
+    """Calcula el centroide en EPSG:2154 de una geometria MultiPolygon GeoJSON.
+
+    Implementacion minima sin dependencia de shapely para que el test unitario
+    pueda ejecutarse aunque shapely no este instalado. Si shapely esta disponible
+    se delega a el (mas exacto sobre polígonos con agujeros).
+
+    Args:
+        coordinates: Lista de coordenadas estilo GeoJSON MultiPolygon:
+            `[[[ [x,y], ... ]], ...]`.
+
+    Returns:
+        Tupla `(x, y)` en EPSG:2154.
+    """
+    try:
+        from shapely.geometry import MultiPolygon, shape  # type: ignore[import-untyped]
+
+        geom = shape({"type": "MultiPolygon", "coordinates": coordinates})
+        if isinstance(geom, MultiPolygon):
+            c = geom.centroid
+            return float(c.x), float(c.y)
+    except Exception:  # noqa: BLE001, S110
+        # Fallback silencioso intencional: ausencia de shapely o geometria
+        # invalida. Caemos al calculo manual con vertices del primer anillo
+        # (loop debajo). Sin signal de log porque shapely es opcional.
+        pass
+
+    # Fallback: media aritmetica de todos los vertices del primer anillo
+    xs: list[float] = []
+    ys: list[float] = []
+    for poly in coordinates:
+        if not poly:
+            continue
+        outer = poly[0]
+        for pt in outer:
+            if len(pt) >= 2:
+                xs.append(float(pt[0]))
+                ys.append(float(pt[1]))
+    if not xs:
+        return 0.0, 0.0
+    return sum(xs) / len(xs), sum(ys) / len(ys)
+
+
+def pastis_patch_coords(
+    metadata_geojson: Path,
+    target_crs: str = "EPSG:4326",
+) -> pl.DataFrame:
+    """Lee `metadata.geojson` de PASTIS-R (EPSG:2154) y reproyecta los centroides.
+
+    Recorre cada feature, calcula el centroide del MultiPolygon en EPSG:2154
+    (Lambert-93) y lo reproyecta al CRS objetivo (default EPSG:4326).
+
+    Args:
+        metadata_geojson: Ruta al `metadata.geojson` distribuido con PASTIS-R.
+        target_crs: CRS destino para `lon`/`lat`. Default `EPSG:4326`.
+
+    Returns:
+        DataFrame Polars con columnas `patch_id, lon, lat, tile, fold`. Si el
+        archivo no existe o no contiene features retorna DataFrame vacio.
+    """
+    schema: dict[str, Any] = {
+        "patch_id": pl.Utf8,
+        "lon": pl.Float64,
+        "lat": pl.Float64,
+        "tile": pl.Utf8,
+        "fold": pl.Int64,
+    }
+    if not metadata_geojson.exists():
+        return pl.DataFrame(schema=schema)
+
+    with metadata_geojson.open(encoding="utf-8") as fh:
+        gj = json.load(fh)
+
+    features = gj.get("features", [])
+    if not features:
+        return pl.DataFrame(schema=schema)
+
+    try:
+        from pyproj import Transformer  # type: ignore[import-untyped]
+
+        transformer = Transformer.from_crs("EPSG:2154", target_crs, always_xy=True)
+    except Exception:  # noqa: BLE001
+        transformer = None
+
+    rows: list[dict[str, Any]] = []
+    for feat in features:
+        props = feat.get("properties", {}) or {}
+        geom = feat.get("geometry", {}) or {}
+        if geom.get("type") != "MultiPolygon":
+            continue
+        coords = geom.get("coordinates", [])
+        cx, cy = _multipolygon_centroid_2154(coords)
+        if transformer is not None:
+            lon, lat = transformer.transform(cx, cy)
+        else:
+            # Sin pyproj devolvemos coords sin reproyectar (modo degradado).
+            lon, lat = cx, cy
+        pid_raw = feat.get("id") or props.get("ID_PATCH")
+        pid = str(pid_raw) if pid_raw is not None else ""
+        rows.append(
+            {
+                "patch_id": pid,
+                "lon": float(lon),
+                "lat": float(lat),
+                "tile": str(props.get("TILE", "")),
+                "fold": int(props.get("Fold")) if props.get("Fold") is not None else 0,
+            }
+        )
+
+    if not rows:
+        return pl.DataFrame(schema=schema)
+    return pl.DataFrame(rows, schema=schema)
+
+
+def pastis_patch_index(metadata_geojson: Path | None = None) -> pl.DataFrame:
+    """Lee `metadata.geojson` y devuelve un indice plano de patches PASTIS-R.
+
+    Util para muestreo estratificado por `(TILE, Fold)` antes de cargar el
+    `.npy` real de cada patch. Mas ligero que `pastis_patch_coords` (no
+    reproyecta geometrias) y mas semantico que parsear el GeoJSON inline
+    en cada notebook.
+
+    Args:
+        metadata_geojson: Ruta al `metadata.geojson` de PASTIS-R. Si None,
+            usa `_DEFAULT_ROOT / "metadata.geojson"` (relativo al repo).
+
+    Returns:
+        DataFrame Polars con columnas `patch_id` (str), `TILE` (str), `Fold`
+        (int64). Vacio si el archivo no existe.
+    """
+    schema: dict[str, Any] = {
+        "patch_id": pl.Utf8,
+        "TILE": pl.Utf8,
+        "Fold": pl.Int64,
+    }
+    meta = metadata_geojson or (_DEFAULT_ROOT / "metadata.geojson")
+    if not meta.exists():
+        return pl.DataFrame(schema=schema)
+
+    with meta.open(encoding="utf-8") as fh:
+        gj = json.load(fh)
+
+    rows: list[dict[str, Any]] = []
+    for feat in gj.get("features", []):
+        props = feat.get("properties", {}) or {}
+        pid_raw = feat.get("id") or props.get("ID_PATCH")
+        if pid_raw is None:
+            continue
+        rows.append(
+            {
+                "patch_id": str(pid_raw),
+                "TILE": str(props.get("TILE", "")),
+                "Fold": int(props.get("Fold")) if props.get("Fold") is not None else 0,
+            }
+        )
+
+    if not rows:
+        return pl.DataFrame(schema=schema)
+    return pl.DataFrame(rows, schema=schema)
+
+
+def pastis_pixel_labels(
+    patch_id: str,
+    root: Path | None = None,
+    sample_per_patch: int | None = None,
+    seed: int = 42,
+    exclude_classes: tuple[int, ...] = (0, 19),
+) -> pl.DataFrame:
+    """Carga `TARGET_{patch_id}.npy[0]` y georreferencia cada pixel a (lon, lat) 4326.
+
+    Usa el bbox del MultiPolygon en `metadata.geojson` proyectado a EPSG:4326
+    como referencia espacial y genera una grilla regular 128x128 sobre ese bbox.
+    Es una aproximacion suficiente para EDA (alineamiento exacto requeriria el
+    `transform` GeoTIFF que PASTIS-R no distribuye con los `.npy`).
+
+    Args:
+        patch_id: Identificador del patch.
+        root: Raíz del dataset (default `data/PASTIS-R/`).
+        sample_per_patch: Si no None, muestrea aleatoriamente N pixeles.
+        seed: Semilla para reproducibilidad.
+        exclude_classes: Clases a filtrar antes del sample (default bg y void).
+
+    Returns:
+        DataFrame Polars con columnas `px_id, patch_id, lon, lat, class_id,
+        class_name`. Vacio si el archivo no existe.
+    """
+    schema: dict[str, Any] = {
+        "px_id": pl.Utf8,
+        "patch_id": pl.Utf8,
+        "lon": pl.Float64,
+        "lat": pl.Float64,
+        "class_id": pl.Int16,
+        "class_name": pl.Utf8,
+    }
+    root = root or _DEFAULT_ROOT
+    pid = str(patch_id)
+    tgt_path = root / "ANNOTATIONS" / f"TARGET_{pid}.npy"
+    metadata_path = root / "metadata.geojson"
+    if not tgt_path.exists():
+        return pl.DataFrame(schema=schema)
+
+    target = np.load(tgt_path)
+    semantic = target[0] if target.ndim == 3 else target
+
+    # Recuperar bbox 4326 desde metadata.geojson
+    lon_min = lat_min = lon_max = lat_max = None
+    if metadata_path.exists():
+        with metadata_path.open(encoding="utf-8") as fh:
+            md = json.load(fh)
+        try:
+            from pyproj import Transformer  # type: ignore[import-untyped]
+
+            transformer = Transformer.from_crs("EPSG:2154", "EPSG:4326", always_xy=True)
+        except Exception:  # noqa: BLE001
+            transformer = None
+        for feat in md.get("features", []):
+            if (
+                str(feat.get("id")) == pid
+                or str((feat.get("properties") or {}).get("ID_PATCH")) == pid
+            ):
+                coords = (feat.get("geometry") or {}).get("coordinates", [])
+                xs: list[float] = []
+                ys: list[float] = []
+                for poly in coords:
+                    if not poly:
+                        continue
+                    for pt in poly[0]:
+                        xs.append(float(pt[0]))
+                        ys.append(float(pt[1]))
+                if xs and ys and transformer is not None:
+                    lon1, lat1 = transformer.transform(min(xs), min(ys))
+                    lon2, lat2 = transformer.transform(max(xs), max(ys))
+                    lon_min, lat_min = min(lon1, lon2), min(lat1, lat2)
+                    lon_max, lat_max = max(lon1, lon2), max(lat1, lat2)
+                elif xs and ys:
+                    lon_min, lat_min, lon_max, lat_max = (
+                        min(xs),
+                        min(ys),
+                        max(xs),
+                        max(ys),
+                    )
+                break
+
+    if lon_min is None or lat_min is None or lon_max is None or lat_max is None:
+        # Fallback: bbox dummy centrado en (0,0) — solo permite que el shape
+        # sea correcto sin afirmar correctitud geografica.
+        lon_min, lat_min, lon_max, lat_max = 0.0, 0.0, 1.0, 1.0
+
+    H, W = semantic.shape
+    lon_axis = np.linspace(lon_min, lon_max, W)
+    lat_axis = np.linspace(lat_max, lat_min, H)  # filas top->bottom
+    lon_grid, lat_grid = np.meshgrid(lon_axis, lat_axis)
+
+    cls_flat = semantic.ravel().astype(np.int16)
+    lon_flat = lon_grid.ravel().astype(np.float64)
+    lat_flat = lat_grid.ravel().astype(np.float64)
+    idx = np.arange(cls_flat.size)
+
+    if exclude_classes:
+        mask = ~np.isin(cls_flat, np.asarray(exclude_classes, dtype=np.int16))
+        cls_flat = cls_flat[mask]
+        lon_flat = lon_flat[mask]
+        lat_flat = lat_flat[mask]
+        idx = idx[mask]
+
+    if sample_per_patch is not None and cls_flat.size > sample_per_patch:
+        rng = np.random.default_rng(seed)
+        choice = rng.choice(cls_flat.size, size=sample_per_patch, replace=False)
+        cls_flat = cls_flat[choice]
+        lon_flat = lon_flat[choice]
+        lat_flat = lat_flat[choice]
+        idx = idx[choice]
+
+    if cls_flat.size == 0:
+        return pl.DataFrame(schema=schema)
+
+    px_ids = [f"{pid}_{int(i)}" for i in idx]
+    cls_names = [PASTIS_CLASS_MAP.get(int(c), "unknown") for c in cls_flat]
+    return pl.DataFrame(
+        {
+            "px_id": px_ids,
+            "patch_id": [pid] * cls_flat.size,
+            "lon": lon_flat,
+            "lat": lat_flat,
+            "class_id": cls_flat,
+            "class_name": cls_names,
+        },
+        schema=schema,
+    )

@@ -97,6 +97,15 @@ google-cloud-aiplatform = { extras = ["reasoning_engines"], version = "^1.152.0"
 google-adk = "^1.33.0"
 litellm = "^1.83.14"
 ipykernel = "^7.2.0"
+# EDA US-011: reduccion dimensional + tests estadisticos + DTW (US-012 reusa)
+umap-learn = "^0.5.7"
+statsmodels = "^0.14.4"
+tslearn = "^0.6.3"
+# EDA US-010: pandas (notebooks legacy), tqdm (progress en pastis_eda_final)
+# pandas requerido por seaborn como input para pivot/heatmap; Polars internamente
+# convierte solo en el borde. tqdm usado para iterar patches en pastis_eda_final.
+pandas = "^2.3.0"
+tqdm = "^4.67.0"
 
 [tool.poetry.group.ml-gpu]
 optional = true
