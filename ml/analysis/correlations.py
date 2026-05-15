@@ -57,6 +57,10 @@ def _safe_div(num: pl.Expr, den: pl.Expr) -> pl.Expr:
 def compute_indices_subset(
     df_bands: pl.DataFrame,
     indices: list[str] | None = None,
+    scale: float = 1.0,
+    clip_negative: bool = False,
+    mask_invalid_band_range: tuple[float, float] | None = None,
+    clip_evi_range: tuple[float, float] | None = None,
 ) -> pl.DataFrame:
     """Calcula el subset core de 6 indices espectrales vectorizado en Polars.
 
@@ -70,13 +74,35 @@ def compute_indices_subset(
             float (o casteables a float). Como minimo `B02, B03, B04, B05,
             B08, B11`.
         indices: Subset opcional de indices a computar; default todos los 6.
+        scale: Factor multiplicativo aplicado a cada banda antes del computo
+            (default 1.0, sin escala). Para Sentinel-2 L2A en DN crudo
+            (rango 0-10000) usar 1e-4 para llevar a reflectancia [0, 1] y
+            evitar overflow en EVI por denominador cercano a cero.
+        clip_negative: Si True clipa valores negativos a 0 antes del computo
+            (artefactos BOA pueden producir DN negativo, lo que rompe los
+            indices normalizados al hacer a + b cercano a 0). Aplica antes
+            del computo de indices. Recomendado usar `mask_invalid_band_range`
+            en su lugar para preservar variabilidad real.
+        mask_invalid_band_range: Tupla `(min, max)` post-escala. Timesteps con
+            cualquier banda requerida fuera de este rango se filtran (drop)
+            antes de calcular indices. Ejemplo: `(0.0, 1.5)` con `scale=1e-4`
+            descarta DN negativos (artefactos BOA) y reflectancias > 1.5
+            (nubes saturadas). Mutuamente excluyente con `clip_negative`.
+        clip_evi_range: Tupla `(min, max)` opcional aplicada a `EVI` despues
+            del computo. Util porque la formula EVI puede producir outliers
+            por geometria del denominador aun con bandas validas. Default
+            no clipea.
 
     Returns:
         DataFrame original con columnas adicionales `NDVI, NDWI, NDMI, EVI,
-        SAVI, NDRE` (o el subset solicitado). Si `df_bands` esta vacio o le
-        faltan bandas requeridas para los indices pedidos, devuelve el df
-        original sin alterar.
+        SAVI, NDRE` (o el subset solicitado). Si `mask_invalid_band_range` se
+        pasa, el DataFrame retornado puede tener menos filas que la entrada
+        (los timesteps invalidos quedan filtrados). Si `df_bands` esta vacio
+        o le faltan bandas requeridas para los indices pedidos, devuelve el
+        df original sin alterar.
     """
+    if clip_negative and mask_invalid_band_range is not None:
+        raise ValueError("clip_negative y mask_invalid_band_range son mutuamente excluyentes")
     requested = indices or list(SPECTRAL_INDICES_CORE.keys())
     unknown = [i for i in requested if i not in SPECTRAL_INDICES_CORE]
     if unknown:
@@ -92,7 +118,32 @@ def compute_indices_subset(
         # No podemos computar; devolvemos el df original sin cambios.
         return df_bands
 
-    casts = {b: pl.col(b).cast(pl.Float64) for b in _DEFAULT_REQUIRED_BANDS}
+    df = df_bands
+    if mask_invalid_band_range is not None:
+        lo, hi = mask_invalid_band_range
+        # Escalamos las bandas para evaluar el rango en la misma unidad que `scale`
+        band_scaled = [
+            (pl.col(b).cast(pl.Float64) * scale).alias(f"__scaled_{b}")
+            for b in _DEFAULT_REQUIRED_BANDS
+        ]
+        df = df.with_columns(band_scaled)
+        keep = pl.lit(True)
+        for b in _DEFAULT_REQUIRED_BANDS:
+            keep = keep & pl.col(f"__scaled_{b}").is_between(lo, hi, closed="both")
+        df = df.filter(keep).drop([f"__scaled_{b}" for b in _DEFAULT_REQUIRED_BANDS])
+        if df.is_empty():
+            new_cols = [pl.lit(None, dtype=pl.Float64).alias(name) for name in requested]
+            return df.with_columns(new_cols) if new_cols else df
+
+    def _cast_band(name: str) -> pl.Expr:
+        expr = pl.col(name).cast(pl.Float64)
+        if scale != 1.0:
+            expr = expr * scale
+        if clip_negative:
+            expr = pl.when(expr < 0).then(0.0).otherwise(expr)
+        return expr
+
+    casts = {b: _cast_band(b) for b in _DEFAULT_REQUIRED_BANDS}
 
     exprs: list[pl.Expr] = []
     if "NDVI" in requested:
@@ -120,7 +171,11 @@ def compute_indices_subset(
         den = casts["B08"] + casts["B05"]
         exprs.append(_safe_div(num, den).alias("NDRE"))
 
-    return df_bands.with_columns(exprs)
+    df_out = df.with_columns(exprs)
+    if clip_evi_range is not None and "EVI" in requested:
+        lo, hi = clip_evi_range
+        df_out = df_out.with_columns(pl.col("EVI").clip(lo, hi).alias("EVI"))
+    return df_out
 
 
 def correlation_pair(
@@ -592,6 +647,33 @@ def dtw_cluster_temporal(
         from tslearn.utils import to_time_series_dataset
     except ImportError:  # pragma: no cover
         return empty, None
+
+    # Compat tslearn 0.6.3 + scikit-learn >= 1.6: sklearn renombro el kwarg
+    # `force_all_finite` a `ensure_all_finite`. tslearn aun lo invoca con el
+    # nombre viejo. El shim se aplica una sola vez por proceso.
+    try:
+        import inspect
+
+        import sklearn.utils.validation as _skv
+
+        _check_array_sig = inspect.signature(_skv.check_array)
+        if "force_all_finite" not in _check_array_sig.parameters:
+            _orig_check_array = _skv.check_array
+
+            def _check_array_compat(*args: Any, **kwargs: Any) -> Any:
+                if "force_all_finite" in kwargs:
+                    kwargs["ensure_all_finite"] = kwargs.pop("force_all_finite")
+                return _orig_check_array(*args, **kwargs)
+
+            _skv.check_array = _check_array_compat
+            try:  # tslearn.clustering.kmeans importa check_array por nombre
+                import tslearn.clustering.kmeans as _tskm
+
+                _tskm.check_array = _check_array_compat
+            except Exception:  # noqa: BLE001, S110  # pragma: no cover
+                pass
+    except Exception:  # noqa: BLE001, S110  # pragma: no cover
+        pass
 
     df = df_ts.clone()
     if "class_id" in df.columns:

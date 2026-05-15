@@ -91,3 +91,25 @@ def configure_ee_from_env(repo_root: Path) -> tuple[str | None, Path | None]:
     sa_json = Path(gee_sa_path) if gee_sa_path and Path(gee_sa_path).is_file() else None
 
     return gee_project, sa_json
+
+
+def show_saved_png(path: Path, caption: str | None = None) -> None:
+    """Muestra inline en Jupyter un PNG ya escrito en disco.
+
+    Util cuando una funcion plotter hace `fig.savefig(...) + plt.close(fig)`:
+    `display(fig)` ya no rinde porque el backend matplotlib cerro la figura,
+    pero el PNG existe. Esta funcion lo carga via `IPython.display.Image` y
+    muestra un caption en negrita opcional como Markdown previo.
+
+    Args:
+        path: Ruta del PNG.
+        caption: Texto en negrita a mostrar antes de la imagen.
+    """
+    from IPython.display import Image, Markdown, display
+
+    if not path.is_file():
+        display(Markdown(f"> Figura `{path.name}` no disponible (no se genero)."))
+        return
+    if caption:
+        display(Markdown(f"**{caption}**"))
+    display(Image(filename=str(path)))

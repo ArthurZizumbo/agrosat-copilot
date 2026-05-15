@@ -137,7 +137,7 @@ eda-alphaearth:  ## Ejecuta el notebook US-011 con papermill (sample_size=100000
 	poetry run papermill notebooks/02b_eda_alphaearth.ipynb /tmp/02b_out.ipynb -p sample_size 100000 -p year 2024
 
 eda-bivariado:  ## Ejecuta el notebook US-012 bivariado/multivariado/temporal (n_parcels=200)
-	poetry run papermill notebooks/02c_eda_bivariado_temporal.ipynb /tmp/02c_out.ipynb -p n_parcels 200
+	poetry run papermill notebooks/eda/02c_eda_bivariado_temporal.ipynb notebooks/eda/02c_eda_bivariado_temporal.ipynb -p n_parcels 200
 
 eda-pdf:  ## Genera el reporte PDF del Avance 1 (US-013 AC-8 + AC-9 CRISP-ML(Q))
 	poetry run python -m ml.report.export_pdf --output paper/avance1_eda_report.pdf

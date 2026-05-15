@@ -130,6 +130,162 @@ def test_compute_indices_subset_subset_selection() -> None:
         assert missing not in out.columns
 
 
+def _synthetic_bands_dn(n: int = 200, seed: int = 42) -> pl.DataFrame:
+    """DataFrame con bandas Sentinel-2 en DN crudo PASTIS-R (int16, 0-10000).
+
+    Replica el formato de PASTIS-R con artefactos BOA realistas:
+    - rangos tipicos 500-5000 DN (reflectancia 0.05-0.50 tras escala 1e-4),
+    - ~5 % de pixeles con DN negativo en B04 (artefactos BOA),
+    - ~3 % de pixeles con DN saturados > 15000 en B08 (nubes).
+    """
+    rng = np.random.default_rng(seed)
+    b02 = rng.integers(500, 1500, size=n).astype(np.float64)
+    b03 = rng.integers(700, 2000, size=n).astype(np.float64)
+    b04 = rng.integers(800, 2500, size=n).astype(np.float64)
+    b05 = rng.integers(1500, 3500, size=n).astype(np.float64)
+    b08 = rng.integers(3000, 6000, size=n).astype(np.float64)
+    b11 = rng.integers(1500, 4000, size=n).astype(np.float64)
+    # Inyecta artefactos: 5 % negativos en B04, 3 % saturados en B08
+    neg_idx = rng.choice(n, size=max(1, n // 20), replace=False)
+    sat_idx = rng.choice(n, size=max(1, n // 33), replace=False)
+    b04[neg_idx] = -200.0
+    b08[sat_idx] = 18000.0
+    return pl.DataFrame({"B02": b02, "B03": b03, "B04": b04, "B05": b05, "B08": b08, "B11": b11})
+
+
+def test_compute_indices_subset_scale_brings_ndvi_into_range() -> None:
+    """`scale=1e-4` sobre DN crudo limpio (sin artefactos) entrega NDVI en [-1, 1].
+
+    Nota: con artefactos BOA (DN negativo) y solo `scale`, NDVI puede exceder 1.0;
+    para garantizar rango fisico hay que combinar con `mask_invalid_band_range`
+    o `clip_negative` (cubierto en tests posteriores).
+    """
+    rng = np.random.default_rng(0)
+    n = 300
+    df = pl.DataFrame(
+        {
+            "B02": rng.integers(500, 1500, size=n).astype(np.float64),
+            "B03": rng.integers(700, 2000, size=n).astype(np.float64),
+            "B04": rng.integers(800, 2500, size=n).astype(np.float64),
+            "B05": rng.integers(1500, 3500, size=n).astype(np.float64),
+            "B08": rng.integers(3000, 6000, size=n).astype(np.float64),
+            "B11": rng.integers(1500, 4000, size=n).astype(np.float64),
+        }
+    )
+    out_dn = compute_indices_subset(df, indices=["NDVI"])
+    out_scaled = compute_indices_subset(df, indices=["NDVI"], scale=1e-4)
+    # NDVI normalizado es invariante al factor de escala global (a-b)/(a+b);
+    # comprobamos el contrato del parametro: produce los mismos valores y caen en [-1, 1].
+    ndvi_dn = out_dn["NDVI"].to_numpy()
+    ndvi_sc = out_scaled["NDVI"].to_numpy()
+    np.testing.assert_allclose(ndvi_dn, ndvi_sc, atol=1e-6)
+    assert ndvi_sc.size == n
+    assert (ndvi_sc >= -1.0001).all()
+    assert (ndvi_sc <= 1.0001).all()
+
+
+def test_compute_indices_subset_clip_negative_replaces_negative_dn() -> None:
+    """`clip_negative=True` elimina los DN negativos antes del computo de indices."""
+    df = pl.DataFrame(
+        {
+            "B02": [500.0, 600.0],
+            "B03": [700.0, 800.0],
+            "B04": [-200.0, 1000.0],
+            "B05": [1500.0, 1600.0],
+            "B08": [4000.0, 4500.0],
+            "B11": [2000.0, 2100.0],
+        }
+    )
+    out = compute_indices_subset(df, indices=["NDVI"], scale=1e-4, clip_negative=True)
+    # Fila 0: B04 clipeado a 0 -> NDVI = (B08-0)/(B08+0) = 1.0
+    # Fila 1: B04 = 0.10, B08 = 0.45 -> NDVI = 0.35/0.55 ~= 0.636
+    ndvi = out["NDVI"].to_numpy()
+    assert ndvi[0] == pytest.approx(1.0, abs=1e-4)
+    assert ndvi[1] == pytest.approx(0.35 / 0.55, abs=1e-3)
+
+
+def test_compute_indices_subset_mask_invalid_band_range_drops_rows() -> None:
+    """`mask_invalid_band_range` descarta timesteps con bandas fuera del rango post-escala."""
+    df = _synthetic_bands_dn(n=400, seed=7)
+    n_in = df.height
+    out = compute_indices_subset(
+        df,
+        indices=["NDVI", "EVI"],
+        scale=1e-4,
+        mask_invalid_band_range=(0.0, 1.5),
+    )
+    # Filas con DN negativo (5 %) o saturado > 15000 (3 %) deben quedar fuera.
+    # Permitimos solape de inyeccion (mismo idx puede haber recibido ambos artefactos),
+    # asi que el descarte real esta entre [n*0.05, n*0.08].
+    n_out = out.height
+    assert n_out < n_in
+    assert n_out >= int(n_in * 0.90)
+    # Los NDVI sobrevivientes deben estar dentro del rango fisico.
+    ndvi = out["NDVI"].drop_nulls().to_numpy()
+    assert (ndvi >= -1.0001).all()
+    assert (ndvi <= 1.0001).all()
+
+
+def test_compute_indices_subset_mask_invalid_band_range_drops_all() -> None:
+    """Si todas las filas violan el rango, devuelve DataFrame vacio con columnas Float64."""
+    df = pl.DataFrame(
+        {
+            "B02": [-1.0, -2.0],
+            "B03": [-1.0, -2.0],
+            "B04": [-1.0, -2.0],
+            "B05": [-1.0, -2.0],
+            "B08": [-1.0, -2.0],
+            "B11": [-1.0, -2.0],
+        }
+    )
+    out = compute_indices_subset(
+        df,
+        indices=["NDVI"],
+        scale=1.0,
+        mask_invalid_band_range=(0.0, 1.0),
+    )
+    assert out.is_empty()
+    assert "NDVI" in out.columns
+    assert out.schema["NDVI"] == pl.Float64
+
+
+def test_compute_indices_subset_clip_evi_range_bounds_output() -> None:
+    """`clip_evi_range` acota EVI post-computo al rango pedido."""
+    # Construimos un caso donde el denominador EVI se acerca a cero y produce outlier.
+    # B08 + 6*B04 - 7.5*B02 + 1 ~ 0 cuando B02 domina; usamos valores que disparan eso.
+    df = pl.DataFrame(
+        {
+            "B02": [0.50, 0.05],
+            "B03": [0.10, 0.10],
+            "B04": [0.05, 0.10],
+            "B05": [0.20, 0.20],
+            "B08": [0.10, 0.50],
+            "B11": [0.20, 0.20],
+        }
+    )
+    out_unclipped = compute_indices_subset(df, indices=["EVI"])
+    out_clipped = compute_indices_subset(df, indices=["EVI"], clip_evi_range=(-1.0, 2.0))
+    evi_un = out_unclipped["EVI"].to_numpy()
+    evi_cl = out_clipped["EVI"].to_numpy()
+    # La fila 0 debe ser un outlier sin clip y caer dentro del rango con clip.
+    assert (evi_cl >= -1.0001).all()
+    assert (evi_cl <= 2.0001).all()
+    # La fila 1 (denominador sano) no debe cambiar.
+    assert evi_cl[1] == pytest.approx(evi_un[1], abs=1e-6)
+
+
+def test_compute_indices_subset_clip_negative_and_mask_are_mutually_exclusive() -> None:
+    """Pasar ambos `clip_negative=True` y `mask_invalid_band_range` levanta ValueError."""
+    df = _synthetic_bands(n=20)
+    with pytest.raises(ValueError, match="mutuamente excluyentes"):
+        compute_indices_subset(
+            df,
+            indices=["NDVI"],
+            clip_negative=True,
+            mask_invalid_band_range=(0.0, 1.5),
+        )
+
+
 # -------------------------------------------------------------------
 # correlation_pair
 # -------------------------------------------------------------------
