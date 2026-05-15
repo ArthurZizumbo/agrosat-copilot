@@ -381,6 +381,355 @@ def qq_grid(
     return fig
 
 
+def pairplot_by_class(
+    df: pl.DataFrame,
+    features: list[str],
+    class_col: str,
+    out_path: Path,
+    subsample_per_class: int = 2000,
+    seed: int = 42,
+    top_classes: int = 10,
+    dpi: int = 200,
+) -> Any:
+    """Pairplot seaborn condicionado por clase con cap de clases y subsampling.
+
+    Cap clases a `top_classes` por frecuencia para no saturar seaborn. Aplica
+    `.to_pandas()` como adapter borde unicamente para `seaborn.pairplot`, que
+    no acepta Polars.
+
+    Args:
+        df: DataFrame Polars con `features` y `class_col`.
+        features: Columnas a usar como ejes del pairplot.
+        class_col: Columna categorica para `hue`.
+        out_path: Ruta PNG de salida.
+        subsample_per_class: Maximo de filas por clase a graficar.
+        seed: Semilla para muestreo.
+        top_classes: Numero maximo de clases (las mas frecuentes) a conservar.
+        dpi: Resolucion del PNG (default 200).
+
+    Returns:
+        Objeto `seaborn.PairGrid` ya guardado en disco.
+    """
+    import matplotlib.pyplot as plt
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    missing = [c for c in [*features, class_col] if c not in df.columns]
+    if df.is_empty() or missing:
+        fig, ax = plt.subplots(figsize=(6, 4), dpi=dpi)
+        ax.text(0.5, 0.5, "Sin datos para pairplot", ha="center", va="center")
+        fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
+        plt.close(fig)
+        return None
+
+    freq = (
+        df.group_by(class_col)
+        .agg(pl.len().alias("__count"))
+        .sort("__count", descending=True)
+        .head(top_classes)
+    )
+    keep_classes = freq[class_col].to_list()
+    sub = df.filter(pl.col(class_col).is_in(keep_classes))
+
+    frames: list[pl.DataFrame] = []
+    for cls in keep_classes:
+        df_c = sub.filter(pl.col(class_col) == cls)
+        if df_c.is_empty():
+            continue
+        if df_c.height > subsample_per_class:
+            df_c = df_c.sample(n=subsample_per_class, seed=seed, shuffle=True)
+        frames.append(df_c)
+    if not frames:
+        fig, ax = plt.subplots(figsize=(6, 4), dpi=dpi)
+        ax.text(0.5, 0.5, "Sin datos para pairplot", ha="center", va="center")
+        fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
+        plt.close(fig)
+        return None
+    sub_sampled = pl.concat(frames, how="vertical_relaxed")
+    pdf = sub_sampled.select([*features, class_col]).drop_nulls().to_pandas()
+    if pdf.empty:
+        fig, ax = plt.subplots(figsize=(6, 4), dpi=dpi)
+        ax.text(0.5, 0.5, "Sin datos para pairplot", ha="center", va="center")
+        fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
+        plt.close(fig)
+        return None
+
+    import seaborn as sns
+
+    grid = sns.pairplot(
+        pdf,
+        vars=features,
+        hue=class_col,
+        corner=True,
+        plot_kws={"s": 6, "alpha": 0.5, "edgecolor": "none"},
+        diag_kind="hist",
+    )
+    grid.fig.suptitle(f"Pairplot por {class_col} (top-{len(keep_classes)})", y=1.02)
+    grid.fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
+    plt.close(grid.fig)
+    return grid
+
+
+def vif_barplot(
+    vif_df: pl.DataFrame,
+    out_path: Path,
+    threshold_warn: float = 5.0,
+    threshold_drop: float = 10.0,
+    dpi: int = 200,
+) -> Any:
+    """Barplot horizontal de VIF con lineas de threshold a 5 y 10.
+
+    Args:
+        vif_df: Output de `correlations.vif_table()` con columnas
+            `feature, vif, status`.
+        out_path: Ruta PNG.
+        threshold_warn: Linea de alerta amarilla (default 5).
+        threshold_drop: Linea critica roja (default 10).
+        dpi: Resolucion.
+
+    Returns:
+        Figura matplotlib (cerrada tras savefig).
+    """
+    import matplotlib.pyplot as plt
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig, ax = plt.subplots(figsize=(8, 5), dpi=dpi)
+    if vif_df.is_empty():
+        ax.text(0.5, 0.5, "Sin datos VIF", ha="center", va="center")
+        fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
+        plt.close(fig)
+        return fig
+
+    # Reemplazar inf por un sentinel grande para graficar
+    sub = vif_df.with_columns(
+        pl.when(pl.col("vif").is_infinite()).then(1e3).otherwise(pl.col("vif")).alias("vif_plot")
+    ).sort("vif_plot", descending=False)
+    feats = sub["feature"].to_list()
+    vals = sub["vif_plot"].to_numpy()
+    statuses = sub["status"].to_list()
+    palette = {
+        "ok": "#2ca02c",
+        "warning": "#ff7f0e",
+        "drop": "#d62728",
+        "dropped_near_perfect_corr": "#7f7f7f",
+    }
+    colors = [palette.get(s, "#1f77b4") for s in statuses]
+    ax.barh(feats, vals, color=colors, edgecolor="black", linewidth=0.4)
+    warn_label = f"warn={threshold_warn}"
+    drop_label = f"drop={threshold_drop}"
+    ax.axvline(threshold_warn, color="orange", linestyle="--", linewidth=1.0, label=warn_label)
+    ax.axvline(threshold_drop, color="red", linestyle="--", linewidth=1.0, label=drop_label)
+    ax.set_xscale("symlog")
+    ax.set_xlabel("VIF (escala simlog)")
+    ax.set_title("Variance Inflation Factor por feature")
+    ax.legend(loc="best", fontsize=8)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
+    plt.close(fig)
+    return fig
+
+
+def dual_axis_precip_ndvi(
+    df_era5: pl.DataFrame,
+    df_ndvi: pl.DataFrame,
+    out_path: Path,
+    dpi: int = 200,
+) -> Any:
+    """Plot doble eje: barras precip ERA5 + linea NDVI maximo anual por ROI.
+
+    Args:
+        df_era5: DataFrame Polars con `year, roi_name, precip_mm`.
+        df_ndvi: DataFrame Polars con `year, roi_name, ndvi_max`.
+        out_path: Ruta PNG.
+        dpi: Resolucion.
+
+    Returns:
+        Figura matplotlib.
+    """
+    import matplotlib.pyplot as plt
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig, ax = plt.subplots(figsize=(10, 5), dpi=dpi)
+    if df_era5.is_empty() or df_ndvi.is_empty():
+        ax.text(0.5, 0.5, "Sin datos ERA5 / NDVI", ha="center", va="center")
+        fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
+        plt.close(fig)
+        return fig
+
+    merged = df_era5.join(df_ndvi, on=["year", "roi_name"], how="inner").sort(["roi_name", "year"])
+    if merged.is_empty():
+        ax.text(0.5, 0.5, "ERA5 y NDVI no se cruzan", ha="center", va="center")
+        fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
+        plt.close(fig)
+        return fig
+
+    rois = merged["roi_name"].unique().to_list()
+    palette = _categorical_palette(len(rois))
+    ax2 = ax.twinx()
+    width = 0.8 / max(1, len(rois))
+    years = sorted(merged["year"].unique().to_list())
+    xpos = np.arange(len(years))
+    for i, roi in enumerate(rois):
+        sub = merged.filter(pl.col("roi_name") == roi).sort("year")
+        precip = sub["precip_mm"].to_numpy()
+        ndvi = sub["ndvi_max"].to_numpy()
+        sub_years = sub["year"].to_list()
+        offset = (i - (len(rois) - 1) / 2.0) * width
+        bar_x = np.array([years.index(y) for y in sub_years]) + offset
+        ax.bar(
+            bar_x,
+            precip,
+            width=width,
+            color=palette[i],
+            alpha=0.65,
+            edgecolor="black",
+            linewidth=0.3,
+            label=f"{roi} precip",
+        )
+        line_x = np.array([years.index(y) for y in sub_years])
+        ax2.plot(line_x, ndvi, marker="o", color=palette[i], linewidth=1.5, label=f"{roi} NDVI")
+
+    ax.set_xticks(xpos)
+    ax.set_xticklabels([str(y) for y in years])
+    ax.set_xlabel("Year")
+    ax.set_ylabel("Precipitacion anual (mm)")
+    ax2.set_ylabel("NDVI maximo anual")
+    ax.set_title("ERA5 precip anual vs NDVI maximo por ROI")
+    # Leyenda combinada
+    h1, l1 = ax.get_legend_handles_labels()
+    h2, l2 = ax2.get_legend_handles_labels()
+    ax.legend(h1 + h2, l1 + l2, loc="best", fontsize=8)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
+    plt.close(fig)
+    return fig
+
+
+def acf_grid_by_class(
+    acf_df: pl.DataFrame,
+    out_path: Path,
+    ncols: int = 3,
+    dpi: int = 200,
+) -> Any:
+    """Grid de plots ACF agregados por clase (media + IC 95%).
+
+    Args:
+        acf_df: Output de `correlations.acf_pacf_per_parcel()` con columnas
+            `parcel_id, class_name, lag, acf, pacf`.
+        out_path: Ruta PNG.
+        ncols: Columnas del grid (default 3).
+        dpi: Resolucion.
+
+    Returns:
+        Figura matplotlib.
+    """
+    import matplotlib.pyplot as plt
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    if acf_df.is_empty():
+        fig, ax = plt.subplots(figsize=(6, 4), dpi=dpi)
+        ax.text(0.5, 0.5, "Sin datos ACF", ha="center", va="center")
+        fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
+        plt.close(fig)
+        return fig
+
+    agg = (
+        acf_df.group_by(["class_name", "lag"])
+        .agg(
+            [
+                pl.col("acf").mean().alias("acf_mean"),
+                pl.col("acf").std().fill_null(0.0).alias("acf_std"),
+                pl.len().alias("n"),
+            ]
+        )
+        .sort(["class_name", "lag"])
+    )
+    classes = sorted(agg["class_name"].unique().to_list())
+    nrows = int(np.ceil(len(classes) / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(4 * ncols, 2.6 * nrows), dpi=dpi)
+    axes_flat = np.asarray(axes).flatten() if nrows * ncols > 1 else np.array([axes])
+    for i, cls in enumerate(classes):
+        ax = axes_flat[i]
+        sub = agg.filter(pl.col("class_name") == cls).sort("lag")
+        lags = sub["lag"].to_numpy()
+        mean = sub["acf_mean"].to_numpy()
+        std = sub["acf_std"].to_numpy()
+        n = sub["n"].to_numpy()
+        # IC95 aproximado con normal: mean +/- 1.96 * std / sqrt(n)
+        denom = np.sqrt(np.maximum(n, 1))
+        ci = 1.96 * std / denom
+        ax.bar(lags, mean, color="#1f77b4", alpha=0.85)
+        ax.errorbar(lags, mean, yerr=ci, fmt="none", ecolor="black", elinewidth=0.6, capsize=2)
+        ax.axhline(0.0, color="black", linewidth=0.4)
+        ax.set_title(cls, fontsize=8)
+        ax.set_ylim(-1.1, 1.1)
+        ax.tick_params(axis="both", labelsize=6)
+    for j in range(len(classes), len(axes_flat)):
+        axes_flat[j].set_visible(False)
+    fig.suptitle("ACF agregado por clase (media + IC95%)", fontsize=12)
+    fig.tight_layout(rect=(0, 0, 1, 0.97))
+    fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
+    plt.close(fig)
+    return fig
+
+
+def dtw_centroids_plot(
+    km_model: Any,
+    df_ts: pl.DataFrame,
+    out_path: Path,
+    dpi: int = 200,
+) -> Any:
+    """Plot de los centroides DTW del `TimeSeriesKMeans` ajustado.
+
+    Args:
+        km_model: Modelo `tslearn.clustering.TimeSeriesKMeans` ajustado con
+            `cluster_centers_` accesible. Si es None, se pinta placeholder.
+        df_ts: DataFrame Polars con `parcel_id, class_name, cluster_id` para
+            anotar tamano de cada cluster.
+        out_path: Ruta PNG.
+        dpi: Resolucion.
+
+    Returns:
+        Figura matplotlib.
+    """
+    import matplotlib.pyplot as plt
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    if km_model is None or not hasattr(km_model, "cluster_centers_"):
+        fig, ax = plt.subplots(figsize=(6, 4), dpi=dpi)
+        ax.text(0.5, 0.5, "Sin modelo DTW", ha="center", va="center")
+        fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
+        plt.close(fig)
+        return fig
+
+    centers = np.asarray(km_model.cluster_centers_)
+    n_clusters = centers.shape[0]
+    counts: dict[int, int] = {}
+    if not df_ts.is_empty() and "cluster_id" in df_ts.columns:
+        cnt_df = df_ts.group_by("cluster_id").agg(pl.len().alias("n"))
+        for r in cnt_df.iter_rows(named=True):
+            counts[int(r["cluster_id"])] = int(r["n"])
+    nrows = int(np.ceil(n_clusters / 2))
+    fig, axes = plt.subplots(nrows, 2, figsize=(10, 2.4 * nrows), dpi=dpi)
+    axes_flat = np.asarray(axes).flatten() if n_clusters > 1 else np.array([axes])
+    palette = _categorical_palette(n_clusters)
+    for k in range(n_clusters):
+        ax = axes_flat[k]
+        center = centers[k].squeeze()
+        ax.plot(center, color=palette[k], linewidth=1.8)
+        ax.axhline(0.0, color="black", linewidth=0.4)
+        ax.set_title(f"Cluster {k} (n={counts.get(k, 0)})", fontsize=10)
+        ax.set_xlabel("Mes (resampleo)")
+        ax.set_ylabel("NDVI z-score")
+        ax.tick_params(axis="both", labelsize=7)
+    for j in range(n_clusters, len(axes_flat)):
+        axes_flat[j].set_visible(False)
+    fig.suptitle("Centroides DTW por cluster (NDVI z-normalizado)", fontsize=12)
+    fig.tight_layout(rect=(0, 0, 1, 0.97))
+    fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
+    plt.close(fig)
+    return fig
+
+
 def cross_region_scatter(
     consistency_df: pl.DataFrame,
     out_path: Path,

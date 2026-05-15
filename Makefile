@@ -1,4 +1,4 @@
-.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip notebooks-check i18n-check db-migrate db-rollback db-new db-status db-seed train-l4 train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eda-sentinel2 eda-alphaearth eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate
+.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip notebooks-check i18n-check db-migrate db-rollback db-new db-status db-seed train-l4 train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eda-sentinel2 eda-alphaearth eda-bivariado eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate
 
 help:
 	@echo "AgroSatCopilot — comandos disponibles:"
@@ -135,6 +135,9 @@ eda-sentinel2:  ## Ejecuta el notebook US-010 con papermill (sample_size=100000)
 
 eda-alphaearth:  ## Ejecuta el notebook US-011 con papermill (sample_size=100000, year=2024)
 	poetry run papermill notebooks/02b_eda_alphaearth.ipynb /tmp/02b_out.ipynb -p sample_size 100000 -p year 2024
+
+eda-bivariado:  ## Ejecuta el notebook US-012 bivariado/multivariado/temporal (n_parcels=200)
+	poetry run papermill notebooks/eda/02c_eda_bivariado_temporal.ipynb notebooks/eda/02c_eda_bivariado_temporal.ipynb -p n_parcels 200
 
 # === Eval ===
 eval-agromind:  ## make eval-agromind variant=gemini
