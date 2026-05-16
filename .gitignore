@@ -122,6 +122,9 @@ data/reference/spectral_library.parquet
 .dvc/plots/
 .dvc/config.local
 
+# ── Notebooks HTML exports (locales para revision visual, no para repo) ──────
+notebooks/eda/html/
+
 # ── MLflow ────────────────────────────────────────────────────────────────────
 mlruns/
 mlflow.db

@@ -1,0 +1,15 @@
+# Requisitos para Streamlit Community Cloud — dashboard EDA (app/eda_dashboard.py).
+# Streamlit Cloud NO usa Poetry; lee este requirements.txt en la raíz del repo.
+# Mantenemos solo lo mínimo necesario para que arranque el dashboard.
+
+streamlit>=1.50
+streamlit-folium>=0.27
+folium>=0.19
+geopandas>=1.0
+shapely>=2.0
+polars>=1.0
+pyyaml>=6.0
+typer>=0.20
+jinja2>=3.1
+# Solo el dashboard necesita estos; el reporte PDF (weasyprint) requiere GTK
+# y no corre en Streamlit Cloud — se omite a propósito.

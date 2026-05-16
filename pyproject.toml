@@ -53,6 +53,7 @@ ruff = "^0.15.12"
 mypy = "^2.1.0"
 ipython = "^9.13.0"
 nbstripout = "^0.9.1"
+notebook = "^7.5.6"
 
 [tool.poetry.group.test.dependencies]
 pytest = "^9.0.3"
@@ -196,6 +197,13 @@ ignore = ["S101", "S301"]  # asserts ok en tests; pickle ok para ML
 "**/tests/**" = ["S"]
 "notebooks/**" = ["E402", "F401"]
 "scripts/**" = ["S603", "S607"]
+# US-013: contenido editorial en español con tipografía rica (em/en dash, comillas tipográficas,
+# signo de multiplicación). RUF001/002/003 marcan estos caracteres como "ambiguos" en código,
+# pero aquí son texto para humanos. El dashboard Streamlit también usa estos caracteres en HTML.
+"ml/report/notebook_content.py" = ["RUF001", "RUF002", "RUF003"]
+"ml/report/figure_narratives.py" = ["RUF001", "RUF002", "RUF003"]
+"app/eda_dashboard.py" = ["RUF001", "RUF002", "RUF003"]
+"scripts/build_avance1_notebook.py" = ["RUF001", "RUF002", "RUF003"]
 
 [tool.mypy]
 python_version = "3.12"

@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <title>Avance 1 EDA</title>
+    <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<section class="cover">
+    <h1>Avance 1 EDA</h1>
+    <p class="subtitle">Reporte consolidado del Avance 1 — EDA AgroSatCopilot</p>
+    <div class="meta">
+        <p><strong>Curso:</strong> MNA</p>
+        <p><strong>Fecha:</strong> 2026-05-13</p>
+        <p><strong>Sponsor:</strong> Dr. Camacho</p>
+        <p><strong>Equipo:</strong></p>
+        <p>Arthur</p>
+        <p>Aaron</p>
+        <p>Isaac</p>
+    </div>
+</section>
+
+<section class="toc">
+    <h2>Índice</h2>
+    <ol>
+        <li>EDA Univariado — Sentinel-2</li>
+        <li>EDA AlphaEarth Foundations (64 dimensiones)</li>
+        <li>EDA Bivariado, Multivariado y Temporal</li>
+        <li>EDA PASTIS-R Consolidado (Avance 1 Equipo 17)</li>
+        <li>Conclusiones Globales del Avance 1</li>
+    </ol>
+    <p class="note">
+        Este reporte sintetiza los cuatro notebooks de EDA del Avance 1
+        (Sentinel-2 univariado, AlphaEarth Foundations, bivariado y temporal,
+        y PASTIS-R consolidado) más un capítulo final de conclusiones
+        globales. Cada ficha conserva la estructura del notebook fuente, sus
+        conclusiones interpretadas y las figuras producidas durante el
+        análisis, redactadas para lectura del sponsor académico.
+    </p>
+</section>
+
+<section class="card">
+    <h2>1. EDA Univariado — Sentinel-2</h2>
+    <p class="subtitle-card">Análisis univariado de las 10 bandas ópticas de Sentinel-2 sobre PASTIS-R (Francia, con etiquetas reales de agricultores) y tres regiones italianas (Pianura Padana, Toscana y Apulia) muestreadas mediante Google Earth Engine. Buscamos entender qué tan limpios están los datos, cómo se distribuyen los valores y cuánto afecta la nubosidad por región y estación del año.</p>
+    <p class="source-link">
+        <strong>Notebook fuente:</strong>
+        <code>notebooks/eda/02a_eda_sentinel2.ipynb</code>
+    </p>
+
+    <div class="sections">
+        <h3>Índice del notebook</h3>
+        <ul>
+            <li>1. Setup y configuración</li>
+            <li>2. Carga de PASTIS-R y muestreo GEE sobre Italia</li>
+            <li>3. Análisis de píxeles inválidos (nubes y sombras)</li>
+            <li>4. Estadísticas descriptivas por banda espectral</li>
+            <li>5. Detección de outliers (IQR + Isolation Forest)</li>
+            <li>6. Cardinalidad de clases (cultivos PASTIS)</li>
+            <li>7. Distribuciones, normalidad y transformaciones recomendadas</li>
+            <li>8. Evolución temporal del NDVI por cultivo</li>
+            <li>9. Estiramiento de contraste (Stretch 2-98) y visualización RGB</li>
+            <li>10. Conclusiones del análisis</li>
+        </ul>
+    </div>
+
+    <div class="figures">
+        <h3>Figuras del análisis</h3>
+        <div class="figure-block">
+            <div class="figure">
+                <img src="C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\paper/figures/us-010/band_distributions.png"
+                     alt="band_distributions" />
+            </div>
+            <h4>Distribuciones de cada banda Sentinel-2</h4>
+            <p class="narrative">Cada panel muestra cómo se reparten los valores de reflectancia en una de las 10 bandas del satélite, después de filtrar los píxeles con nubes. Las bandas del visible (azul, verde, rojo) tienen colas largas hacia valores altos por nubes residuales, mientras que las del infrarrojo tienen valores más altos y consistentes — eso es la huella de la vegetación sana. Ninguna banda se comporta como una campana de Gauss; todas están sesgadas hacia valores bajos, lo cual es normal en imágenes satelitales.</p>
+            <p class="method"><strong>Cómo se construyó:</strong> Muestreo estratificado de píxeles en las 3 regiones italianas (Pianura Padana, Toscana y Apulia) más PASTIS-R Francia como control. Histogramas por banda con bins fijos después de aplicar la máscara SCL del satélite.</p>
+        </div>
+        <div class="figure-block">
+            <div class="figure">
+                <img src="C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\paper/figures/us-010/band_stats_heatmap.png"
+                     alt="band_stats_heatmap" />
+            </div>
+            <h4>Resumen de estadísticas por banda y región</h4>
+            <p class="narrative">Esta tabla en forma de mapa de calor compara las cuatro zonas en términos de media, desviación, percentiles y sesgo. Apulia es la zona más homogénea (menor desviación en el infrarrojo), mientras que la Pianura Padana es la más heterogénea por su mosaico parcelario denso. La banda B12 (infrarrojo de onda corta) concentra los valores más extremos por su sensibilidad al estrés hídrico de los cultivos.</p>
+            <p class="method"><strong>Cómo se construyó:</strong> Agregación por (región, banda) sobre píxeles válidos. Normalización min-max por columna para que todas las métricas sean comparables en el mismo color.</p>
+        </div>
+        <div class="figure-block">
+            <div class="figure">
+                <img src="C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\paper/figures/us-010/class_cardinality.png"
+                     alt="class_cardinality" />
+            </div>
+            <h4>Cuántos píxeles hay por cada cultivo en PASTIS-R</h4>
+            <p class="narrative">Trigo blando, maíz y prados dominan el dataset; legumbres, viñedos y frutales son minoritarios. Esta asimetría obliga a hacer muestreo estratificado por clase y región durante los splits de entrenamiento, y a usar una función de pérdida con pesos inversos (o focal loss) en la segmentación del EPIC 5, para que las clases raras no se ‘pierdan’ durante el entrenamiento.</p>
+            <p class="method"><strong>Cómo se construyó:</strong> Conteo directo de píxeles por clase usando los labels densos del metadata.geojson de PASTIS-R, anotados por agricultores.</p>
+        </div>
+        <div class="figure-block">
+            <div class="figure">
+                <img src="C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\paper/figures/us-010/outliers_by_band.png"
+                     alt="outliers_by_band" />
+            </div>
+            <h4>Outliers detectados por dos métodos complementarios</h4>
+            <p class="narrative">Aplicamos dos detectores: IQR (mira cada banda por separado) e Isolation Forest (mira las 10 bandas juntas). IQR marca entre 4,6 % y 15,2 % por banda — más en el visible por nubes. Isolation Forest marca un 5 % uniforme. El valor promedio de los puntos atípicos es muy alto (4.700–6.300), lo que confirma que son superficies muy brillantes (nubes que escaparon a la máscara del satélite). Recomendación: aplicar winsorización al percentil 99,5 en lugar de eliminarlos.</p>
+            <p class="method"><strong>Cómo se construyó:</strong> IQR robusto por banda con los límites Q1−1.5·IQR y Q3+1.5·IQR. Isolation Forest con 100 estimadores sobre las 10 bandas en conjunto.</p>
+        </div>
+        <div class="figure-block">
+            <div class="figure">
+                <img src="C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\paper/figures/us-010/scl_missingness_by_roi_season.png"
+                     alt="scl_missingness_by_roi_season" />
+            </div>
+            <h4>Cuántos píxeles se pierden por nubes (por región y estación)</h4>
+            <p class="narrative">Pianura Padana pierde el 53 % de los píxeles en otoño por nubes; Apulia mantiene el 88 % utilizable en verano. El verano es la mejor estación para todas las zonas; el otoño queda como un gap conocido especialmente en la Pianura. Esta tabla guía la priorización de adquisiciones para el pipeline Dagster que construiremos en el Avance 2.</p>
+            <p class="method"><strong>Cómo se construyó:</strong> Conteo de píxeles con la bandera SCL válida (clases 4, 5, 6 = vegetación, no-vegetación, agua) sobre el total muestreado por (región, estación del año).</p>
+        </div>
+        <div class="figure-block">
+            <div class="figure">
+                <img src="C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\paper/figures/us-010/stretch_2_98_grid.png"
+                     alt="stretch_2_98_grid" />
+            </div>
+            <h4>Visualización RGB de las regiones italianas</h4>
+            <p class="narrative">Composiciones RGB en color verdadero (B04 rojo, B03 verde, B02 azul) con un ajuste de contraste entre los percentiles 2 y 98 que descarta los extremos saturados. Permite verificar visualmente que las regiones cubren mosaicos agrícolas reales y no superficies degeneradas. Funciona como sanity check antes de entrar al feature engineering.</p>
+            <p class="method"><strong>Cómo se construyó:</strong> Reflectancia escalada por banda al rango [percentil 2, percentil 98] y luego normalizada a [0, 1] para visualización.</p>
+        </div>
+    </div>
+
+    <div class="conclusions">
+        <h3>Conclusiones e interpretación</h3>
+        <div class="conclusion-block">
+            <h4>Las 10 bandas aportan información — ninguna se descarta</h4>
+            <p>Las bandas del visible (azul, verde, rojo) muestran valores promedio bajos (1.200–1.440) mientras que las del infrarrojo cercano y borde rojo (B07, B08, B8A) llegan a ser 2 a 3 veces más altas (3.100–3.400). La vegetación sana refleja mucho infrarrojo y poco rojo: ese contraste es la huella que permite separar cultivos. Conclusión práctica: mantener las 10 bandas como features candidatas para el baseline.</p>
+        </div>
+        <div class="conclusion-block">
+            <h4>Los datos vienen sucios y hay que limpiarlos antes de modelar</h4>
+            <p>El 0,47 % de los píxeles tiene valor -10.000 (marcador de ‘sin dato’ del satélite) y se filtra sin problema. Tras filtrar, persisten valores levemente negativos (entre -300 y -994) que son artefactos de la corrección atmosférica sobre agua y sombras — válidos, no errores. Ninguna banda sigue una distribución normal: todas están sesgadas hacia valores bajos, comportamiento típico de sensores satelitales.</p>
+        </div>
+        <div class="conclusion-block">
+            <h4>La nubosidad domina y varía mucho por zona y estación</h4>
+            <p>Pianura Padana pierde el 53 % de los píxeles en otoño por nubes (33 % en verano). Toscana central queda en 41 % otoño y 21 % verano. Apulia es la zona más limpia todo el año (12 % en verano, 32 % en otoño). El verano es la mejor estación para las tres zonas. Esto guía cuándo priorizar adquisiciones para el pipeline del Avance 2.</p>
+        </div>
+        <div class="conclusion-block">
+            <h4>Los outliers son nubes residuales, no errores de medición</h4>
+            <p>El método IQR univariado marca entre 4,6 % y 15,2 % de outliers por banda (más en visible por nubes). Isolation Forest multivariado marca un 5 % uniforme. El valor promedio de los puntos atípicos es 4.700–6.300, confirmando que son superficies muy brillantes (nubes que escaparon a la máscara del satélite). Recomendación: aplicar winsorización al percentil 99,5 en lugar de eliminarlos.</p>
+        </div>
+        <div class="conclusion-block">
+            <h4>Lo que sigue para el Avance 2</h4>
+            <p>Replicar la máscara de calidad antes de cualquier feature engineering. Aplicar transformación logarítmica o Yeo-Johnson para corregir el sesgo. Priorizar verano para ventanas de adquisición y aceptar pérdidas mayores en otoño en Pianura Padana. Mantener las 10 bandas como features candidatas — no hay redundancia a este nivel univariado.</p>
+        </div>
+    </div>
+</section>
+<section class="card">
+    <h2>2. EDA AlphaEarth Foundations (64 dimensiones)</h2>
+    <p class="subtitle-card">AlphaEarth es un modelo de Google que comprime cada píxel satelital de 10 m de la Tierra en un vector de 64 números. Aquí evaluamos si esos 64 números sirven para distinguir tipos de cultivos en dos países muy diferentes: Italia (3 regiones piloto con etiquetas Dynamic World, 6.000 píxeles) y Francia (10 patches PASTIS-R con 13 cultivos reales, 5.000 píxeles).</p>
+    <p class="source-link">
+        <strong>Notebook fuente:</strong>
+        <code>notebooks/eda/02b_eda_alphaearth.ipynb</code>
+    </p>
+
+    <div class="sections">
+        <h3>Índice del notebook</h3>
+        <ul>
+            <li>Sección 1 — Italia × Dynamic World (separabilidad de clases)</li>
+            <li>Sección 2 — Francia × PASTIS-R (separabilidad agronómica)</li>
+            <li>Sección 3 — Comparativa cross-region (estabilidad y consistencia)</li>
+            <li>Conclusiones — qué aprendimos de los embeddings</li>
+        </ul>
+    </div>
+
+    <div class="figures">
+        <h3>Figuras del análisis</h3>
+        <div class="figure-block">
+            <div class="figure">
+                <img src="C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\paper/figures/us-011/sec1_alphaearth_vs_ndvi.png"
+                     alt="sec1_alphaearth_vs_ndvi" />
+            </div>
+            <h4>AlphaEarth aporta más información que el NDVI clásico</h4>
+            <p class="narrative">Panel comparativo de tres vistas: RGB Sentinel-2 real, NDVI escalar y un ‘pseudo-RGB’ construido con las 3 dimensiones AlphaEarth más informativas. El pseudo-RGB resalta la variación estructural (parcelas, caminos) que el NDVI aplana en un solo número. Eso justifica usar AlphaEarth como pool de features principal en el baseline del Avance 3.</p>
+            <p class="method"><strong>Cómo se construyó:</strong> Selección de las 3 dimensiones con mayor importancia Random Forest sobre Italia. Mapeo de cada dimensión a un canal R/G/B con normalización min-max.</p>
+        </div>
+        <div class="figure-block">
+            <div class="figure">
+                <img src="C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\paper/figures/us-011/sec1_corr_italia_dw.png"
+                     alt="sec1_corr_italia_dw" />
+            </div>
+            <h4>Correlación entre las 64 dimensiones AlphaEarth (Italia)</h4>
+            <p class="narrative">Mapa de calor que muestra cuánto se parecen entre sí las 64 dimensiones AlphaEarth sobre los 6.000 píxeles italianos etiquetados con Dynamic World. Hay varios pares con |r| &gt; 0,7 que indican redundancia. Aplicar PCA antes de XGBoost reduce el ruido sin perder capacidad discriminativa.</p>
+            <p class="method"><strong>Cómo se construyó:</strong> Correlación Pearson sobre los embeddings AlphaEarth v2.1 estándar; matriz simétrica con diagonal = 1.</p>
+        </div>
+        <div class="figure-block">
+            <div class="figure">
+                <img src="C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\paper/figures/us-011/sec1_qq_italia_dw.png"
+                     alt="sec1_qq_italia_dw" />
+            </div>
+            <h4>¿Las dimensiones AlphaEarth son aproximadamente normales? (Italia)</h4>
+            <p class="narrative">Los QQ-plots comparan cada dimensión con la normal estándar. La mayoría se desvía en las colas (colas pesadas), pero el centro es aproximadamente normal. Eso justifica usar PCA directamente sobre los embeddings, sin necesidad de transformación logarítmica previa.</p>
+            <p class="method"><strong>Cómo se construyó:</strong> QQ-plot de cada dim_XX contra distribución normal estándar. Submuestra de 1.000 píxeles para mantener los gráficos legibles.</p>
+        </div>
+        <div class="figure-block">
+            <div class="figure">
+                <img src="C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\paper/figures/us-011/sec1_tsne_italia_dw.png"
+                     alt="sec1_tsne_italia_dw" />
+            </div>
+            <h4>Proyección t-SNE 2D coloreada por clase Dynamic World (Italia)</h4>
+            <p class="narrative">Proyección 2D que comprime las 64 dimensiones en un plano. Se ven clusters claros: agricultura separada de zonas construidas, agua y bosque. Un Random Forest simple sobre estos 64 números logra OOB 0,888 sobre 8 clases — los embeddings ya capturan la información necesaria sin feature engineering manual.</p>
+            <p class="method"><strong>Cómo se construyó:</strong> t-SNE con perplexity = 30 sobre una submuestra de 5.000 píxeles. Coloreado por la clase Dynamic World (8 categorías dominantes).</p>
+        </div>
+        <div class="figure-block">
+            <div class="figure">
+                <img src="C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\paper/figures/us-011/sec1_umap_italia_dw.png"
+                     alt="sec1_umap_italia_dw" />
+            </div>
+            <h4>Proyección UMAP 2D coloreada por clase Dynamic World (Italia)</h4>
+            <p class="narrative">Variante de t-SNE con UMAP. UMAP preserva mejor la estructura global y permite ver las relaciones entre clusters. Sirve como sanity check de robustez: si UMAP y t-SNE coinciden, la estructura es real (no es artefacto de un solo método).</p>
+            <p class="method"><strong>Cómo se construyó:</strong> UMAP con n_neighbors = 15 y min_dist = 0,1 sobre la misma submuestra que t-SNE.</p>
+        </div>
+        <div class="figure-block">
+            <div class="figure">
+                <img src="C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\paper/figures/us-011/sec2_corr_francia_pastis.png"
+                     alt="sec2_corr_francia_pastis" />
+            </div>
+            <h4>Correlación entre las 64 dimensiones AlphaEarth (Francia)</h4>
+            <p class="narrative">Misma matriz pero sobre los 5.000 píxeles franceses con etiquetas reales de agricultores. Comparada con Italia, la estructura de correlaciones cambia: confirma que AlphaEarth aprendió representaciones diferentes según la región.</p>
+            <p class="method"><strong>Cómo se construyó:</strong> Mismo procedimiento que sec1_corr_italia_dw pero sobre los 10 patches PASTIS-R con labels densos.</p>
+        </div>
+        <div class="figure-block">
+            <div class="figure">
+                <img src="C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\paper/figures/us-011/sec2_tsne_francia_pastis.png"
+                     alt="sec2_tsne_francia_pastis" />
+            </div>
+            <h4>Proyección t-SNE 2D coloreada por cultivo PASTIS-R (Francia)</h4>
+            <p class="narrative">Los 13 cultivos etiquetados forman clusters separables. Random Forest alcanza OOB 0,831 — menor que en Italia (0,888) porque PASTIS tiene 13 clases agronómicas finas frente a 8 categorías de Dynamic World. La separación es visible: cereales de invierno en una zona, cultivos de verano en otra, prados en una tercera.</p>
+            <p class="method"><strong>Cómo se construyó:</strong> t-SNE con perplexity = 30 sobre 5.000 píxeles franceses estratificados.</p>
+        </div>
+        <div class="figure-block">
+            <div class="figure">
+                <img src="C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\paper/figures/us-011/sec2_tsne_francia_phenology.png"
+                     alt="sec2_tsne_francia_phenology" />
+            </div>
+            <h4>t-SNE coloreado por familia fenológica (Francia)</h4>
+            <p class="narrative">Variante del t-SNE anterior que agrupa los cultivos por familia fenológica: cereales de invierno, cereales de verano, oleaginosas y prados. La separación mejora respecto a las 13 clases finas, lo cual sugiere que un baseline jerárquico (predecir primero la familia y luego el cultivo) podría ser más efectivo.</p>
+            <p class="method"><strong>Cómo se construyó:</strong> Se aplica el mapping PASTIS_R_GROUPINGS antes del coloreado. Misma proyección t-SNE que sec2_tsne_francia_pastis.</p>
+        </div>
+        <div class="figure-block">
+            <div class="figure">
+                <img src="C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\paper/figures/us-011/sec2_umap_francia_pastis.png"
+                     alt="sec2_umap_francia_pastis" />
+            </div>
+            <h4>Proyección UMAP 2D coloreada por cultivo PASTIS-R (Francia)</h4>
+            <p class="narrative">UMAP sobre los mismos 5.000 píxeles franceses. Los cultivos PASTIS forman clusters más compactos que en t-SNE; UMAP captura mejor la estructura agronómica de transición entre familias (cereales → oleaginosas → prados).</p>
+            <p class="method"><strong>Cómo se construyó:</strong> UMAP con n_neighbors = 15 y min_dist = 0,1 sobre 5.000 píxeles franceses.</p>
+        </div>
+        <div class="figure-block">
+            <div class="figure">
+                <img src="C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\paper/figures/us-011/sec3_cross_region_consistency.png"
+                     alt="sec3_cross_region_consistency" />
+            </div>
+            <h4>¿Las dimensiones útiles en Italia y Francia coinciden?</h4>
+            <p class="narrative">Mapa de calor que muestra cuánta similitud hay entre las top-10 dimensiones más útiles en cada país. Solo dim_40 coincide en el top de ambos; el resto del top-10 cambia totalmente. Conclusión: AlphaEarth se especializa por región. Entrenar un solo clasificador global rinde menos que entrenar uno por región.</p>
+            <p class="method"><strong>Cómo se construyó:</strong> Importancia de features con Random Forest en cada región. Intersección de top-K = 10. Visualización como matriz de overlap.</p>
+        </div>
+    </div>
+
+    <div class="conclusions">
+        <h3>Conclusiones e interpretación</h3>
+        <div class="conclusion-block">
+            <h4>Los embeddings separan cultivos sin feature engineering manual</h4>
+            <p>En las proyecciones t-SNE y UMAP se ven clusters claros: agricultura separada de zonas construidas, agua y bosque. No fue necesario calcular NDVI, EVI ni NDWI — los 64 números ya capturan esa información. Un Random Forest simple sobre los embeddings logra OOB score 0,888 en Italia (8 clases) y 0,831 en Francia (13 cultivos PASTIS-R).</p>
+        </div>
+        <div class="conclusion-block">
+            <h4>AlphaEarth carga más señal que el NDVI clásico</h4>
+            <p>El panel comparativo muestra el RGB real de Sentinel-2 al lado del ‘pseudo-RGB’ construido con las 3 dimensiones AlphaEarth más informativas. El pseudo-RGB resalta variación estructural (parcelas, caminos) que un solo índice escalar como NDVI aplana. Justifica usar AlphaEarth como pool de features principal en el baseline.</p>
+        </div>
+        <div class="conclusion-block">
+            <h4>Los embeddings se especializan por región</h4>
+            <p>De las 10 dimensiones más útiles para clasificar, solo dim_40 coincide entre Italia y Francia. Italia se apoya en dim_30, dim_36, dim_16, dim_07 y dim_63; Francia en dim_10, dim_55, dim_05, dim_32 y dim_60. AlphaEarth aprendió representaciones que dependen del contexto regional. Consecuencia: entrenar un clasificador por región rinde más que entrenar uno solo global.</p>
+        </div>
+        <div class="conclusion-block">
+            <h4>Estabilidad temporal alta entre años consecutivos</h4>
+            <p>La similitud coseno entre embeddings de las mismas coordenadas en años consecutivos es muy alta: 2022 vs 2023 mediana 0,967 — 2023 vs 2024 mediana 0,975 — 2024 vs 2025 mediana 0,976. Para parcelas con uso del suelo constante podemos entrenar con un solo año y predecir en años cercanos sin re-entrenar el modelo.</p>
+        </div>
+        <div class="conclusion-block">
+            <h4>Existe redundancia entre dimensiones</h4>
+            <p>La matriz de correlación 64×64 detecta varios pares con |r| &gt; 0,7. Aplicar PCA antes de XGBoost reduce el ruido sin perder capacidad discriminativa. No es bloqueante, pero ayuda al baseline a converger más rápido.</p>
+        </div>
+        <div class="conclusion-block">
+            <h4>Lo que sigue para el Avance 2</h4>
+            <p>Probar el baseline XGBoost por región en lugar de uno global. Aplicar PCA o seleccionar las top-10 dimensiones por región antes de la fusión multisensor. Mantener las 64 dimensiones como pool principal, complementadas con NDVI, NDMI y EVI explícitos para interpretabilidad.</p>
+        </div>
+    </div>
+</section>
+<section class="card">
+    <h2>3. EDA Bivariado, Multivariado y Temporal</h2>
+    <p class="subtitle-card">Aquí buscamos relaciones entre variables: correlaciones entre las bandas Sentinel-2 y los índices espectrales, redundancia (multicolinealidad VIF), fenología (mes del pico de vegetación), autocorrelación temporal y agrupamiento DTW sobre series temporales de PASTIS-R.</p>
+    <p class="source-link">
+        <strong>Notebook fuente:</strong>
+        <code>notebooks/eda/02c_eda_bivariado_temporal.ipynb</code>
+    </p>
+
+    <div class="sections">
+        <h3>Índice del notebook</h3>
+        <ul>
+            <li>1. Setup y carga de timesteps PASTIS-R</li>
+            <li>2. Máscara de calidad: filtrado de timesteps con bandas fuera de rango</li>
+            <li>3. Correlaciones Pearson y Spearman (bandas–bandas, bandas–índices, índices–índices)</li>
+            <li>4. VIF para detección de multicolinealidad</li>
+            <li>5. Pairplot Top-5 features por clase</li>
+            <li>6. Pico NDVI por clase (mes y valor)</li>
+            <li>7. Autocorrelación (ACF) por clase</li>
+            <li>8. Agrupamiento DTW de series temporales</li>
+            <li>9. Cruces con ERA5 (precipitación y NDVI)</li>
+            <li>Conclusiones</li>
+        </ul>
+    </div>
+
+    <div class="figures">
+        <h3>Figuras del análisis</h3>
+        <div class="figure-block">
+            <div class="figure">
+                <img src="C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\paper/figures/us-012/sec3_corr_pearson_bands_bands.png"
+                     alt="sec3_corr_pearson_bands_bands" />
+            </div>
+            <h4>Correlación Pearson entre bandas Sentinel-2</h4>
+            <p class="narrative">Mapa de calor de correlaciones entre las 10 bandas: 19 pares únicos banda–banda superan |r| &gt; 0,85. El cuarteto {B07, B8A, B02, B03} forma un bloque casi perfecto (B07 vs B8A = 0,997). Aplicar PCA al subconjunto de bandas elimina la redundancia sin perder información antes del baseline.</p>
+            <p class="method"><strong>Cómo se construyó:</strong> Pearson r sobre píxeles válidos tras la máscara de calidad (rango físico [0; 1,5] tras escalar a reflectancia).</p>
+        </div>
+        <div class="figure-block">
+            <div class="figure">
+                <img src="C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\paper/figures/us-012/sec3_corr_pearson_bands_indices.png"
+                     alt="sec3_corr_pearson_bands_indices" />
+            </div>
+            <h4>Correlación Pearson entre bandas e índices espectrales</h4>
+            <p class="narrative">Hay un techo en r ≈ 0,80 (B04 vs NDWI). La no-linealidad de la fórmula (a−b)/(a+b) que usan los índices impide que crucen correlaciones perfectas con las bandas crudas. Esto justifica mantener bandas e índices como fuentes complementarias en el feature engineering.</p>
+            <p class="method"><strong>Cómo se construyó:</strong> Mismo procedimiento Pearson, cruzando las 10 bandas con los 17 índices candidatos.</p>
+        </div>
+        <div class="figure-block">
+            <div class="figure">
+                <img src="C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\paper/figures/us-012/sec3_corr_pearson_indices_indices.png"
+                     alt="sec3_corr_pearson_indices_indices" />
+            </div>
+            <h4>Correlación Pearson entre índices espectrales</h4>
+            <p class="narrative">Del cuarteto {NDVI, NDRE, NDWI, SAVI} basta uno como representante: NDVI vs NDRE = 0,974, NDVI vs SAVI = 0,949, NDVI vs NDWI = −0,959. NDMI usa la banda B11 (SWIR) y aporta una dimensión propia que el resto no captura. Recomendación: {NDVI, NDMI, EVI} cubre la señal espectral con redundancias mínimas.</p>
+            <p class="method"><strong>Cómo se construyó:</strong> Pearson sobre las 6 columnas de índices. Las recomendaciones se cruzan con el VIF para confirmarlas.</p>
+        </div>
+        <div class="figure-block">
+            <div class="figure">
+                <img src="C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\paper/figures/us-012/sec3_corr_spearman_bands_bands.png"
+                     alt="sec3_corr_spearman_bands_bands" />
+            </div>
+            <h4>Correlación Spearman entre bandas (robusta a outliers)</h4>
+            <p class="narrative">Variante de Pearson que usa rangos en lugar de valores absolutos, por lo que es robusta a outliers. Los pares fuertes se mantienen, lo cual confirma que la redundancia banda–banda no es un artefacto de valores extremos. Útil como cross-check antes de descartar features.</p>
+            <p class="method"><strong>Cómo se construyó:</strong> Coeficiente de rangos Spearman sobre los mismos pares banda–banda.</p>
+        </div>
+        <div class="figure-block">
+            <div class="figure">
+                <img src="C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\paper/figures/us-012/sec3_corr_spearman_bands_indices.png"
+                     alt="sec3_corr_spearman_bands_indices" />
+            </div>
+            <h4>Correlación Spearman banda × índice</h4>
+            <p class="narrative">Confirma el techo agronómico de ~0,80 en rangos, no solo en valores absolutos. Los pares líderes (B04 vs NDWI, B12 vs NDVI) siguen capturando estructura física: la clorofila absorbe el rojo y el SWIR responde al estrés hídrico de los cultivos.</p>
+            <p class="method"><strong>Cómo se construyó:</strong> Spearman sobre las 10 bandas contra los 17 índices (correlaciones por rangos).</p>
+        </div>
+        <div class="figure-block">
+            <div class="figure">
+                <img src="C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\paper/figures/us-012/sec3_corr_spearman_indices_indices.png"
+                     alt="sec3_corr_spearman_indices_indices" />
+            </div>
+            <h4>Correlación Spearman entre índices (robusta a outliers)</h4>
+            <p class="narrative">Misma conclusión que la matriz Pearson de índices, pero robusta a outliers: el cuarteto {NDVI, NDRE, NDWI, SAVI} es altamente redundante incluso bajo ranking. EVI y NDMI conservan diversidad.</p>
+            <p class="method"><strong>Cómo se construyó:</strong> Spearman sobre los 6 índices candidatos.</p>
+        </div>
+        <div class="figure-block">
+            <div class="figure">
+                <img src="C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\paper/figures/us-012/sec4_vif_barplot.png"
+                     alt="sec4_vif_barplot" />
+            </div>
+            <h4>VIF por feature: cuánto se pueden predecir entre sí</h4>
+            <p class="narrative">El VIF (Variance Inflation Factor) mide cuánto se puede predecir una feature a partir del resto. EVI tiene el VIF más bajo (11,3), seguido de NDMI (15,7), pero ambos superan el umbral convencional de 10. Ninguna feature es ortogonal al resto. Recomendación: PCA sobre el bloque de bandas o subconjunto reducido (NDVI + NDMI + 1–2 SWIR + 64 AlphaEarth).</p>
+            <p class="method"><strong>Cómo se construyó:</strong> VIF = 1 / (1 − R²ⱼ), donde R²ⱼ es el R² de regresar la feature j contra el resto. Umbrales: 5 (atención), 10 (descartar).</p>
+        </div>
+        <div class="figure-block">
+            <div class="figure">
+                <img src="C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\paper/figures/us-012/sec5_pairplot_top5_by_class.png"
+                     alt="sec5_pairplot_top5_by_class" />
+            </div>
+            <h4>Pairplot de las 5 features más informativas por cultivo</h4>
+            <p class="narrative">Diagramas de dispersión entre las 5 features con mayor importancia Random Forest, coloreados por clase PASTIS. Permite ver visualmente cuán separable es cada clase en el espacio bidimensional de las features líderes y validar que están capturando estructura agronómica, no ruido aleatorio.</p>
+            <p class="method"><strong>Cómo se construyó:</strong> Selección por feature importance Random Forest sobre embeddings e índices. Submuestra estratificada de 2.000 píxeles.</p>
+        </div>
+        <div class="figure-block">
+            <div class="figure">
+                <img src="C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\paper/figures/us-012/sec6_peak_ndvi_by_class.png"
+                     alt="sec6_peak_ndvi_by_class" />
+            </div>
+            <h4>Mes del pico NDVI por clase de cultivo</h4>
+            <p class="narrative">Boxplot que muestra en qué mes alcanza cada clase su máximo NDVI. Soft winter wheat pica en abril–mayo; Corn y Beet en agosto–septiembre; Meadow en septiembre–octubre. La feature ‘mes del pico’ es por sí sola fuertemente discriminativa, así que se incorpora como feature explícita al baseline.</p>
+            <p class="method"><strong>Cómo se construyó:</strong> Por parcela, se toma el argmax temporal del NDVI dentro de los 14 meses de cobertura PASTIS-R. Luego se grafica la distribución del mes resultante por clase.</p>
+        </div>
+        <div class="figure-block">
+            <div class="figure">
+                <img src="C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\paper/figures/us-012/sec7_acf_grid_by_class.png"
+                     alt="sec7_acf_grid_by_class" />
+            </div>
+            <h4>¿Hay autocorrelación temporal en las series NDVI?</h4>
+            <p class="narrative">Solo el 6,5 % del total de pares (parcela, lag ≥ 1) supera el umbral de significancia de Bartlett ±0,524 (para n ≈ 14 observaciones mensuales). El lag más informativo es lag = 1, con un 22 % de pares significativos. La autocorrelación temporal es débil con esta cobertura, así que los modelos seq2seq pueden no aportar frente a features agregadas.</p>
+            <p class="method"><strong>Cómo se construyó:</strong> ACF por parcela hasta lag = 12. Umbral de significancia ±1,96/√n.</p>
+        </div>
+        <div class="figure-block">
+            <div class="figure">
+                <img src="C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\paper/figures/us-012/sec8_dtw_centroids.png"
+                     alt="sec8_dtw_centroids" />
+            </div>
+            <h4>Agrupamiento DTW: ¿qué cultivos comparten perfiles temporales?</h4>
+            <p class="narrative">El agrupamiento DTW con k = 6 alcanza una pureza de 0,380 sobre 12 clases mayoritarias (vs 0,06 que daría una asignación aleatoria con 16 clases). El cluster más nítido reúne cereales de invierno (Soft winter wheat + Winter barley). El resto queda mezclado porque PASTIS-R cubre solo 14 meses y muchas clases tienen perfiles temporales similares en ese horizonte.</p>
+            <p class="method"><strong>Cómo se construyó:</strong> K-means con métrica DTW (tslearn) sobre series NDVI por parcela. El k se selecciona por elbow y por interpretabilidad.</p>
+        </div>
+        <div class="figure-block">
+            <div class="figure">
+                <img src="C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\paper/figures/us-012/sec9_era5_ndvi_dual_axis.png"
+                     alt="sec9_era5_ndvi_dual_axis" />
+            </div>
+            <h4>Lluvia ERA5 vs NDVI (eje dual)</h4>
+            <p class="narrative">Cruce temporal entre la precipitación ERA5-Land y el NDVI medio sobre las regiones italianas. Permite identificar el lag entre las lluvias y la respuesta de la vegetación (típicamente 2–4 semanas) y guiar la construcción de features climatológicas para el baseline.</p>
+            <p class="method"><strong>Cómo se construyó:</strong> Agregación diaria de precipitación ERA5 y mensual de NDVI (mediana) por región. Plot con eje dual de doble escala en Y.</p>
+        </div>
+    </div>
+
+    <div class="conclusions">
+        <h3>Conclusiones e interpretación</h3>
+        <div class="conclusion-block">
+            <h4>La calidad del dato es el primer cuello de botella</h4>
+            <p>De 8.600 timesteps cargados, 545 (6,3 %) tienen alguna banda fuera del rango físico [0; 1,5] tras escalar a reflectancia. Son artefactos BOA (DN negativo) o píxeles nubosos. Filtrar los timesteps en lugar de recortarlos (clip) preserva la variabilidad real del NDVI: ahora el valor del pico muestra una distribución continua en lugar de saturarse en 1,0 en el 75 % de las parcelas.</p>
+        </div>
+        <div class="conclusion-block">
+            <h4>Las bandas de Sentinel-2 son fuertemente redundantes entre sí</h4>
+            <p>19 pares únicos banda–banda y 6 pares únicos índice–índice superan |r| &gt; 0,85 (Pearson). Ningún par banda–índice cruza ese umbral (techo r ≈ 0,80 en B04 vs NDWI). El cuarteto {B07, B8A, B02, B03} forma un bloque casi perfecto (B07 vs B8A = 0,997).</p>
+        </div>
+        <div class="conclusion-block">
+            <h4>Los índices principales también son redundantes</h4>
+            <p>NDVI vs NDRE = 0,974 — NDVI vs SAVI = 0,949 — NDRE vs SAVI = 0,945 — NDVI vs NDWI = -0,959. Del cuarteto {NDVI, NDRE, NDWI, SAVI} basta uno como representante. NDMI usa la banda B11 (SWIR) y aporta una dimensión propia que el resto no captura.</p>
+        </div>
+        <div class="conclusion-block">
+            <h4>El VIF marca todas las features para descarte</h4>
+            <p>EVI tiene el VIF más bajo (11,3), seguido de NDMI (15,7), pero ambos superan el umbral convencional de 10. Ninguna feature aislada es ortogonal al resto. Para el baseline conviene aplicar PCA sobre el bloque de bandas o trabajar con un subconjunto reducido (NDVI + NDMI + un par de bandas SWIR) aceptando colinealidad residual.</p>
+        </div>
+        <div class="conclusion-block">
+            <h4>El mes del pico NDVI separa familias de cultivos</h4>
+            <p>Soft winter wheat tiene su pico en abril–mayo; Corn y Beet en agosto–septiembre; Meadow en septiembre–octubre; Fruits/vegetables/flowers más distribuido. La feature ‘mes del pico’ es por sí sola fuertemente discriminativa y se incorpora explícita al baseline.</p>
+        </div>
+        <div class="conclusion-block">
+            <h4>El agrupamiento DTW con k=6 alcanza pureza 0,380</h4>
+            <p>Sobre 12 clases mayoritarias (frente al 0,06 que daría una asignación aleatoria con 16 clases). El cluster más nítido agrupa cereales de invierno (Soft winter wheat + Winter barley) con baja presencia de Meadow. El resto de clusters queda mezclado porque PASTIS-R cubre solo 14 meses y muchas clases tienen perfiles temporales similares en ese horizonte.</p>
+        </div>
+        <div class="conclusion-block">
+            <h4>La autocorrelación temporal es débil con esta cobertura</h4>
+            <p>Solo el 6,5 % del total de pares (parcela, lag ≥ 1) supera el umbral de Bartlett ±0,524 (para n ≈ 14 observaciones mensuales). El lag más informativo es lag=1, con un 22 % de pares significativos.</p>
+        </div>
+        <div class="conclusion-block">
+            <h4>Lo que sigue para el Avance 2</h4>
+            <p>Replicar la máscara de calidad antes del feature engineering. Reducir el bloque {NDVI, NDRE, NDWI, SAVI} a un solo representante más NDMI más EVI. Incorporar ‘mes del pico’ como feature explícita en el baseline. Usar DTW con k=6 como feature sintética para cereales de invierno; no aporta a clases de verano-otoño.</p>
+        </div>
+    </div>
+</section>
+<section class="card">
+    <h2>4. EDA PASTIS-R Consolidado (Avance 1 Equipo 17)</h2>
+    <p class="subtitle-card">Análisis exploratorio completo del dataset PASTIS-R: estructura de los tensores, calidad de los datos, segmentación de parcelas, PCA, outliers y preprocesamiento recomendado para los modelos de segmentación que entrenaremos en el EPIC 5.</p>
+    <p class="source-link">
+        <strong>Notebook fuente:</strong>
+        <code>notebooks/eda/Avance1.Equipo17.ipynb</code>
+    </p>
+
+    <div class="sections">
+        <h3>Índice del notebook</h3>
+        <ul>
+            <li>1. Carga y exploración inicial</li>
+            <li>2. Análisis de estructura del dataset</li>
+            <li>3. Análisis univariante (estadísticas y distribuciones por banda)</li>
+            <li>4. Análisis temporal (índices de vegetación + gaps temporales)</li>
+            <li>5. Análisis de segmentación y categorización (parcelas y geografía)</li>
+            <li>6. Análisis bivariante y multivariante (correlaciones y PCA)</li>
+            <li>7. Detección de valores atípicos</li>
+            <li>8. Preprocesamiento recomendado (Z-score, log, winsorización)</li>
+            <li>9. Conclusiones del EDA</li>
+        </ul>
+    </div>
+
+    <div class="figures">
+        <h3>Figuras del análisis</h3>
+        <div class="figure-block">
+            <div class="figure">
+                <img src="C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\paper/figures/avance1/cell_013_3_2_distribuciones_y_analisis_de_sesgo.png"
+                     alt="cell_013_3_2_distribuciones_y_analisis_de_sesgo" />
+            </div>
+            <h4>Distribuciones y sesgo por banda (PASTIS-R)</h4>
+            <p class="narrative">Las 10 bandas presentan un sesgo significativo (|skew| &gt; 0,5) y todas requieren transformación no lineal antes del modelado. Las bandas del visible tienen colas largas hacia valores altos por nubes residuales. Justifica el preprocesamiento obligatorio: Z-score con NORM_S2_patch.json más transformación logarítmica.</p>
+            <p class="method"><strong>Cómo se construyó:</strong> Histogramas por banda sobre 2.468 patches PASTIS-R × 43 timesteps. Skewness calculado con scipy.stats.skew.</p>
+        </div>
+        <div class="figure-block">
+            <div class="figure">
+                <img src="C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\paper/figures/avance1/cell_015_4_analisis_temporal.png"
+                     alt="cell_015_4_analisis_temporal" />
+            </div>
+            <h4>Evolución temporal de los índices de vegetación</h4>
+            <p class="narrative">Series temporales de NDVI y EVI promediadas por clase de cultivo. El NDVI tiene un CV de 53,9 % (variabilidad significativa) y el EVI alcanza 74,9 % (más sensible a cambios). Los ciclos fenológicos son claros y consistentes — el dataset es apto para modelos secuenciales (LSTM, U-TAE, TSViT).</p>
+            <p class="method"><strong>Cómo se construyó:</strong> Cálculo de NDVI = (B08 − B04) / (B08 + B04) y EVI por timestep, promediado por clase. CV = std / mean a lo largo del eje temporal.</p>
+        </div>
+        <div class="figure-block">
+            <div class="figure">
+                <img src="C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\paper/figures/avance1/cell_017_4_2_deteccion_de_gaps_temporales.png"
+                     alt="cell_017_4_2_deteccion_de_gaps_temporales" />
+            </div>
+            <h4>Detección de gaps temporales</h4>
+            <p class="narrative">Solo el 2,3 % de los timesteps tienen problemas moderados (nubes); el 97,7 % es utilizable. PASTIS-R tiene una cobertura suficientemente densa (entre 38 y 61 timesteps por patch, media 48,1) para modelos secuenciales sin necesidad de interpolación agresiva.</p>
+            <p class="method"><strong>Cómo se construyó:</strong> Conteo de timesteps por patch con bandera válida vs bandera de nube. Visualización como heatmap parche × timestep.</p>
+        </div>
+        <div class="figure-block">
+            <div class="figure">
+                <img src="C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\paper/figures/avance1/cell_019_5_analisis_de_segmentacion_y_categorizacion.png"
+                     alt="cell_019_5_analisis_de_segmentacion_y_categorizacion" />
+            </div>
+            <h4>Análisis de segmentación de parcelas</h4>
+            <p class="narrative">Hay en promedio 116 parcelas por patch, con una cobertura del 80,58 % del área. La fragmentación es alta: los tamaños varían de 1 a 1.388 píxeles. Esto obliga a usar arquitecturas multi-escala en segmentación (U-Net con atención, SegFormer) que capturen las parcelas pequeñas sin perderlas en el downsampling.</p>
+            <p class="method"><strong>Cómo se construyó:</strong> Por patch, conteo de objetos segmentados y distribución de áreas. Visualización como histogramas más ejemplos de patches concretos.</p>
+        </div>
+        <div class="figure-block">
+            <div class="figure">
+                <img src="C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\paper/figures/avance1/cell_021_5_2_categorizacion_por_tamano_de_parcela.png"
+                     alt="cell_021_5_2_categorizacion_por_tamano_de_parcela" />
+            </div>
+            <h4>Categorización por tamaño de parcela</h4>
+            <p class="narrative">El 56 % de las parcelas son pequeñas (&lt;100 píxeles), el 42,2 % son medianas (100–500 px) y solo el 1,7 % son grandes (&gt;500 px). El predominio de parcelas pequeñas exige features multi-escala y una loss ponderada por área inversa, para evitar que las parcelas grandes dominen el entrenamiento.</p>
+            <p class="method"><strong>Cómo se construyó:</strong> Discretización del área en 3 bins. Conteo por bin sobre todas las parcelas del dataset (n ≈ 286.000).</p>
+        </div>
+        <div class="figure-block">
+            <div class="figure">
+                <img src="C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\paper/figures/avance1/cell_025_6_analisis_bivariante_multivariante.png"
+                     alt="cell_025_6_analisis_bivariante_multivariante" />
+            </div>
+            <h4>Correlación entre bandas espectrales (PASTIS-R)</h4>
+            <p class="narrative">Matriz de correlación 10×10 entre las bandas Sentinel-2 sobre PASTIS-R. Replica el hallazgo de la US-012 con el dataset francés completo: redundancia fuerte en el bloque {B07, B8A} y entre bandas del visible. Soporta la decisión de aplicar PCA antes de los modelos densos.</p>
+            <p class="method"><strong>Cómo se construyó:</strong> Pearson r sobre 2.468 patches × 128×128 píxeles, agregado a nivel patch para evitar autocorrelación espacial.</p>
+        </div>
+        <div class="figure-block">
+            <div class="figure">
+                <img src="C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\paper/figures/avance1/cell_027_6_2_pca_para_reduccion_dimensional.png"
+                     alt="cell_027_6_2_pca_para_reduccion_dimensional" />
+            </div>
+            <h4>PCA para reducción dimensional</h4>
+            <p class="narrative">Con solo 2 componentes principales se captura el 95 % de la varianza (reducción del 80 %); con 4 componentes se alcanza el 99 %. Esta compresión confirma que las 10 bandas son altamente redundantes. Para el baseline tabular, PCA a 2 componentes es una opción rápida; para segmentación densa conviene mantener las 10 bandas con transformación logarítmica.</p>
+            <p class="method"><strong>Cómo se construyó:</strong> PCA sobre bandas estandarizadas con NORM_S2_patch.json. Scree plot más curva de varianza acumulada.</p>
+        </div>
+        <div class="figure-block">
+            <div class="figure">
+                <img src="C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\paper/figures/avance1/cell_029_7_deteccion_de_valores_atipicos.png"
+                     alt="cell_029_7_deteccion_de_valores_atipicos" />
+            </div>
+            <h4>Detección de valores atípicos (PASTIS-R)</h4>
+            <p class="narrative">Entre el 5 % y el 15 % de outliers por banda, pero son valores reales, no errores. Recomendación: winsorización a percentiles 1–99 antes del entrenamiento, para preservar el rango físico sin que los outliers dominen el gradiente del modelo.</p>
+            <p class="method"><strong>Cómo se construyó:</strong> IQR más visualización como boxplots por banda. Caracterización de los puntos atípicos con su valor medio para identificar nubes residuales.</p>
+        </div>
+    </div>
+
+    <div class="conclusions">
+        <h3>Conclusiones e interpretación</h3>
+        <div class="conclusion-block">
+            <h4>Estructura del dataset</h4>
+            <p>PASTIS-R contiene 2.468 parches de 128×128 píxeles. La longitud temporal varía entre 38 y 61 timesteps (media 48,1). Tiene 10 bandas Sentinel-2 con un rango de valores de -1.338 a 13.756.</p>
+        </div>
+        <div class="conclusion-block">
+            <h4>Calidad de los datos</h4>
+            <p>El 97,7 % de los timesteps son utilizables (42 de 43); solo un 2,3 % presenta problemas moderados por nubes. Hay valores negativos (normal en la corrección atmosférica). La normalización Z-score es crítica antes del modelado.</p>
+        </div>
+        <div class="conclusion-block">
+            <h4>Características espectrales</h4>
+            <p>Las bandas del infrarrojo cercano y el borde rojo muestran los valores más altos, lo que indica vegetación activa. Las 10 bandas requieren transformación no lineal. El PCA es muy efectivo: 2 componentes capturan el 95 % de la varianza (reducción del 80 %) y 4 componentes el 99 %.</p>
+        </div>
+        <div class="conclusion-block">
+            <h4>Patrones temporales</h4>
+            <p>Se observan ciclos fenológicos claros en los índices de vegetación. El NDVI presenta un CV de 53,9 % (variabilidad temporal significativa). El EVI alcanza 74,9 % (mayor sensibilidad a cambios). Las series temporales son completas y aptas para modelos secuenciales (LSTM, Transformer, U-TAE, TSViT).</p>
+        </div>
+        <div class="conclusion-block">
+            <h4>Segmentación y categorización</h4>
+            <p>Hay un promedio de 116 parcelas por patch, con tamaños muy variables (de 1 a 1.388 píxeles, alta fragmentación). La cobertura promedio es del 80,58 % del patch. Distribución por tamaño: 56 % pequeñas (&lt;100 px), 42,2 % medianas (100–500 px) y solo 1,7 % grandes (&gt;500 px). La distribución geográfica es balanceada: Este-Norte 25 %, Este-Sur 26 %, Oeste-Norte 23 %, Oeste-Sur 26 %.</p>
+        </div>
+        <div class="conclusion-block">
+            <h4>Distribuciones y outliers</h4>
+            <p>Las 10 bandas presentan sesgo significativo (|skew| &gt; 0,5) y todas requieren transformación no lineal. Los outliers representan entre el 5 % y el 15 % por banda (valores reales, no errores). Recomendación: winsorización en lugar de eliminación.</p>
+        </div>
+        <div class="conclusion-block">
+            <h4>Respuestas a las preguntas clave del Avance 1</h4>
+            <p>(1) Valores faltantes: sí, el 2,3 % de timesteps afectado por nubes. (2) Estadísticas: rango -1.338 a 13.756 con alta variabilidad entre bandas. (3) Valores atípicos: sí, 5–15 % por banda. (4) Distribuciones sesgadas: sí, 10 de 10 bandas requieren transformación. (5) Tendencias temporales: sí, CV de 53,9 % en NDVI y 74,9 % en EVI. (6) Correlación: sí, reducción a 2 componentes viable (95 % de varianza). (7) Normalización: crítica — usar estadísticas oficiales NORM_S2_patch.json. (8) Categorización: implementada por tamaño (3 clases) y ubicación (4 cuadrantes).</p>
+        </div>
+        <div class="conclusion-block">
+            <h4>Recomendaciones para el modelado</h4>
+            <p>(1) Preprocesamiento obligatorio: Z-score con NORM_S2_patch.json + transformación logarítmica + winsorización al rango 1–99. (2) Arquitectura sugerida: encoder temporal (LSTM, GRU o Transformer) más encoder espacial U-Net con atención y multi-escala para parcelas pequeñas. (3) Reducción dimensional: PCA a 2 componentes como opción rápida o mantener las 10 bandas con transformación logarítmica. (4) Validación: cross-validation respetando los folds del metadata; métricas IoU, F1-score y mAP para segmentación.</p>
+        </div>
+    </div>
+</section>
+<section class="card">
+    <h2>5. Conclusiones Globales del Avance 1</h2>
+    <p class="subtitle-card">Síntesis cruzada de los cuatro notebooks de EDA, traducida en decisiones concretas para el Avance 2 (Feature Engineering) y el baseline del Avance 3 (XGBoost sobre AlphaEarth + índices espectrales).</p>
+    <p class="source-link">
+        <strong>Notebook fuente:</strong>
+        <code>(síntesis cruzada)</code>
+    </p>
+
+    <div class="sections">
+        <h3>Índice del notebook</h3>
+        <ul>
+            <li>1. Hallazgos transversales entre los 4 notebooks</li>
+            <li>2. Decisiones para Feature Engineering (Avance 2)</li>
+            <li>3. Decisiones para Modelado (Avances 3–5)</li>
+            <li>4. Limitaciones conocidas y mitigaciones</li>
+            <li>5. Lo que sigue</li>
+        </ul>
+    </div>
+
+
+    <div class="conclusions">
+        <h3>Conclusiones e interpretación</h3>
+        <div class="conclusion-block">
+            <h4>AlphaEarth es la mejor base de features que tenemos</h4>
+            <p>Un Random Forest crudo sobre los 64 embeddings alcanza OOB 0,831 en Francia y 0,888 en Italia sin feature engineering. Eso deja el piso del baseline muy por encima del mínimo 0,60 exigido por la rúbrica del Avance 3. El reto no es alcanzar la métrica, sino demostrar que los índices clásicos, DINOv3 y los ensambles aportan valor por encima de ese piso.</p>
+        </div>
+        <div class="conclusion-block">
+            <h4>La especialización por región es la decisión clave</h4>
+            <p>AlphaEarth aprendió dimensiones distintas en Italia y Francia: solo dim_40 coincide en el top-10. Un único clasificador global pierde frente a clasificadores por región. Esta decisión propaga al EPIC 5 (entrenar dos ramas o dos modelos paralelos) y al EPIC 6 (ensambles por región en lugar de globales).</p>
+        </div>
+        <div class="conclusion-block">
+            <h4>La máscara de calidad va antes que cualquier otra cosa</h4>
+            <p>Los cuatro notebooks coinciden: filtrar timesteps y píxeles inválidos (SCL nubes + bandas fuera del rango [0; 1,5]) antes de calcular cualquier feature. Sin esa máscara, el 75 % de las parcelas saturan el NDVI a 1,0 y los outliers de banda se confunden con nubes residuales. Es el primer paso del pipeline Dagster en la US-014.</p>
+        </div>
+        <div class="conclusion-block">
+            <h4>La redundancia entre features es el segundo cuello de botella</h4>
+            <p>El VIF marca todas las features tabulares para descarte (EVI, con 11,3, es la mejor y aún supera el umbral 10). PCA antes de XGBoost o un subconjunto reducido (NDVI + NDMI + 1–2 SWIR + 64 AlphaEarth) son la vía para un baseline interpretable. AlphaEarth no necesita PCA global, pero sí por región.</p>
+        </div>
+        <div class="conclusion-block">
+            <h4>Decisiones concretas para el Avance 2 (Feature Engineering)</h4>
+            <p>(1) Aplicar máscara SCL + rango [0; 1,5] antes de cualquier feature. (2) Z-score con NORM_S2_patch.json para PASTIS-R y estadísticas propias para Italia. (3) Transformación logarítmica o Yeo-Johnson sobre las 10 bandas. (4) Winsorización 1–99 sobre outliers reales. (5) Reducir los 17 índices del catálogo inicial a {NDVI, NDMI, EVI}. (6) Mes del pico NDVI como feature explícita. (7) DTW con k=6 como feature sintética para cereales de invierno. (8) AlphaEarth de 64 dimensiones como pool principal por región. (9) PCA opcional para visualización, no para modelado denso.</p>
+        </div>
+        <div class="conclusion-block">
+            <h4>Decisiones para el Modelado (Avances 3–5)</h4>
+            <p>(1) Baseline XGBoost por región (Italia y Francia separados) sobre AlphaEarth + 3 índices + DTW cluster + mes del pico. Target F1-macro ≥ 0,60. (2) Segmentación densa con encoder temporal (U-TAE, TSViT) sobre PASTIS-R con los folds del metadata oficial. (3) Loss focal o ponderada para clases minoritarias (legumbres, viñedos, frutales). (4) Ensambles por región: voting top-3, stacking con Gemma 4 y blending con Optuna.</p>
+        </div>
+        <div class="conclusion-block">
+            <h4>Limitaciones conocidas</h4>
+            <p>(1) PASTIS-R cubre solo 14 meses, por lo que las clases con perfiles temporales similares (potato, beet, corn, rapeseed) son difíciles de separar con DTW. (2) Italia no tiene etiquetas reales — solo Dynamic World — así que la validación final depende de cooperativas locales o de EuroCrops/HCAT3. (3) El verano es la única ventana limpia para Pianura Padana, así que la cobertura de otoño queda como gap conocido. (4) La autocorrelación temporal es débil (n=14), por lo que los modelos seq2seq pueden no aportar frente a features agregadas.</p>
+        </div>
+        <div class="conclusion-block">
+            <h4>Lo que sigue (Avance 2)</h4>
+            <p>Migrar el pipeline EDA a un asset Dagster reproducible: ingesta GEE → máscara de calidad → normalización → features tabulares → partición espacial. Versionar el resultado en DVC (gs://agrosat-dvc-remote). Etiquetar con `data_version` y `code_version` en MLflow al cerrar el Avance 2.</p>
+        </div>
+    </div>
+</section>
+
+<section class="footer-attributions">
+    <h3>Atribuciones de licencias</h3>
+    <ul>
+        <li>PASTIS-R: Sainte-Fare-Garnot et al. 2021 — CC-BY-SA 4.0</li>
+        <li>Sentinel-2: Copernicus Programme (European Union / ESA) — términos Copernicus</li>
+        <li>AlphaEarth Foundations v2.1: Google DeepMind vía Google Earth Engine — términos GEE</li>
+        <li>Dynamic World: Google + World Resources Institute — CC-BY-4.0</li>
+        <li>ERA5: Copernicus Climate Change Service (C3S) — licencia Copernicus</li>
+        <li>EuroCrops / HCAT3: TUM (Technische Universität München) — CC-BY-4.0</li>
+    </ul>
+    <p>
+        Detalle completo en <code>docs/licenses/DATA_LICENSE.md</code> del repositorio.
+    </p>
+</section>
+
+</body>
+</html>

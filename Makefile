@@ -1,4 +1,4 @@
-.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip notebooks-check i18n-check db-migrate db-rollback db-new db-status db-seed train-l4 train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eda-sentinel2 eda-alphaearth eda-bivariado eda-pdf eda-dashboard eda-dashboard-test eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate
+.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip notebooks-check i18n-check db-migrate db-rollback db-new db-status db-seed train-l4 train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eda-sentinel2 eda-alphaearth eda-bivariado eda-figures-avance1 eda-pastis-subset eda-notebook-avance1 eda-pdf eda-dashboard eda-dashboard-test eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate
 
 help:
 	@echo "AgroSatCopilot — comandos disponibles:"
@@ -139,10 +139,19 @@ eda-alphaearth:  ## Ejecuta el notebook US-011 con papermill (sample_size=100000
 eda-bivariado:  ## Ejecuta el notebook US-012 bivariado/multivariado/temporal (n_parcels=200)
 	poetry run papermill notebooks/eda/02c_eda_bivariado_temporal.ipynb notebooks/eda/02c_eda_bivariado_temporal.ipynb -p n_parcels 200
 
-eda-pdf:  ## Genera el reporte PDF del Avance 1 (US-013 AC-8 + AC-9 CRISP-ML(Q))
+eda-figures-avance1:  ## Extrae figuras inline del notebook Avance1.Equipo17 a paper/figures/avance1/
+	poetry run python -m ml.report.extract_notebook_figures notebooks/eda/Avance1.Equipo17.ipynb
+
+eda-pastis-subset:  ## Genera subset compacto de PASTIS-R (~500KB) para el mapa folium del dashboard
+	poetry run python -m ml.report.generate_pastis_subset
+
+eda-notebook-avance1:  ## Regenera notebooks/eda/Avance1.Equipo17.ipynb desde notebook_content.py + figure_narratives.py
+	poetry run python scripts/build_avance1_notebook.py
+
+eda-pdf:  ## Genera el reporte PDF del Avance 1 con las 5 fichas (S2, AlphaEarth, Bivariado, PASTIS, Globales)
 	poetry run python -m ml.report.export_pdf --output paper/avance1_eda_report.pdf
 
-eda-dashboard:  ## Arranca el dashboard Streamlit del Avance 1 (US-013 AC-1 a AC-7)
+eda-dashboard:  ## Arranca el dashboard Streamlit del Avance 1 (6 tabs: 5 fichas + mapa espacial)
 	poetry run streamlit run app/eda_dashboard.py --server.port 8501 --server.headless true
 
 eda-dashboard-test:  ## Smoke test opcional con Playwright para el dashboard (US-013 AC-11 bonus)

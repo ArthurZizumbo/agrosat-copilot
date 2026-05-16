@@ -9,7 +9,7 @@
 
 <section class="cover">
     <h1>{{ title }}</h1>
-    <p class="subtitle">Avance 1 - CRISP-ML(Q) Data Understanding</p>
+    <p class="subtitle">Reporte consolidado del Avance 1 — EDA AgroSatCopilot</p>
     <div class="meta">
         <p><strong>Curso:</strong> {{ course }}</p>
         <p><strong>Fecha:</strong> {{ report_date }}</p>
@@ -22,192 +22,94 @@
 </section>
 
 <section class="toc">
-    <h2>Indice</h2>
+    <h2>Índice</h2>
     <ol>
-        <li>Business Understanding</li>
-        <li>Data Understanding</li>
-        <li>Data Preparation</li>
-        <li>Modeling</li>
-        <li>Evaluation</li>
-        <li>Deployment</li>
+        {% for card in cards %}
+        <li>{{ card.title }}</li>
+        {% endfor %}
     </ol>
-</section>
-
-<section class="crisp-phase">
-    <h2>1. Business Understanding</h2>
-    <p>
-        AgroSatCopilot es un SaaS conversacional open-source para analisis satelital
-        agricola enfocado en parcelas mediterraneas (Italia continental y referencia
-        cross-region en Francia con PASTIS-R). El objetivo del Avance 1 es completar
-        la fase de Data Understanding del marco CRISP-ML(Q), validando la viabilidad
-        de los datasets seleccionados y produciendo el insumo cualitativo para Data
-        Preparation y Feature Engineering en avances posteriores.
-    </p>
-    <p>
-        Stakeholders: sponsor academico Dr. Camacho (Tec de Monterrey), agronomos
-        objetivo en cooperativas italianas, y el equipo de desarrollo. KPI de exito
-        agregado: F1-macro &gt;= 0.80 en modelo final, mIoU &gt;= 0.70 en segmentacion
-        densa, AgroMind score &gt;= 0.70 en VLM on-prem.
+    <p class="note">
+        Este reporte sintetiza los cuatro notebooks de EDA del Avance 1
+        (Sentinel-2 univariado, AlphaEarth Foundations, bivariado y temporal,
+        y PASTIS-R consolidado) más un capítulo final de conclusiones
+        globales. Cada ficha conserva la estructura del notebook fuente, sus
+        conclusiones interpretadas y las figuras producidas durante el
+        análisis, redactadas para lectura del sponsor académico.
     </p>
 </section>
 
-<section class="crisp-phase">
-    <h2>2. Data Understanding</h2>
-    <p>
-        Esta seccion consolida el EDA producido en US-010 (Sentinel-2 univariado),
-        US-011 (AlphaEarth y cross-region PASTIS) y US-012 (bivariado, multivariado,
-        temporal). Esta organizada en seis sub-bloques que reflejan la rubrica oficial.
+{% for card in cards %}
+<section class="card">
+    <h2>{{ loop.index }}. {{ card.title }}</h2>
+    <p class="subtitle-card">{{ card.subtitle }}</p>
+    <p class="source-link">
+        <strong>Notebook fuente:</strong>
+        <code>{{ card.notebook_path }}</code>
     </p>
 
-    <div class="subblock">
-        <h3>2.1 Data Sources</h3>
-        <p>
-            Fuentes principales: Sentinel-2 L2A (Copernicus, bandas opticas 10/20 m),
-            AlphaEarth Foundations v2.1 (embeddings 64-dim de Google DeepMind via GEE),
-            PASTIS-R (parcelas francesas etiquetadas, Sainte-Fare-Garnot 2021),
-            Dynamic World (cobertura terrestre Google + WRI), ERA5 (climatologia C3S),
-            EuroCrops/HCAT3 (taxonomia armonizada TUM).
-        </p>
+    {% if card.sections %}
+    <div class="sections">
+        <h3>Índice del notebook</h3>
+        <ul>
+            {% for section in card.sections %}
+            <li>{{ section }}</li>
+            {% endfor %}
+        </ul>
     </div>
+    {% endif %}
 
-    <div class="subblock">
-        <h3>2.2 Schema</h3>
-        <p>
-            Sentinel-2: 13 bandas + SCL, resolucion nativa 10/20/60 m, revisita 5 dias.
-            AlphaEarth: vectores 64-dim por celda anual (mosaico EE). PASTIS-R:
-            2433 parcelas, label denso por pixel + serie temporal. Schema completo
-            documentado en US-010 / US-011 (notebooks 02a, 02b).
-        </p>
-    </div>
-
-    <div class="subblock">
-        <h3>2.3 Quality: missingness, outliers, distributions</h3>
-        <p>
-            Analisis SCL (Scene Classification Layer) revela patrones de nubes
-            sistematicos; los outliers de reflectancia se detectan via IQR robusto
-            sobre logaritmos de bandas. Las distribuciones se aproximan a log-normal
-            en bandas SWIR y a quasi-normal en visibles tras correccion atmosferica.
-        </p>
-        {% if figures.us_010 %}
-        {% for fig in figures.us_010 %}
-        <div class="figure">
-            <img src="{{ figures_base_url }}figures/us-010/{{ fig.name }}" alt="{{ fig.stem }}" />
-            <div class="caption">Figura US-010: {{ fig.stem }}</div>
+    {% set figures = card_figures[card.notebook_id] %}
+    {% if figures %}
+    <div class="figures">
+        <h3>Figuras del análisis</h3>
+        {% for fig in figures %}
+        {% set narrative = get_narrative(card.notebook_id, fig.name) %}
+        <div class="figure-block">
+            <div class="figure">
+                <img src="{{ figures_base_url }}figures/{{ card.figures_dir }}/{{ fig.name }}"
+                     alt="{{ fig.stem }}" />
+            </div>
+            {% if narrative %}
+            <h4>{{ narrative.title }}</h4>
+            <p class="narrative">{{ narrative.narrative }}</p>
+            <p class="method"><strong>Cómo se construyó:</strong> {{ narrative.method }}</p>
+            {% else %}
+            <div class="caption">{{ fig.stem }}</div>
+            {% endif %}
         </div>
         {% endfor %}
-        {% else %}
-        <p class="placeholder">Pendiente: figuras US-010 no disponibles en paper/figures/us-010/.</p>
-        {% endif %}
     </div>
+    {% elif card.figures_dir %}
+    <p class="placeholder">
+        Pendiente: no se encontraron figuras en
+        <code>paper/figures/{{ card.figures_dir }}/</code>. Ejecutá el
+        notebook fuente para poblarlas.
+    </p>
+    {% endif %}
 
-    <div class="subblock">
-        <h3>2.4 Feature Inventory</h3>
-        <p>
-            Catalogo de features candidatas: 17 indices espectrales (NDVI, NDWI, EVI,
-            NDRE, NBR, SAVI, MSAVI, etc.), embeddings AlphaEarth (64-dim), DINOv3
-            features satelitales frozen (1024-dim), variables ERA5 (precipitacion,
-            temperatura, humedad), y atributos derivados temporales (peak NDVI, dia
-            del peak, amplitud, fenologia DTW).
-        </p>
-        {% if figures.us_011 %}
-        {% for fig in figures.us_011 %}
-        <div class="figure">
-            <img src="{{ figures_base_url }}figures/us-011/{{ fig.name }}" alt="{{ fig.stem }}" />
-            <div class="caption">Figura US-011: {{ fig.stem }}</div>
+    {% if card.conclusions %}
+    <div class="conclusions">
+        <h3>Conclusiones e interpretación</h3>
+        {% for heading, body in card.conclusions %}
+        <div class="conclusion-block">
+            <h4>{{ heading }}</h4>
+            <p>{{ body }}</p>
         </div>
         {% endfor %}
-        {% else %}
-        <p class="placeholder">Pendiente: figuras US-011 no disponibles en paper/figures/us-011/.</p>
-        {% endif %}
     </div>
-
-    <div class="subblock">
-        <h3>2.5 Label Balance</h3>
-        <p>
-            PASTIS-R presenta desbalance moderado (clases dominantes: trigo, maiz,
-            colza, prados). Las clases minoritarias (legumbres, vinedos, frutales)
-            requieren stratified sampling por clase Y por region, ademas de pesado
-            inverso o focal loss en entrenamiento de segmentacion.
-        </p>
-    </div>
-
-    <div class="subblock">
-        <h3>2.6 Decisions for Feature Engineering</h3>
-        <p>
-            (1) Spatial CV con bloques disjuntos (no random split) por riesgo de leakage.
-            (2) Fusion multisensor a vector por parcela con Polars (AlphaEarth + indices
-            S2 + ERA5 agregados). (3) Reduccion VIF para descartar features colineales.
-            (4) DTW phenology clustering como feature derivado. (5) DINOv3 frozen como
-            extractor unico, sin fine-tune del backbone.
-        </p>
-        {% if figures.us_012 %}
-        {% for fig in figures.us_012 %}
-        <div class="figure">
-            <img src="{{ figures_base_url }}figures/us-012/{{ fig.name }}" alt="{{ fig.stem }}" />
-            <div class="caption">Figura US-012: {{ fig.stem }}</div>
-        </div>
-        {% endfor %}
-        {% else %}
-        <p class="placeholder">Pendiente: figuras US-012 no disponibles en paper/figures/us-012/.</p>
-        {% endif %}
-    </div>
+    {% endif %}
 </section>
-
-<section class="crisp-phase">
-    <h2>3. Data Preparation</h2>
-    <p>
-        Plan derivado del EDA: (a) pipeline de ingesta versionado en DVC con
-        Sentinel-2 y AlphaEarth como assets primarios; (b) feature engineering en
-        Polars 1.x (no pandas) con indices espectrales reutilizables; (c) splits
-        espaciales estratificados generados por scripts deterministas; (d) cache
-        intermedio en parquet/arrow para acelerar iteraciones del modelado.
-        Materializa en US-014 a US-017.
-    </p>
-</section>
-
-<section class="crisp-phase">
-    <h2>4. Modeling</h2>
-    <p>
-        Estrategia confirmada por EDA: (1) baseline tabular XGBoost sobre AlphaEarth
-        (target F1-macro &gt;= 0.60); (2) seis arquitecturas de segmentacion
-        obligatorias en EPIC 5 (U-Net, DeepLabv3+, SegFormer-B2, U-TAE, TSViT,
-        Swin-UNETR); (3) fine-tune VLM Gemma 4 26B-MoE con LoRA rank 16 BF16 en
-        H100 96GB; (4) cuatro ensambles (voting top-3, bagging XGB+AlphaEarth,
-        stacking con Gemma 4, blending con Optuna).
-    </p>
-</section>
-
-<section class="crisp-phase">
-    <h2>5. Evaluation</h2>
-    <p>
-        Metricas mapeadas a la rubrica: F1-macro y Cohen kappa para clasificacion,
-        mIoU para segmentacion densa, AgroMind para VLM, GeoAnalystBench pass rate
-        para el agente conversacional. Spatial residuals plot obligatorio para
-        validar ausencia de leakage espacial. Cross-validation con bloques
-        disjuntos y buffer espacial entre folds (no KFold IID).
-    </p>
-</section>
-
-<section class="crisp-phase">
-    <h2>6. Deployment</h2>
-    <p>
-        Despliegue planeado: FastAPI + Nuxt 4 SSR sobre GCP (Cloud Run + L4 spot
-        para workers ML pesados) y Azure 1xH100 NVL 96GB spot para training de
-        Gemma 4 y serving on-prem de Qwen3.5-35B-A3B via vLLM. MLflow para
-        tracking, DVC + GCS para datos, Dagster asset-oriented para orquestacion,
-        Evidently AI para monitoreo de drift en produccion.
-    </p>
-</section>
+{% endfor %}
 
 <section class="footer-attributions">
     <h3>Atribuciones de licencias</h3>
     <ul>
-        <li>PASTIS-R: Sainte-Fare-Garnot et al. 2021 - CC-BY-SA 4.0</li>
-        <li>Sentinel-2: Copernicus Programme (European Union / ESA) - terminos Copernicus</li>
-        <li>AlphaEarth Foundations v2.1: Google DeepMind via Google Earth Engine - GEE Terms of Service</li>
-        <li>Dynamic World: Google + World Resources Institute - CC-BY-4.0</li>
-        <li>ERA5: Copernicus Climate Change Service (C3S) - Copernicus license</li>
-        <li>EuroCrops / HCAT3: TUM (Technische Universitaet Muenchen) - CC-BY-4.0</li>
+        <li>PASTIS-R: Sainte-Fare-Garnot et al. 2021 — CC-BY-SA 4.0</li>
+        <li>Sentinel-2: Copernicus Programme (European Union / ESA) — términos Copernicus</li>
+        <li>AlphaEarth Foundations v2.1: Google DeepMind vía Google Earth Engine — términos GEE</li>
+        <li>Dynamic World: Google + World Resources Institute — CC-BY-4.0</li>
+        <li>ERA5: Copernicus Climate Change Service (C3S) — licencia Copernicus</li>
+        <li>EuroCrops / HCAT3: TUM (Technische Universität München) — CC-BY-4.0</li>
     </ul>
     <p>
         Detalle completo en <code>docs/licenses/DATA_LICENSE.md</code> del repositorio.
