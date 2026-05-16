@@ -1049,7 +1049,7 @@ S10-S11 (22-jun a 3-jul): Buffer + Paper Track opcional
 
 ---
 
-### US-013 — Dashboard Streamlit de EDA y reporte PDF
+### US-013 — Dashboard Streamlit de EDA y reporte PDF ✅ CERRADA Fase A · 2026-05-16
 
 **Como** equipo,
 - **quiero** un dashboard ejecutable y un reporte PDF que resuman el EDA,
@@ -1057,17 +1057,25 @@ S10-S11 (22-jun a 3-jul): Buffer + Paper Track opcional
 
 **Criterios de Aceptación:**
 
-- Dashboard Streamlit `app/eda_dashboard.py` con seis tabs: univariado Sentinel-2, AlphaEarth, bivariado, temporal, espacial (mapa folium), conclusiones.
+- Dashboard Streamlit `app/eda_dashboard.py` con seis tabs: univariado Sentinel-2, AlphaEarth, bivariado, temporal, espacial (mapa folium), conclusiones. **Rehecho como 5 fichas notebook + 1 tab mapa espacial** (ver cambio de scope en handoff).
 - Exportación PDF de las conclusiones vía `weasyprint` o `reportlab` para anexar al Avance 1.
 - Conclusiones explícitas y mapeadas al contexto CRISP-ML(Q) Data Understanding.
 
 **Tareas técnicas:**
 
-- [ ] Dashboard Streamlit con navegación
-- [ ] Función `export_report_pdf()`
-- [ ] Integración con notebooks vía papermill
+- [x] Dashboard Streamlit con navegación (6 tabs, design system Data-Dense Dashboard, KPI cards, narrativa por figura)
+- [x] Función `export_report_pdf()` (`ml/report/export_pdf.py` CLI Typer + Jinja2 + WeasyPrint, requiere GTK3 en Windows)
+- [x] Integración con notebooks vía papermill (notebook integrador `notebooks/eda/Avance1.Equipo17.ipynb` generado por `scripts/build_avance1_notebook.py`, ejecutable con `make eda-notebook-avance1`)
 
-**Estimación:** 2 puntos (~1 día).
+**Entregables adicionales (no en plan original)**:
+- Módulo DRY `ml/report/notebook_content.py` + `figure_narratives.py` consumido por los 3 canales (dashboard, PDF, notebook)
+- Subset compacto `data/reference/pastis_tiles_dissolved.geojson` (506 KB) para mapa folium sin DVC
+- Setup Streamlit Community Cloud aislado en `deploy/streamlit/`
+- Fase B (FastAPI + Nuxt + ECharts) documentada en `docs/product-backlog/eda-dashboard-fase-b-nuxt.md`
+
+**Cierre**: ver [`docs/us-resolved/us-013.md`](../docs/us-resolved/us-013.md).
+
+**Estimación:** 2 puntos (~1 día). **Real: 5 puntos** (cambio de scope mid-fase + design system premium + 4 bugs Fase A v2 + 3 Mayores deuda técnica resueltos antes del PR).
 
 ---
 
@@ -2306,7 +2314,7 @@ Trimestre 20-abr-2026 a 3-jul-2026. **Sprints semanales** para alinearse con ent
 |---|
 | E1 US-006 AlphaEarth, US-007 Sentinel-2, US-008 DINOv3+PASTIS+DW, US-009 catálogo STAC |
 | E2 US-010 empezar EDA univariado |
-| **Dom 3-may: Avance 1 entregado (EDA inicial con las 10 preguntas guía)** |
+| **Dom 3-may: Avance 1 entregado (EDA inicial con las 10 preguntas guía)** ✅ entregado 2026-05-13 (recovery sprint S2-recovery, cerrado por US-010 + US-011 + US-012 + US-013 el 2026-05-16) |
 
 ### Sprint 3 — Semana del 4 al 10 de mayo
 

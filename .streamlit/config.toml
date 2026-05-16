@@ -1,0 +1,25 @@
+# Configuración Streamlit para el dashboard EDA AgroSatCopilot.
+# Alinea el tema nativo con el design system Data-Dense Dashboard
+# (paleta azul + ámbar definida en app/eda_dashboard.py).
+
+[theme]
+base = "light"
+primaryColor = "#2563EB"
+backgroundColor = "#F8FAFC"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#1E293B"
+font = "sans serif"
+
+[server]
+# Streamlit Cloud respeta headless/runOnSave/fileWatcherType solo en local;
+# enableXsrfProtection y enableCORS sí aplican también en Streamlit Community
+# Cloud y son obligatorios para evitar CSRF / origin spoofing al exponer el
+# dashboard publicamente (Avance 1 + demos al sponsor).
+headless = true
+runOnSave = false
+fileWatcherType = "auto"
+enableXsrfProtection = true
+enableCORS = false
+
+[browser]
+gatherUsageStats = false

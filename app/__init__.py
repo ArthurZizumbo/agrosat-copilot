@@ -1,0 +1,1 @@
+"""Apps internas (Streamlit dashboards)."""

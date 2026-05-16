@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <title>{{ title }}</title>
+    <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<section class="cover">
+    <h1>{{ title }}</h1>
+    <p class="subtitle">Reporte consolidado del Avance 1 — EDA AgroSatCopilot</p>
+    <div class="meta">
+        <p><strong>Curso:</strong> {{ course }}</p>
+        <p><strong>Fecha:</strong> {{ report_date }}</p>
+        <p><strong>Sponsor:</strong> {{ sponsor }}</p>
+        <p><strong>Equipo:</strong></p>
+        {% for member in team %}
+        <p>{{ member }}</p>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="toc">
+    <h2>Índice</h2>
+    <ol>
+        {% for card in cards %}
+        <li>{{ card.title }}</li>
+        {% endfor %}
+    </ol>
+    <p class="note">
+        Este reporte sintetiza los cuatro notebooks de EDA del Avance 1
+        (Sentinel-2 univariado, AlphaEarth Foundations, bivariado y temporal,
+        y PASTIS-R consolidado) más un capítulo final de conclusiones
+        globales. Cada ficha conserva la estructura del notebook fuente, sus
+        conclusiones interpretadas y las figuras producidas durante el
+        análisis, redactadas para lectura del sponsor académico.
+    </p>
+</section>
+
+{% for card in cards %}
+<section class="card">
+    <h2>{{ loop.index }}. {{ card.title }}</h2>
+    <p class="subtitle-card">{{ card.subtitle }}</p>
+    <p class="source-link">
+        <strong>Notebook fuente:</strong>
+        <code>{{ card.notebook_path }}</code>
+    </p>
+
+    {% if card.sections %}
+    <div class="sections">
+        <h3>Índice del notebook</h3>
+        <ul>
+            {% for section in card.sections %}
+            <li>{{ section }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    {% set figures = card_figures[card.notebook_id] %}
+    {% if figures %}
+    <div class="figures">
+        <h3>Figuras del análisis</h3>
+        {% for fig in figures %}
+        {% set narrative = get_narrative(card.notebook_id, fig.name) %}
+        <div class="figure-block">
+            <div class="figure">
+                <img src="{{ figures_base_url }}figures/{{ card.figures_dir }}/{{ fig.name }}"
+                     alt="{{ fig.stem }}" />
+            </div>
+            {% if narrative %}
+            <h4>{{ narrative.title }}</h4>
+            <p class="narrative">{{ narrative.narrative }}</p>
+            <p class="method"><strong>Cómo se construyó:</strong> {{ narrative.method }}</p>
+            {% else %}
+            <div class="caption">{{ fig.stem }}</div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% elif card.figures_dir %}
+    <p class="placeholder">
+        Pendiente: no se encontraron figuras en
+        <code>paper/figures/{{ card.figures_dir }}/</code>. Ejecutá el
+        notebook fuente para poblarlas.
+    </p>
+    {% endif %}
+
+    {% if card.conclusions %}
+    <div class="conclusions">
+        <h3>Conclusiones e interpretación</h3>
+        {% for heading, body in card.conclusions %}
+        <div class="conclusion-block">
+            <h4>{{ heading }}</h4>
+            <p>{{ body }}</p>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</section>
+{% endfor %}
+
+<section class="footer-attributions">
+    <h3>Atribuciones de licencias</h3>
+    <ul>
+        <li>PASTIS-R: Sainte-Fare-Garnot et al. 2021 — CC-BY-SA 4.0</li>
+        <li>Sentinel-2: Copernicus Programme (European Union / ESA) — términos Copernicus</li>
+        <li>AlphaEarth Foundations v2.1: Google DeepMind vía Google Earth Engine — términos GEE</li>
+        <li>Dynamic World: Google + World Resources Institute — CC-BY-4.0</li>
+        <li>ERA5: Copernicus Climate Change Service (C3S) — licencia Copernicus</li>
+        <li>EuroCrops / HCAT3: TUM (Technische Universität München) — CC-BY-4.0</li>
+    </ul>
+    <p>
+        Detalle completo en <code>docs/licenses/DATA_LICENSE.md</code> del repositorio.
+    </p>
+</section>
+
+</body>
+</html>
