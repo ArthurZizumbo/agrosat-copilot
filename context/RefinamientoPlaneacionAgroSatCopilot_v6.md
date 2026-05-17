@@ -1160,9 +1160,9 @@ S10-S11 (22-jun a 3-jul): Buffer + Paper Track opcional
 
 **Tareas técnicas:**
 
-- [ ] Script `scripts/build_parcel_features.py` con asset Dagster
-- [ ] Spatial train-test split con `geopandas` y tessellation
-- [ ] Guardar scaler y splits con versionado DVC
+- [x] Script `scripts/build_parcel_features.py` con asset Dagster (CLI Typer + 3 assets Dagster `parcel_features_fused`, `parcel_splits_spatial_kfold`, `parcel_features_scaler` compartiendo `ml/features/fusion.py` — DRY)
+- [x] Spatial train-test split con `geopandas` y tessellation (`ml/features/spatial_split.py` con tessellation H3 res 5 + KMeans + buffer 1 km)
+- [ ] Guardar scaler y splits con versionado DVC (deferido a sub-US **US-016.1** — bucket `gs://agrosat-dvc-remote` pendiente; backlog en `docs/product-backlog/us-016-1-dvc-multisensor-outputs.md`)
 
 **Estimación:** 3 puntos (~1.5 días).
 

@@ -1,4 +1,4 @@
-.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip notebooks-check i18n-check db-migrate db-rollback db-new db-status db-seed db-test-us015 features-extract-demo features-persist train-l4 train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eda-sentinel2 eda-alphaearth eda-bivariado eda-figures-avance1 eda-pastis-subset eda-notebook-avance1 eda-pdf eda-dashboard eda-dashboard-test eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate
+.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip notebooks-check i18n-check db-migrate db-rollback db-new db-status db-seed db-test-us015 features-extract-demo features-persist features-fuse-demo features-fuse-italy dagster-materialize-features train-l4 train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eda-sentinel2 eda-alphaearth eda-bivariado eda-figures-avance1 eda-pastis-subset eda-notebook-avance1 eda-pdf eda-dashboard eda-dashboard-test eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate
 
 help:
 	@echo "AgroSatCopilot — comandos disponibles:"
@@ -107,6 +107,30 @@ features-persist:  ## TODO US-016: invoca load_features_parcels con DSN de .env.
 
 db-test-us015:  ## Ejecuta tests round-trip de migraciones US-015
 	poetry run pytest tests/db/test_migrations_us015.py -q
+
+# === Features US-016 (fusión multisensor a nivel parcela) ===
+features-fuse-demo:  ## US-016 — Fusión sobre fixture demo 9 parcelas (3 regiones italianas)
+	poetry run python scripts/build_parcel_features.py \
+	  --year 2024 \
+	  --regions pianura_padana,toscana,puglia \
+	  --parcels-path data/test_fixtures/parcels_demo_3regions.parquet \
+	  --out data/features/features_fused_v1_demo.parquet \
+	  --scaler-out artifacts/scaler_v1_demo.pkl \
+	  --splits-out data/splits/spatial_kfold_v1_demo/ \
+	  --no-farslip
+
+features-fuse-italy:  ## US-016 — Fusión completa Italia 3 regiones (requiere parcels Postgres + GEE)
+	poetry run python scripts/build_parcel_features.py \
+	  --year 2024 \
+	  --regions pianura_padana,toscana,puglia \
+	  --out data/features/features_fused_v1.parquet \
+	  --scaler-out artifacts/scaler_v1.pkl \
+	  --splits-out data/splits/spatial_kfold_v1/ \
+	  --no-farslip
+
+dagster-materialize-features:  ## US-016 — Materializa los 3 assets en orden (features → splits → scaler)
+	poetry run dagster asset materialize -m dagster_project.definitions \
+	  --select parcel_features_fused+
 
 # === ML / Training ===
 train-l4:  ## Spot L4 24GB (baselines, dev)

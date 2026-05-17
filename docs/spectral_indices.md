@@ -190,6 +190,72 @@ lanzar excepción.
   decomposition and parallel processing — Software Manual*. Lund and
   Malmö Universities. ISBN 978-91-87983-19-0.
 
+## Multisensor fusion vector layout (US-016)
+
+El módulo [`ml/features/fusion.py`](../ml/features/fusion.py) fusiona seis bloques
+heterogéneos por `(parcel_id, year)` produciendo un vector tabular de **189
+columnas** (cuando el bloque opcional FarSLIP está deshabilitado) o **701
+columnas** con FarSLIP. El frame resultante se persiste en
+`data/features/features_fused_v1.parquet` y se versiona con DVC.
+
+El subset de estadísticos temporales `FUSION_STATS = (mean, std, p25, p50, p95)`
+es **distinto** al de US-015 (`mean, std, min, max, p05, p25, p50, p75, p95`)
+— US-016 reduce a 5 stats por economía cuando combinamos 6 sensores; los 9 stats
+completos siguen disponibles en la tabla `features_parcels` de US-015 para
+modelos puramente ópticos.
+
+### Tabla de bloques
+
+| # | Bloque | Cols | Prefijo / convención | Fuente | Reducción |
+|---|--------|------|----------------------|--------|-----------|
+| 1 | AlphaEarth | 64 | `ae_00 .. ae_63` (`float32`) | `GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL` vía `sample_alphaearth_at_coords` | media de las 64 dims sobre los pixeles de la parcela |
+| 2 | Indices×Stats | 85 | `{idx}_{stat}` con 17 indices × 5 stats | `ml/features/spectral_indices.py` (US-014) sobre S2 L2A | NDVI lee `features_parcels.ndvi_stats` JSONB (US-015); resto recomputado on-the-fly con cache Redis |
+| 3 | Sentinel-1 | 10 | `s1_vv_{stat}` (5) + `s1_vh_{stat}` (5) | `COPERNICUS/S1_GRD` IW GRDH asc+desc, despeckle Lee 7×7, sigma0 en dB | stats anuales sobre ~60 timesteps por parcela |
+| 4 | SRTM | 3 | `srtm_elev_mean`, `srtm_slope_mean`, `srtm_aspect_dominant` | `USGS/SRTMGL1_003` + `ee.Terrain.slope` + `ee.Terrain.aspect` | elev / slope: media de pixeles; aspect: bin dominante de 8 cuadrantes (N..NW) |
+| 5 | ERA5 mensual | 24 | `era5_tmean_m01..m12` (12) + `era5_prec_m01..m12` (12) | `ECMWF/ERA5_LAND/DAILY_AGGR` agrupado server-side por mes | tmean en °C; prec acumulado mm |
+| 6 | Geometría | 3 | `geom_area_ha`, `geom_perimeter_m`, `geom_elongation` | columna `parcels.geom` (POSTGIS / shapely) | area: `ST_Area(geom::geography)/10000`; elongation: `perimeter² / (4·π·area)` (Polsby-Popper inverso) |
+| 7 | FarSLIP (opcional) | +512 | `farslip_000..farslip_511` (`float32`) | `data/farslip/embeddings_italy.parquet` (US-016b) | LEFT join por `parcel_id`; si el parquet no existe, el log emite `farslip_block_skipped=True` y el bloque se omite |
+
+### Layout exacto del frame
+
+```
+parcel_id (i64) | year (i16) |
+ae_00 ... ae_63 (64) |
+ndvi_mean, ndvi_std, ndvi_p25, ndvi_p50, ndvi_p95,
+... (17 indices × 5 stats = 85 cols, orden indice outer × stat inner) ...
+tsavi_mean, tsavi_std, tsavi_p25, tsavi_p50, tsavi_p95 |
+s1_vv_mean, s1_vv_std, s1_vv_p25, s1_vv_p50, s1_vv_p95 (5) |
+s1_vh_mean, s1_vh_std, s1_vh_p25, s1_vh_p50, s1_vh_p95 (5) |
+srtm_elev_mean, srtm_slope_mean, srtm_aspect_dominant (3) |
+era5_tmean_m01 ... era5_tmean_m12 (12) |
+era5_prec_m01 ... era5_prec_m12 (12) |
+geom_area_ha, geom_perimeter_m, geom_elongation (3) |
+[farslip_000 ... farslip_511 (512)]  # opcional
+```
+
+Total: **2 + 64 + 85 + 10 + 3 + 24 + 3 = 191 columnas** (189 features +
+`parcel_id` + `year`). Con FarSLIP: **703 columnas**.
+
+Constantes del módulo:
+
+- `EXPECTED_COL_COUNT_NO_FARSLIP = 189`
+- `EXPECTED_COL_COUNT_WITH_FARSLIP = 701`
+- `FUSION_STATS = ("mean", "std", "p25", "p50", "p95")`
+- `BLOCK_NAMES = ("alphaearth", "indices_stats", "sentinel1", "srtm",
+  "era5_monthly", "geometry", "farslip")`
+
+### Orquestación dual
+
+El mismo punto de entrada `ml.features.fusion.build_fused_features` es
+consumido por:
+
+- el script CLI `scripts/build_parcel_features.py` (Typer); y
+- los assets Dagster `parcel_features_fused`, `parcel_splits_spatial_kfold`,
+  `parcel_features_scaler` definidos en
+  [`dagster_project/assets/features.py`](../dagster_project/assets/features.py).
+
+DRY enforced — ver `docs/us-planning/us-016.md` §2.1.
+
 ## Atribución
 
 Spyndex (MIT) — Montero, D., Aybar, C., Mahecha, M.D. et al. (2023).

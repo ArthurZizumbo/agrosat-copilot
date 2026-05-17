@@ -146,6 +146,7 @@ pypgstac = "^0.9.11"
 sentinelhub = "^3.11.5"
 deepeval = "^4.0.0"
 evidently = "^0.7.21"
+h3 = "^4.1.2"
 
 [tool.poetry.group.paper]
 optional = true
@@ -227,4 +228,6 @@ filterwarnings = ["ignore::DeprecationWarning"]
 markers = [
     "integration: integration tests requiring Docker / external services",
     "e2e: end-to-end tests requiring full stack",
+    "requires_gee: tests that require a live Earth Engine session (skipped in CI)",
+    "slow: tests that take >5s; deselect with `-m 'not slow'`",
 ]

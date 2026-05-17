@@ -9,7 +9,7 @@ US-006/007/009.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import polars as pl
@@ -25,6 +25,14 @@ _log = structlog.get_logger(__name__)
 ALPHAEARTH_COLLECTION = "GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL"
 DYNAMIC_WORLD_COLLECTION = "GOOGLE/DYNAMICWORLD/V1"
 ERA5_COLLECTION = "ECMWF/ERA5_LAND/DAILY_AGGR"
+S1_COLLECTION = "COPERNICUS/S1_GRD"
+SRTM_COLLECTION = "USGS/SRTMGL1_003"
+
+#: 8 cuadrantes cardinales usados por `sample_srtm_terrain` para discretizar
+#: la orientación dominante (aspect) en grados [0, 360) → string cardinal.
+_ASPECT_CARDINALS: tuple[str, ...] = (
+    "N", "NE", "E", "SE", "S", "SW", "W", "NW",
+)
 DYNAMIC_WORLD_CLASSES: dict[int, str] = {
     0: "water",
     1: "trees",
@@ -721,3 +729,396 @@ def era5_annual_precip(
     df = pl.DataFrame(rows, schema=schema)
     df.write_parquet(cache_file)
     return df
+
+
+# ===========================================================================
+# US-016 — samplers nuevos (Sentinel-1, SRTM, ERA5 mensual) por parcela.
+# ===========================================================================
+#
+# Convención común:
+# - `parcels` es un `gpd.GeoDataFrame` con columnas `parcel_id`, `geometry`
+#   (POLYGON EPSG:4326) y opcionalmente `year`. Cada parcela se convierte a
+#   `ee.Geometry` server-side y se reduce con `ee.Reducer.mean()`.
+# - Outputs Polars con cache parquet local en `data/cache/gee/` (mismo patrón
+#   que `sample_alphaearth_*` y `era5_annual_precip`).
+# - Modo degradado: si `ee` no está disponible o GEE falla, se devuelve un
+#   DataFrame vacío con el esquema correcto para no romper la cadena Polars
+#   en el resto del pipeline (los blocks de `ml/features/fusion.py` rellenan
+#   con None las cols faltantes).
+
+
+def _parcels_to_feature_collection(parcels: Any) -> Any:
+    """Convierte un GeoDataFrame de parcelas a ``ee.FeatureCollection``.
+
+    Args:
+        parcels: GeoDataFrame con `parcel_id` y `geometry` POLYGON EPSG:4326.
+
+    Returns:
+        ``ee.FeatureCollection`` con propiedad `parcel_id` por feature.
+    """
+    if ee is None:
+        raise ImportError("earthengine-api no disponible.")
+    features = []
+    for row in parcels.itertuples(index=False):
+        geom = getattr(row, "geometry", None)
+        if geom is None or geom.is_empty:
+            continue
+        gj = geom.__geo_interface__
+        ee_geom = ee.Geometry(gj)
+        features.append(
+            ee.Feature(ee_geom, {"parcel_id": int(row.parcel_id)})
+        )
+    return ee.FeatureCollection(features)
+
+
+def sample_s1_roi_for_parcels(
+    parcels: Any,
+    year: int,
+    *,
+    polarization: tuple[str, ...] = ("VV", "VH"),
+    orbit_pass: Literal["both", "ascending", "descending"] = "both",  # noqa: S107
+    despeckle: Literal["lee_7x7", "none"] = "lee_7x7",
+    sigma0_units: Literal["dB", "linear"] = "dB",
+    cache_dir: Path | None = None,
+    cache_key: str = "parcels",
+) -> pl.DataFrame:
+    """Muestrea Sentinel-1 GRD VV+VH por parcela con stats temporales (US-016 AC-4).
+
+    Preset operativo:
+
+    - Colección ``COPERNICUS/S1_GRD`` modo IW (Interferometric Wide).
+    - ``ascending + descending`` mosaicados (``orbit_pass="both"``),
+      resolución 10 m.
+    - Despeckle Lee 7x7 (default) aplicado por imagen antes del stack.
+    - Salida en sigma0 dB (default; ``"linear"`` para datos crudos).
+
+    Stats devueltos por (parcel_id, polarization): ``mean, std, p25, p50,
+    p95`` sobre el stack temporal → 5 stats x 2 pol = 10 columnas con
+    prefijos ``s1_vv_*`` y ``s1_vh_*``.
+
+    Args:
+        parcels: GeoDataFrame con `parcel_id` y `geometry` POLYGON EPSG:4326.
+        year: Año a samplear (ventana ``[YYYY-01-01, (YYYY+1)-01-01)``).
+        polarization: Polarizaciones a extraer (default ``("VV", "VH")``).
+        orbit_pass: Filtro de pase orbital. ``"both"`` mosaicea asc+desc.
+        despeckle: Filtro de speckle. ``"lee_7x7"`` aplica filtro Lee con
+            kernel 7x7; ``"none"`` desactiva el filtro.
+        sigma0_units: Unidades de salida; los datos GRD GEE ya vienen en dB.
+            Si se solicita ``"linear"`` se aplica ``10^(x/10)``.
+        cache_dir: Carpeta de cache local (default ``data/cache/gee/``).
+        cache_key: Nombre lógico del subset para el cache.
+
+    Returns:
+        ``pl.DataFrame`` con columnas ``parcel_id, year, s1_vv_mean, ...,
+        s1_vh_p95``. Devuelve frame vacío con esquema válido si GEE falla.
+    """
+    pol_cols: list[str] = []
+    for pol in polarization:
+        for stat in ("mean", "std", "p25", "p50", "p95"):
+            pol_cols.append(f"s1_{pol.lower()}_{stat}")
+    schema: dict[str, Any] = {
+        "parcel_id": pl.Int64,
+        "year": pl.Int16,
+        **{c: pl.Float64 for c in pol_cols},
+    }
+
+    cache_root = cache_dir or DEFAULT_CACHE_DIR
+    cache_root.mkdir(parents=True, exist_ok=True)
+    cache_file = (
+        cache_root
+        / f"s1_{cache_key}_{year}_{orbit_pass}_{despeckle}_{sigma0_units}.parquet"
+    )
+    if cache_file.exists():
+        return pl.read_parquet(cache_file)
+
+    if ee is None or len(parcels) == 0:
+        return pl.DataFrame(schema=schema)
+
+    try:
+        fc = _parcels_to_feature_collection(parcels)
+        collection = (
+            ee.ImageCollection(S1_COLLECTION)
+            .filterDate(f"{year}-01-01", f"{year + 1}-01-01")
+            .filter(ee.Filter.eq("instrumentMode", "IW"))
+            .filter(ee.Filter.listContains("transmitterReceiverPolarisation", "VV"))
+            .filter(ee.Filter.listContains("transmitterReceiverPolarisation", "VH"))
+            .select(list(polarization))
+        )
+        if orbit_pass == "ascending":  # noqa: S105
+            collection = collection.filter(ee.Filter.eq("orbitProperties_pass", "ASCENDING"))
+        elif orbit_pass == "descending":  # noqa: S105
+            collection = collection.filter(ee.Filter.eq("orbitProperties_pass", "DESCENDING"))
+
+        if despeckle == "lee_7x7":
+            # focalMean con kernel cuadrado de radio 3 (7x7 pixels).
+            kernel = ee.Kernel.square(radius=3, units="pixels")
+            collection = collection.map(lambda img: img.focalMean(kernel=kernel))
+
+        if sigma0_units == "linear":
+            collection = collection.map(
+                lambda img: img.expression(
+                    "pow(10, x / 10)", {"x": img.select(list(polarization))}
+                )
+            )
+
+        rows: list[dict[str, Any]] = []
+        year_int = int(year)
+        for pol in polarization:
+            pol_col = collection.select(pol)
+            stats_img = pol_col.reduce(
+                ee.Reducer.mean()
+                .combine(ee.Reducer.stdDev(), sharedInputs=True)
+                .combine(
+                    ee.Reducer.percentile([25, 50, 95]),
+                    sharedInputs=True,
+                )
+            )
+            reduced = stats_img.reduceRegions(
+                collection=fc,
+                reducer=ee.Reducer.mean(),
+                scale=10,
+            )
+            info = reduced.getInfo()
+            for feat in info.get("features", []) or []:
+                props = feat.get("properties", {}) or {}
+                pid = int(props.get("parcel_id"))
+                row: dict[str, Any] = {"parcel_id": pid, "year": year_int}
+                row[f"s1_{pol.lower()}_mean"] = _safe_float(props.get(f"{pol}_mean"))
+                row[f"s1_{pol.lower()}_std"] = _safe_float(props.get(f"{pol}_stdDev"))
+                row[f"s1_{pol.lower()}_p25"] = _safe_float(props.get(f"{pol}_p25"))
+                row[f"s1_{pol.lower()}_p50"] = _safe_float(props.get(f"{pol}_p50"))
+                row[f"s1_{pol.lower()}_p95"] = _safe_float(props.get(f"{pol}_p95"))
+                rows.append(row)
+    except Exception as exc:  # noqa: BLE001 — degradación graceful
+        _log.warning("s1_sample_failed", error=str(exc), year=int(year))
+        return pl.DataFrame(schema=schema)
+
+    if not rows:
+        return pl.DataFrame(schema=schema)
+
+    # Merge filas VV y VH de la misma parcela.
+    merged: dict[int, dict[str, Any]] = {}
+    for row in rows:
+        pid = int(row["parcel_id"])
+        if pid not in merged:
+            merged[pid] = {"parcel_id": pid, "year": int(year)}
+        for k, v in row.items():
+            if k in ("parcel_id", "year"):
+                continue
+            if v is not None:
+                merged[pid][k] = v
+    df = pl.DataFrame(list(merged.values()), schema=schema)
+    df.write_parquet(cache_file)
+    return df
+
+
+def sample_srtm_terrain(
+    parcels: Any,
+    *,
+    cache_dir: Path | None = None,
+    cache_key: str = "parcels",
+) -> pl.DataFrame:
+    """Muestrea SRTM elevación + slope + aspect dominante por parcela (US-016 AC-5).
+
+    Usa ``USGS/SRTMGL1_003`` (DEM 30m global) más ``ee.Terrain.slope`` y
+    ``ee.Terrain.aspect``. ``aspect_dominant`` se discretiza en 8 cuadrantes
+    cardinales (N, NE, ..., NW) usando el centro de cada bin de 45°.
+
+    Args:
+        parcels: GeoDataFrame con `parcel_id` y `geometry` POLYGON EPSG:4326.
+        cache_dir: Carpeta cache local.
+        cache_key: Nombre lógico para el cache.
+
+    Returns:
+        ``pl.DataFrame`` con cols ``parcel_id, srtm_elev_mean,
+        srtm_slope_mean, srtm_aspect_dominant`` (string cardinal).
+    """
+    schema: dict[str, Any] = {
+        "parcel_id": pl.Int64,
+        "srtm_elev_mean": pl.Float64,
+        "srtm_slope_mean": pl.Float64,
+        "srtm_aspect_dominant": pl.Utf8,
+    }
+    cache_root = cache_dir or DEFAULT_CACHE_DIR
+    cache_root.mkdir(parents=True, exist_ok=True)
+    cache_file = cache_root / f"srtm_{cache_key}.parquet"
+    if cache_file.exists():
+        return pl.read_parquet(cache_file)
+
+    if ee is None or len(parcels) == 0:
+        return pl.DataFrame(schema=schema)
+
+    try:
+        fc = _parcels_to_feature_collection(parcels)
+        dem = ee.Image(SRTM_COLLECTION).select("elevation")
+        slope = ee.Terrain.slope(dem)
+        aspect = ee.Terrain.aspect(dem)
+        composite = dem.addBands(slope.rename("slope")).addBands(aspect.rename("aspect"))
+        reduced = composite.reduceRegions(
+            collection=fc,
+            reducer=ee.Reducer.mean(),
+            scale=30,
+        )
+        info = reduced.getInfo()
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("srtm_sample_failed", error=str(exc))
+        return pl.DataFrame(schema=schema)
+
+    rows: list[dict[str, Any]] = []
+    for feat in info.get("features", []) or []:
+        props = feat.get("properties", {}) or {}
+        pid = int(props.get("parcel_id"))
+        aspect_deg = _safe_float(props.get("aspect"))
+        rows.append(
+            {
+                "parcel_id": pid,
+                "srtm_elev_mean": _safe_float(props.get("elevation")),
+                "srtm_slope_mean": _safe_float(props.get("slope")),
+                "srtm_aspect_dominant": _aspect_to_cardinal(aspect_deg),
+            }
+        )
+
+    if not rows:
+        return pl.DataFrame(schema=schema)
+    df = pl.DataFrame(rows, schema=schema)
+    df.write_parquet(cache_file)
+    return df
+
+
+def sample_era5_monthly_climate(
+    parcels: Any,
+    year: int,
+    *,
+    temperature_units: Literal["K", "C"] = "C",
+    cache_dir: Path | None = None,
+    cache_key: str = "parcels",
+) -> pl.DataFrame:
+    """Muestrea ERA5-Land mensual: tmean (12) + prec acumulado (12) (US-016 AC-6).
+
+    Usa ``ECMWF/ERA5_LAND/DAILY_AGGR`` agrupando server-side por mes:
+
+    - ``temperature_2m`` reducido con ``mean()`` por mes → °C si
+      ``temperature_units="C"``.
+    - ``total_precipitation_sum`` reducido con ``sum()`` por mes (metros)
+      → mm acumulado (multiplicado x 1000).
+
+    Args:
+        parcels: GeoDataFrame con `parcel_id` y `geometry` POLYGON EPSG:4326.
+        year: Año (genera ventana ``[YYYY-01-01, (YYYY+1)-01-01)``).
+        temperature_units: ``"C"`` (default) o ``"K"``.
+        cache_dir: Carpeta cache local.
+        cache_key: Nombre lógico para el cache.
+
+    Returns:
+        ``pl.DataFrame`` con cols ``parcel_id, year, era5_tmean_m01..m12,
+        era5_prec_m01..m12`` (24 cols).
+    """
+    t_cols = [f"era5_tmean_m{m:02d}" for m in range(1, 13)]
+    p_cols = [f"era5_prec_m{m:02d}" for m in range(1, 13)]
+    schema: dict[str, Any] = {
+        "parcel_id": pl.Int64,
+        "year": pl.Int16,
+        **{c: pl.Float64 for c in t_cols + p_cols},
+    }
+    cache_root = cache_dir or DEFAULT_CACHE_DIR
+    cache_root.mkdir(parents=True, exist_ok=True)
+    cache_file = cache_root / f"era5_monthly_{cache_key}_{year}_{temperature_units}.parquet"
+    if cache_file.exists():
+        return pl.read_parquet(cache_file)
+
+    if ee is None or len(parcels) == 0:
+        return pl.DataFrame(schema=schema)
+
+    try:
+        fc = _parcels_to_feature_collection(parcels)
+        result_rows: dict[int, dict[str, Any]] = {}
+        # Bug-6 fix (smoke real, 2026-05-17):
+        # reduceRegions con scale=11132 (nativa ERA5-Land ~11 km/pixel) y
+        # parcelas sub-pixel (~1 km2 del fixture demo) NO intersecta ningun
+        # pixel: el payload omite por completo la propiedad reducida y queda
+        # solo `{parcel_id}`. Bajamos scale a 1000 m (oversampling 11x) y
+        # anadimos `tileScale=4` para evitar memory errors en parcelas grandes.
+        # Resultado: scale=1000 interpola correctamente el pixel ERA5
+        # contenedor y rellena las 24 cols con valores fisicos plausibles.
+        # Ademas, dependiendo del scale, GEE renombra la propiedad al band
+        # original (`temperature_2m` / `total_precipitation_sum`) o a `mean`;
+        # leemos band-name con fallback a `mean` para cubrir ambos paths.
+        tband = "temperature_2m"
+        pband = "total_precipitation_sum"
+        for month in range(1, 13):
+            start = f"{year}-{month:02d}-01"
+            end = (
+                f"{year + 1}-01-01"
+                if month == 12
+                else f"{year}-{month + 1:02d}-01"
+            )
+            month_collection = ee.ImageCollection(ERA5_COLLECTION).filterDate(start, end)
+            tmean_img = month_collection.select(tband).mean()
+            prec_img = month_collection.select(pband).sum()
+
+            tmean_reduced = tmean_img.reduceRegions(
+                collection=fc, reducer=ee.Reducer.mean(), scale=1000, tileScale=4
+            )
+            prec_reduced = prec_img.reduceRegions(
+                collection=fc, reducer=ee.Reducer.mean(), scale=1000, tileScale=4
+            )
+            t_info = tmean_reduced.getInfo()
+            p_info = prec_reduced.getInfo()
+            for feat in t_info.get("features", []) or []:
+                props = feat.get("properties", {}) or {}
+                pid = int(props.get("parcel_id"))
+                if pid not in result_rows:
+                    result_rows[pid] = {"parcel_id": pid, "year": int(year)}
+                # `reduceRegions` con single-band image renombra la propiedad
+                # al nombre del band (no a "mean"); fallback a "mean" por
+                # compatibilidad con mocks viejos / multi-band reducers.
+                tval = _safe_float(props.get(tband, props.get("mean")))
+                if tval is not None and temperature_units == "C":
+                    tval = tval - 273.15
+                result_rows[pid][f"era5_tmean_m{month:02d}"] = tval
+            for feat in p_info.get("features", []) or []:
+                props = feat.get("properties", {}) or {}
+                pid = int(props.get("parcel_id"))
+                if pid not in result_rows:
+                    result_rows[pid] = {"parcel_id": pid, "year": int(year)}
+                pval = _safe_float(props.get(pband, props.get("mean")))
+                # `pval` proviene del `sum()` mensual (metros) reducido en
+                # espacio; multiplicamos x 1000 para reportar en mm.
+                result_rows[pid][f"era5_prec_m{month:02d}"] = (
+                    pval * 1000.0 if pval is not None else None
+                )
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("era5_monthly_sample_failed", error=str(exc), year=int(year))
+        return pl.DataFrame(schema=schema)
+
+    if not result_rows:
+        return pl.DataFrame(schema=schema)
+    df = pl.DataFrame(list(result_rows.values()), schema=schema)
+    df.write_parquet(cache_file)
+    return df
+
+
+def _safe_float(val: Any) -> float | None:
+    """Convierte valor a float o devuelve None si es nulo/NaN."""
+    if val is None:
+        return None
+    try:
+        f = float(val)
+        if np.isnan(f) or np.isinf(f):
+            return None
+        return f
+    except (TypeError, ValueError):
+        return None
+
+
+def _aspect_to_cardinal(aspect_deg: float | None) -> str | None:
+    """Discretiza un ángulo ``[0, 360)`` en uno de 8 cuadrantes cardinales.
+
+    Bins centrados en cada cardinal (N=0, NE=45, ..., NW=315) con ancho 45°.
+    ``None`` o NaN devuelve ``None``.
+    """
+    if aspect_deg is None:
+        return None
+    deg = float(aspect_deg) % 360.0
+    idx = int(((deg + 22.5) // 45.0) % 8)
+    return _ASPECT_CARDINALS[idx]

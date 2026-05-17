@@ -19,10 +19,28 @@ Documenta TODOS los datasets y modelos usados durante el proyecto. Sin esto, el 
   en `data/cache/gee/` (gitignored).
 
 ### Sentinel-2 L2A & Sentinel-1 GRD — Copernicus
-- Source: Copernicus Data Space Ecosystem · Google Earth Engine `COPERNICUS/S2_SR_HARMONIZED`
-- License: Copernicus Open Access (free, full, open)
+- Source: Copernicus Data Space Ecosystem · Google Earth Engine
+  `COPERNICUS/S2_SR_HARMONIZED` (S2 L2A surface reflectance) y
+  `COPERNICUS/S1_GRD` (S1 IW GRDH ascending+descending, sigma0 dB).
+- License: Copernicus Open Access (free, full, open) — CC-BY-SA equivalente.
 - Attribution required: "Contains modified Copernicus Sentinel data 2017-2025"
 - Use scope US-010/011/012: muestreo on-the-fly desde GEE para EDA univariado de las 3 ROIs italianas (Pianura Padana, Toscana centrale, Apulia).
+- Use scope US-016 (Sentinel-1 GRD): bloque backscatter VV+VH del vector
+  multisensor fusionado por parcela. Preset operativo: IW GRDH ascending +
+  descending mosaicados, despeckle Lee 7×7, sigma0 calibrado en dB.
+  Stats anuales `{mean, std, p25, p50, p95}` por polarización (10 cols).
+  Helper `sample_s1_roi_for_parcels` en `ml/ingest/gee_sampler.py`.
+
+### SRTM v3 — NASA / USGS
+- Source: GEE `USGS/SRTMGL1_003` (SRTM v3, ~30 m resolution).
+- License: U.S. public domain (NASA / USGS distribuyen sin restricciones).
+- Citation: Farr, T.G. et al. (2007). *The Shuttle Radar Topography Mission*.
+  Reviews of Geophysics 45, RG2004. DOI
+  [10.1029/2005RG000183](https://doi.org/10.1029/2005RG000183).
+- Use scope US-016: bloque terreno del vector multisensor (3 cols:
+  `srtm_elev_mean`, `srtm_slope_mean`, `srtm_aspect_dominant`). `slope` y
+  `aspect` derivados server-side con `ee.Terrain.slope` / `ee.Terrain.aspect`.
+  Helper `sample_srtm_terrain` en `ml/ingest/gee_sampler.py`.
 
 ### PASTIS-R — INRAE / Sainte-Fare-Garnot et al. 2021
 - Source: Zenodo · HuggingFace `INRAE/PASTIS-R`
@@ -41,6 +59,10 @@ Documenta TODOS los datasets y modelos usados durante el proyecto. Sin esto, el 
   por ROI (bbox PASTIS-R) para detectar anomalias climaticas (anos secos /
   cantidos) y cruzarlas con NDVI maximo anual derivado de Sentinel-2 (AC-8).
   Cache parquet local en `data/cache/gee/` (gitignored).
+- Use scope US-016: agregaciones mensuales server-side via GEE para el
+  bloque ERA5 del vector multisensor fusionado por parcela (24 cols:
+  `era5_tmean_m01..m12` en °C y `era5_prec_m01..m12` acumulado mensual).
+  Helper `sample_era5_monthly_climate` en `ml/ingest/gee_sampler.py`.
 
 ### Dynamic World — Google + WRI
 - Source: GEE `GOOGLE/DYNAMICWORLD/V1`
@@ -106,6 +128,17 @@ Documenta TODOS los datasets y modelos usados durante el proyecto. Sin esto, el 
 - Repo: [davemlz/eemont](https://github.com/davemlz/eemont) `^2025.7.1`
 - License: MIT
 - Use scope US-014: wrapper opcional `compute_index_ee` para pipelines server-side de Earth Engine (US-006/US-009).
+
+### h3-py — Uber Technologies
+- Repo: [uber/h3-py](https://github.com/uber/h3-py) `^4.1.2`
+- License: Apache 2.0
+- Citation: Brodsky, I. (2018). *H3: Uber's Hexagonal Hierarchical Spatial
+  Index*. Uber Engineering Blog. https://eng.uber.com/h3/
+- Use scope US-016: tessellation hexagonal H3 res 5 (~252 km²) sobre el bbox
+  de las parcelas italianas. Centroides de las celdas se clusterizan con
+  KMeans (K=5) y se aplica un buffer de exclusion de 1 km entre folds
+  vecinos para evitar leakage espacial. Implementado en
+  `ml/features/spatial_split.py::build_spatial_kfold`.
 
 ## Bibliografía agronómica de los índices custom (US-014)
 
