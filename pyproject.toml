@@ -63,6 +63,7 @@ httpx = "^0.28.1"
 pytest-httpx = "^0.36.2"
 testcontainers = { extras = ["postgresql", "redis"], version = "^4.14.2" }
 faker = "^40.15.0"
+fakeredis = "^2.35.1"
 
 [tool.poetry.group.ml]
 optional = true

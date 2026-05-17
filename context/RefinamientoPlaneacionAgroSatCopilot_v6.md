@@ -1109,11 +1109,13 @@ S10-S11 (22-jun a 3-jul): Buffer + Paper Track opcional
 
 **Tareas técnicas:**
 
-- [ ] Función `compute_index(da: xr.DataArray, index: str) -> xr.DataArray`
-- [ ] Tabla de referencias académicas por índice en `docs/spectral_indices.md`
-- [ ] Tests con fixtures sintéticos y fixtures reales de una parcela demo
+- [x] Función `compute_index(da: xr.DataArray, index: str) -> xr.DataArray`
+- [x] Tabla de referencias académicas por índice en `docs/spectral_indices.md`
+- [x] Tests con fixtures sintéticos y fixtures reales de una parcela demo
 
 **Estimación:** 4 puntos (~2 días).
+
+**Estado:** ✅ Cerrada 2026-05-16 (ver [`docs/us-resolved/us-014.md`](../docs/us-resolved/us-014.md)).
 
 ---
 

@@ -15,58 +15,62 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 - Polars LazyFrame para datasets grandes (>5 GB)
 - Outputs como Parquet versionado con DVC
 
-## 17 Índices Espectrales
+## 17 Índices Espectrales — implementados en `ml/features/spectral_indices.py`
 
-| Índice | Fórmula resumida | Uso agronómico |
-|--------|------------------|----------------|
-| NDVI   | (NIR - R) / (NIR + R) | Vigor vegetativo |
-| NDWI   | (G - NIR) / (G + NIR) | Contenido de agua en hoja |
-| NDMI   | (NIR - SWIR1) / (NIR + SWIR1) | Humedad canopy |
-| EVI    | 2.5*(NIR-R)/(NIR+6R-7.5B+1) | Vigor en canopy denso |
-| SAVI   | ((NIR-R)/(NIR+R+L))*(1+L), L=0.5 | Vigor con suelo desnudo |
-| MSAVI2 | versión auto-calibrada SAVI | Idem mejorado |
-| NBR    | (NIR - SWIR2) / (NIR + SWIR2) | Estrés / fuego |
-| MCARI  | ((RE - R) - 0.2(RE - G)) * (RE/R) | Clorofila |
-| CCCI   | normalizado MCARI/NDVI | Clorofila + canopy |
-| LAI    | leaf area index empírico | Densidad foliar |
-| FAPAR  | radiación absorbida | Fotosíntesis |
-| PSRI   | (R - G) / RE | Senescencia |
-| NDCI   | (RE - R) / (RE + R) | Clorofila acuática |
-| GCVI   | NIR/G - 1 | Clorofila verde |
-| RENDVI | (NIR - RE) / (NIR + RE) | Red-edge NDVI |
-| NDRE   | idem RENDVI alt | Cultivos densos |
-| TSAVI  | a*(NIR-a*R-b)/(R+a*(NIR-b)) | SAVI calibrado |
+Catálogo canónico (US-014). Tabla académica completa con DOIs en
+[`docs/spectral_indices.md`](../../../docs/spectral_indices.md).
 
-## Implementación con spyndex
+**Backends** (verificado con spyndex 0.10.0):
+- 11 índices delegan literal a spyndex.
+- 3 alias documentados: `MSAVI2 → MSAVI`, `NDRE → NDREI`, `GCVI → CIG`.
+- 3 fórmulas custom auditadas con DOI: `LAI` Boegh 2002, `FAPAR` Myneni 1997, `CCCI` Barnes 2000.
+
+| Índice | Fórmula resumida | Backend | Uso agronómico |
+|--------|------------------|---------|----------------|
+| NDVI   | (N - R) / (N + R) | spyndex `NDVI` | Vigor vegetativo |
+| NDWI   | (G - N) / (G + N) | spyndex `NDWI` | Contenido de agua en hoja |
+| NDMI   | (N - S1) / (N + S1) | spyndex `NDMI` | Humedad canopy |
+| EVI    | g·(N-R)/(N+C1·R-C2·B+L) | spyndex `EVI` | Vigor en canopy denso |
+| SAVI   | ((N-R)/(N+R+L))·(1+L), L=0.5 | spyndex `SAVI` | Vigor con suelo desnudo |
+| MSAVI2 | 0.5·(2N+1 - √((2N+1)² - 8(N-R))) | spyndex `MSAVI` (alias) | SAVI auto-calibrado |
+| NBR    | (N - S2) / (N + S2) | spyndex `NBR` | Estrés / fuego |
+| MCARI  | ((RE1-R)-0.2·(RE1-G))·(RE1/R) | spyndex `MCARI` | Clorofila |
+| CCCI   | NDRE / NDVI | **custom** Barnes 2000 | Clorofila + canopy |
+| LAI    | -ln(1-(NDVI-0.05)/0.95)/0.5 | **custom** Boegh 2002 | Densidad foliar |
+| FAPAR  | 1.24·NDVI - 0.168 | **custom** Myneni 1997 | Radiación absorbida |
+| PSRI   | (R - B) / RE2 | spyndex `PSRI` | Senescencia |
+| NDCI   | (RE1 - R) / (RE1 + R) | spyndex `NDCI` | Clorofila acuática |
+| GCVI   | N/G - 1 | spyndex `CIG` (alias) | Clorofila verde |
+| RENDVI | (RE2 - RE1) / (RE2 + RE1) | spyndex `RENDVI` | Red-edge NDVI |
+| NDRE   | (N - RE1) / (N + RE1) | spyndex `NDREI` (alias) | Cultivos densos |
+| TSAVI  | sla·(N-sla·R-slb)/(sla·N+R-sla·slb) | spyndex `TSAVI` | SAVI calibrado |
+
+## API canónica (importar desde `ml.features`)
 
 ```python
+from ml.features import (
+    INDEX_NAMES,                # lista canónica de los 17 índices
+    compute_index,              # API principal sobre xr.DataArray
+    compute_index_timeseries,   # con eje time + reduce opcional
+    compute_index_cached,       # cache Redis opcional (best-effort)
+    compute_index_ee,           # wrapper server-side GEE via eemont
+)
 import xarray as xr
-import spyndex
+from ml.ingest.pastis_loader import PASTIS_S2_BANDS
 
-def compute_index(da: xr.DataArray, index: str) -> xr.DataArray:
-    """Computa índice espectral sobre xarray.DataArray.
+# Pre-requisitos (responsabilidad del caller):
+# 1. Reflectancia escalada [0, 1] (dividir DN /10000)
+# 2. Máscara SCL aplicada (sin nubes/sombras/nieve)
+# 3. Dimensión 'band' con labels PASTIS_S2_BANDS
 
-    Args:
-        da: DataArray con dimensión 'band' (B02, B03, B04, B05, B06, B07, B08, B8A, B11, B12).
-        index: nombre del índice (NDVI, NDWI, EVI, etc.).
-
-    Returns:
-        DataArray con índice computado, conserva tiempo y espacio.
-    """
-    params = {
-        "B": da.sel(band="B02"),
-        "G": da.sel(band="B03"),
-        "R": da.sel(band="B04"),
-        "RE1": da.sel(band="B05"),
-        "RE2": da.sel(band="B06"),
-        "RE3": da.sel(band="B07"),
-        "N": da.sel(band="B08"),
-        "S1": da.sel(band="B11"),
-        "S2": da.sel(band="B12"),
-        "L": 0.5,
-    }
-    return spyndex.computeIndex(index=index, params=params)
+da: xr.DataArray  # dims (band, y, x) o (time, band, y, x)
+ndvi = compute_index(da, "NDVI")
+lai_max = compute_index_timeseries(da, "LAI", reduce="p95")
 ```
+
+El mapeo `PASTIS_S2_BANDS → spyndex` (B/G/R/RE1.../S1/S2) y la elección
+spyndex vs custom-formula viven internamente en `_BAND_TO_SPYNDEX` y
+`_INDEX_REGISTRY`. No reimplementar fuera del módulo.
 
 ## Features Temporales con Polars
 

@@ -93,3 +93,27 @@ Documenta TODOS los datasets y modelos usados durante el proyecto. Sin esto, el 
 ### Gemini 3.1 Pro — Google
 - Access: Vertex AI API
 - License: Google Cloud ToS
+
+## Librerías de feature engineering
+
+### spyndex — David Montero Loaiza et al.
+- Repo: [awesome-spectral-indices/spyndex](https://github.com/awesome-spectral-indices/spyndex) `^0.10.0`
+- License: MIT
+- Citation: Montero, D., Aybar, C., Mahecha, M.D. et al. (2023). *A standardized catalogue of spectral indices to advance the use of remote sensing in Earth system research*. Scientific Data 10, 197. DOI [10.1038/s41597-023-02096-0](https://doi.org/10.1038/s41597-023-02096-0).
+- Use scope US-014: backend principal de `ml/features/spectral_indices.py` para 14 de los 17 índices canónicos. Mapeo y alias documentados en [`docs/spectral_indices.md`](../spectral_indices.md).
+
+### eemont — David Montero Loaiza
+- Repo: [davemlz/eemont](https://github.com/davemlz/eemont) `^2025.7.1`
+- License: MIT
+- Use scope US-014: wrapper opcional `compute_index_ee` para pipelines server-side de Earth Engine (US-006/US-009).
+
+## Bibliografía agronómica de los índices custom (US-014)
+
+Las 3 fórmulas custom del catálogo (`LAI`, `FAPAR`, `CCCI`) implementan
+versiones canónicas del proyecto con DOI propio:
+
+- **LAI**: Boegh et al. (2002). *Remote Sensing of Environment* 81(2-3), 179-193. DOI [10.1016/S0034-4257(01)00342-X](https://doi.org/10.1016/S0034-4257(01)00342-X).
+- **FAPAR**: Myneni & Williams (1994). *Remote Sensing of Environment* 49(3), 200-211. DOI [10.1016/0034-4257(94)90016-7](https://doi.org/10.1016/0034-4257(94)90016-7).
+- **CCCI**: Barnes et al. (2000). Proc. 5th International Conference on Precision Agriculture, Bloomington MN.
+
+Tabla académica completa con DOIs por índice en [`docs/spectral_indices.md`](../spectral_indices.md).
