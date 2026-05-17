@@ -92,7 +92,7 @@ make deploy-staging                   # solo si entornos reactivados (ver ADR-00
 
 - [`AGENTS.md`](AGENTS.md) ≡ [`CLAUDE.md`](CLAUDE.md) — orquestador único (espejos): identidad, decisiones irrevocables, calendario, presupuesto, reglas, checklist US
 - [`context/RefinamientoPlaneacionAgroSatCopilot_v6_RESUMEN.md`](context/RefinamientoPlaneacionAgroSatCopilot_v6_RESUMEN.md) — resumen operativo del plan
-- [`context/RefinamientoPlaneacionAgroSatCopilot_v6.md`](context/RefinamientoPlaneacionAgroSatCopilot_v6.md) — plan SCRUM completo (12 EPICs, US-001 a US-055)
+- [`context/RefinamientoPlaneacionAgroSatCopilot_v6.md`](context/RefinamientoPlaneacionAgroSatCopilot_v6.md) — plan SCRUM completo (12 EPICs, US-001 a US-056)
 - [`docs/orchestration/`](docs/orchestration/) — catálogo de 30 skills, auto-invoke table, mapa skill↔subagente, comandos Make
 - [`docs/licenses/DATA_LICENSE.md`](docs/licenses/DATA_LICENSE.md) — atribuciones de datasets y modelos
 

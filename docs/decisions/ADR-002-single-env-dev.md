@@ -62,7 +62,7 @@ variantes de cada env.
 
 ### Neutras
 
-- US-005 (CI/CD), US-051 (deploy staging), US-053 (deploy prod) del plan v6
+- US-005 (CI/CD), US-052 (deploy staging), US-054 (deploy prod) del plan v6
   quedan reinterpretadas a deploy único `dev`. Cuando se reactiven entornos
   adicionales, se generara una US de seguimiento.
 

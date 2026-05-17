@@ -121,7 +121,7 @@ We **do not** allow `mem_delete` or `mem_merge_projects` by default — destruct
 
 ### SAVE — internal knowledge that decays slowly
 
-- US closure rationale: *"US-026 TSViT trained 18-may V1 with batch 4 grad-accum 8 = effective 32, BF16, peak 78 GB VRAM"*.
+- US closure rationale: *"TSViT trained on V1 window with batch 4 grad-accum 8 = effective 32, BF16, peak 78 GB VRAM"*.
 - Trade-off decisions and **why** (paired with the ADR if one exists).
 - Cross-laptop gotchas: *"GEE export to GCS asia-northeast1 fails silently; use us-central1 mirror"*.
 - Sprint retro insights: *"Sprint 4 underestimated SegFormer-B2 by 2 SP — base future SP on actuals"*.
@@ -141,7 +141,7 @@ When closing a US the agent should call `mem_save` with this shape:
 
 ```json
 {
-  "title": "US-029 — Gemma 4 26B-MoE LoRA fits 1xH100 NVL 96GB",
+  "title": "Gemma 4 26B-MoE LoRA fits 1xH100 NVL 96GB",
   "type": "architecture",
   "what": "Gemma 4 26B-MoE LoRA rank 16 BF16 + FlashAttention-2 + grad checkpointing fits 1xH100 NVL 96GB at effective batch 16 (b=2 x ga=8).",
   "why": "V3 budget is 24h; this config peaks at 82 GB VRAM with 78%/22% util, leaving headroom for serving warm-up.",
@@ -154,7 +154,7 @@ CLI invocation (for ad-hoc terminal use, not through Claude Code):
 
 ```bash
 engram save \
-  "US-029 — Gemma 4 26B-MoE LoRA fits 1xH100 NVL 96GB" \
+  "Gemma 4 26B-MoE LoRA fits 1xH100 NVL 96GB" \
   "Gemma 4 26B-MoE LoRA rank 16 BF16 + FlashAttention-2 + grad checkpointing fits 1xH100 NVL 96GB at effective batch 16 (b=2 x ga=8). Peak VRAM 82 GB. 24h fits in V3 window." \
   --type architecture --project agrosat-copilot
 ```

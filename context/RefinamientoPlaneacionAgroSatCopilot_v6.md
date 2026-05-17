@@ -222,8 +222,8 @@ Reporta estado del arte en open-vocabulary semantic segmentation, zero-shot clas
 
 **Aplicación en AgroSatCopilot.** FarSLIP se implementa en el proyecto como técnica activa de feature extraction y refinamiento espacial:
 
-- **EPIC 3 — Feature Engineering (US-016).** Destilación parche-a-parche de un CLIP fine-tuneado sobre crops Sentinel-2 (256×256 px) en las tres regiones italianas. Las features destiladas se anexan a la Familia 1 como banco adicional de embeddings espaciales fine-grained de 512-dim que complementan AlphaEarth (semántica global) y DINOv3 (estructura vegetal).
-- **EPIC 5 — Modelos Alternativos (US-024 SegFormer-B2).** Cabezal open-vocabulary con alineación región-categoría sobre token CLS, que permite a SegFormer producir máscaras semánticas sub-parcela alineadas a categorías de cultivo descritas en lenguaje natural (italiano/español/inglés).
+- **EPIC 3 — Feature Engineering (US-017).** Destilación parche-a-parche de un CLIP fine-tuneado sobre crops Sentinel-2 (256×256 px) en las tres regiones italianas. Las features destiladas se anexan a la Familia 1 como banco adicional de embeddings espaciales fine-grained de 512-dim que complementan AlphaEarth (semántica global) y DINOv3 (estructura vegetal).
+- **EPIC 5 — Modelos Alternativos (US-025 SegFormer-B2).** Cabezal open-vocabulary con alineación región-categoría sobre token CLS, que permite a SegFormer producir máscaras semánticas sub-parcela alineadas a categorías de cultivo descritas en lenguaje natural (italiano/español/inglés).
 - **EPIC 6 — Modelo Final.** La salida open-vocabulary FarSLIP entra como uno de los base learners del stacking heterogéneo, complementando a Gemma 4, U-TAE, TSViT, Swin-UNETR y XGB-AlphaEarth.
 
 Esta técnica reduce el margen de error sistemático en la cuantificación de superficies en hectáreas y mejora la consistencia espacial de las fronteras de cultivo, dos atributos críticos para que el copiloto reporte cifras trazables.
@@ -256,7 +256,7 @@ La revisión bibliográfica abarca treinta fuentes publicadas en los años 2025 
 | 11 | VLM meets RS Survey, arXiv:2505.14361 | 2025 | Referencia de métricas de evaluación |
 | 12 | GeoGround, arXiv:2411.11904 | 2024-25 | Patrón de grounding espacial usado en `alphaearth_query` |
 | 13 | SkyMoE, arXiv:2512.02517 | 2025 | Referencia eficiencia MoE |
-| 13b | **FarSLIP, arXiv:2511.14901** (Li et al.) | nov-2025 | **Implementado** en EPIC 3 US-016 (destilación parche-a-parche) y EPIC 5 US-024 (cabezal open-vocabulary sobre SegFormer-B2) |
+| 13b | **FarSLIP, arXiv:2511.14901** (Li et al.) | nov-2025 | **Implementado** en EPIC 3 US-017 (destilación parche-a-parche) y EPIC 5 US-025 (cabezal open-vocabulary sobre SegFormer-B2) |
 | 13c | **Be My Eyes, arXiv:2511.19417** (Huang et al.) | nov-2025 | **Patrón arquitectónico** del EPIC 7: desacopla perceiver (Gemma 4 / Qwen3-VL) y reasoner (Qwen3.5 / Gemini 3.1 Pro) |
 
 ### 4.3 Agentes LLM, Razonamiento Geoespacial y RAG Espacial
@@ -371,7 +371,7 @@ AgroSatCopilot replica el patrón arquitectónico validado por Google Earth AI (
 | Motor de DataFrames analíticos | **Polars 1.x** | 5-10× más rápido que pandas, ergonomía mejor, ideal para fusión multisensor |
 | Motor SQL analítico (opcional) | DuckDB en notebooks de exploración | Queries ad-hoc sobre Parquet |
 | Migraciones de esquema | **dbmate** | SQL puro, framework-agnóstico, preferencia del equipo |
-| Colas asíncronas | Cloud Pub/Sub + Cloud Tasks | Jobs de inferencia desacoplados (US-040) |
+| Colas asíncronas | Cloud Pub/Sub + Cloud Tasks | Jobs de inferencia desacoplados (US-041) |
 | Caché | Redis Memorystore | Cache de tiles, sesiones, embeddings AlphaEarth |
 | Object storage | GCS (primario) + Azure Blob (checkpoints H100) | Tiles COG, datasets, pesos LoRA |
 | Dependency manager | Poetry | Lockfile determinístico |
@@ -436,7 +436,7 @@ AgroSatCopilot replica el patrón arquitectónico validado por Google Earth AI (
 | CI/CD | GitHub Actions + Cloud Build | Tests, build, deploy |
 | Registro de modelos | MLflow Model Registry + Artifact Registry | Versionado |
 | Infraestructura como código | Terraform 1.9+ | Reproducibilidad GCP + Azure H100 |
-| Monitoreo drift | **Evidently AI** (US-047) | Drift en bandas Sentinel-2 y AlphaEarth embeddings |
+| Monitoreo drift | **Evidently AI** (US-048) | Drift en bandas Sentinel-2 y AlphaEarth embeddings |
 | Observabilidad agente | **Google ADK tracing built-in** + Cloud Monitoring | Tool calls, latencia, errores |
 | Observabilidad API | Prometheus + Grafana | Métricas técnicas |
 | Secretos | Secret Manager (GCP) + Key Vault (Azure) | API keys seguras |
@@ -662,9 +662,9 @@ Las épicas E0 a E6 cubren entregables obligatorios del curso (Avances 0-5) y de
 
 **Stretch candidates** (sacrificables en orden de prioridad si hay atrasos):
 
-1. US-045 Switch A/B de LLM en UI (1 SP) — sustituible por dos pestañas del frontend en la demo.
-2. US-047 Evidently drift pipeline automatizado (2 SP) — sustituible por análisis textual en el Avance 6.
-3. US-040 Worker Pub/Sub inferencia (2 SP) — sustituible por inferencia síncrona con timeout para AOIs pequeños.
+1. US-046 Switch A/B de LLM en UI (1 SP) — sustituible por dos pestañas del frontend en la demo.
+2. US-048 Evidently drift pipeline automatizado (2 SP) — sustituible por análisis textual en el Avance 6.
+3. US-041 Worker Pub/Sub inferencia (2 SP) — sustituible por inferencia síncrona con timeout para AOIs pequeños.
 
 El equipo tomó la decisión explícita de **mantener los tres en el MVP** por su valor para la demo de la presentación final, aceptando el riesgo asociado.
 
@@ -1089,7 +1089,7 @@ S10-S11 (22-jun a 3-jul): Buffer + Paper Track opcional
 
 **Alineado con.** Avance 2 (17 de mayo de 2026).
 
-**Puntos totales de la épica: 18** (14 baseline + 4 SP de US-016b FarSLIP).
+**Puntos totales de la épica: 18** (14 baseline + 4 SP de US-017 FarSLIP).
 
 ---
 
@@ -1135,11 +1135,11 @@ S10-S11 (22-jun a 3-jul): Buffer + Paper Track opcional
 
 **Tareas técnicas:**
 
-- [ ] Función `extract_temporal_features(parcel_timeseries: xr.DataArray) -> pl.DataFrame`
-- [ ] Migración `dbmate new create_features_parcels`
-- [ ] Tests contra parcela demo con curva NDVI conocida
+- [x] Función `extract_temporal_features(parcel_timeseries: xr.DataArray) -> pl.DataFrame`
+- [x] Migración `dbmate new create_features_parcels` (+ `create_parcels` como precondición del FK)
+- [x] Tests contra parcela demo con curva NDVI conocida
 
-**Estimación:** 3 puntos (~1.5 días).
+**Estimación:** 3 puntos (~1.5 días). **Cerrada 2026-05-17** — ver [`docs/us-resolved/us-015.md`](../docs/us-resolved/us-015.md).
 
 ---
 
@@ -1152,7 +1152,7 @@ S10-S11 (22-jun a 3-jul): Buffer + Paper Track opcional
 **Criterios de Aceptación:**
 
 - Vector combinado con las siguientes componentes por parcela: 64 dimensiones AlphaEarth (media sobre la parcela), 17 índices espectrales con sus estadísticos temporales (5 stats × 17 = 85 features), backscatter Sentinel-1 VV y VH con sus stats temporales (5 × 2 = 10 features), elevación media, pendiente media y orientación dominante desde SRTM DEM, temperatura media mensual y precipitación acumulada mensual desde ERA5 (24 features), geometría: superficie en ha, perímetro en m, elongación (3 features).
-- **Banco FarSLIP fine-grained:** 512 dimensiones de embeddings producidos por la rama de destilación parche-a-parche descrita en US-016b (CLIP adaptado con técnica FarSLIP sobre crops Sentinel-2 256×256 px). Mejoran la discriminabilidad espacial sub-parcela sin degradar la coherencia semántica.
+- **Banco FarSLIP fine-grained:** 512 dimensiones de embeddings producidos por la rama de destilación parche-a-parche descrita en US-017 (CLIP adaptado con técnica FarSLIP sobre crops Sentinel-2 256×256 px). Mejoran la discriminabilidad espacial sub-parcela sin degradar la coherencia semántica.
 - Shape final aproximado: 64 + 85 + 10 + 3 + 24 + 3 + 512 (FarSLIP opcional) = **189 features tabulares clásicos por parcela + 512-dim FarSLIP**. Los modelos pueden consumir el vector completo o sólo el subset tabular según ablation declarada en el notebook.
 - Normalización z-score global con estadísticos guardados en `artifacts/scaler_v1.pkl`.
 - Split train/val/test estratificado espacialmente (K=5 folds por regiones no contiguas) guardado en `data/splits/`.
@@ -1168,11 +1168,11 @@ S10-S11 (22-jun a 3-jul): Buffer + Paper Track opcional
 
 ---
 
-### US-016b — Destilación FarSLIP parche-a-parche sobre crops Sentinel-2
+### US-017 — Destilación FarSLIP parche-a-parche sobre crops Sentinel-2
 
 **Como** ML Engineer,
 - **quiero** entrenar una rama de adaptación CLIP siguiendo la técnica FarSLIP (Li et al., 2025) sobre crops Sentinel-2 de las tres regiones italianas,
-- **para que** el pipeline disponga de embeddings fine-grained de 512 dimensiones que mejoren la cuantificación sub-parcela y alimenten tanto el banco de features de US-016 como el cabezal open-vocabulary de SegFormer-B2 en EPIC 5 US-024.
+- **para que** el pipeline disponga de embeddings fine-grained de 512 dimensiones que mejoren la cuantificación sub-parcela y alimenten tanto el banco de features de US-016 como el cabezal open-vocabulary de SegFormer-B2 en EPIC 5 US-025.
 
 **Criterios de Aceptación:**
 
@@ -1193,7 +1193,7 @@ S10-S11 (22-jun a 3-jul): Buffer + Paper Track opcional
 
 ---
 
-### US-017 — Selección, extracción y normalización
+### US-018 — Selección, extracción y normalización
 
 **Como** ML Engineer,
 - **quiero** aplicar métodos de filtrado y extracción con justificación empírica,
@@ -1218,7 +1218,7 @@ S10-S11 (22-jun a 3-jul): Buffer + Paper Track opcional
 
 ---
 
-**Subtotal EPIC 3: 18 story points** (14 originales + 4 de US-016b FarSLIP).
+**Subtotal EPIC 3: 18 story points** (14 originales + 4 de US-017 FarSLIP).
 
 ---
 
@@ -1234,7 +1234,7 @@ S10-S11 (22-jun a 3-jul): Buffer + Paper Track opcional
 
 ---
 
-### US-018 — Random Forest y XGBoost sobre features combinados
+### US-019 — Random Forest y XGBoost sobre features combinados
 
 **Como** ML Engineer,
 - **quiero** entrenar Random Forest y XGBoost sobre el vector de features del EPIC 3,
@@ -1259,7 +1259,7 @@ S10-S11 (22-jun a 3-jul): Buffer + Paper Track opcional
 
 ---
 
-### US-019 — Feature importance y análisis SHAP
+### US-020 — Feature importance y análisis SHAP
 
 **Como** ML Engineer,
 - **quiero** identificar y visualizar los features más relevantes,
@@ -1283,7 +1283,7 @@ S10-S11 (22-jun a 3-jul): Buffer + Paper Track opcional
 
 ---
 
-### US-020 — Curvas de aprendizaje, validación y análisis de sub/sobreajuste
+### US-021 — Curvas de aprendizaje, validación y análisis de sub/sobreajuste
 
 **Como** ML Engineer,
 - **quiero** diagnosticar sub y sobreajuste con visualizaciones,
@@ -1305,7 +1305,7 @@ S10-S11 (22-jun a 3-jul): Buffer + Paper Track opcional
 
 ---
 
-### US-021 — Notebook secuencial y comparativa vs Sentinel-2 crudo
+### US-022 — Notebook secuencial y comparativa vs Sentinel-2 crudo
 
 **Como** equipo,
 - **quiero** un notebook `notebooks/04_baseline.ipynb` ejecutable de principio a fin más una comparativa AlphaEarth vs Sentinel-2 crudo,
@@ -1346,11 +1346,11 @@ S10-S11 (22-jun a 3-jul): Buffer + Paper Track opcional
 5. TSViT — Vision Transformer factorizado temporal-espacial (implementación del Paper 1 del profesor).
 6. Swin-UNETR para SITS (Transformer moderno para series temporales, arXiv:2412.01944).
 
-**Puntos totales de la épica: 21** (20 baseline + 1 SP adicional en US-024 SegFormer-B2 por integración del cabezal FarSLIP open-vocabulary).
+**Puntos totales de la épica: 21** (20 baseline + 1 SP adicional en US-025 SegFormer-B2 por integración del cabezal FarSLIP open-vocabulary).
 
 ---
 
-### US-022 — Modelo 1: U-Net con ResNet-50
+### US-023 — Modelo 1: U-Net con ResNet-50
 
 **Como** ML Engineer,
 - **quiero** entrenar U-Net sobre patches 256×256 de una imagen Sentinel-2 sin dimensión temporal,
@@ -1374,7 +1374,7 @@ S10-S11 (22-jun a 3-jul): Buffer + Paper Track opcional
 
 ---
 
-### US-023 — Modelo 2: DeepLabv3+ con MobileNetV3
+### US-024 — Modelo 2: DeepLabv3+ con MobileNetV3
 
 **Como** ML Engineer,
 - **quiero** entrenar DeepLabv3+ como alternativa eficiente,
@@ -1383,19 +1383,19 @@ S10-S11 (22-jun a 3-jul): Buffer + Paper Track opcional
 **Criterios de Aceptación:**
 
 - Backbone MobileNetV3-Large pretrained; head DeepLabv3+ con ASPP rates {6, 12, 18}.
-- Mismo pipeline de datos y loss que US-022.
+- Mismo pipeline de datos y loss que US-023.
 - Run MLflow `alt-deeplabv3plus-mobilenet-v1`.
 
 **Tareas técnicas:**
 
-- [ ] Reusar pipeline de datos de US-022
+- [ ] Reusar pipeline de datos de US-023
 - [ ] Configurar backbone desde `segmentation_models.pytorch`
 
 **Estimación:** 2 puntos (~1 día).
 
 ---
 
-### US-024 — Modelo 3: SegFormer-B2 con cabezal open-vocabulary FarSLIP
+### US-025 — Modelo 3: SegFormer-B2 con cabezal open-vocabulary FarSLIP
 
 **Como** ML Engineer,
 - **quiero** SegFormer-B2 como representante Transformer de segmentación spatial-only, acoplado a un cabezal open-vocabulary basado en la técnica FarSLIP (Li et al., 2025),
@@ -1404,7 +1404,7 @@ S10-S11 (22-jun a 3-jul): Buffer + Paper Track opcional
 **Criterios de Aceptación:**
 
 - Variante SegFormer-B2 pretrained en ADE20K, head adaptado a 18 clases PASTIS.
-- Cabezal complementario open-vocabulary cuyo encoder visual proviene del student FarSLIP entrenado en US-016b, con alineación región-categoría basada en token CLS. Inferencia con clases verbalizadas como prompts (por ejemplo "campo di mais in maturazione", "viñedo en senescencia", "olive grove with pruning").
+- Cabezal complementario open-vocabulary cuyo encoder visual proviene del student FarSLIP entrenado en US-017, con alineación región-categoría basada en token CLS. Inferencia con clases verbalizadas como prompts (por ejemplo "campo di mais in maturazione", "viñedo en senescencia", "olive grove with pruning").
 - Fusión final por máscara que combina la salida supervisada (18 clases PASTIS) con la salida open-vocabulary, ponderada por la confianza de cada rama.
 - Fine-tuning con LoRA opcional para reducir memoria.
 - Runs MLflow: `alt-segformer-b2-v1` (rama supervisada) y `alt-segformer-b2-farslip-ov-v1` (rama open-vocabulary).
@@ -1414,14 +1414,14 @@ S10-S11 (22-jun a 3-jul): Buffer + Paper Track opcional
 
 - [ ] Cargar SegFormer desde `transformers.SegformerForSemanticSegmentation`
 - [ ] Adaptar head a 18 clases PASTIS
-- [ ] Integrar el `FarSLIPExtractor` de US-016b como rama paralela y la pérdida CLS de alineación
+- [ ] Integrar el `FarSLIPExtractor` de US-017 como rama paralela y la pérdida CLS de alineación
 - [ ] Diseñar la regla de fusión por máscara con ablation documentada
 
 **Estimación:** 4 puntos (~2 días, +1 SP vs base por integración FarSLIP).
 
 ---
 
-### US-025 — Modelo 4: U-TAE
+### US-026 — Modelo 4: U-TAE
 
 **Como** ML Engineer,
 - **quiero** entrenar U-TAE sobre las series temporales Sentinel-2,
@@ -1444,7 +1444,7 @@ S10-S11 (22-jun a 3-jul): Buffer + Paper Track opcional
 
 ---
 
-### US-026 — Modelo 5: TSViT (Paper 1 del profesor)
+### US-027 — Modelo 5: TSViT (Paper 1 del profesor)
 
 **Como** ML Engineer,
 - **quiero** replicar TSViT con el encoder temporal-espacial factorizado y múltiples cls tokens,
@@ -1469,7 +1469,7 @@ S10-S11 (22-jun a 3-jul): Buffer + Paper Track opcional
 
 ---
 
-### US-027 — Modelo 6: Swin-UNETR para SITS
+### US-028 — Modelo 6: Swin-UNETR para SITS
 
 **Como** ML Engineer,
 - **quiero** Swin-UNETR adaptado a SITS (arXiv:2412.01944) como representante Transformer moderno,
@@ -1490,7 +1490,7 @@ S10-S11 (22-jun a 3-jul): Buffer + Paper Track opcional
 
 ---
 
-### US-028 — Comparativa, ajuste fino de top-2 y selección del modelo individual final
+### US-029 — Comparativa, ajuste fino de top-2 y selección del modelo individual final
 
 **Como** equipo,
 - **quiero** una tabla comparativa ordenada por métrica principal y un ajuste fino bayesiano de los dos mejores modelos,
@@ -1513,7 +1513,7 @@ S10-S11 (22-jun a 3-jul): Buffer + Paper Track opcional
 
 ---
 
-**Subtotal EPIC 5: 21 story points** (20 baseline + 1 SP US-024 con cabezal FarSLIP).
+**Subtotal EPIC 5: 21 story points** (20 baseline + 1 SP US-025 con cabezal FarSLIP).
 
 ---
 
@@ -1527,7 +1527,7 @@ S10-S11 (22-jun a 3-jul): Buffer + Paper Track opcional
 
 ---
 
-### US-029 — Fine-tuning Gemma 4 26B-MoE con LoRA en H100
+### US-030 — Fine-tuning Gemma 4 26B-MoE con LoRA en H100
 
 **Como** ML Engineer,
 - **quiero** fine-tunear **Gemma 4 26B-MoE** con LoRA rank 16 sobre AgroMind + dataset agrícola italiano/español,
@@ -1570,7 +1570,7 @@ S10-S11 (22-jun a 3-jul): Buffer + Paper Track opcional
 
 ---
 
-### US-030 — Adaptación de Gemma 4 a segmentación densa
+### US-031 — Adaptación de Gemma 4 a segmentación densa
 
 **Como** ML Engineer,
 - **quiero** una capa de adaptación que convierta las respuestas de Gemma 4 con coordenadas/polígonos en máscaras de segmentación densa,
@@ -1591,7 +1591,7 @@ S10-S11 (22-jun a 3-jul): Buffer + Paper Track opcional
 
 ---
 
-### US-031 — Cuatro ensambles homogéneos y heterogéneos
+### US-032 — Cuatro ensambles homogéneos y heterogéneos
 
 **Como** equipo,
 - **quiero** construir cuatro ensambles que combinen los mejores modelos del EPIC 5, el baseline del EPIC 4 y Gemma 4,
@@ -1616,7 +1616,7 @@ S10-S11 (22-jun a 3-jul): Buffer + Paper Track opcional
 
 ---
 
-### US-032 — Gráficas interpretadas del modelo final
+### US-033 — Gráficas interpretadas del modelo final
 
 **Como** equipo,
 - **quiero** al menos cuatro gráficas interpretadas del modelo final,
@@ -1650,11 +1650,11 @@ S10-S11 (22-jun a 3-jul): Buffer + Paper Track opcional
 
 **Alineado con.** Avances 5 y 6. Evaluación formal con benchmarks AgroMind, GeoAnalystBench y GeoBenchX.
 
-**Puntos totales de la épica: 14** (13 baseline + 1 SP adicional en US-034 por la separación perceiver–reasoner siguiendo el patrón Be My Eyes). El tracing built-in de ADK y el deploy nativo a Vertex AI Agent Engine permiten mantener un presupuesto contenido sin observabilidad custom del agente.
+**Puntos totales de la épica: 14** (13 baseline + 1 SP adicional en US-035 por la separación perceiver–reasoner siguiendo el patrón Be My Eyes). El tracing built-in de ADK y el deploy nativo a Vertex AI Agent Engine permiten mantener un presupuesto contenido sin observabilidad custom del agente.
 
 ---
 
-### US-033 — Construcción de nueve tools geoespaciales con schemas Pydantic
+### US-034 — Construcción de nueve tools geoespaciales con schemas Pydantic
 
 **Como** equipo,
 - **quiero** nueve tools ejecutables desde Google ADK con schemas Pydantic validados,
@@ -1684,7 +1684,7 @@ Tools implementados como ADK `FunctionTool` con input/output schema Pydantic y l
 
 ---
 
-### US-034 — Agente Google ADK Plan-and-React con Spatial-RAG híbrido y arquitectura perceiver–reasoner
+### US-035 — Agente Google ADK Plan-and-React con Spatial-RAG híbrido y arquitectura perceiver–reasoner
 
 **Como** equipo,
 - **quiero** un agente Google ADK que implemente plan-and-react sobre los tools, consulte un Spatial-RAG híbrido antes de actuar, y separe explícitamente percepción visual y razonamiento simbólico siguiendo el patrón Be My Eyes (Huang et al., 2025),
@@ -1714,7 +1714,7 @@ Tools implementados como ADK `FunctionTool` con input/output schema Pydantic y l
 
 ---
 
-### US-035 — Variante A: Gemini 3.1 Pro como orquestador cloud
+### US-036 — Variante A: Gemini 3.1 Pro como orquestador cloud
 
 **Como** equipo,
 - **quiero** integrar Gemini 3.1 Pro vía Vertex AI como orquestador de alta disponibilidad,
@@ -1737,7 +1737,7 @@ Tools implementados como ADK `FunctionTool` con input/output schema Pydantic y l
 
 ---
 
-### US-036 — Variante B: Qwen3.5-35B-A3B self-hosted en H100 NVL 96GB con vLLM
+### US-037 — Variante B: Qwen3.5-35B-A3B self-hosted en H100 NVL 96GB con vLLM
 
 **Como** equipo,
 - **quiero** desplegar **Qwen3.5-35B-A3B** (MoE 35B totales / 3B activos, contexto nativo 128K, licencia Apache 2.0) en Azure H100 NVL 96GB con vLLM como orquestador open-source on-premise,
@@ -1776,7 +1776,7 @@ Tools implementados como ADK `FunctionTool` con input/output schema Pydantic y l
 
 ---
 
-### US-037 — Evaluación del copiloto en AgroMind y GeoAnalystBench
+### US-038 — Evaluación del copiloto en AgroMind y GeoAnalystBench
 
 **Como** equipo,
 - **quiero** evaluar las dos variantes del agente en benchmarks estándar,
@@ -1813,7 +1813,7 @@ Tools implementados como ADK `FunctionTool` con input/output schema Pydantic y l
 
 ---
 
-### US-038 — API REST FastAPI con endpoints de plataforma
+### US-039 — API REST FastAPI con endpoints de plataforma
 
 **Como** equipo,
 - **quiero** una API REST documentada con OpenAPI 3.1 que exponga los endpoints de la plataforma,
@@ -1844,7 +1844,7 @@ OpenAPI 3.1 auto-generado; rate limiting Redis (60 req/min por usuario); RBAC mu
 
 ---
 
-### US-039 — TiTiler para tiling COG dinámico
+### US-040 — TiTiler para tiling COG dinámico
 
 **Como** frontend,
 - **quiero** tiles PNG/WebP generados on-the-fly desde COGs en GCS,
@@ -1867,7 +1867,7 @@ OpenAPI 3.1 auto-generado; rate limiting Redis (60 req/min por usuario); RBAC mu
 
 ---
 
-### US-040 — Worker de inferencia con cola Pub/Sub
+### US-041 — Worker de inferencia con cola Pub/Sub
 
 **Como** equipo,
 - **quiero** un worker Cloud Run GPU L4 que consume mensajes Pub/Sub para inferencias pesadas,
@@ -1905,7 +1905,7 @@ OpenAPI 3.1 auto-generado; rate limiting Redis (60 req/min por usuario); RBAC mu
 
 ---
 
-### US-041 — Layout split-screen con mapa y chat
+### US-042 — Layout split-screen con mapa y chat
 
 **Como** usuario,
 - **quiero** un layout con mapa a la izquierda y chat a la derecha,
@@ -1929,7 +1929,7 @@ OpenAPI 3.1 auto-generado; rate limiting Redis (60 req/min por usuario); RBAC mu
 
 ---
 
-### US-042 — Internacionalización italiano/español/inglés
+### US-043 — Internacionalización italiano/español/inglés
 
 **Como** usuario italiano o hispanohablante,
 - **quiero** la interfaz en mi idioma nativo,
@@ -1953,7 +1953,7 @@ OpenAPI 3.1 auto-generado; rate limiting Redis (60 req/min por usuario); RBAC mu
 
 ---
 
-### US-043 — Overlays NDVI/NDWI/AlphaEarth y timeline
+### US-044 — Overlays NDVI/NDWI/AlphaEarth y timeline
 
 **Como** usuario,
 - **quiero** activar overlays interactivos de índices espectrales sobre el mapa,
@@ -1976,7 +1976,7 @@ OpenAPI 3.1 auto-generado; rate limiting Redis (60 req/min por usuario); RBAC mu
 
 ---
 
-### US-044 — Chat UI con streaming, tool calls y citaciones
+### US-045 — Chat UI con streaming, tool calls y citaciones
 
 **Como** usuario,
 - **quiero** ver qué tools llama el agente y las citaciones de las respuestas,
@@ -2000,7 +2000,7 @@ OpenAPI 3.1 auto-generado; rate limiting Redis (60 req/min por usuario); RBAC mu
 
 ---
 
-### US-045 — Switch A/B variante LLM en UI
+### US-046 — Switch A/B variante LLM en UI
 
 **Como** evaluador (demo presentación),
 - **quiero** cambiar en vivo entre Gemini 3.1 Pro y Qwen3.5-35B-A3B,
@@ -2035,7 +2035,7 @@ OpenAPI 3.1 auto-generado; rate limiting Redis (60 req/min por usuario); RBAC mu
 
 ---
 
-### US-046 — Dashboard de observabilidad con Prometheus y Grafana
+### US-047 — Dashboard de observabilidad con Prometheus y Grafana
 
 **Como** operador,
 - **quiero** métricas técnicas en tiempo real del sistema,
@@ -2057,7 +2057,7 @@ OpenAPI 3.1 auto-generado; rate limiting Redis (60 req/min por usuario); RBAC mu
 
 ---
 
-### US-047 — Drift detection con Evidently AI
+### US-048 — Drift detection con Evidently AI
 
 **Como** ML Engineer,
 - **quiero** detectar drift en bandas Sentinel-2 y en predicciones del modelo,
@@ -2081,7 +2081,7 @@ OpenAPI 3.1 auto-generado; rate limiting Redis (60 req/min por usuario); RBAC mu
 
 ---
 
-### US-048 — Análisis costo-beneficio para Avances 6 y 7
+### US-049 — Análisis costo-beneficio para Avances 6 y 7
 
 **Como** equipo,
 - **quiero** tablas de costos y beneficios cuantificables,
@@ -2103,7 +2103,7 @@ OpenAPI 3.1 auto-generado; rate limiting Redis (60 req/min por usuario); RBAC mu
 
 ---
 
-### US-049 — Análisis de riesgos categorizados para Avance 7
+### US-050 — Análisis de riesgos categorizados para Avance 7
 
 **Como** equipo,
 - **quiero** análisis exhaustivo de riesgos por categoría,
@@ -2123,7 +2123,7 @@ OpenAPI 3.1 auto-generado; rate limiting Redis (60 req/min por usuario); RBAC mu
 
 ---
 
-### US-050 — Análisis comparativo de proveedores cloud
+### US-051 — Análisis comparativo de proveedores cloud
 
 **Como** equipo,
 - **quiero** justificar la elección multi-cloud con análisis comparativo,
@@ -2142,7 +2142,7 @@ OpenAPI 3.1 auto-generado; rate limiting Redis (60 req/min por usuario); RBAC mu
 
 ---
 
-### US-051 — Seguridad y documentación final
+### US-052 — Seguridad y documentación final
 
 **Como** equipo,
 - **quiero** mejores prácticas de seguridad implementadas y documentación consolidada,
@@ -2189,7 +2189,7 @@ OpenAPI 3.1 auto-generado; rate limiting Redis (60 req/min por usuario); RBAC mu
 
 ---
 
-### US-052 — Construcción de benchmark AgroMind-IT/ES (500 pares)
+### US-053 — Construcción de benchmark AgroMind-IT/ES (500 pares)
 
 **Como** equipo,
 - **quiero** construir y publicar un benchmark bilingüe italiano/español con 500 pares Q&A agrícolas,
@@ -2213,7 +2213,7 @@ OpenAPI 3.1 auto-generado; rate limiting Redis (60 req/min por usuario); RBAC mu
 
 ---
 
-### US-053 — Evaluación comparativa en GEO-Bench-2, AgroMind y AgroMind-IT/ES
+### US-054 — Evaluación comparativa en GEO-Bench-2, AgroMind y AgroMind-IT/ES
 
 **Como** equipo,
 - **quiero** evaluar rigurosamente las dos variantes (Gemini 3.1 Pro y Qwen3.5-35B-A3B) en tres benchmarks,
@@ -2237,7 +2237,7 @@ OpenAPI 3.1 auto-generado; rate limiting Redis (60 req/min por usuario); RBAC mu
 
 ---
 
-### US-054 — Figuras y tablas reproducibles del paper
+### US-055 — Figuras y tablas reproducibles del paper
 
 **Como** equipo,
 - **quiero** las figuras y tablas del paper generadas desde notebooks Python reproducibles,
@@ -2259,7 +2259,7 @@ OpenAPI 3.1 auto-generado; rate limiting Redis (60 req/min por usuario); RBAC mu
 
 ---
 
-### US-055 — Redacción, revisión y submission
+### US-056 — Redacción, revisión y submission
 
 **Como** equipo,
 - **quiero** redactar el paper en LaTeX, revisarlo con el sponsor y enviarlo a venue,
@@ -2335,21 +2335,21 @@ Trimestre 20-abr-2026 a 3-jul-2026. **Sprints semanales** para alinearse con ent
 
 | Actividades |
 |---|
-| E3 US-015 features temporales, US-016 fusión multisensor, US-017 selección/extracción |
-| E4 US-018 empezar RF+XGB |
+| E3 US-015 features temporales, US-016 fusión multisensor, US-018 selección/extracción |
+| E4 US-019 empezar RF+XGB |
 | **Dom 17-may: Avance 2 entregado (Feature Engineering)** |
 
 ### Sprint 5 — Semana del 18 al 24 de mayo
 
 **Objetivo.** Baseline completo + primeros modelos alternativos.
-**Story points:** 5 (resto E4) + 10 (E5 US-022 a US-024) = 15.
+**Story points:** 5 (resto E4) + 10 (E5 US-023 a US-025) = 15.
 
 **GPU:** Ventana V1 (noches 18-20 may, 8-12 h L4) para baselines. Si se tiene acceso anticipado H100, ventana V2 preliminar (12 h TSViT/U-TAE).
 
 | Actividades |
 |---|
-| E4 US-019 SHAP, US-020 curvas, US-021 notebook comparativo |
-| E5 US-022 U-Net, US-023 DeepLabv3+, US-024 SegFormer |
+| E4 US-020 SHAP, US-021 curvas, US-022 notebook comparativo |
+| E5 US-023 U-Net, US-024 DeepLabv3+, US-025 SegFormer |
 | **Mié 20-may: Avance 3 entregado (Baseline)** |
 | **Dom 24-may: Avance 4 entregado (6 Modelos + comparativa)** — se acepta que los últimos 3 modelos se reporten en forma inicial y se afinen en S6 |
 
@@ -2362,8 +2362,8 @@ Trimestre 20-abr-2026 a 3-jul-2026. **Sprints semanales** para alinearse con ent
 
 | Actividades |
 |---|
-| E5 US-025 U-TAE, US-026 TSViT, US-027 Swin-UNETR, US-028 ajuste fino |
-| E6 US-029 Gemma 4 LoRA, US-030 adaptador seg, US-031 4 ensambles, US-032 gráficas |
+| E5 US-026 U-TAE, US-027 TSViT, US-028 Swin-UNETR, US-029 ajuste fino |
+| E6 US-030 Gemma 4 LoRA, US-031 adaptador seg, US-032 4 ensambles, US-033 gráficas |
 | **Dom 31-may: Avance 5 entregado (Modelo final + ensambles)** |
 
 ### Sprint 7 — Semana del 1 al 7 de junio
@@ -2375,8 +2375,8 @@ Trimestre 20-abr-2026 a 3-jul-2026. **Sprints semanales** para alinearse con ent
 
 | Actividades |
 |---|
-| E7 US-033 tools, US-034 agente ADK + Spatial-RAG, US-035 Gemini, US-036 Qwen3.5 serving, US-037 eval |
-| E8 US-038 API FastAPI, US-039 TiTiler, US-040 worker Pub/Sub |
+| E7 US-034 tools, US-035 agente ADK + Spatial-RAG, US-036 Gemini, US-037 Qwen3.5 serving, US-038 eval |
+| E8 US-039 API FastAPI, US-040 TiTiler, US-041 worker Pub/Sub |
 | **Dom 7-jun: Avance 6 entregado (Conclusiones)** |
 
 ### Sprint 8 — Semana del 8 al 14 de junio
@@ -2386,8 +2386,8 @@ Trimestre 20-abr-2026 a 3-jul-2026. **Sprints semanales** para alinearse con ent
 
 | Actividades |
 |---|
-| E9 US-041 layout, US-042 i18n, US-043 overlays, US-044 chat UI, US-045 switch A/B |
-| E10 US-046 Prometheus/Grafana, US-047 Evidently drift, US-048 costo-beneficio, US-049 riesgos, US-050 cloud comparativa, US-051 seguridad/docs |
+| E9 US-042 layout, US-043 i18n, US-044 overlays, US-045 chat UI, US-046 switch A/B |
+| E10 US-047 Prometheus/Grafana, US-048 Evidently drift, US-049 costo-beneficio, US-050 riesgos, US-051 cloud comparativa, US-052 seguridad/docs |
 | **Dom 14-jun: Avance 7 entregado (Resumen ejecutivo)** |
 
 ### Sprint 9 — Semana del 15 al 21 de junio
@@ -2406,7 +2406,7 @@ Trimestre 20-abr-2026 a 3-jul-2026. **Sprints semanales** para alinearse con ent
 
 ### Sprints 10-11 — Semanas del 22 de junio al 3 de julio
 
-**Ejecución opcional del Paper Track.** E11 US-052 a US-055. Cero impacto en calificación.
+**Ejecución opcional del Paper Track.** E11 US-053 a US-056. Cero impacto en calificación.
 
 ### Balance de capacidad
 
@@ -2426,7 +2426,7 @@ Trimestre 20-abr-2026 a 3-jul-2026. **Sprints semanales** para alinearse con ent
 **Interpretación.** Los sprints de modelado (S6) y agente (S7) están sobrecomprometidos respecto a capacidad humana por 15 y 7 SP respectivamente. Las tres mitigaciones son:
 
 1. **S6 aprovecha entrenamiento overnight** — el código de Gemma 4 LoRA y ensambles se deja corriendo en H100 mientras el equipo trabaja otros temas de día. El tiempo humano real es ~25 SP efectivos de código + 5 SP de overnight GPU.
-2. **S7 usa ADK para reducir el esfuerzo de agente** — la US-034 con Spatial-RAG se mantiene en 4 SP gracias al planner, executor y tracing built-in de ADK.
+2. **S7 usa ADK para reducir el esfuerzo de agente** — la US-035 con Spatial-RAG se mantiene en 4 SP gracias al planner, executor y tracing built-in de ADK.
 3. **Sprints 3, 5 y 9 tienen buffer** que absorbe overflow de S6/S7. Los 3 stretch candidates (switch A/B, Evidently pipeline, worker Pub/Sub, 5 SP combinados) son lo primero que se sacrifica si algún sprint crítico se atrasa.
 
 ---

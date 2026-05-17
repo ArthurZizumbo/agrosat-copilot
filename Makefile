@@ -1,4 +1,4 @@
-.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip notebooks-check i18n-check db-migrate db-rollback db-new db-status db-seed train-l4 train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eda-sentinel2 eda-alphaearth eda-bivariado eda-figures-avance1 eda-pastis-subset eda-notebook-avance1 eda-pdf eda-dashboard eda-dashboard-test eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate
+.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip notebooks-check i18n-check db-migrate db-rollback db-new db-status db-seed db-test-us015 features-extract-demo features-persist train-l4 train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eda-sentinel2 eda-alphaearth eda-bivariado eda-figures-avance1 eda-pastis-subset eda-notebook-avance1 eda-pdf eda-dashboard eda-dashboard-test eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate
 
 help:
 	@echo "AgroSatCopilot — comandos disponibles:"
@@ -91,6 +91,22 @@ db-seed:
 
 db-shell:
 	docker compose exec postgres psql -U agrosat -d agrosat
+
+# === Features (US-015) ===
+features-extract-demo:  ## Ejecuta extract_temporal_features sobre el fixture demo
+	poetry run python -c "import xarray as xr; from ml.features import extract_temporal_features; \
+ds = xr.open_dataset('data/test_fixtures/parcel_demo_ts.nc'); \
+da = ds['parcel_indices']; da.attrs.setdefault('parcel_id', 42); da.attrs.setdefault('year', 2024); \
+da = da.assign_coords(band=[b.decode() if isinstance(b, bytes) else b for b in da.coords['band'].values]) if da.coords['band'].dtype.kind == 'S' else da; \
+df = extract_temporal_features(da); \
+import structlog; log = structlog.get_logger(); log.info('features extracted', shape=df.shape, sample_cols=df.columns[:8])"
+
+features-persist:  ## TODO US-016: invoca load_features_parcels con DSN de .env.local (stub)
+	@echo "US-015 stub: load_features_parcels esperando parquet operativo desde US-016"
+	@echo "Uso futuro: poetry run python -m ml.features.persist_features --input <parquet> --dsn $$DATABASE_URL"
+
+db-test-us015:  ## Ejecuta tests round-trip de migraciones US-015
+	poetry run pytest tests/db/test_migrations_us015.py -q
 
 # === ML / Training ===
 train-l4:  ## Spot L4 24GB (baselines, dev)

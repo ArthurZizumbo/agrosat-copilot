@@ -35,7 +35,7 @@ make db-shell
 ## ML / Training
 
 ```bash
-make train-l4 epic=E4 us=US-020          # spot L4 24GB (baselines, dev)
+make train-l4 epic=E4 us=US-021          # spot L4 24GB (baselines, dev)
 make train-h100 window=V3 script=train_gemma4_lora.py
 make azure-h100-start       # enciende VM Azure H100 spot con auto-shutdown 12h
 make azure-h100-stop

@@ -1,6 +1,6 @@
 ---
 name: agrosat-ml-features
-description: Compute spectral indices (NDVI, NDWI, EVI, MSAVI2, MCARI, CCCI, NDRE, etc.), temporal features (FFT harmonics, phenology), and multisensor fusion at parcel level using Polars 1.x for AgroSatCopilot. Use for Feature Engineering (EPIC 3).
+description: Compute spectral indices (NDVI, NDWI, EVI, MSAVI2, MCARI, CCCI, NDRE, etc.), temporal features (FFT harmonics, phenology), and multisensor fusion at parcel level using Polars 1.x for AgroSatCopilot. Use when computing spectral indices, temporal aggregations or multisensor feature fusion at parcel level.
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 ---
 
@@ -17,7 +17,7 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 
 ## 17 Índices Espectrales — implementados en `ml/features/spectral_indices.py`
 
-Catálogo canónico (US-014). Tabla académica completa con DOIs en
+Catálogo canónico del proyecto. Tabla académica completa con DOIs en
 [`docs/spectral_indices.md`](../../../docs/spectral_indices.md).
 
 **Backends** (verificado con spyndex 0.10.0):

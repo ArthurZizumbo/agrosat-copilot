@@ -1,0 +1,194 @@
+"""Persistencia de features temporales en ``features_parcels`` (US-015).
+
+Carga el ``pl.DataFrame`` producido por
+:func:`ml.features.temporal_features.extract_temporal_features` a la tabla
+``features_parcels`` con UPSERT sobre ``(parcel_id, year)``.
+
+Convenciones de columnas
+------------------------
+La tabla ``features_parcels`` (ver ``db/migrations/*_create_features_parcels.sql``
+del plan US-015 §4.3) mezcla columnas escalares para queries frecuentes y dos
+columnas JSONB para evitar 153 columnas individuales:
+
+- **Escalares**: ``parcel_id``, ``year``, ``sog_doy``, ``peak_doy``,
+  ``peak_value``, ``senescence_doy``, ``ndvi_auc``, ``ndvi_slope_pre_peak``,
+  ``ndvi_slope_post_peak``, ``maturity_duration_days``.
+- **JSONB ``ndvi_stats``**: las 153 stats descriptivas (todas las
+  ``{idx}_{stat}``).
+- **JSONB ``phenology``**: las 24 columnas FFT (``{idx}_fft_amp_*`` y
+  ``{idx}_fft_phase_*``).
+
+El campo ``alphaearth_embedding`` queda ``NULL`` en US-015 (se pobla en
+US-016 con la fusión multisensor).
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Final, Literal
+
+import polars as pl
+import structlog
+from sqlalchemy import Engine, text
+
+logger = structlog.get_logger(__name__)
+
+#: Columnas escalares mapeadas 1:1 con la tabla (excepto ``parcel_id`` y
+#: ``year`` que conforman la PK lógica).
+_SCALAR_PHENOLOGY_COLS: Final[tuple[str, ...]] = (
+    "sog_doy",
+    "peak_doy",
+    "peak_value",
+    "senescence_doy",
+    "ndvi_auc",
+    "ndvi_slope_pre_peak",
+    "ndvi_slope_post_peak",
+    "maturity_duration_days",
+)
+
+_PK_COLS: Final[tuple[str, ...]] = ("parcel_id", "year")
+
+
+def load_features_parcels(
+    df: pl.DataFrame,
+    engine: Engine,
+    *,
+    on_conflict: Literal["update", "skip", "raise"] = "update",
+) -> int:
+    """Carga el DataFrame de features a ``features_parcels`` con UPSERT.
+
+    Args:
+        df: salida de
+            :func:`ml.features.temporal_features.extract_temporal_features`.
+        engine: SQLAlchemy ``Engine`` apuntando a Postgres 15 + PostGIS +
+            pgvector.
+        on_conflict: comportamiento ante violación de
+            ``UNIQUE(parcel_id, year)``:
+
+            - ``"update"``: ``ON CONFLICT DO UPDATE SET ...`` (default).
+            - ``"skip"``: ``ON CONFLICT DO NOTHING``.
+            - ``"raise"``: ``INSERT`` sin ``ON CONFLICT``; propaga
+              ``sqlalchemy.exc.IntegrityError`` al colisionar.
+
+    Returns:
+        Número de filas insertadas o actualizadas. ``0`` si ``df`` está vacío.
+
+    Raises:
+        sqlalchemy.exc.IntegrityError: en modo ``"raise"`` si la fila
+            colisiona con un par ``(parcel_id, year)`` existente.
+        ValueError: si ``df`` no contiene las columnas de PK.
+    """
+    if df.is_empty():
+        logger.info("load_features_parcels skipped (empty frame)")
+        return 0
+
+    for pk in _PK_COLS:
+        if pk not in df.columns:
+            raise ValueError(f"DataFrame missing PK column '{pk}'")
+
+    stat_cols = _detect_stat_columns(df.columns)
+    fft_cols = _detect_fft_columns(df.columns)
+
+    rows: list[dict[str, object]] = []
+    for record in df.to_dicts():
+        ndvi_stats = {col: _serializable(record[col]) for col in stat_cols}
+        phenology_json = {col: _serializable(record[col]) for col in fft_cols}
+        row: dict[str, object] = {
+            "parcel_id": int(record["parcel_id"]),
+            "year": int(record["year"]),
+            "ndvi_stats": json.dumps(ndvi_stats),
+            "phenology": json.dumps(phenology_json),
+        }
+        for col in _SCALAR_PHENOLOGY_COLS:
+            row[col] = _serializable(record.get(col))
+        rows.append(row)
+
+    sql = _build_upsert_sql(on_conflict=on_conflict)
+
+    with engine.begin() as conn:
+        result = conn.execute(text(sql), rows)
+        affected = result.rowcount if result.rowcount is not None else len(rows)
+
+    logger.info(
+        "load_features_parcels completed",
+        rows_input=len(rows),
+        rows_affected=int(affected),
+        on_conflict=on_conflict,
+    )
+    return int(affected)
+
+
+# ---------------------------------------------------------------------------
+# Helpers privados
+# ---------------------------------------------------------------------------
+
+
+def _detect_stat_columns(columns: list[str]) -> list[str]:
+    """Devuelve las columnas estadísticas (``{idx}_{stat}``) en orden estable."""
+    stat_suffixes = ("_mean", "_std", "_min", "_max", "_p05", "_p25", "_p50", "_p75", "_p95")
+    return sorted(c for c in columns if c.endswith(stat_suffixes))
+
+
+def _detect_fft_columns(columns: list[str]) -> list[str]:
+    """Devuelve las columnas FFT (``*_fft_amp_*`` y ``*_fft_phase_*``)."""
+    return sorted(c for c in columns if ("_fft_amp_" in c) or ("_fft_phase_" in c))
+
+
+def _serializable(value: object) -> object:
+    """Convierte ``NaN``/``None`` a ``None`` y numpy scalars a Python nativos."""
+    import math
+
+    if value is None:
+        return None
+    if isinstance(value, float) and math.isnan(value):
+        return None
+    if hasattr(value, "item"):
+        try:
+            return value.item()  # type: ignore[no-any-return]
+        except (AttributeError, ValueError):  # pragma: no cover - defensivo
+            return value
+    return value
+
+
+def _build_upsert_sql(*, on_conflict: Literal["update", "skip", "raise"]) -> str:
+    """Construye el ``INSERT`` con la cláusula de conflicto solicitada.
+
+    Usa parámetros nombrados (``:param``) — SQLAlchemy + psycopg los enlazan
+    de forma segura (sin string interpolation).
+    """
+    cols = (
+        "parcel_id",
+        "year",
+        "ndvi_stats",
+        "phenology",
+        *_SCALAR_PHENOLOGY_COLS,
+    )
+    col_list = ", ".join(cols)
+    placeholder_list = ", ".join(f":{c}" for c in cols)
+    # S608: nombres de columna provienen de constantes internas
+    # (`_SCALAR_PHENOLOGY_COLS`), no de input externo. Los valores se enlazan
+    # vía parámetros named `:param`.
+    base = f"INSERT INTO features_parcels ({col_list}, updated_at) VALUES ({placeholder_list}, now())"  # noqa: S608, E501
+
+    if on_conflict == "raise":
+        return base
+
+    if on_conflict == "skip":
+        return base + " ON CONFLICT (parcel_id, year) DO NOTHING"
+
+    # update
+    update_targets = (
+        "ndvi_stats",
+        "phenology",
+        *_SCALAR_PHENOLOGY_COLS,
+    )
+    set_clause = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_targets)
+    return (
+        base
+        + " ON CONFLICT (parcel_id, year) DO UPDATE SET "
+        + set_clause
+        + ", updated_at = now()"
+    )
+
+
+__all__ = ["load_features_parcels"]

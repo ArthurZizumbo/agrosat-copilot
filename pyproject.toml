@@ -54,6 +54,7 @@ mypy = "^2.1.0"
 ipython = "^9.13.0"
 nbstripout = "^0.9.1"
 notebook = "^7.5.6"
+psycopg = {extras = ["binary"], version = "^3.3.4"}
 
 [tool.poetry.group.test.dependencies]
 pytest = "^9.0.3"
@@ -205,6 +206,11 @@ ignore = ["S101", "S301"]  # asserts ok en tests; pickle ok para ML
 "ml/report/figure_narratives.py" = ["RUF001", "RUF002", "RUF003"]
 "app/eda_dashboard.py" = ["RUF001", "RUF002", "RUF003"]
 "scripts/build_avance1_notebook.py" = ["RUF001", "RUF002", "RUF003"]
+# US-015 docstrings agronómicos en español usan caracteres tipográficos
+# (σ, ×, ≥, π) deliberadamente para preservar notación matemática estándar.
+"ml/features/temporal_features.py" = ["RUF001", "RUF002", "RUF003"]
+"tests/ml/features/test_temporal_features.py" = ["RUF001", "RUF002", "RUF003", "E501"]
+"scripts/generate_demo_parcel_ts.py" = ["RUF001", "RUF002", "RUF003", "B008", "BLE001"]
 
 [tool.mypy]
 python_version = "3.12"

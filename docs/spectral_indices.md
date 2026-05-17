@@ -110,13 +110,85 @@ Conference on Precision Agriculture, Bloomington MN.
 `notebooks/eda/Avance1.Equipo17.ipynb` §3 (bivariado) y §5 (conclusiones):
 
 - **Redundancia detectada** dentro de `{NDVI, NDRE, NDWI, SAVI}` con Pearson
-  0.95-0.97. La selección final (US-017) retendrá `{NDVI, NDMI, EVI}` por
+  0.95-0.97. La selección final (US-018) retendrá `{NDVI, NDMI, EVI}` por
   diversidad espectral (NDMI usa SWIR B11, dimensión independiente).
 - **NDVI satura a 1.0** en 75 % de parcelas sin máscara SCL. El módulo
   documenta el contrato del caller en su docstring.
 - **DN vs reflectancia**: las bandas S2 distribuidas como DN (0-10000)
   deben dividirse por 10000 antes de invocar `compute_index`. El módulo no
   hace esta conversión para no acoplarse a una fuente de datos específica.
+
+## Temporal aggregation (US-015)
+
+El módulo [`ml/features/temporal_features.py`](../ml/features/temporal_features.py)
+agrega cada uno de los 17 índices a lo largo del ciclo agrícola anual y
+deriva features fenológicos a partir del NDVI. La salida es un
+`polars.DataFrame` con ~187 columnas por `(parcel_id, year)` consumido por
+la tabla `features_parcels`.
+
+### Estadísticos descriptivos (9 stats × 17 índices = 153 columnas)
+
+Por cada índice se calculan: `mean`, `std`, `min`, `max` y los percentiles
+`p05`, `p25`, `p50`, `p75`, `p95`. Las muestras inválidas (`NaN`/`null`) se
+descartan antes de agregar (el caller es responsable del filtrado SCL aguas
+arriba). El cálculo usa `pl.LazyFrame.group_by().agg().collect(engine="streaming")`
+(Polars 1.x) para escalar a ~30 k parcelas Italia sin desbordar memoria.
+
+### Descomposición harmónica FFT (4 amplitudes + 4 fases × 3 índices = 24 columnas)
+
+Sobre los 3 índices clave (NDVI, NDWI, EVI) se aplica `np.fft.rfft` a la
+serie pre-interpolada linealmente a una rejilla diaria — Sentinel-2 tiene
+revisita irregular (~5 días con huecos por nubes) y FFT asume muestreo
+regular. Se conservan **4 componentes** (DC + 3 armónicos):
+
+- **k=0 (DC)**: equivale a la media; amplitud = `|X[0]| / N`. Fase reportada
+  como 0 (carece de interpretación física).
+- **k=1 (anual)**: captura la estacionalidad principal del cultivo.
+- **k=2 (bimestral / semestral)**: distingue ciclos doble-pico (raros en
+  Italia) y siembra-cosecha desfasadas.
+- **k=3 (mensual)**: residuo de alta frecuencia útil para detectar
+  perturbaciones cortas (riegos, eventos meteorológicos).
+
+Convención single-sided: amplitud de armónicos = `|X[k]| * 2 / N`; fase en
+radianes en `(-π, π]`. Validado por test `test_fft_synthetic_sin` con
+`sin(2πt/365)` recuperando amplitud `1±0.05` y fase `-π/2±0.1`.
+
+### Features fenológicos NDVI (8 columnas)
+
+Implementados según el criterio de umbral fijo de White et al. 1997 con
+`sog_threshold = 0.3`:
+
+- `sog_doy` (start of greenness, día del año en que NDVI cruza 0.3 ascendente).
+- `peak_doy`, `peak_value` (máximo de la curva interpolada diaria).
+- `senescence_doy` (primer cruce descendente del umbral tras el peak).
+- `ndvi_auc` (integral trapezoidal de la curva, proxy de productividad
+  primaria bruta — Reed et al. 2003).
+- `ndvi_slope_pre_peak`, `ndvi_slope_post_peak` (pendientes de regresión
+  lineal SOG→peak y peak→senescencia, en unidades NDVI/día).
+- `maturity_duration_days` (longitud de la racha contigua en torno al peak
+  con NDVI ≥ `maturity_pct × peak_value`, default 80 %; métrica
+  TIMESAT-like — Jönsson & Eklundh 2002).
+
+**Manejo graceful**: si NDVI nunca cruza el umbral (parcela sin vegetación o
+con peak por debajo de 0.3) las 8 métricas son `None` (NULL en Postgres) sin
+lanzar excepción.
+
+### Referencias académicas (temporal aggregation)
+
+- White, M.A., Thornton, P.E., Running, S.W. (1997). *A continental
+  phenology model for monitoring vegetation responses to interannual
+  climatic variability*. Global Biogeochemical Cycles 11(2), 217-234. DOI
+  [10.1029/97GB00993](https://doi.org/10.1029/97GB00993).
+- Reed, B.C., White, M., Brown, J.F. (2003). *Remote sensing phenology*.
+  En *Phenology: An Integrative Environmental Science*, Springer. DOI
+  [10.1007/978-94-007-0632-3](https://doi.org/10.1007/978-94-007-0632-3).
+- Jönsson, P., Eklundh, L. (2002). *Seasonality extraction by function
+  fitting to time-series of satellite sensor data*. IEEE Transactions on
+  Geoscience and Remote Sensing 40(8), 1824-1832. DOI
+  [10.1109/TGRS.2002.802519](https://doi.org/10.1109/TGRS.2002.802519).
+- Eklundh, L., Jönsson, P. (2017). *TIMESAT 3.3 with seasonal trend
+  decomposition and parallel processing — Software Manual*. Lund and
+  Malmö Universities. ISBN 978-91-87983-19-0.
 
 ## Atribución
 

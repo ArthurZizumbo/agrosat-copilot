@@ -1,6 +1,6 @@
 ---
 name: agrosat-ml-baseline
-description: Train tabular baseline classifiers (XGBoost, LightGBM, Random Forest) on AlphaEarth 64-dim embeddings + spectral indices + DINOv3 features for AgroSatCopilot crop classification. Use for EPIC 4 baseline (Avance 3).
+description: Train tabular baseline classifiers (XGBoost, LightGBM, Random Forest) on AlphaEarth 64-dim embeddings + spectral indices + DINOv3 features for AgroSatCopilot crop classification. Use when training, tuning or evaluating tabular baselines for crop classification.
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 ---
 

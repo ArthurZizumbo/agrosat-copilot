@@ -1,6 +1,9 @@
 services:
   postgres:
-    image: postgis/postgis:15-3.4
+    build:
+      context: .
+      dockerfile: infrastructure/docker/postgres.Dockerfile
+    image: agrosat-postgres:15-3.4-pgvector
     environment:
       POSTGRES_USER: agrosat
       POSTGRES_PASSWORD: agrosat

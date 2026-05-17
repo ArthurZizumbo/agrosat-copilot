@@ -61,7 +61,7 @@
 | **MVP** | **E0-E10** | **A0-A7 + Pres** | **9 sem** | **146** |
 | E11 | Paper Track (post-presentación, opcional) | — | S10-S11 | 28 |
 
-**Stretch (sacrificables si hay atraso)**: US-045 Switch A/B UI, US-047 Evidently auto, US-040 Pub/Sub. Decisión equipo: mantener los 3 en MVP.
+**Stretch (sacrificables si hay atraso)**: US-046 Switch A/B UI, US-048 Evidently auto, US-041 Pub/Sub. Decisión equipo: mantener los 3 en MVP.
 
 ## 6. Secuenciación semanal
 
@@ -115,10 +115,10 @@ Categorías rúbrica Avance 7: **datos** (R01,R03,R05-R08,R13), **ataques** (R14
 
 | # | Paper | Aporte | Aplicación |
 |---|-------|--------|------------|
-| 1 | **TSViT** (Tarasiou, arXiv:2301.04944, 2023) — Vision Transformers for SITS | Factorización temporal + espacial, SOTA en PASTIS | EPIC 5 US-026 obligatorio rúbrica |
+| 1 | **TSViT** (Tarasiou, arXiv:2301.04944, 2023) — Vision Transformers for SITS | Factorización temporal + espacial, SOTA en PASTIS | EPIC 5 US-027 obligatorio rúbrica |
 | 2 | **Phenology Description** (Wen, ISPRS 2025) | CLIP + ViT + GPT-4 prompt 3-layer + GCN + LoRA contrastivo | EPIC 7 tool `phenology_descriptor` (Gemma 4 sustituye GPT-4) |
 | 3 | Be My Eyes (2025) | Multi-agent perceiver-reasoner | EPIC 7 arquitectura del agente |
-| 4 | FarSLIP (2025) | CLIP fine-grained RS adaptation | EPIC 5 US-024 SegFormer + cabezal FarSLIP |
+| 4 | FarSLIP (2025) | CLIP fine-grained RS adaptation | EPIC 3 US-017 destilación + EPIC 5 US-025 SegFormer cabezal FarSLIP |
 
 ## 11. Datasets y licencias
 
@@ -158,7 +158,7 @@ Todas las atribuciones en [`docs/licenses/DATA_LICENSE.md`](../docs/licenses/DAT
 | FinOps (costos training + operativo) | §8 | 548-590 |
 | Datasets y licenciamiento | §9 | 591-635 |
 | Mapa épicas + SP + secuenciación | §10 | 636-686 |
-| **EPIC 0-11 detallados (US-001 a US-055)** | §EPIC | 688-2280 |
+| **EPIC 0-11 detallados (US-001 a US-056)** | §EPIC | 688-2280 |
 | Roadmap sprints semanales | §11 | 2281-2438 |
 | Gestión de riesgos (14) | §13 | 2440-2476 |
 | Criterios éxito MVP | §14 | 2479-2515 |
