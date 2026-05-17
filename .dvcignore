@@ -5,3 +5,11 @@ __pycache__/
 *.pyc
 .mypy_cache/
 .ruff_cache/
+
+# === US-016 — excepciones explícitas para outputs versionados con DVC ===
+# Las siguientes rutas SI deben llegar al remoto (gs://agrosat-dvc-remote) via
+# `dvc add` + `dvc push`. La forma negada (!) garantiza que dvc no las ignore
+# aunque hereden de un patrón anterior:
+!data/features/features_fused_*.parquet
+!data/splits/spatial_kfold_*/**
+!artifacts/scaler_*.pkl
