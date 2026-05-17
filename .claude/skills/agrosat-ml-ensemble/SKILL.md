@@ -1,6 +1,6 @@
 ---
 name: agrosat-ml-ensemble
-description: Build 4 ensemble strategies for AgroSatCopilot final model (EPIC 6, Avance 5) — Voting (homogeneous top-3), Bagging (XGB AlphaEarth), Stacking (U-TAE + TSViT + Swin-UNETR + XGB + Gemma 4), Blending (Optuna-optimized weights). Use for final model selection.
+description: Build 4 ensemble strategies for AgroSatCopilot final model — Voting (homogeneous top-3), Bagging (XGB AlphaEarth), Stacking (U-TAE + TSViT + Swin-UNETR + XGB + Gemma 4), Blending (Optuna-optimized weights). Use when designing or training ensembles for final model selection.
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 ---
 
@@ -8,9 +8,9 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 
 ## Rules — NON-NEGOTIABLE
 
-- 4 ensambles obligatorios por rúbrica Avance 5
+- 4 ensambles obligatorios para el modelo final
 - Out-of-fold predictions con spatial CV (no leakage)
-- Base learners de EPIC 5 + baseline XGB + Gemma 4 (EPIC 6)
+- Base learners de las 6 arquitecturas de segmentación + baseline XGB + Gemma 4 fine-tuneado
 - Optuna para optimizar pesos blending
 - MLflow run por ensamble con tag `ensemble_type`
 - Comparar contra mejor modelo individual

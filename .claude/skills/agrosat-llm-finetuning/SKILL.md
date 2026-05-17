@@ -1,6 +1,6 @@
 ---
 name: agrosat-llm-finetuning
-description: Fine-tune Gemma 4 26B-MoE and Qwen3-VL-30B-A3B with LoRA rank 16 BF16, deploy Qwen3.5-35B-A3B with vLLM on Azure H100 NVL 96GB for AgroSatCopilot. Use for EPIC 6 fine-tuning and EPIC 7 LLM serving with vLLM (OpenAI-compatible).
+description: Fine-tune Gemma 4 26B-MoE and Qwen3-VL-30B-A3B with LoRA rank 16 BF16, deploy Qwen3.5-35B-A3B with vLLM on Azure H100 NVL 96GB for AgroSatCopilot. Use when fine-tuning VLMs with LoRA or serving LLMs with vLLM (OpenAI-compatible).
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 ---
 
@@ -20,7 +20,7 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 
 | Modelo | HF ID | Licencia | Uso |
 |--------|-------|----------|-----|
-| Gemma 4 26B-MoE | `google/gemma-4-26b-it` | Apache 2.0 | VLM principal EPIC 6 |
+| Gemma 4 26B-MoE | `google/gemma-4-26b-it` | Apache 2.0 | VLM principal del proyecto |
 | Gemma 4 E4B | `google/gemma-4-e4b-it` | Apache 2.0 | Fallback L4 |
 | Qwen3-VL 30B-A3B | `Qwen/Qwen3-VL-30B-A3B-Instruct` | Apache 2.0 | VLM comparativo |
 | Qwen3.5 35B-A3B | `Qwen/Qwen3.5-35B-A3B` | Apache 2.0 | Orquestador on-prem (**sin -Instruct**) |

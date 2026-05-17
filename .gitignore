@@ -182,6 +182,9 @@ models/weights/
 !frontend/public/maps/*.geojson
 !backend/tests/fixtures/**/*.geojson
 !ml/tests/fixtures/**/*.tif
+# US-015 fixture demo (<100 KB, determinista)
+!data/test_fixtures/**/*.nc
+!data/test_fixtures/**/*.zarr/
 
 # ── Earth Engine cache ────────────────────────────────────────────────────────
 .earthengine/

@@ -39,27 +39,30 @@ perf(E6): enable FlashAttention-2 in Gemma 4 training
 
 ## Flujo por User Story
 
+Sustituir `E{N}` por el número de épica y `US-XXX` por el ID de la historia
+del plan vigente; `{slug}` describe la US en kebab-case corto.
+
 ```bash
 # Inicio
 git checkout develop && git pull
-git checkout -b feature/E6-US-029-gemma4-lora
+git checkout -b feature/E{N}-US-XXX-{slug}
 
 # Trabajo iterativo
-git add ml/train/train_gemma4_lora.py configs/gemma4_h100.yaml
-git commit -m "feat(E6): scaffold Gemma 4 LoRA training script"
+git add path/to/file.py path/to/config.yaml
+git commit -m "feat(E{N}): scaffold {descripción corta}"
 
-git add ml/utils/mlflow_utils.py
-git commit -m "feat(E6): add @track_experiment decorator"
+git add path/to/utils.py
+git commit -m "feat(E{N}): {siguiente paso atómico}"
 
 # Push y PR
-git push -u origin feature/E6-US-029-gemma4-lora
-gh pr create --base develop --title "feat(E6): US-029 fine-tune Gemma 4 26B-MoE LoRA" \
-  --body "## US-029\n\n[Refinamiento v5](context/RefinamientoPlaneacionAgroSatCopilot_v5.md)..."
+git push -u origin feature/E{N}-US-XXX-{slug}
+gh pr create --base develop --title "feat(E{N}): US-XXX {título corto}" \
+  --body "## US-XXX\n\n[Plan vigente](context/RefinamientoPlaneacionAgroSatCopilot_v6.md)..."
 
 # Tras merge a develop
 gh pr merge --squash
 git checkout develop && git pull
-git branch -d feature/E6-US-029-gemma4-lora
+git branch -d feature/E{N}-US-XXX-{slug}
 ```
 
 ## Cierre de US

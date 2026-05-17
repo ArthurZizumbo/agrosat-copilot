@@ -30,7 +30,7 @@ El EDA del Avance 1 (`notebooks/eda/Avance1.Equipo17.ipynb`, §3 Bivariado y
 - Las bandas Sentinel-2 distribuidas como DN (0-10000) deben dividirse por
   10000 para entrar como reflectancia en [0, 1].
 - Redundancia fuerte detectada en el cuarteto {NDVI, NDRE, NDWI, SAVI}
-  (Pearson 0.95-0.97); la selección final (US-017) retiene {NDVI, NDMI, EVI}.
+  (Pearson 0.95-0.97); la selección final (US-018) retiene {NDVI, NDMI, EVI}.
   Este módulo entrega los 17 candidatos íntegros; la selección no es su
   responsabilidad.
 

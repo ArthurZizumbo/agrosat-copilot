@@ -1,6 +1,6 @@
 ---
 name: agrosat-ml-segmentation
-description: Implement and train 6 segmentation architectures for AgroSatCopilot crop mapping (EPIC 5, Avance 4) — U-Net, DeepLabv3+, SegFormer-B2, U-TAE, TSViT (Paper 1), Swin-UNETR. Use for dense semantic segmentation on Sentinel-2 patches with PASTIS-R labels.
+description: Implement and train 6 segmentation architectures for AgroSatCopilot crop mapping — U-Net, DeepLabv3+, SegFormer-B2, U-TAE, TSViT, Swin-UNETR. Use when implementing dense semantic segmentation on Sentinel-2 patches with PASTIS-R labels.
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 ---
 

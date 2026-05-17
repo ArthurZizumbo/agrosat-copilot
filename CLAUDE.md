@@ -11,7 +11,7 @@
 | Documento | Propósito |
 |-----------|-----------|
 | [`context/RefinamientoPlaneacionAgroSatCopilot_v6_RESUMEN.md`](context/RefinamientoPlaneacionAgroSatCopilot_v6_RESUMEN.md) | Plan operativo destilado (172 líneas): EPICs, SP, calendario, riesgos, métricas |
-| [`context/RefinamientoPlaneacionAgroSatCopilot_v6.md`](context/RefinamientoPlaneacionAgroSatCopilot_v6.md) | Plan SCRUM completo con US-001 a US-055 |
+| [`context/RefinamientoPlaneacionAgroSatCopilot_v6.md`](context/RefinamientoPlaneacionAgroSatCopilot_v6.md) | Plan SCRUM completo con US-001 a US-056 |
 | [`docs/orchestration/skills-catalog.md`](docs/orchestration/skills-catalog.md) | Catálogo de las 30 skills `agrosat-*` |
 | [`docs/orchestration/auto-invoke.md`](docs/orchestration/auto-invoke.md) | Qué skill cargar antes de cada acción |
 | [`docs/orchestration/skill-owners.md`](docs/orchestration/skill-owners.md) | Mapa skill → subagente owner + 9 subagentes |

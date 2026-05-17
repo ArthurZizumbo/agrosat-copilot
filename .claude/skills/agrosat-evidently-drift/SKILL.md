@@ -1,6 +1,6 @@
 ---
 name: agrosat-evidently-drift
-description: Monitor data drift on Sentinel-2 bands and AlphaEarth embeddings with Evidently AI, generating weekly HTML reports for AgroSatCopilot. Use for EPIC 10 US-047 drift pipeline as Dagster asset triggered weekly.
+description: Monitor data drift on Sentinel-2 bands and AlphaEarth embeddings with Evidently AI, generating weekly HTML reports for AgroSatCopilot. Use when building drift detection pipelines as Dagster assets with weekly schedule.
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 ---
 
