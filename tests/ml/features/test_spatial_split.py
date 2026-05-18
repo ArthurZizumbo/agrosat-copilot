@@ -28,11 +28,10 @@ from shapely.geometry import Polygon
 
 pytest.importorskip("h3", reason="US-016 spatial K-fold requiere `h3 ^4.1.2` (pendiente Arthur).")
 
-from ml.features.spatial_split import (  # noqa: E402
+from ml.features.spatial_split import (
     FoldAssignment,
     build_spatial_kfold,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers — generador de parcelas sinteticas distribuidas en una grid lat/lon.

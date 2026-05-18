@@ -1,4 +1,4 @@
-.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip notebooks-check i18n-check db-migrate db-rollback db-new db-status db-seed db-test-us015 features-extract-demo features-persist features-fuse-demo features-fuse-italy dagster-materialize-features train-l4 train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eda-sentinel2 eda-alphaearth eda-bivariado eda-figures-avance1 eda-pastis-subset eda-notebook-avance1 eda-pdf eda-dashboard eda-dashboard-test eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate farslip-dataset-build farslip-dataset-check farslip-train farslip-eval-pastis farslip-smoke-eval
+.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip notebooks-check i18n-check db-migrate db-rollback db-new db-status db-seed db-test-us015 features-extract-demo features-persist features-fuse-demo features-fuse-italy dagster-materialize-features feature-selection-subset feature-selection-build feature-selection-notebook feature-selection-test feature-fusion-build feature-fusion-notebook avance2-build avance2-notebook train-l4 train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eda-sentinel2 eda-alphaearth eda-bivariado eda-figures-avance1 eda-pastis-subset eda-notebook-avance1 eda-pdf eda-dashboard eda-dashboard-test eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate farslip-dataset-build farslip-dataset-check farslip-train farslip-eval-pastis farslip-smoke-eval
 
 help:
 	@echo "AgroSatCopilot — comandos disponibles:"
@@ -131,6 +131,41 @@ features-fuse-italy:  ## US-016 — Fusión completa Italia 3 regiones (requiere
 dagster-materialize-features:  ## US-016 — Materializa los 3 assets en orden (features → splits → scaler)
 	poetry run dagster asset materialize -m dagster_project.definitions \
 	  --select parcel_features_fused+
+
+# === Feature Selection US-018 (Avance 2 CRISP-ML(Q) Data Preparation) ===
+feature-selection-subset:  ## US-018 — Regenera subset PASTIS-R estratificado (>=500 muestras x 187 cols)
+	poetry run python scripts/generate_feature_selection_subset.py \
+	  --root data/PASTIS-R \
+	  --out data/test_fixtures/feature_selection_subset.parquet \
+	  --min-per-class 10 \
+	  --max-samples 500
+
+feature-selection-build:  ## US-018 — Reconstruye notebooks/feature_engineering/03b_fe_spectral_temporal_pastis.ipynb desde scripts/build_us018_notebook.py
+	poetry run python scripts/build_us018_notebook.py
+
+feature-selection-notebook:  ## US-018 — Papermill end-to-end sobre 03b_fe_spectral_temporal_pastis.ipynb
+	MPLBACKEND=Agg poetry run papermill notebooks/feature_engineering/03b_fe_spectral_temporal_pastis.ipynb \
+	  notebooks/feature_engineering/03b_fe_spectral_temporal_pastis.ipynb --no-progress-bar
+
+feature-selection-test:  ## US-018 — pytest selection.py con cobertura
+	poetry run pytest tests/ml/features/test_selection.py \
+	  --cov=ml.features.selection --cov-report=term-missing
+
+feature-fusion-build:  ## US-018 ext — Reconstruye notebooks/feature_engineering/03c_fe_alphaearth_pastis.ipynb desde scripts/build_fusion_notebook.py
+	poetry run python scripts/build_fusion_notebook.py
+
+feature-fusion-notebook:  ## US-018 ext — Papermill end-to-end sobre 03c_fe_alphaearth_pastis.ipynb
+	MPLBACKEND=Agg poetry run papermill notebooks/feature_engineering/03c_fe_alphaearth_pastis.ipynb \
+	  notebooks/feature_engineering/03c_fe_alphaearth_pastis.ipynb --no-progress-bar
+
+# === Avance 2 — Feature Engineering (entregable del curso, US-018 ext) ===
+avance2-build:  ## US-018 ext — Reconstruye notebooks/feature_engineering/Avance2.Equipo17.ipynb desde scripts/build_avance2_notebook.py
+	poetry run python scripts/build_avance2_notebook.py \
+	  --out notebooks/feature_engineering/Avance2.Equipo17.ipynb
+
+avance2-notebook:  ## US-018 ext — Papermill end-to-end sobre Avance2.Equipo17.ipynb
+	MPLBACKEND=Agg poetry run papermill notebooks/feature_engineering/Avance2.Equipo17.ipynb \
+	  notebooks/feature_engineering/Avance2.Equipo17.ipynb --no-progress-bar
 
 # === ML / Training ===
 train-l4:  ## Spot L4 24GB (baselines, dev)

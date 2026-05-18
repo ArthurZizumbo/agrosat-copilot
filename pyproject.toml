@@ -217,6 +217,17 @@ ignore = ["S101", "S301"]  # asserts ok en tests; pickle ok para ML
 "ml/features/temporal_features.py" = ["RUF001", "RUF002", "RUF003"]
 "tests/ml/features/test_temporal_features.py" = ["RUF001", "RUF002", "RUF003", "E501"]
 "scripts/generate_demo_parcel_ts.py" = ["RUF001", "RUF002", "RUF003", "B008", "BLE001"]
+# US-018: scripts Typer permiten function-call defaults; build_us018_notebook
+# usa f-strings concatenadas para construir el notebook (E501 inevitable).
+"scripts/generate_feature_selection_subset.py" = ["B008"]
+"scripts/build_us018_notebook.py" = ["E501"]
+# US-018 extension fase 5: build_avance2_notebook usa f-strings concatenadas
+# extensas para construir las celdas del notebook (E501 inevitable). Typer
+# permite defaults via Option (B008).
+"scripts/build_avance2_notebook.py" = ["E501", "B008"]
+# build_fusion_notebook usa el mismo patron de f-strings concatenadas
+# para construir celdas (E501 inevitable).
+"scripts/build_fusion_notebook.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.12"
@@ -235,4 +246,5 @@ markers = [
     "e2e: end-to-end tests requiring full stack",
     "requires_gee: tests that require a live Earth Engine session (skipped in CI)",
     "slow: tests that take >5s; deselect with `-m 'not slow'`",
+    "empirical: tests requiring data/PASTIS-R/ or generated parquet subsets (skipped if absent)",
 ]
