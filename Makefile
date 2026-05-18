@@ -1,4 +1,4 @@
-.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip notebooks-check i18n-check db-migrate db-rollback db-new db-status db-seed db-test-us015 features-extract-demo features-persist features-fuse-demo features-fuse-italy dagster-materialize-features train-l4 train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eda-sentinel2 eda-alphaearth eda-bivariado eda-figures-avance1 eda-pastis-subset eda-notebook-avance1 eda-pdf eda-dashboard eda-dashboard-test eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate
+.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip notebooks-check i18n-check db-migrate db-rollback db-new db-status db-seed db-test-us015 features-extract-demo features-persist features-fuse-demo features-fuse-italy dagster-materialize-features train-l4 train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eda-sentinel2 eda-alphaearth eda-bivariado eda-figures-avance1 eda-pastis-subset eda-notebook-avance1 eda-pdf eda-dashboard eda-dashboard-test eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate farslip-dataset-build farslip-dataset-check farslip-train farslip-eval-pastis farslip-smoke-eval
 
 help:
 	@echo "AgroSatCopilot — comandos disponibles:"
@@ -234,6 +234,22 @@ deploy-staging:  ## Cloud Build → staging
 deploy-prod:
 	@[ "$(shell git rev-parse --abbrev-ref HEAD)" = "main" ] || (echo "ERROR: deploy-prod solo desde main"; exit 1)
 	gcloud builds submit --config=infrastructure/cloudbuild.yaml --substitutions=_ENV=prod
+
+# === FarSLIP (US-017 / US-016b) ===
+farslip-dataset-build:  ## US-017 — Construye dataset pares imagen-texto (3 ROIs italianas)
+	poetry run python -c "from pathlib import Path; from ml.farslip.dataset import build_farslip_pairs; build_farslip_pairs(rois=('pianura_padana','toscana','puglia'), output_root=Path('data/farslip_pairs'), vocabulary_path=Path('ml/farslip/cap_vocabulary.yaml'))"
+
+farslip-dataset-check:  ## US-017 AC-3 gate — n_pairs>=30k + balance min/max ROI>=0.20
+	poetry run python -m ml.farslip.dataset_audit
+
+farslip-train:  ## US-017 AC-4 — entrena FarSLIP (CPU smoke local o GCP L4 spot)
+	poetry run python -m ml.farslip.train --rois italy --epochs 4 --batch-size 64 --lr 1e-5 --seed 42 --output-dir artifacts/farslip
+
+farslip-eval-pastis:  ## US-017 AC-6 — eval mIoU FarSLIP vs RemoteCLIP en PASTIS-R (notebook TODO)
+	@echo "TODO: notebook notebooks/features/04_farslip_eval_pastis.ipynb pendiente Fase 4"
+
+farslip-smoke-eval:  ## US-017 — smoke eval extractor desde GCS o cache local
+	poetry run python scripts/farslip_smoke_eval.py --n-patches 10
 
 # === Security ===
 security-audit:
