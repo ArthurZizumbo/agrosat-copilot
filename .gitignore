@@ -261,6 +261,12 @@ coverage.xml
 .scratch/
 .notes/
 
+# ── US-018 reports: ignore all except gitkeep + 2 PNG entregable ─────────────
+reports/feature_selection/*
+!reports/feature_selection/.gitkeep
+!reports/feature_selection/correlation_matrix.png
+!reports/feature_selection/umap_2d.png
+
 # ── Misc ──────────────────────────────────────────────────────────────────────
 *.bak
 *.tmp

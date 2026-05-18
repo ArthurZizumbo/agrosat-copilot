@@ -36,7 +36,6 @@ from ml.features.fusion import (
 )
 from ml.features.spectral_indices import INDEX_NAMES
 
-
 # ---------------------------------------------------------------------------
 # Helpers internos del modulo de tests.
 # ---------------------------------------------------------------------------

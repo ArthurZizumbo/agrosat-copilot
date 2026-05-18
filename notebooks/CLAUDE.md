@@ -20,7 +20,7 @@
 | `02a_eda_sentinel2.ipynb` | Avance 1 | 3-may-2026 | Univariado |
 | `02b_eda_alphaearth.ipynb` | Avance 1 | 3-may-2026 | AlphaEarth caracterización |
 | `02c_eda_bivariado_temporal.ipynb` | Avance 1 | 3-may-2026 | Bivariado + temporal |
-| `03_feature_engineering.ipynb` | Avance 2 | 17-may-2026 | FE 30+30+30+10 pts |
+| `feature_engineering/03b_fe_spectral_temporal_pastis.ipynb` + `03c_fe_alphaearth_pastis.ipynb` + `Avance2.Equipo17.ipynb` | Avance 2 | 17-may-2026 | FE 30+30+30+10 pts |
 | `04_baseline_xgboost_alphaearth.ipynb` | Avance 3 | 20-may-2026 | Baseline |
 | `05_alt_models.ipynb` | Avance 4 | 24-may-2026 | 6 arquitecturas |
 | `06_final_gemma4_ensembles.ipynb` | Avance 5 | 31-may-2026 | Gemma 4 + ensambles |

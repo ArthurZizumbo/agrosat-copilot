@@ -22,7 +22,6 @@ from sklearn.preprocessing import StandardScaler
 
 from ml.features.scaler import fit_scaler_on_train, load_scaler
 
-
 # ---------------------------------------------------------------------------
 # Fixtures locales.
 # ---------------------------------------------------------------------------

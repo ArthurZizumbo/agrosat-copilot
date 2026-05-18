@@ -1,0 +1,8 @@
+block,n_cols,description
+alphaearth,64,media del embedding 64-dim por parcela
+indices_stats,85,17 indices x 5 stats temporales = 85
+sentinel1,10,backscatter VV+VH x 5 stats con preset GRD IW asc+desc despeckle Lee 7x7
+srtm,3,elevacion media + slope medio + aspect dominante (string cardinal)
+era5_monthly,24,temperatura media + precipitacion acumulada por mes (12 + 12)
+geometry,3,area en ha + perimetro en m + razon de elongacion Polsby-Popper
+farslip,512,embedding CLIP destilado parche-a-parche (opcional)

@@ -263,3 +263,33 @@ Spyndex (MIT) — Montero, D., Aybar, C., Mahecha, M.D. et al. (2023).
 remote sensing in Earth system research*. Scientific Data 10, 197.
 DOI [10.1038/s41597-023-02096-0](https://doi.org/10.1038/s41597-023-02096-0).
 Repositorio: [awesome-spectral-indices](https://github.com/awesome-spectral-indices/awesome-spectral-indices).
+
+## Feature selection findings (US-018, Avance 2)
+
+Tras ejecutar `notebooks/feature_engineering/03b_fe_spectral_temporal_pastis.ipynb`
+sobre el subset PASTIS-R estratificado (77 muestras / 17 clases / 187 columnas):
+
+- **Cluster espectral redundante confirmado**: el filtro
+  `drop_correlated_features(|r|>0.95, Pearson)` reduce el cluster
+  `{NDVI, NDRE, NDWI, SAVI}` retenido por US-014 a un representante por grupo,
+  validando la hipotesis empirica del Avance 1 (US-013).
+- **Senial temporal dominante**: el ranking ANOVA F y la importance RF/XGB
+  exploratorios muestran que los componentes `*_fft_amp_*` y stats de indices
+  vegetativos (NDWI_p05, GCVI_p95, MSAVI2_min) ocupan los primeros lugares,
+  por encima de stats puntuales por banda.
+- **PCA 0.95 con compresion fuerte**: la varianza explicada acumulada alcanza
+  95 % con un numero de componentes muy inferior al total (`pca_scree.png`),
+  evidencia de subespacio espectral compartido entre indices.
+- **Normalizacion por familia de modelo**: `select_normalizer` rutea
+  StandardScaler para modelos lineales, MinMaxScaler para NN, Yeo-Johnson
+  para features sesgadas (acepta NDVI negativo en agua/sombras, D10) y
+  log1p para LAI/biomasa. Decisiones por feature en
+  `reports/feature_selection/normalization_decisions.csv`.
+- **Tabla comparativa antes/despues**: el RF baseline con folds PASTIS 1-5
+  (split espacial oficial Sainte-Fare-Garnot 2021, D1) cuantifica el costo en
+  F1-macro/mIoU de cada estrategia de seleccion. Reporte en
+  `reports/feature_selection/before_after.{csv,md}`.
+
+Artefactos visuales commiteados: `reports/feature_selection/correlation_matrix.png`
+y `reports/feature_selection/umap_2d.png`. El resto se regenera con
+`make feature-selection-notebook`.
