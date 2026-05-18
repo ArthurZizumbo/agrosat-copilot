@@ -1,0 +1,466 @@
+# Vocabulario CAP italiano para FarSLIP US-017 / US-016b.
+#
+# Estructura por clase:
+#   <cap_class>:
+#     it: lista de 3 plantillas (bare, with_phenology, with_region)
+#     es: idem en espanol neutro
+#     en: idem en ingles
+#     phenology: lista de fenofases agronomicas usables en plantilla 2
+#     regions:   lista de regiones italianas usables en plantilla 3
+#
+# Las plantillas son cadenas con marcadores {phenology}, {region} que el
+# dataset builder rellena con valores reales (DOY -> fenofase, ROI -> region).
+# El builder rota plantillas por crop para diversidad lexical.
+
+defaults:
+  phenology: ["germinazione", "fioritura", "fruttificazione", "maturazione", "raccolta"]
+  regions: ["Pianura Padana", "Toscana", "Puglia"]
+
+classes:
+  mais:
+    it:
+      - "campo di mais"
+      - "mais in fase di {phenology}"
+      - "coltivazione di mais in {region}"
+    es:
+      - "campo de maiz"
+      - "maiz en fase de {phenology}"
+      - "cultivo de maiz en {region}"
+    en:
+      - "maize field"
+      - "maize at {phenology} stage"
+      - "maize crop in {region}"
+
+  frumento:
+    it:
+      - "campo di frumento"
+      - "frumento in fase di {phenology}"
+      - "coltivazione di frumento in {region}"
+    es:
+      - "campo de trigo"
+      - "trigo en fase de {phenology}"
+      - "cultivo de trigo en {region}"
+    en:
+      - "wheat field"
+      - "wheat at {phenology} stage"
+      - "wheat crop in {region}"
+
+  vite:
+    it:
+      - "vigneto"
+      - "vigneto in fase di {phenology}"
+      - "vigneto coltivato in {region}"
+    es:
+      - "vinedo"
+      - "vinedo en fase de {phenology}"
+      - "vinedo cultivado en {region}"
+    en:
+      - "vineyard"
+      - "vineyard at {phenology} stage"
+      - "vineyard grown in {region}"
+
+  olivo:
+    it:
+      - "oliveto"
+      - "oliveto in fase di {phenology}"
+      - "oliveto coltivato in {region}"
+    es:
+      - "olivar"
+      - "olivar en fase de {phenology}"
+      - "olivar cultivado en {region}"
+    en:
+      - "olive grove"
+      - "olive grove at {phenology} stage"
+      - "olive grove in {region}"
+
+  riso:
+    it:
+      - "risaia"
+      - "risaia in fase di {phenology}"
+      - "risaia coltivata in {region}"
+    es:
+      - "arrozal"
+      - "arrozal en fase de {phenology}"
+      - "arrozal cultivado en {region}"
+    en:
+      - "rice paddy"
+      - "rice paddy at {phenology} stage"
+      - "rice paddy in {region}"
+
+  foraggio:
+    it:
+      - "coltura foraggera"
+      - "foraggio in fase di {phenology}"
+      - "coltura foraggera in {region}"
+    es:
+      - "cultivo forrajero"
+      - "forraje en fase de {phenology}"
+      - "cultivo forrajero en {region}"
+    en:
+      - "forage crop"
+      - "forage at {phenology} stage"
+      - "forage crop in {region}"
+
+  ortaggi:
+    it:
+      - "ortaggi"
+      - "ortaggi in fase di {phenology}"
+      - "produzione orticola in {region}"
+    es:
+      - "hortalizas"
+      - "hortalizas en fase de {phenology}"
+      - "produccion horticola en {region}"
+    en:
+      - "vegetables"
+      - "vegetables at {phenology} stage"
+      - "vegetable production in {region}"
+
+  girasole:
+    it:
+      - "campo di girasole"
+      - "girasole in fase di {phenology}"
+      - "coltivazione di girasole in {region}"
+    es:
+      - "campo de girasol"
+      - "girasol en fase de {phenology}"
+      - "cultivo de girasol en {region}"
+    en:
+      - "sunflower field"
+      - "sunflower at {phenology} stage"
+      - "sunflower crop in {region}"
+
+  soia:
+    it:
+      - "campo di soia"
+      - "soia in fase di {phenology}"
+      - "coltivazione di soia in {region}"
+    es:
+      - "campo de soja"
+      - "soja en fase de {phenology}"
+      - "cultivo de soja en {region}"
+    en:
+      - "soybean field"
+      - "soybean at {phenology} stage"
+      - "soybean crop in {region}"
+
+  colza:
+    it:
+      - "campo di colza"
+      - "colza in fase di {phenology}"
+      - "coltivazione di colza in {region}"
+    es:
+      - "campo de colza"
+      - "colza en fase de {phenology}"
+      - "cultivo de colza en {region}"
+    en:
+      - "rapeseed field"
+      - "rapeseed at {phenology} stage"
+      - "rapeseed crop in {region}"
+
+  orzo:
+    it:
+      - "campo di orzo"
+      - "orzo in fase di {phenology}"
+      - "coltivazione di orzo in {region}"
+    es:
+      - "campo de cebada"
+      - "cebada en fase de {phenology}"
+      - "cultivo de cebada en {region}"
+    en:
+      - "barley field"
+      - "barley at {phenology} stage"
+      - "barley crop in {region}"
+
+  sorgo:
+    it:
+      - "campo di sorgo"
+      - "sorgo in fase di {phenology}"
+      - "coltivazione di sorgo in {region}"
+    es:
+      - "campo de sorgo"
+      - "sorgo en fase de {phenology}"
+      - "cultivo de sorgo en {region}"
+    en:
+      - "sorghum field"
+      - "sorghum at {phenology} stage"
+      - "sorghum crop in {region}"
+
+  pomodoro:
+    it:
+      - "coltivazione di pomodoro"
+      - "pomodoro in fase di {phenology}"
+      - "coltivazione di pomodoro in {region}"
+    es:
+      - "cultivo de tomate"
+      - "tomate en fase de {phenology}"
+      - "cultivo de tomate en {region}"
+    en:
+      - "tomato crop"
+      - "tomato at {phenology} stage"
+      - "tomato crop in {region}"
+
+  patata:
+    it:
+      - "coltivazione di patata"
+      - "patata in fase di {phenology}"
+      - "coltivazione di patata in {region}"
+    es:
+      - "cultivo de patata"
+      - "patata en fase de {phenology}"
+      - "cultivo de patata en {region}"
+    en:
+      - "potato crop"
+      - "potato at {phenology} stage"
+      - "potato crop in {region}"
+
+  barbabietola:
+    it:
+      - "coltivazione di barbabietola"
+      - "barbabietola in fase di {phenology}"
+      - "coltivazione di barbabietola in {region}"
+    es:
+      - "cultivo de remolacha"
+      - "remolacha en fase de {phenology}"
+      - "cultivo de remolacha en {region}"
+    en:
+      - "sugar beet crop"
+      - "sugar beet at {phenology} stage"
+      - "sugar beet crop in {region}"
+
+  tabacco:
+    it:
+      - "campo di tabacco"
+      - "tabacco in fase di {phenology}"
+      - "coltivazione di tabacco in {region}"
+    es:
+      - "campo de tabaco"
+      - "tabaco en fase de {phenology}"
+      - "cultivo de tabaco en {region}"
+    en:
+      - "tobacco field"
+      - "tobacco at {phenology} stage"
+      - "tobacco crop in {region}"
+
+  lino:
+    it:
+      - "campo di lino"
+      - "lino in fase di {phenology}"
+      - "coltivazione di lino in {region}"
+    es:
+      - "campo de lino"
+      - "lino en fase de {phenology}"
+      - "cultivo de lino en {region}"
+    en:
+      - "flax field"
+      - "flax at {phenology} stage"
+      - "flax crop in {region}"
+
+  canapa:
+    it:
+      - "campo di canapa"
+      - "canapa in fase di {phenology}"
+      - "coltivazione di canapa in {region}"
+    es:
+      - "campo de canamo"
+      - "canamo en fase de {phenology}"
+      - "cultivo de canamo en {region}"
+    en:
+      - "hemp field"
+      - "hemp at {phenology} stage"
+      - "hemp crop in {region}"
+
+  agrumi:
+    it:
+      - "agrumeto"
+      - "agrumeto in fase di {phenology}"
+      - "agrumeto coltivato in {region}"
+    es:
+      - "huerto de citricos"
+      - "citricos en fase de {phenology}"
+      - "huerto de citricos en {region}"
+    en:
+      - "citrus orchard"
+      - "citrus orchard at {phenology} stage"
+      - "citrus orchard in {region}"
+
+  melo:
+    it:
+      - "meleto"
+      - "meleto in fase di {phenology}"
+      - "meleto coltivato in {region}"
+    es:
+      - "manzanar"
+      - "manzanar en fase de {phenology}"
+      - "manzanar cultivado en {region}"
+    en:
+      - "apple orchard"
+      - "apple orchard at {phenology} stage"
+      - "apple orchard in {region}"
+
+  pero:
+    it:
+      - "pereto"
+      - "pereto in fase di {phenology}"
+      - "pereto coltivato in {region}"
+    es:
+      - "peral"
+      - "peral en fase de {phenology}"
+      - "peral cultivado en {region}"
+    en:
+      - "pear orchard"
+      - "pear orchard at {phenology} stage"
+      - "pear orchard in {region}"
+
+  pesco:
+    it:
+      - "pescheto"
+      - "pescheto in fase di {phenology}"
+      - "pescheto coltivato in {region}"
+    es:
+      - "duraznar"
+      - "duraznar en fase de {phenology}"
+      - "duraznar cultivado en {region}"
+    en:
+      - "peach orchard"
+      - "peach orchard at {phenology} stage"
+      - "peach orchard in {region}"
+
+  mandorlo:
+    it:
+      - "mandorleto"
+      - "mandorleto in fase di {phenology}"
+      - "mandorleto coltivato in {region}"
+    es:
+      - "almendral"
+      - "almendral en fase de {phenology}"
+      - "almendral cultivado en {region}"
+    en:
+      - "almond orchard"
+      - "almond orchard at {phenology} stage"
+      - "almond orchard in {region}"
+
+  noce:
+    it:
+      - "noceto"
+      - "noceto in fase di {phenology}"
+      - "noceto coltivato in {region}"
+    es:
+      - "nogal"
+      - "nogal en fase de {phenology}"
+      - "nogal cultivado en {region}"
+    en:
+      - "walnut orchard"
+      - "walnut orchard at {phenology} stage"
+      - "walnut orchard in {region}"
+
+  prato_permanente:
+    it:
+      - "prato permanente"
+      - "prato permanente in fase di {phenology}"
+      - "prato permanente in {region}"
+    es:
+      - "prado permanente"
+      - "prado permanente en fase de {phenology}"
+      - "prado permanente en {region}"
+    en:
+      - "permanent grassland"
+      - "permanent grassland at {phenology} stage"
+      - "permanent grassland in {region}"
+
+  pascolo:
+    it:
+      - "pascolo"
+      - "pascolo in fase di {phenology}"
+      - "pascolo in {region}"
+    es:
+      - "pastizal"
+      - "pastizal en fase de {phenology}"
+      - "pastizal en {region}"
+    en:
+      - "pasture"
+      - "pasture at {phenology} stage"
+      - "pasture in {region}"
+
+  set_aside:
+    it:
+      - "terreno a riposo"
+      - "set aside in fase di {phenology}"
+      - "terreno a riposo in {region}"
+    es:
+      - "barbecho"
+      - "barbecho en fase de {phenology}"
+      - "barbecho en {region}"
+    en:
+      - "set-aside land"
+      - "set-aside at {phenology} stage"
+      - "set-aside land in {region}"
+
+  serra:
+    it:
+      - "serra agricola"
+      - "serra in fase di {phenology}"
+      - "serre agricole in {region}"
+    es:
+      - "invernadero agricola"
+      - "invernadero en fase de {phenology}"
+      - "invernaderos agricolas en {region}"
+    en:
+      - "agricultural greenhouse"
+      - "greenhouse at {phenology} stage"
+      - "agricultural greenhouses in {region}"
+
+  vivai:
+    it:
+      - "vivaio"
+      - "vivaio in fase di {phenology}"
+      - "vivai in {region}"
+    es:
+      - "vivero"
+      - "vivero en fase de {phenology}"
+      - "viveros en {region}"
+    en:
+      - "plant nursery"
+      - "plant nursery at {phenology} stage"
+      - "plant nurseries in {region}"
+
+  floricoltura:
+    it:
+      - "floricoltura"
+      - "floricoltura in fase di {phenology}"
+      - "floricoltura in {region}"
+    es:
+      - "floricultura"
+      - "floricultura en fase de {phenology}"
+      - "floricultura en {region}"
+    en:
+      - "floriculture"
+      - "floriculture at {phenology} stage"
+      - "floriculture in {region}"
+
+  leguminose:
+    it:
+      - "coltivazione di leguminose"
+      - "leguminose in fase di {phenology}"
+      - "leguminose coltivate in {region}"
+    es:
+      - "cultivo de leguminosas"
+      - "leguminosas en fase de {phenology}"
+      - "leguminosas cultivadas en {region}"
+    en:
+      - "legume crop"
+      - "legumes at {phenology} stage"
+      - "legumes grown in {region}"
+
+  altro:
+    it:
+      - "coltura agricola"
+      - "coltura agricola in fase di {phenology}"
+      - "coltura agricola in {region}"
+    es:
+      - "cultivo agricola"
+      - "cultivo agricola en fase de {phenology}"
+      - "cultivo agricola en {region}"
+    en:
+      - "agricultural crop"
+      - "agricultural crop at {phenology} stage"
+      - "agricultural crop in {region}"

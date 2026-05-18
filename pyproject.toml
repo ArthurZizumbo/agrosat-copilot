@@ -109,6 +109,11 @@ tslearn = "^0.6.3"
 # convierte solo en el borde. tqdm usado para iterar patches en pastis_eda_final.
 pandas = "^2.3.0"
 tqdm = "^4.67.0"
+# US-017 / US-016b — CLI Typer para ml/farslip/train.py, dataset_audit.py y
+# scripts/farslip_smoke_eval.py. Compatible con la version transitiva de FastAPI.
+typer = "^0.25.0"
+# safetensors para persistir pesos student FarSLIP (formato HF estandar).
+safetensors = "^0.7.0"
 
 [tool.poetry.group.ml-gpu]
 optional = true

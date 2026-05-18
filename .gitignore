@@ -202,6 +202,7 @@ gee_tasks.json
 !data/reference/**/*.parquet
 !backend/tests/fixtures/**/*.parquet
 !ml/tests/fixtures/**/*.parquet
+!data/test_fixtures/**/*.parquet
 
 # ── Notebooks: SE COMMITEAN con outputs poblados ──────────────────────────────
 # Los .ipynb son entregable visual del curso: outputs (HTML tables, PNG inline,
