@@ -50,6 +50,14 @@ Documenta TODOS los datasets y modelos usados durante el proyecto. Sin esto, el 
 - Contents: 2,433 patches Sentinel-2 multitemporales (T,10,128,128) + S1 ascending/descending + anotaciones panopticas + metadata.geojson EPSG:2154 (Lambert-93 Francia) + NORM_*.json por fold. 20 clases canónicas (0 background + 1-18 cultivos + 19 void).
 - Use scope US-010: PASTIS-R sirve como dataset de control con labels semánticos verificados, dado que los GSAA italianos aún no están en disco (US-006/007 diferidos).
 
+### BreizhCrops — Rußwurm et al. (ENSTA / TUM)
+- Source: bucket S3 público `breizhcrops.s3.eu-central-1.amazonaws.com` (sin autenticación) · paquete PyPI `breizhcrops`
+- License: dataset distribuido bajo CC-BY-SA 4.0; código del paquete `breizhcrops` bajo MIT
+- Citation: Rußwurm, M., Pelletier, C., Zollner, M., Lefèvre, S., Körner, M. (2020). _BreizhCrops: A Time Series Dataset for Crop Type Mapping_. ISPRS Archives — International Archives of the Photogrammetry, Remote Sensing and Spatial Information Sciences, XLIII-B2-2020, 1545-1551. DOI [10.5194/isprs-archives-XLIII-B2-2020-1545-2020](https://doi.org/10.5194/isprs-archives-XLIII-B2-2020-1545-2020).
+- Predecessor paper (referenciado por feedback del sponsor): Rußwurm, M. & Körner, M. (2018). _Multi-Temporal Land Cover Classification with Sequential Recurrent Encoders_. ISPRS International Journal of Geo-Information 7(4), 129. DOI [10.3390/ijgi7040129](https://doi.org/10.3390/ijgi7040129).
+- Contents: series temporales Sentinel-2 por parcela (Bretaña, Francia, 2017), nivel L2A con 10 bandas ópticas + máscaras CLD/EDG/SAT, índice tabular por región (`frh01`..`frh04`), `classmapping.csv` con 9 clases agronómicas (barley, wheat, rapeseed, corn, sunflower, orchards, nuts, permanent meadows, temporary meadows). Bases HDF5 ~640 MB (frh04) / ~987 MB (frh01).
+- Use scope EPIC 2: BreizhCrops es el sucesor moderno y mantenido del dataset de Rußwurm & Körner 2018 (pedido en feedback del profesor). Se usa como conjunto de control cross-region para validar que las features temporales (FFT + fenología) calibradas sobre PASTIS-R generalizan a otra región francesa. Descarga manual única vía `scripts/download_breizhcrops.sh`; versionado en DVC (`data/breizhcrops.dvc`).
+
 ### ERA5-Land Daily Aggregates — Copernicus Climate Change Service (C3S)
 - Source: GEE `ECMWF/ERA5_LAND/DAILY_AGGR`
 - License: Copernicus C3S Climate Data Store ToS (free, full, open)
