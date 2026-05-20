@@ -114,6 +114,7 @@ tqdm = "^4.67.0"
 typer = "^0.25.0"
 # safetensors para persistir pesos student FarSLIP (formato HF estandar).
 safetensors = "^0.7.0"
+breizhcrops = "^0.0.4.1"
 
 [tool.poetry.group.ml-gpu]
 optional = true

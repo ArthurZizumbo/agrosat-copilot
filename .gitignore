@@ -108,6 +108,7 @@ data/cache/**
 # Se versionan vía DVC cuando se cierre US-006/US-007/US-008. Hasta entonces, viven
 # solo en la máquina de Isaac y se documentan en data/README.md.
 data/PASTIS-R/
+data/breizhcrops/
 data/dynamic_world/
 data/gsaa_italia/
 data/reference/spectral_library.parquet

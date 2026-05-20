@@ -643,6 +643,74 @@ PASTIS_NARRATIVES: tuple[FigureNarrative, ...] = (
 
 
 # ---------------------------------------------------------------------------
+# BreizhCrops — Validación cross-region (Rußwurm & Körner, sucesor moderno)
+# ---------------------------------------------------------------------------
+
+BREIZHCROPS_NARRATIVES: tuple[FigureNarrative, ...] = (
+    FigureNarrative(
+        filename="breizhcrops_class_distribution.png",
+        title="Distribución de cultivos en Bretaña (frh04)",
+        narrative=(
+            "Cada barra cuenta cuántas parcelas hay de cada cultivo en la "
+            "región analizada. El reparto es muy desigual: pastizales "
+            "temporales, maíz y pastizales permanentes acaparan casi el "
+            "80 % de las 122.708 parcelas, mientras que girasol y frutos "
+            "secos apenas aparecen (2 y 11 parcelas). Es el mismo patrón "
+            "de desbalance que vimos en PASTIS-R, lo que confirma que no "
+            "es una rareza de un solo dataset sino una característica real "
+            "del paisaje agrícola europeo: hay que estratificar por clase "
+            "o ponderar antes de entrenar."
+        ),
+        method=(
+            "Conteo de parcelas por clase sobre el índice tabular completo "
+            "de la región frh04 (año 2017, nivel L2A), usando el mapeo "
+            "oficial de 9 clases agronómicas distribuido con el dataset."
+        ),
+    ),
+    FigureNarrative(
+        filename="breizhcrops_ndvi_by_class.png",
+        title="Firma fenológica del NDVI por cultivo",
+        narrative=(
+            "Cada curva muestra cómo evoluciona el vigor vegetal (NDVI) a "
+            "lo largo del año para un cultivo distinto. Las curvas no se "
+            "superponen: el maíz alcanza su pico de verdor más tarde y más "
+            "bajo (0,81) que el trigo o los huertos (más de 0,94), y cada "
+            "cultivo dibuja una campana en un momento distinto. Esa "
+            "diferencia en cuándo y cuánto crece la planta es exactamente "
+            "la señal que un modelo temporal puede explotar, y justifica "
+            "invertir en features de fenología en vez de promedios anuales."
+        ),
+        method=(
+            "NDVI = (B08 - B04) / (B08 + B04) calculado por paso temporal "
+            "sobre una muestra estratificada de parcelas; agregación de la "
+            "mediana por cultivo y día del año para trazar la curva media."
+        ),
+    ),
+    FigureNarrative(
+        filename="breizhcrops_vs_pastis_ndvi.png",
+        title="Comparación de vigor vegetal: BreizhCrops vs PASTIS-R",
+        narrative=(
+            "Esta figura enfrenta las distribuciones de NDVI de los dos "
+            "datasets franceses. Se solapan ampliamente: la mediana es "
+            "0,613 en BreizhCrops y 0,431 en PASTIS-R, con los extremos "
+            "(percentiles 5 y 95) casi idénticos. El desplazamiento es "
+            "esperable —Bretaña es más húmeda y verde que las zonas de "
+            "PASTIS— pero no hay un cambio de dominio radical. La lectura "
+            "para el proyecto es positiva: combinar ambos datasets no "
+            "expone al modelo a una distribución de entrada irreconocible, "
+            "lo que reduce el riesgo de domain shift."
+        ),
+        method=(
+            "Muestreo equivalente de píxeles/observaciones NDVI de ambos "
+            "datasets y comparación de percentiles (5, mediana, 95) más "
+            "histogramas superpuestos. PASTIS-R se carga con el loader "
+            "existente del proyecto para garantizar el mismo cálculo."
+        ),
+    ),
+)
+
+
+# ---------------------------------------------------------------------------
 # Índice global: notebook_id -> narrativas
 # ---------------------------------------------------------------------------
 
@@ -651,6 +719,7 @@ NARRATIVES_BY_NOTEBOOK: dict[str, tuple[FigureNarrative, ...]] = {
     "alphaearth": ALPHAEARTH_NARRATIVES,
     "bivariate-temporal": BIVARIATE_NARRATIVES,
     "pastis-consolidado": PASTIS_NARRATIVES,
+    "breizhcrops": BREIZHCROPS_NARRATIVES,
     "globales": (),
 }
 
