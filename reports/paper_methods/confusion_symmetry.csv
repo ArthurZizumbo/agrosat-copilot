@@ -1,0 +1,32 @@
+class_a,class_b,symmetric,asymmetric,interpretation
+Meadow,Corn,4,19,external_factor
+Meadow,Soft winter wheat,3,18,external_factor
+Meadow,Grapevine,3,6,external_factor
+Meadow,Soybeans,0,7,external_factor
+Meadow,"Fruits, vegetables, flowers",2,4,external_factor
+Sunflower,Grapevine,0,6,external_factor
+Meadow,Orchard,2,3,external_factor
+Grapevine,Leguminous fodder,0,5,external_factor
+Meadow,Winter durum wheat,2,2,spectral_similarity
+Meadow,Leguminous fodder,0,4,external_factor
+Soft winter wheat,Corn,0,3,external_factor
+Grapevine,Orchard,1,2,external_factor
+"Fruits, vegetables, flowers",Orchard,0,3,external_factor
+Soft winter wheat,Winter barley,0,2,external_factor
+Soft winter wheat,Winter rapeseed,0,2,external_factor
+Sunflower,Winter durum wheat,1,1,spectral_similarity
+Grapevine,Winter durum wheat,1,1,spectral_similarity
+Winter durum wheat,"Fruits, vegetables, flowers",0,2,external_factor
+Meadow,Winter rapeseed,0,1,external_factor
+Soft winter wheat,Spring barley,0,1,external_factor
+Soft winter wheat,Grapevine,0,1,external_factor
+Soft winter wheat,"Fruits, vegetables, flowers",0,1,external_factor
+Corn,Winter barley,0,1,external_factor
+Corn,Grapevine,0,1,external_factor
+Corn,"Fruits, vegetables, flowers",0,1,external_factor
+Corn,Soybeans,0,1,external_factor
+Winter barley,Grapevine,0,1,external_factor
+Spring barley,Winter durum wheat,0,1,external_factor
+Grapevine,"Fruits, vegetables, flowers",0,1,external_factor
+Winter durum wheat,Orchard,0,1,external_factor
+"Fruits, vegetables, flowers",Leguminous fodder,0,1,external_factor

@@ -31,7 +31,14 @@ SRTM_COLLECTION = "USGS/SRTMGL1_003"
 #: 8 cuadrantes cardinales usados por `sample_srtm_terrain` para discretizar
 #: la orientación dominante (aspect) en grados [0, 360) → string cardinal.
 _ASPECT_CARDINALS: tuple[str, ...] = (
-    "N", "NE", "E", "SE", "S", "SW", "W", "NW",
+    "N",
+    "NE",
+    "E",
+    "SE",
+    "S",
+    "SW",
+    "W",
+    "NW",
 )
 DYNAMIC_WORLD_CLASSES: dict[int, str] = {
     0: "water",
@@ -571,7 +578,7 @@ def fetch_s2_ndvi_rgb_for_parcel(
     cloud_pct_max: int = 20,
     scale: int = 10,
     max_pixels: int = 1_000_000,
-) -> dict[str, np.ndarray]:
+) -> dict[str, Any]:
     """Devuelve RGB + NDVI Sentinel-2 para una parcela en una fecha aproximada.
 
     Toma una ventana +/- 15 dias alrededor de `date` y retorna la mediana
@@ -646,7 +653,8 @@ def fetch_s2_ndvi_rgb_for_parcel(
         if band.size == 0:
             return band
         lo, hi = np.percentile(band, [2.0, 98.0])
-        return np.clip((band - lo) / max(hi - lo, 1e-6), 0.0, 1.0)
+        stretched: np.ndarray = np.clip((band - lo) / max(hi - lo, 1e-6), 0.0, 1.0)
+        return stretched
 
     rgb = np.stack([_stretch(b4), _stretch(b3), _stretch(b2)], axis=-1)
     _ = max_pixels
@@ -765,9 +773,7 @@ def _parcels_to_feature_collection(parcels: Any) -> Any:
             continue
         gj = geom.__geo_interface__
         ee_geom = ee.Geometry(gj)
-        features.append(
-            ee.Feature(ee_geom, {"parcel_id": int(row.parcel_id)})
-        )
+        features.append(ee.Feature(ee_geom, {"parcel_id": int(row.parcel_id)}))
     return ee.FeatureCollection(features)
 
 
@@ -825,8 +831,7 @@ def sample_s1_roi_for_parcels(
     cache_root = cache_dir or DEFAULT_CACHE_DIR
     cache_root.mkdir(parents=True, exist_ok=True)
     cache_file = (
-        cache_root
-        / f"s1_{cache_key}_{year}_{orbit_pass}_{despeckle}_{sigma0_units}.parquet"
+        cache_root / f"s1_{cache_key}_{year}_{orbit_pass}_{despeckle}_{sigma0_units}.parquet"
     )
     if cache_file.exists():
         return pl.read_parquet(cache_file)
@@ -856,9 +861,7 @@ def sample_s1_roi_for_parcels(
 
         if sigma0_units == "linear":
             collection = collection.map(
-                lambda img: img.expression(
-                    "pow(10, x / 10)", {"x": img.select(list(polarization))}
-                )
+                lambda img: img.expression("pow(10, x / 10)", {"x": img.select(list(polarization))})
             )
 
         rows: list[dict[str, Any]] = []
@@ -881,7 +884,7 @@ def sample_s1_roi_for_parcels(
             info = reduced.getInfo()
             for feat in info.get("features", []) or []:
                 props = feat.get("properties", {}) or {}
-                pid = int(props.get("parcel_id"))
+                pid = int(props["parcel_id"])
                 row: dict[str, Any] = {"parcel_id": pid, "year": year_int}
                 row[f"s1_{pol.lower()}_mean"] = _safe_float(props.get(f"{pol}_mean"))
                 row[f"s1_{pol.lower()}_std"] = _safe_float(props.get(f"{pol}_stdDev"))
@@ -967,7 +970,7 @@ def sample_srtm_terrain(
     rows: list[dict[str, Any]] = []
     for feat in info.get("features", []) or []:
         props = feat.get("properties", {}) or {}
-        pid = int(props.get("parcel_id"))
+        pid = int(props["parcel_id"])
         aspect_deg = _safe_float(props.get("aspect"))
         rows.append(
             {
@@ -977,6 +980,129 @@ def sample_srtm_terrain(
                 "srtm_aspect_dominant": _aspect_to_cardinal(aspect_deg),
             }
         )
+
+    if not rows:
+        return pl.DataFrame(schema=schema)
+    df = pl.DataFrame(rows, schema=schema)
+    df.write_parquet(cache_file)
+    return df
+
+
+def sample_alphaearth_for_parcels(
+    parcels: Any,
+    year: int,
+    *,
+    cache_dir: Path | None = None,
+    cache_key: str = "parcels",
+    batch_size: int = 100,
+    scale: int = 10,
+) -> pl.DataFrame:
+    """Muestrea AlphaEarth 64-dim por polígono de parcela (US-018.3).
+
+    Variante de ``sample_alphaearth_at_coords`` que opera sobre polígonos
+    en lugar de puntos. Usa ``ee.Reducer.mean()`` para agregar el embedding
+    sobre cada parcela individual. Útil para PASTIS-R vectorizado por
+    parcela (no por centroide del patch).
+
+    A diferencia de los otros samplers de parcela (``sample_srtm_terrain``,
+    ``sample_s1_roi_for_parcels``), aquí ``parcel_id`` puede ser string
+    (formato ``"<patch_id>_<instance_id>"``) porque PASTIS-R tiene IDs
+    duplicados entre patches. Internamente reasignamos a enteros
+    sequenciales para que GEE pueda devolverlos en las properties.
+
+    Args:
+        parcels: GeoDataFrame con `parcel_id` (str o int) y `geometry`
+            POLYGON EPSG:4326.
+        year: Año del embedding anual a queryear.
+        cache_dir: Carpeta cache local.
+        cache_key: Nombre lógico para el cache.
+        batch_size: Tamaño de batch por request server-side. Polígonos son
+            más caros que puntos; default 100 evita timeouts.
+        scale: Resolución de muestreo (default 10 m, nativa de AlphaEarth).
+
+    Returns:
+        ``pl.DataFrame`` con columnas ``parcel_id, year, dim_00..dim_63``.
+        Frame vacío con esquema válido si GEE falla.
+    """
+    schema: dict[str, Any] = {
+        "parcel_id": pl.Utf8,
+        "year": pl.Int64,
+    }
+    for col in ALPHAEARTH_DIM_COLS:
+        schema[col] = pl.Float64
+
+    cache_root = cache_dir or DEFAULT_CACHE_DIR
+    cache_root.mkdir(parents=True, exist_ok=True)
+    cache_file = cache_root / f"alphaearth_parcels_{cache_key}_{year}_{len(parcels)}.parquet"
+    if cache_file.exists():
+        return pl.read_parquet(cache_file)
+
+    if ee is None or len(parcels) == 0:
+        return pl.DataFrame(schema=schema)
+
+    band_names = _alphaearth_band_names()
+    image = (
+        ee.ImageCollection(ALPHAEARTH_COLLECTION)
+        .filterDate(f"{year}-01-01", f"{year + 1}-01-01")
+        .mosaic()
+        .select(band_names)
+    )
+
+    # Reasignamos parcel_id (potencialmente string) a int sequential para que
+    # GEE lo devuelva en properties. Mapping inverso al final.
+    int_to_str: dict[int, str] = {}
+    rows: list[dict[str, Any]] = []
+    total = len(parcels)
+
+    for start in range(0, total, batch_size):
+        chunk = parcels.iloc[start : start + batch_size]
+        try:
+            features = []
+            for offset, row in enumerate(chunk.itertuples(index=False)):
+                geom = getattr(row, "geometry", None)
+                if geom is None or geom.is_empty:
+                    continue
+                seq_id = start + offset
+                int_to_str[seq_id] = str(row.parcel_id)
+                features.append(
+                    ee.Feature(
+                        ee.Geometry(geom.__geo_interface__),
+                        {"seq_id": int(seq_id)},
+                    )
+                )
+            if not features:
+                continue
+            fc = ee.FeatureCollection(features)
+            sampled = image.reduceRegions(
+                collection=fc,
+                reducer=ee.Reducer.mean(),
+                scale=scale,
+            )
+            info = sampled.getInfo()
+        except Exception as exc:  # noqa: BLE001
+            _log.warning(
+                "alphaearth_parcels_batch_failed",
+                start=start,
+                size=len(chunk),
+                year=int(year),
+                error=str(exc),
+            )
+            continue
+
+        for feat in info.get("features", []):
+            props = feat.get("properties", {}) or {}
+            seq_id = int(props.get("seq_id", -1))
+            pid_str = int_to_str.get(seq_id)
+            if pid_str is None:
+                continue
+            row_out: dict[str, Any] = {
+                "parcel_id": pid_str,
+                "year": int(year),
+            }
+            for i, band in enumerate(band_names):
+                val = props.get(band)
+                row_out[ALPHAEARTH_DIM_COLS[i]] = float(val) if val is not None else None
+            rows.append(row_out)
 
     if not rows:
         return pl.DataFrame(schema=schema)
@@ -1047,11 +1173,7 @@ def sample_era5_monthly_climate(
         pband = "total_precipitation_sum"
         for month in range(1, 13):
             start = f"{year}-{month:02d}-01"
-            end = (
-                f"{year + 1}-01-01"
-                if month == 12
-                else f"{year}-{month + 1:02d}-01"
-            )
+            end = f"{year + 1}-01-01" if month == 12 else f"{year}-{month + 1:02d}-01"
             month_collection = ee.ImageCollection(ERA5_COLLECTION).filterDate(start, end)
             tmean_img = month_collection.select(tband).mean()
             prec_img = month_collection.select(pband).sum()
@@ -1066,7 +1188,7 @@ def sample_era5_monthly_climate(
             p_info = prec_reduced.getInfo()
             for feat in t_info.get("features", []) or []:
                 props = feat.get("properties", {}) or {}
-                pid = int(props.get("parcel_id"))
+                pid = int(props["parcel_id"])
                 if pid not in result_rows:
                     result_rows[pid] = {"parcel_id": pid, "year": int(year)}
                 # `reduceRegions` con single-band image renombra la propiedad
@@ -1078,7 +1200,7 @@ def sample_era5_monthly_climate(
                 result_rows[pid][f"era5_tmean_m{month:02d}"] = tval
             for feat in p_info.get("features", []) or []:
                 props = feat.get("properties", {}) or {}
-                pid = int(props.get("parcel_id"))
+                pid = int(props["parcel_id"])
                 if pid not in result_rows:
                     result_rows[pid] = {"parcel_id": pid, "year": int(year)}
                 pval = _safe_float(props.get(pband, props.get("mean")))

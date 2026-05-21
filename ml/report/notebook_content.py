@@ -515,18 +515,140 @@ BREIZHCROPS_CARD = NotebookCard(
 )
 
 
+PAPER_METHODS_CARD = NotebookCard(
+    notebook_id="paper-methods",
+    notebook_path="notebooks/eda/02e_eda_metodos_paper.ipynb",
+    title="EDA Avanzado — Métodos derivados de la literatura",
+    subtitle=(
+        "Traslada a código reproducible un conjunto de métodos de análisis "
+        "exploratorio extraídos de cuatro artículos de referencia sobre "
+        "series temporales satelitales de cultivos: Rußwurm y Körner (2018) "
+        "sobre clasificación multitemporal con codificadores recurrentes, "
+        "Tarasiou et al. (2021) sobre la varianza de borde en parcelas, el "
+        "Phenology-Aware Transformer (2025) sobre calendarios fenológicos y "
+        "Qin et al. (2025) sobre enmascaramiento espaciotemporal. Cada "
+        "método se aplica sobre datos PASTIS-R reales para diagnosticar qué "
+        "técnicas de la literatura aportan información útil antes de "
+        "entrenar modelos."
+    ),
+    sections=(
+        "0. Preparación del entorno e introducción",
+        "1. Análisis interior-vs-frontera de parcela (Tarasiou et al. 2021)",
+        "2. Irregularidad de revisita temporal (Rußwurm y Körner 2018)",
+        "3. Confusiones simétricas vs asimétricas (Rußwurm y Körner 2018)",
+        "4. Calendario fenológico (Phenology-Aware Transformer 2025)",
+        "5. Robustez ante huecos de nubes (Qin et al. 2025)",
+        "6. Conclusiones",
+    ),
+    figures_dir="paper-methods",
+    kpis=(
+        KPI("Artículos de referencia", "4", "Métodos trasladados a código"),
+        KPI("Revisita media", "9,3 días", "93,4 % del año cubierto"),
+        KPI("Confusiones simétricas", "3 de 31", "Resto factores externos"),
+        KPI("Deriva al ocultar 60 %", "0,73", "Características temporales"),
+    ),
+    conclusions=(
+        (
+            "La dispersión espectral se concentra en los bordes de parcela",
+            "Replicando el análisis de Tarasiou et al. (2021), separamos "
+            "cada parcela PASTIS-R en píxeles interiores y de frontera. En "
+            "el patch analizado la desviación estándar de la banda "
+            "infrarroja en la frontera es 0,91 veces la del interior; el "
+            "artículo describe la mayor variabilidad de borde como una "
+            "tendencia sobre el conjunto completo, no como una regla que se "
+            "cumpla patch a patch. Aun así, los bordes siguen siendo la "
+            "zona más sensible de la segmentación: la proporción "
+            "frontera/total por parcela tiene una media de 0,45 a 0,60 "
+            "según el patch, y muchas parcelas pequeñas son íntegramente "
+            "borde (proporción 1,0). Conviene vigilar de cerca el "
+            "rendimiento de los modelos de segmentación justo en los "
+            "límites de parcela.",
+        ),
+        (
+            "La revisita de Sentinel-2 es irregular y obliga a interpolar",
+            "Los patches PASTIS-R tienen 43 imágenes válidas por año, con "
+            "un hueco medio de 9,3 días entre adquisiciones, un hueco "
+            "máximo de 55 días y uno mínimo de 5 días. La serie cubre el "
+            "93,4 % del calendario anual, pero los intervalos no son "
+            "constantes. Esa irregularidad — consecuencia del "
+            "preprocesamiento mínimo que defienden Rußwurm y Körner "
+            "(2018) — justifica interpolar la serie a una rejilla diaria "
+            "antes de calcular las características temporales por "
+            "transformada de Fourier, y reportar la métrica kappa de Cohen "
+            "junto con la exactitud para tener en cuenta el desbalance de "
+            "clases.",
+        ),
+        (
+            "La mayoría de las confusiones entre cultivos son asimétricas",
+            "Sobre una matriz de confusión construida con un Random Forest "
+            "validado en folds espaciales (entrenado en cuatro folds y "
+            "evaluado en uno distinto), analizamos la simetría de los "
+            "errores. De los 31 pares de clases confundidas, solo 3 están "
+            "dominados por la componente simétrica — una similitud "
+            "espectral o fenológica real entre cultivos — mientras que 28 "
+            "están dominados por la componente asimétrica, que delata "
+            "factores externos como el desbalance de clases o errores de "
+            "anotación. La clase mayoritaria Meadow concentra la mayor "
+            "parte de esos errores asimétricos. Distinguir ambos tipos "
+            "orienta dónde invertir: características más finas para las "
+            "confusiones simétricas y rebalanceo o limpieza de etiquetas "
+            "para las asimétricas.",
+        ),
+        (
+            "El día del pico de vegetación se resume en etapas fenológicas",
+            "Tomando el día del año en que cada parcela alcanza su máximo "
+            "de vegetación y discretizándolo, las 2.433 parcelas con dato "
+            "se reparten en 4 etapas de crecimiento (dormancia, "
+            "crecimiento, pico y senescencia). La etapa dominante separa "
+            "familias de cultivos de forma clara: praderas y trigo de "
+            "invierno concentran su pico en la etapa de máximo verdor, el "
+            "maíz y los girasoles en senescencia tardía, y la vid y los "
+            "frutales en dormancia. Esta característica categórica resume "
+            "cuándo crece cada cultivo y se incorpora como variable "
+            "adicional en la fase de fusión de datos.",
+        ),
+        (
+            "Las características temporales toleran bien los huecos de nubes",
+            "Inspirados en el enmascaramiento espaciotemporal de Qin et "
+            "al. (2025), ocultamos fracciones crecientes de imágenes de "
+            "una parcela — del 20 % al 60 % — y medimos cuánto se "
+            "desplazan las características temporales recalculadas. La "
+            "deriva media al ocultar el 60 % de las observaciones es de "
+            "0,73, un valor moderado que confirma que el proceso de "
+            "ingeniería de características tolera la pérdida de datos por "
+            "cobertura nubosa sin colapsar. Esto valida usar la serie "
+            "temporal incluso en regiones con nubosidad alta, siempre que "
+            "se conserve un mínimo de observaciones bien distribuidas.",
+        ),
+        (
+            "Lo que sigue para el Avance 2",
+            "Los métodos quedan disponibles como funciones estables y "
+            "probadas en `ml/analysis/paper_methods.py`. La proporción "
+            "frontera/total y las etapas fenológicas se incorporan como "
+            "características adicionales en la fase de fusión de datos. El "
+            "análisis de simetría de confusiones se reutilizará para "
+            "diagnosticar las matrices de confusión de los modelos de "
+            "segmentación. Las métricas de revisita temporal y de robustez "
+            "ante huecos de nubes pasan a ser un control de calidad de los "
+            "datos antes de cada entrenamiento, y la agregación de clases "
+            "raras orienta la estrategia de rebalanceo del modelo base.",
+        ),
+    ),
+)
+
+
 GLOBAL_CARD = NotebookCard(
     notebook_id="globales",
     notebook_path="(síntesis cruzada)",
     title="Conclusiones Globales del Avance 1",
     subtitle=(
-        "Síntesis cruzada de los cuatro notebooks de EDA, traducida en "
+        "Síntesis cruzada de los seis notebooks de EDA, traducida en "
         "decisiones concretas para el Avance 2 (Feature Engineering) y "
         "el baseline del Avance 3 (XGBoost sobre AlphaEarth + índices "
         "espectrales)."
     ),
     sections=(
-        "1. Hallazgos transversales entre los 4 notebooks",
+        "1. Hallazgos transversales entre los 6 notebooks",
         "2. Decisiones para Feature Engineering (Avance 2)",
         "3. Decisiones para Modelado (Avances 3–5)",
         "4. Limitaciones conocidas y mitigaciones",
@@ -534,7 +656,7 @@ GLOBAL_CARD = NotebookCard(
     ),
     figures_dir="",
     kpis=(
-        KPI("Notebooks integrados", "4", "S2 + AE + Bivariado + PASTIS"),
+        KPI("Notebooks integrados", "6", "S2 + AE + Bivariado + PASTIS + BreizhCrops + Literatura"),
         KPI("Decisión arquitectural", "Por región", "Italia y Francia separados"),
         KPI("Índices recomendados", "3", "NDVI + NDMI + EVI"),
         KPI("Baseline F1-macro", "≥ 0,60", "Objetivo XGBoost"),
@@ -545,10 +667,10 @@ GLOBAL_CARD = NotebookCard(
             "Un Random Forest crudo sobre los 64 embeddings alcanza "
             "OOB 0,831 en Francia y 0,888 en Italia sin feature "
             "engineering. Eso deja el piso del baseline muy por encima "
-            "del mínimo 0,60 exigido por la rúbrica del Avance 3. El "
-            "reto no es alcanzar la métrica, sino demostrar que los "
-            "índices clásicos, DINOv3 y los ensambles aportan valor por "
-            "encima de ese piso.",
+            "del mínimo de 0,60 que fijamos como objetivo para el "
+            "Avance 3. El reto no es alcanzar la métrica, sino demostrar "
+            "que los índices clásicos, DINOv3 y los ensambles aportan "
+            "valor por encima de ese piso.",
         ),
         (
             "La especialización por región es la decisión clave",
@@ -589,7 +711,12 @@ GLOBAL_CARD = NotebookCard(
             "explícita. (7) DTW con k=6 como feature sintética para "
             "cereales de invierno. (8) AlphaEarth de 64 dimensiones "
             "como pool principal por región. (9) PCA opcional para "
-            "visualización, no para modelado denso.",
+            "visualización, no para modelado denso. (10) Proporción "
+            "frontera/total por parcela como descriptor de geometría. "
+            "(11) Etapa fenológica del pico de vegetación (4 niveles) "
+            "como característica categórica derivada de la literatura. "
+            "(12) Interpolar la serie temporal a rejilla diaria antes "
+            "de calcular las características por transformada de Fourier.",
         ),
         (
             "Decisiones para el Modelado (Avances 3–5)",
@@ -601,6 +728,29 @@ GLOBAL_CARD = NotebookCard(
             "(3) Loss focal o ponderada para clases minoritarias "
             "(legumbres, viñedos, frutales). (4) Ensambles por región: "
             "voting top-3, stacking con Gemma 4 y blending con Optuna.",
+        ),
+        (
+            "La literatura confirma los hallazgos y aporta nuevas características",
+            "Aplicar sobre PASTIS-R los métodos de cuatro artículos de "
+            "referencia validó tres decisiones del proyecto y agregó dos "
+            "características nuevas. Primero, la varianza espectral se "
+            "concentra en los bordes de parcela (Tarasiou et al. 2021): la "
+            "proporción frontera/total — media de 0,45 a 0,60 según el "
+            "patch — se incorpora como descriptor de geometría y advierte "
+            "que los modelos de segmentación deben vigilarse en los "
+            "límites de parcela. Segundo, la revisita de Sentinel-2 es "
+            "irregular (hueco medio de 9,3 días, 93,4 % del año cubierto), "
+            "lo que confirma la necesidad de interpolar la serie a una "
+            "rejilla diaria antes del feature engineering. Tercero, el "
+            "análisis de simetría de confusiones muestra que solo 3 de 31 "
+            "pares de cultivos se confunden por similitud espectral real y "
+            "28 por desbalance o errores de anotación, lo que orienta a "
+            "rebalancear antes que a refinar características. Además, el "
+            "calendario fenológico discretiza el día del pico de "
+            "vegetación en 4 etapas de crecimiento — una característica "
+            "categórica nueva — y la auditoría de huecos de nubes "
+            "(deriva media de 0,73 al ocultar el 60 % de las imágenes) "
+            "confirma que el proceso temporal tolera la nubosidad.",
         ),
         (
             "Limitaciones conocidas",
@@ -634,6 +784,7 @@ CARDS: tuple[NotebookCard, ...] = (
     BIVARIATE_CARD,
     PASTIS_CARD,
     BREIZHCROPS_CARD,
+    PAPER_METHODS_CARD,
     GLOBAL_CARD,
 )
 

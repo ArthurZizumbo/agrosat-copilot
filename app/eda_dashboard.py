@@ -21,12 +21,15 @@ import polars as pl
 import streamlit as st
 import yaml
 
+from ml.report.avance2_content import FE_CARDS
 from ml.report.figure_narratives import FigureNarrative, get_narrative
 from ml.report.notebook_content import (
     ALPHAEARTH_CARD,
     BIVARIATE_CARD,
+    BREIZHCROPS_CARD,
     CARDS,
     GLOBAL_CARD,
+    PAPER_METHODS_CARD,
     PASTIS_CARD,
     SENTINEL2_CARD,
     NotebookCard,
@@ -643,8 +646,14 @@ def render_tab_pastis(figures_dir: Path | None = None) -> None:
     render_card(PASTIS_CARD)
 
 
+def render_tab_breizhcrops(figures_dir: Path | None = None) -> None:
+    """Tab 5 - BreizhCrops cross-dataset (firma legacy)."""
+    _ = figures_dir
+    render_card(BREIZHCROPS_CARD)
+
+
 def render_tab_global() -> None:
-    """Tab 5 - Conclusiones globales del Avance 1."""
+    """Tab 6 - Conclusiones globales del Avance 1."""
     render_card(GLOBAL_CARD)
 
 
@@ -785,41 +794,70 @@ def render_tab_spatial(rois_yaml: Path, pastis_metadata: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-_TAB_LABELS: tuple[str, ...] = (
+# Tabs del Avance 1 (EDA): 6 fichas de contenido + mapa espacial.
+# El selector de sección de nivel superior ya indica "EDA", por lo que las
+# etiquetas de los tabs no repiten ese prefijo.
+_EDA_TAB_LABELS: tuple[str, ...] = (
     "Sentinel-2",
     "AlphaEarth",
     "Bivariado / Temporal",
     "PASTIS-R Consolidado",
+    "BreizhCrops",
+    "Métodos de la Literatura",
     "Conclusiones Globales",
     "Mapa Espacial",
 )
+
+# Tabs del Avance 2 (Feature Engineering): 4 fichas de FE_CARDS.
+_FE_TAB_LABELS: tuple[str, ...] = (
+    "Sentinel-2",
+    "PASTIS-R Espectro-Temporal",
+    "Fusión AlphaEarth",
+    "Conclusiones",
+)
+
+# Etiquetas combinadas (retrocompatibilidad con tests que importan _TAB_LABELS).
+_TAB_LABELS: tuple[str, ...] = _EDA_TAB_LABELS + _FE_TAB_LABELS
+
+# Opciones del selector de sección de nivel superior.
+_SECTION_EDA = "Exploración de Datos (EDA)"
+_SECTION_FE = "Ingeniería de Características (FE)"
+_SECTION_OPTIONS: tuple[str, ...] = (_SECTION_EDA, _SECTION_FE)
+# Clave de st.session_state que preserva la sección seleccionada.
+_SECTION_STATE_KEY = "dashboard_section"
 
 
 def _render_hero() -> None:
     """Renderiza el hero banner con título, subtítulo y meta."""
     st.markdown(
         '<div class="hero-banner">'
-        "<h1>AgroSatCopilot — Análisis Exploratorio de Datos</h1>"
-        "<p>Reporte consolidado del Avance 1: cuatro notebooks de EDA "
-        "(Sentinel-2 univariado, AlphaEarth Foundations, bivariado y "
-        "temporal, y PASTIS-R) sintetizados en una vista única con "
-        "narrativa por figura, KPIs y conclusiones por fase.</p>"
+        "<h1>AgroSatCopilot — Exploración e Ingeniería de Características</h1>"
+        "<p>Reporte consolidado de dos fases del proyecto: el análisis "
+        "exploratorio de datos (seis notebooks de EDA) y la ingeniería de "
+        "características (tres notebooks de feature engineering sobre "
+        "Sentinel-2, PASTIS-R y AlphaEarth), sintetizados en una vista "
+        "única con narrativa por figura, KPIs y conclusiones por fase.</p>"
         '<div class="hero-meta">'
         "<span><strong>Curso:</strong> MNA — Tec de Monterrey</span>"
-        "<span><strong>Sprint:</strong> S2-recovery</span>"
-        "<span><strong>Avance:</strong> A1 — EDA (2026-05-13)</span>"
-        "<span><strong>Sponsor:</strong> Dr. Camacho</span>"
+        "<span><strong>Fases:</strong> EDA + Ingeniería de Características</span>"
+        "<span><strong>Equipo:</strong> 17</span>"
         "</div>"
         "</div>",
         unsafe_allow_html=True,
     )
 
 
-def _render_sidebar() -> None:
-    """Renderiza la sidebar con navegación y metadata del proyecto."""
+def _render_sidebar(active_section: str) -> None:
+    """Renderiza la sidebar con navegación y metadata del proyecto.
+
+    Args:
+        active_section: Sección seleccionada en el selector de nivel
+            superior (``_SECTION_EDA`` o ``_SECTION_FE``). La lista de tabs
+            de la sección activa se resalta como navegación vigente.
+    """
     with st.sidebar:
         st.title("AgroSatCopilot")
-        st.markdown("**EDA · Avance 1**")
+        st.markdown("**EDA · Ingeniería de Características**")
         st.markdown("---")
         st.markdown("**Equipo**")
         st.markdown("- Arthur Zizumbo · MLOps Lead")
@@ -833,11 +871,21 @@ def _render_sidebar() -> None:
         st.markdown("- HCAT3 / EuroCrops")
         st.markdown("---")
         st.markdown("**Navegación**")
-        for label in _TAB_LABELS:
-            st.markdown(f"- {label}")
-        st.markdown("---")
-        st.caption("Sprint S2-recovery · 2026-05-13")
-        st.caption("Owner: Aaron Bocanegra")
+        eda_active = active_section == _SECTION_EDA
+        fe_active = active_section == _SECTION_FE
+        st.markdown(
+            f"**Exploración de datos**{'  ·  sección activa' if eda_active else ''}"
+        )
+        for label in _EDA_TAB_LABELS:
+            prefix = "▸ " if eda_active else "- "
+            st.markdown(f"{prefix}{label}")
+        st.markdown(
+            f"**Ingeniería de características**"
+            f"{'  ·  sección activa' if fe_active else ''}"
+        )
+        for label in _FE_TAB_LABELS:
+            prefix = "▸ " if fe_active else "- "
+            st.markdown(f"{prefix}{label}")
 
 
 def _render_footer() -> None:
@@ -858,10 +906,71 @@ def _render_footer() -> None:
     )
 
 
+# Fichas del Avance 1 (EDA): 6 fichas de contenido (el mapa espacial es un
+# tab aparte sin NotebookCard).
+_EDA_CARDS: tuple[NotebookCard, ...] = (
+    SENTINEL2_CARD,
+    ALPHAEARTH_CARD,
+    BIVARIATE_CARD,
+    PASTIS_CARD,
+    BREIZHCROPS_CARD,
+    PAPER_METHODS_CARD,
+    GLOBAL_CARD,
+)
+
+
+def _render_eda_section() -> None:
+    """Renderiza el bloque de Exploración de Datos: 7 fichas + mapa espacial."""
+    assert len(_EDA_CARDS) == len(CARDS), "CARDS y _EDA_CARDS desincronizados"
+    assert len(_EDA_TAB_LABELS) == len(_EDA_CARDS) + 1, "Etiquetas EDA desincronizadas"
+
+    tabs = st.tabs(list(_EDA_TAB_LABELS))
+    n_cards = len(_EDA_CARDS)
+    for tab, card in zip(tabs[:n_cards], _EDA_CARDS, strict=True):
+        with tab:
+            render_card(card)
+    # El último tab del bloque EDA es el mapa espacial.
+    with tabs[n_cards]:
+        render_tab_spatial(ROIS_YAML, PASTIS_METADATA)
+
+
+def _render_fe_section() -> None:
+    """Renderiza el bloque de Ingeniería de Características: 4 fichas FE."""
+    assert len(_FE_TAB_LABELS) == len(FE_CARDS), "Etiquetas FE desincronizadas"
+
+    tabs = st.tabs(list(_FE_TAB_LABELS))
+    for tab, card in zip(tabs, FE_CARDS, strict=True):
+        with tab:
+            render_card(card)
+
+
+def _render_section_selector() -> str:
+    """Renderiza el selector de sección de nivel superior.
+
+    Returns:
+        La sección seleccionada (``_SECTION_EDA`` o ``_SECTION_FE``). El
+        valor se preserva entre re-renders vía ``st.session_state``.
+    """
+    if _SECTION_STATE_KEY not in st.session_state:
+        st.session_state[_SECTION_STATE_KEY] = _SECTION_EDA
+
+    selected = st.segmented_control(
+        "Sección del reporte",
+        options=_SECTION_OPTIONS,
+        key=_SECTION_STATE_KEY,
+        label_visibility="collapsed",
+    )
+    # segmented_control puede devolver None si el usuario deselecciona;
+    # en ese caso conservamos la última sección válida (default EDA).
+    if selected is None:
+        selected = st.session_state.get(_SECTION_STATE_KEY) or _SECTION_EDA
+    return selected
+
+
 def main() -> None:
-    """Punto de entrada Streamlit: design system + sidebar + hero + tabs."""
+    """Punto de entrada Streamlit: design system + selector + sidebar + tabs."""
     st.set_page_config(
-        page_title="AgroSatCopilot - EDA Avance 1",
+        page_title="AgroSatCopilot - EDA + Feature Engineering",
         page_icon=None,
         layout="wide",
         initial_sidebar_state="expanded",
@@ -870,25 +979,17 @@ def main() -> None:
     # Design system CSS injection
     st.markdown(_DESIGN_SYSTEM_CSS, unsafe_allow_html=True)
 
-    _render_sidebar()
     _render_hero()
 
-    tabs = st.tabs(list(_TAB_LABELS))
+    # Selector de sección: alterna entre el bloque EDA y el bloque FE.
+    active_section = _render_section_selector()
 
-    cards_in_order: tuple[NotebookCard, ...] = (
-        SENTINEL2_CARD,
-        ALPHAEARTH_CARD,
-        BIVARIATE_CARD,
-        PASTIS_CARD,
-        GLOBAL_CARD,
-    )
-    assert len(cards_in_order) == len(CARDS), "CARDS y cards_in_order desincronizados"
+    _render_sidebar(active_section)
 
-    for tab, card in zip(tabs[:5], cards_in_order, strict=True):
-        with tab:
-            render_card(card)
-    with tabs[5]:
-        render_tab_spatial(ROIS_YAML, PASTIS_METADATA)
+    if active_section == _SECTION_FE:
+        _render_fe_section()
+    else:
+        _render_eda_section()
 
     _render_footer()
 

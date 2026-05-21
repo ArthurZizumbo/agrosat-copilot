@@ -1,1 +1,11 @@
 /breizhcrops
+
+# EuroCrops FR_2018: shapefile (~11 GB) + ZIP (2.5 GB). Pendiente de versionar
+# en DVC (ver docs/product-backlog). Las tablas de taxonomia HCAT (CSV ligeros)
+# SI se commitean por ser referencia de la que depende ml/features/encoding.py.
+/reference/eurocrops/FR_2018/
+/reference/eurocrops/FR_2018.zip
+
+# Subset PASTIS-R parcel-level (~76 MB) generado para feature engineering.
+# Demasiado grande para Git; pendiente de versionar en DVC.
+/test_fixtures/feature_selection_parcels_subset.parquet

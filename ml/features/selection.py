@@ -125,13 +125,19 @@ def _to_numpy(
 
 
 def _impute_with_column_mean(matrix: np.ndarray) -> np.ndarray:
-    """Imputa NaN con la media de la columna (sklearn no acepta NaN).
+    """Imputa NaN e inf con la media de la columna (sklearn no acepta ninguno).
 
-    Si una columna es enteramente NaN, se imputa con 0.0 (caso degenerado;
-    el caller deberia haber filtrado con :func:`apply_variance_threshold`).
+    ``inf`` / ``-inf`` se convierten a ``NaN`` antes de imputar; pueden
+    aparecer en features derivadas (e.g. GCVI con NIR/Green pequenos, ratios
+    espectrales sobre pixeles oscuros). Si una columna es enteramente NaN, se
+    imputa con 0.0 (caso degenerado; el caller deberia haber filtrado con
+    :func:`apply_variance_threshold`).
     """
     if matrix.size == 0:
         return matrix
+    # inf -> NaN para que la imputacion los trate igual que los NaN.
+    if not np.isfinite(matrix).all():
+        matrix = np.where(np.isinf(matrix), np.nan, matrix)
     col_means = np.nanmean(matrix, axis=0)
     col_means = np.where(np.isnan(col_means), 0.0, col_means)
     nan_mask = np.isnan(matrix)

@@ -1,0 +1,129 @@
+"""Muestrea AlphaEarth 64-dim para cada parcela vectorizada de PASTIS-R.
+
+Operativo permanente. Lee `data/processed/pastis_parcels_full.geoparquet`
+(generado por `scripts/vectorize_pastis_parcels.py`), invoca
+`sample_alphaearth_for_parcels` con polígonos reales (no centroides), y
+persiste el cache que el notebook 03c consume.
+
+Output:
+    data/cache/gee/alphaearth_pastis_fr_parcels_2019_N.parquet
+    con columnas: parcel_id (str "patch_inst"), patch_id, instance_id,
+    class_id, class_name, fold, area_m2, n_pixels, year, dim_00..dim_63.
+
+Uso::
+
+    poetry run python scripts/generate_alphaearth_pastis_parcels.py \\
+        --parcels data/processed/pastis_parcels_full.geoparquet \\
+        --year 2019 \\
+        --batch-size 100
+"""
+
+from __future__ import annotations
+
+import time
+from pathlib import Path
+
+import geopandas as gpd
+import polars as pl
+import structlog
+import typer
+
+from ml.ingest.gee_sampler import init_ee, sample_alphaearth_for_parcels
+
+logger = structlog.get_logger(__name__)
+app = typer.Typer(add_completion=False, help=__doc__)
+
+
+@app.command()
+def main(
+    parcels: Path = typer.Option(
+        Path("data/processed/pastis_parcels_full.geoparquet"),
+        "--parcels",
+        help="GeoParquet de parcelas vectorizadas (output de vectorize_pastis_parcels.py)",
+    ),
+    out_dir: Path = typer.Option(
+        Path("data/cache/gee"),
+        "--out-dir",
+        help="Carpeta de salida del cache AlphaEarth",
+    ),
+    year: int = typer.Option(2019, "--year", help="Año del embedding"),
+    batch_size: int = typer.Option(
+        100, "--batch-size", help="Parcelas por request GEE"
+    ),
+    cache_key: str = typer.Option(
+        "pastis_fr_parcels",
+        "--cache-key",
+        help="Nombre lógico del cache",
+    ),
+    limit: int = typer.Option(
+        0,
+        "--limit",
+        help="Si > 0, procesa solo las primeras N parcelas (smoke test)",
+    ),
+) -> None:
+    """Muestrea AlphaEarth sobre polígonos de parcela PASTIS-R."""
+    if not parcels.exists():
+        logger.error("parcels_missing", path=str(parcels))
+        raise typer.Exit(code=2)
+
+    logger.info("loading_parcels", path=str(parcels))
+    gdf = gpd.read_parquet(parcels)
+    logger.info(
+        "parcels_loaded",
+        n_parcels=len(gdf),
+        n_classes=gdf["class_id"].nunique(),
+        folds=sorted(gdf["fold"].unique().tolist()),
+    )
+
+    if limit > 0:
+        gdf = gdf.head(limit).copy()
+        logger.info("limited_for_smoke", n=len(gdf))
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    init_ee()
+
+    logger.info("ae_sampling_started", n_parcels=len(gdf), year=year, batch_size=batch_size)
+    t0 = time.time()
+    df_ae = sample_alphaearth_for_parcels(
+        gdf,
+        year=year,
+        cache_dir=out_dir,
+        cache_key=cache_key,
+        batch_size=batch_size,
+    )
+    elapsed = time.time() - t0
+    logger.info(
+        "ae_sampling_done",
+        n_rows=df_ae.height,
+        n_cols=df_ae.width,
+        elapsed_seconds=round(elapsed, 1),
+        elapsed_minutes=round(elapsed / 60, 1),
+        rate_parcels_per_s=round(df_ae.height / max(elapsed, 0.01), 2),
+    )
+
+    # Join con metadata de parcelas (patch_id, class_id, class_name, fold, area_m2, n_pixels).
+    meta_cols = [
+        "parcel_id", "patch_id", "instance_id", "class_id",
+        "class_name", "fold", "area_m2", "n_pixels",
+    ]
+    meta_df = pl.from_pandas(gdf[meta_cols].copy())
+    df_enriched = df_ae.join(meta_df, on="parcel_id", how="inner")
+
+    out_path = out_dir / f"alphaearth_{cache_key}_{year}_{df_enriched.height}_enriched.parquet"
+    df_enriched.write_parquet(out_path)
+    logger.info(
+        "enriched_parquet_written",
+        path=str(out_path),
+        n_rows=df_enriched.height,
+        size_mb=round(out_path.stat().st_size / 1e6, 2),
+    )
+    print(f"Wrote: {out_path} ({df_enriched.shape})")
+    print(
+        f"Stats: {df_enriched.height} parcelas, "
+        f"{df_enriched['class_id'].n_unique()} clases, "
+        f"folds {sorted(df_enriched['fold'].unique().to_list())}"
+    )
+
+
+if __name__ == "__main__":
+    app()

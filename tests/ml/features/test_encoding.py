@@ -240,21 +240,34 @@ def test_derive_season_handles_nan() -> None:
     assert out[2] == "summer"
 
 
-def test_derive_crop_group_from_class_id_uses_pastis_mapping() -> None:
-    """Debe usar la agrupacion agronomica oficial (cereales, etc.)."""
-    # class_id 2 = "Soft winter wheat" -> cereals
-    # class_id 5 = "Winter rapeseed" -> oilseeds_legumes
-    # class_id 8 = "Grapevine" -> permanent_long_cycle
+def test_derive_crop_group_from_class_id_uses_hcat_taxonomy() -> None:
+    """Debe usar la taxonomia HCAT oficial de EuroCrops (cereal, etc.)."""
+    # class_id 2 = "Soft winter wheat" -> cereal
+    # class_id 5 = "Winter rapeseed" -> industrial_nonfood
+    # class_id 8 = "Grapevine" -> vineyard
     series = pl.Series("class_id", [2, 5, 8, 0, 19])
     groups = derive_crop_group_from_class_id(series)
     out = groups.to_list()
-    assert out[0] == "cereals"
-    assert out[1] == "oilseeds_legumes"
-    assert out[2] == "permanent_long_cycle"
-    # 0=background, 19=void; ambos en el default map.
+    assert out[0] == "cereal"
+    assert out[1] == "industrial_nonfood"
+    assert out[2] == "vineyard"
+    # 0=background, 19=void; ambos en el mapeo HCAT inline.
     assert out[3] in {"background", "unknown"}
     assert out[4] in {"void", "unknown"}
-    assert groups.name == "class_id__group"
+
+
+def test_derive_crop_group_hcat_codes_are_valid() -> None:
+    """Cada grupo HCAT productivo debe tener un codigo HCAT3 trazable."""
+    from ml.features.encoding import _HCAT_GROUP_CODES
+
+    expected_groups = {
+        "cereal", "legume", "root_tuber", "industrial_nonfood",
+        "vegetable", "grassland", "orchard", "vineyard",
+    }
+    assert expected_groups.issubset(_HCAT_GROUP_CODES.keys())
+    # Los codigos productivos HCAT3 arrancan con 33 (rama crop_type).
+    for grp in expected_groups:
+        assert _HCAT_GROUP_CODES[grp].startswith("33")
 
 
 def test_derive_crop_group_with_custom_mapping() -> None:

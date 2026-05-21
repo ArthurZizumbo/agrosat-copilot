@@ -1,0 +1,6 @@
+block,n_cols,n_parcels,nan_cells,coverage_pct
+alphaearth,64,85951,0,100.0
+sentinel1,10,85951,65450,92.39
+srtm,3,85951,0,100.0
+era5_monthly,24,85951,293904,85.75
+geometry,3,85951,0,100.0

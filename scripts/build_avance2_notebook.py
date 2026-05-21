@@ -1,621 +1,422 @@
-"""Construye programaticamente notebooks/feature_engineering/Avance2.Equipo17.ipynb (US-018 ext).
+"""Genera el notebook integrador Avance2.Equipo17.ipynb a partir de
+``ml.report.avance2_content``.
 
-Operativo permanente reusable (sigue el patron de
-``scripts/build_us018_notebook.py`` y ``scripts/build_avance1_notebook.py``):
-regenera el .ipynb desde codigo Python con ``nbformat.v4``, ejecutable
-end-to-end con papermill y reproducible byte-a-byte.
+El notebook consolidado del Avance 2 reune el trabajo de ingenieria de
+caracteristicas realizado sobre tres fuentes de datos complementarias
+(Sentinel-2, PASTIS-R espectro-temporal y embeddings AlphaEarth) en un
+unico entregable coherente, sin re-ejecutar el feature engineering inline.
+Sigue el mismo patron que ``scripts/build_avance1_notebook.py``.
 
-Este notebook es el ENTREGABLE OFICIAL del Avance 2 del curso (formato
-``AvanceN.Equipo17``). Cubre los 100 pts de la rubrica:
+Estructura del notebook generado:
+    1. Portada (titulo, equipo, fecha, datasets)
+    2. Resumen ejecutivo + indice general
+    3-5. Capitulos (uno por notebook fuente): titulo, subtitulo, indice del
+        notebook fuente, figuras con narrativa, conclusiones interpretadas
+    6. Conclusiones globales de la fase de preparacion de datos
+    7. Atribuciones de licencias
 
-- Construccion (30 pts) -> §1 features + §2 discretizacion + §3 codificacion.
-- Normalizacion (30 pts) -> §4 transformaciones + §5 escalamiento.
-- Seleccion/Extraccion (30 pts) -> §6 filtros + §7 extractores.
-- Conclusiones CRISP-ML(Q) (10 pts) -> §8 con header canonico.
+Las figuras se embeben como base64 en las celdas de codigo, de modo que el
+notebook se commitea con las figuras pobladas sin necesidad de re-ejecutarlo
+(no requiere papermill). Las figuras se extraen previamente de los tres
+notebooks fuente con ``ml.report.extract_notebook_figures``.
 
 Uso:
     poetry run python scripts/build_avance2_notebook.py
     poetry run python scripts/build_avance2_notebook.py \\
         --out notebooks/feature_engineering/Avance2.Equipo17.ipynb
+
+Se ejecuta una sola vez por sprint cuando cambia el contenido editorial
+(``ml/report/avance2_content.py``).
 """
 
 from __future__ import annotations
 
+import base64
+import json
+import sys
+import uuid
 from pathlib import Path
+from typing import Any
 
-import nbformat as nbf
 import typer
+
+
+def _new_id() -> str:
+    """ID estable para cada celda (nbformat >= 4.5 lo exige)."""
+    return uuid.uuid4().hex[:12]
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from ml.report.avance2_content import FE_CARDS  # noqa: E402
+from ml.report.figure_narratives import get_narrative  # noqa: E402
+from ml.report.notebook_content import NotebookCard, list_figures  # noqa: E402
+
+FIGURES_ROOT = REPO_ROOT / "paper" / "figures"
 
 app = typer.Typer(add_completion=False)
 
 
-def _md(source: str) -> nbf.NotebookNode:
-    return nbf.v4.new_markdown_cell(source)
-
-
-def _code(source: str) -> nbf.NotebookNode:
-    return nbf.v4.new_code_cell(source)
-
-
 # ---------------------------------------------------------------------------
-# Construccion editorial del notebook (cells -> list[NotebookNode])
+# Helpers para construir celdas Jupyter nbformat v4
 # ---------------------------------------------------------------------------
 
 
-CELLS: list[nbf.NotebookNode] = [
-    _md(
-        "# Avance 2 — Ingenieria de Caracteristicas (Equipo 17 · AgroSatCopilot)\n"
-        "\n"
-        "**Curso**: Maestria en Inteligencia Artificial Aplicada · Tec de Monterrey.\n"
-        "**Sponsor**: Dr. Gerardo J. Camacho (`gjcamacho@tec.mx`).\n"
-        "**Fecha**: 17-may-2026.\n"
-        "**Equipo 17**: Arthur Zizumbo (MLOps), Aaron Bocanegra (Full-Stack), Isaac Avila (ML).\n"
-        "\n"
-        "## Resumen ejecutivo\n"
-        "\n"
-        "Este notebook consolida el entregable del **Avance 2 — Feature Engineering**\n"
-        "(100 pts) del proyecto AgroSatCopilot. Cubre la fase **Data Preparation** del\n"
-        "ciclo CRISP-ML(Q) sobre el dataset PASTIS-R (Sainte-Fare-Garnot 2021) y\n"
-        "sus derivados via los modulos `ml.features.spectral_indices` (17 indices),\n"
-        "`ml.features.temporal_features` (187 columnas estadisticas + FFT + fenologia)\n"
-        "y `ml.features.{selection, encoding}` (este Avance).\n"
-        "\n"
-        "### Mapeo rubrica -> secciones\n"
-        "\n"
-        "| Criterio rubrica | Pts | Seccion |\n"
-        "|------------------|-----|---------|\n"
-        "| Construccion de features | 30 | §1 (generacion) + §2 (discretizacion) + §3 (codificacion) |\n"
-        "| Normalizacion | 30 | §4 (correccion de sesgo) + §5 (escalamiento) |\n"
-        "| Seleccion / Extraccion | 30 | §6 (filtros) + §7 (extraccion) |\n"
-        "| Conclusiones CRISP-ML(Q) Data Preparation | 10 | §8 |\n"
-        "\n"
-        "### Decisiones tecnicas clave\n"
-        "\n"
-        "- **Polars in / Polars out** (regla `ml/CLAUDE.md NEVER pandas`): todas las\n"
-        "  funciones del modulo usan `pl.DataFrame.to_dummies()`, `pl.Series.qcut()`,\n"
-        "  `pl.Series.cut()` en lugar de equivalentes pandas.\n"
-        "- **Split espacial** = folds oficiales PASTIS-R 1-5 (Sainte-Fare-Garnot 2021),\n"
-        "  NO `KFold` aleatorio.\n"
-        "- **Yeo-Johnson** sobre indices con `|skew| > 1.0` (NDVI puede ser negativo).\n"
-        "- **PCA con `target_variance=0.95`** parametrico, NO `n_components` fijo.\n"
-        "- **Auto-deteccion**: si el subset PASTIS no esta presente, cae a fixture\n"
-        "  sintetico determinista (seed=42) sin abortar.\n"
-    ),
-    _md("## §0. Setup"),
-    _code(
+def _md_cell(source: str) -> dict[str, Any]:
+    """Celda markdown nbformat v4.5."""
+    return {
+        "cell_type": "markdown",
+        "id": _new_id(),
+        "metadata": {},
+        "source": source.splitlines(keepends=True),
+    }
+
+
+def _code_cell(
+    source: str,
+    outputs: list[dict[str, Any]] | None = None,
+    tags: list[str] | None = None,
+) -> dict[str, Any]:
+    """Celda code nbformat v4.5 con outputs embebidos y tags opcionales."""
+    metadata: dict[str, Any] = {}
+    if tags:
+        metadata["tags"] = tags
+    return {
+        "cell_type": "code",
+        "id": _new_id(),
+        "execution_count": None,
+        "metadata": metadata,
+        "source": source.splitlines(keepends=True),
+        "outputs": outputs or [],
+    }
+
+
+def _image_output(png_path: Path) -> dict[str, Any]:
+    """Output display_data con PNG embebido en base64.
+
+    Embebe la imagen como output de la celda code que la renderiza, para que
+    el notebook se commitee con las figuras pobladas y se vea sin tener que
+    re-ejecutarlo.
+    """
+    png_bytes = png_path.read_bytes()
+    b64 = base64.b64encode(png_bytes).decode("ascii")
+    return {
+        "output_type": "display_data",
+        "data": {
+            "image/png": b64,
+            "text/plain": [f"<Figure: {png_path.name}>"],
+        },
+        "metadata": {"image/png": {}},
+    }
+
+
+# ---------------------------------------------------------------------------
+# Construccion de las distintas secciones del notebook
+# ---------------------------------------------------------------------------
+
+
+def _parameters_cell() -> dict[str, Any]:
+    """Celda code con tag 'parameters'.
+
+    El notebook es file-driven (no consume datos externos), pero exponemos
+    ``figures_dir`` para que pueda apuntarse a un directorio alternativo si se
+    ejecuta en otra maquina.
+    """
+    src = (
+        "# Parametros configurables del notebook integrador:\n"
+        'figures_dir = "paper/figures"\n'
+    )
+    return _code_cell(src, tags=["parameters"])
+
+
+def _bootstrap_cell() -> dict[str, Any]:
+    """Celda code con sys.path, autoreload y resolucion del directorio de figuras."""
+    src = (
         "from __future__ import annotations\n"
         "\n"
-        "import os\n"
-        "os.environ.setdefault('MPLBACKEND', 'Agg')\n"
-        "\n"
-        "import json\n"
         "import sys\n"
         "from pathlib import Path\n"
         "\n"
-        "import matplotlib\n"
-        "matplotlib.use('Agg')\n"
-        "import matplotlib.pyplot as plt\n"
-        "import numpy as np\n"
-        "import polars as pl\n"
-        "import seaborn as sns\n"
-        "import structlog\n"
+        "from IPython.display import Image, Markdown, display\n"
         "\n"
-        "from ml.utils.notebook_setup import find_repo_root\n"
+        "# Bootstrap sys.path para que el notebook pueda importar desde ml/*\n"
+        "_REPO = Path.cwd().resolve()\n"
+        "for _candidate in (_REPO, *_REPO.parents):\n"
+        '    if (_candidate / "pyproject.toml").is_file():\n'
+        "        _REPO = _candidate\n"
+        "        break\n"
+        "if str(_REPO) not in sys.path:\n"
+        "    sys.path.insert(0, str(_REPO))\n"
         "\n"
-        "REPO_ROOT = find_repo_root(Path.cwd())\n"
-        "sys.path.insert(0, str(REPO_ROOT))\n"
+        "FIGURES = _REPO / figures_dir\n"
         "\n"
-        "from ml.features.encoding import (\n"
-        "    derive_crop_group_from_class_id,\n"
-        "    derive_season_from_doy,\n"
-        "    encode_onehot,\n"
-        "    encode_ordinal,\n"
-        "    encode_target_mean,\n"
-        ")\n"
-        "from ml.features.selection import (\n"
-        "    anova_f_select,\n"
-        "    apply_variance_threshold,\n"
-        "    chi2_select,\n"
-        "    compare_before_after,\n"
-        "    compute_feature_importance,\n"
-        "    discretize_features,\n"
-        "    discretize_ndvi_phenology_domain,\n"
-        "    drop_correlated_features,\n"
-        "    fit_factor_analysis,\n"
-        "    fit_pca,\n"
-        "    fit_umap_2d,\n"
-        "    make_preprocessor,\n"
-        "    select_normalizer,\n"
-        ")\n"
-        "from ml.features.selection import _load_pastis_features_subset  # type: ignore[reportPrivateUsage]\n"
+        "# Autoreload para captar cambios en ml/*.py sin restart de kernel\n"
+        "%load_ext autoreload\n"
+        "%autoreload 2\n"
         "\n"
-        "log = structlog.get_logger('avance2_notebook')\n"
-        "\n"
-        "REPORTS_DIR = REPO_ROOT / 'reports' / 'feature_selection'\n"
-        "REPORTS_DIR.mkdir(parents=True, exist_ok=True)\n"
-        "\n"
-        "SUBSET_PARQUET = REPO_ROOT / 'data' / 'test_fixtures' / 'feature_selection_subset.parquet'\n"
-        "print(f'SUBSET_PARQUET={SUBSET_PARQUET} exists={SUBSET_PARQUET.exists()}')\n"
-    ),
-    _code(
-        "# Carga del subset (real o sintetico).\n"
-        "MODE = 'real' if SUBSET_PARQUET.exists() else 'synthetic'\n"
-        "\n"
-        "if MODE == 'real':\n"
-        "    X, y, folds = _load_pastis_features_subset(SUBSET_PARQUET)\n"
-        "    # Para §3 necesitamos class_id (lo recargamos del parquet original).\n"
-        "    raw_df = pl.read_parquet(SUBSET_PARQUET)\n"
-        "    class_ids = raw_df.get_column('class_id')\n"
-        "else:\n"
-        "    from tests.ml.features.fixtures.selection_synthetic import make_pastis_subset_synthetic\n"
-        "    X, y, folds = make_pastis_subset_synthetic(\n"
-        "        n_samples=500, n_features=187, n_classes=20, seed=42\n"
-        "    )\n"
-        "    class_ids = y\n"
-        "\n"
-        "print(f'MODE={MODE}')\n"
-        "print(f'X shape: {X.shape}')\n"
-        "print(f'y unique classes ({len(set(y.to_list()))}): {sorted(set(y.to_list()))[:10]}...')\n"
-        "print(f'folds unique: {sorted(set(folds.tolist()))}')\n"
-    ),
-    _md(
-        "## §1. Construccion — generacion de nuevas caracteristicas\n"
-        "\n"
-        "Las features upstream (`X` con 187 columnas) provienen de:\n"
-        "\n"
-        "- **US-014**: 17 indices espectrales via `ml.features.spectral_indices.compute_index`,\n"
-        "  catalogo `spyndex` (NDVI, NDRE, NDWI, NDMI, NBR, MSAVI2, EVI, MCARI, CCCI,\n"
-        "  GCVI, PSRI, NDCI, FAPAR, LAI, RENDVI, SAVI, TSAVI).\n"
-        "- **US-015**: 187 columnas por `(parcel_id, year)` = 153 estadisticas (9 stats x\n"
-        "  17 indices) + 24 componentes FFT (8 x 3 indices) + 8 features de fenologia\n"
-        "  (`sog_doy`, `peak_doy`, `peak_value`, `senescence_doy`, `ndvi_auc`,\n"
-        "  `ndvi_slope_pre_peak`, `ndvi_slope_post_peak`, `maturity_duration_days`)\n"
-        "  + 2 indices auxiliares.\n"
-        "\n"
-        "**Referencias**: Tucker (1979) NDVI; Gao (1996) NDWI/NDMI; Daughtry (2000)\n"
-        "MCARI; Huete (2002) EVI; Pettorelli et al. (2005) interpretacion ecologica\n"
-        "del NDVI.\n"
-    ),
-    _code(
-        "# Muestra ejemplo de la familia NDVI sobre el subset y plot por clase.\n"
-        "ndvi_cols = [c for c in X.columns if c.startswith('NDVI_') and not c.endswith('__bin')][:6]\n"
-        "print(f'Familia NDVI ({len(ndvi_cols)} cols mostradas):', ndvi_cols)\n"
-        "if ndvi_cols:\n"
-        "    summary = X.select(ndvi_cols).describe()\n"
-        "    print(summary)\n"
-    ),
-    _code(
-        "# Distribucion NDVI_mean por clase: visualiza dispersion fenologica entre cultivos.\n"
-        "if 'NDVI_mean' in X.columns:\n"
-        "    ndvi_arr = X.get_column('NDVI_mean').to_numpy()\n"
-        "    y_arr = np.asarray(y.to_list())\n"
-        "    classes = sorted(set(y_arr.tolist()))[:8]\n"
-        "    fig, ax = plt.subplots(figsize=(9, 5))\n"
-        "    for cls in classes:\n"
-        "        mask = y_arr == cls\n"
-        "        if mask.sum() >= 2:\n"
-        "            ax.hist(ndvi_arr[mask], bins=15, alpha=0.5, label=f'cls {cls}')\n"
-        "    ax.set_xlabel('NDVI_mean')\n"
-        "    ax.set_ylabel('Frecuencia')\n"
-        "    ax.set_title('Distribucion NDVI_mean por clase PASTIS (top-8 clases)')\n"
-        "    ax.legend(fontsize=7)\n"
-        "    plt.tight_layout()\n"
-        "    plt.show()\n"
-        "    plt.close(fig)\n"
-        "else:\n"
-        "    print('NDVI_mean no disponible en este subset')\n"
-    ),
-    _md(
-        "## §2. Discretizacion / binning\n"
-        "\n"
-        "Cubre el bloque **Construccion** de la rubrica: tres estrategias canonicas\n"
-        "del CRISP-ML(Q) Data Preparation aplicadas sobre features continuas. Todas\n"
-        "via `ml.features.selection.discretize_features` (Polars-first; usa\n"
-        "`pl.Series.qcut` y `pl.Series.cut`, NO `KBinsDiscretizer` directo).\n"
-        "\n"
-        "1. **Quantile** (4 bins): preserva masa equiprobable; util para indices\n"
-        "   con distribucion no normal (NDVI sesgado a derecha en cultivos densos).\n"
-        "2. **KMeans 1D** (4 bins): agrupa por proximidad, reflejando regimenes\n"
-        "   fenologicos sin imponer cuantiles arbitrarios.\n"
-        "3. **Dominio agronomico** (5 bins NDVI): umbrales Tucker (1979) /\n"
-        "   Pettorelli et al. (2005) -> `water/bare/sparse/moderate/dense` via\n"
-        "   `discretize_ndvi_phenology_domain`.\n"
-    ),
-    _code(
-        "candidate_cols = [c for c in ('NDVI_mean', 'EVI_mean', 'NDWI_mean') if c in X.columns]\n"
-        "if not candidate_cols:\n"
-        "    candidate_cols = [c for c in X.columns if c not in ('parcel_id', 'year')][:2]\n"
-        "print(f'Columnas a discretizar: {candidate_cols}')\n"
-        "\n"
-        "X_bin_q, edges_q = discretize_features(\n"
-        "    X, columns=candidate_cols, strategy='quantile', n_bins=4\n"
-        ")\n"
-        "X_bin_k, edges_k = discretize_features(\n"
-        "    X, columns=candidate_cols, strategy='kmeans', n_bins=4, random_state=42\n"
-        ")\n"
-        "for col in candidate_cols:\n"
-        "    print(f'  {col}: quantile_edges={[round(e, 3) for e in edges_q[col]]} '\n"
-        "          f'kmeans_centers={[round(e, 3) for e in edges_k[col]]}')\n"
-    ),
-    _code(
-        "# Comparativa visual: histograma + bins quantile vs kmeans (primera columna).\n"
-        "if candidate_cols and candidate_cols[0] in X.columns:\n"
-        "    col0 = candidate_cols[0]\n"
-        "    vals = X.get_column(col0).to_numpy()\n"
-        "    bins_q = X_bin_q.get_column(f'{col0}__bin').to_numpy()\n"
-        "    bins_k = X_bin_k.get_column(f'{col0}__bin').to_numpy()\n"
-        "    fig, axes = plt.subplots(1, 3, figsize=(13, 4))\n"
-        "    axes[0].hist(vals, bins=20, color='steelblue', alpha=0.8)\n"
-        "    axes[0].set_title(f'{col0} (continuo)')\n"
-        "    sns.countplot(x=bins_q, ax=axes[1], color='seagreen')\n"
-        "    axes[1].set_title('Quantile bins (4)')\n"
-        "    axes[1].set_xlabel(f'{col0}__bin')\n"
-        "    sns.countplot(x=bins_k, ax=axes[2], color='goldenrod')\n"
-        "    axes[2].set_title('KMeans bins (4)')\n"
-        "    axes[2].set_xlabel(f'{col0}__bin')\n"
-        "    plt.tight_layout()\n"
-        "    plt.show()\n"
-        "    plt.close(fig)\n"
-    ),
-    _code(
-        "# Discretizacion de dominio: NDVI con umbrales agronomicos (water/bare/sparse/moderate/dense).\n"
-        "ndvi_target = 'NDVI_mean' if 'NDVI_mean' in X.columns else (candidate_cols[0] if candidate_cols else None)\n"
-        "if ndvi_target:\n"
-        "    X_pheno, pheno_labels = discretize_ndvi_phenology_domain(X, ndvi_col=ndvi_target)\n"
-        "    counts = X_pheno.group_by(f'{ndvi_target}__pheno').agg(pl.len().alias('n')).sort('n', descending=True)\n"
-        "    print(f'Discretizacion de dominio aplicada sobre {ndvi_target}:')\n"
-        "    print(counts)\n"
-        "    print(f'Labels: {pheno_labels}')\n"
-        "else:\n"
-        "    print('Sin columna NDVI para discretizacion de dominio')\n"
-    ),
-    _md(
-        "## §3. Codificacion de variables categoricas\n"
-        "\n"
-        "Las 187 features upstream son numericas continuas. Para cumplir el CA\n"
-        "**Construccion** (codificacion de categoricas) sobre el dataset PASTIS:\n"
-        "\n"
-        "1. **Ordinal** sobre estacion derivada de `peak_doy` (`derive_season_from_doy`)\n"
-        "   con mapping explicito `winter=0 < spring=1 < summer=2 < autumn=3`.\n"
-        "2. **One-hot** sobre `crop_group` derivado de `class_id` via\n"
-        "   `derive_crop_group_from_class_id` (colapsa 20 clases PASTIS-R en ~5 grupos\n"
-        "   agronomicos: cereals, root_crops, oilseeds_legumes, permanent_long_cycle,\n"
-        "   special_crops). Polars nativo (`pl.DataFrame.to_dummies`), NO pandas.\n"
-        "3. **Target mean encoding** (bayesiano con smoothing) sobre `crop_group`\n"
-        "   con el numero de la clase como proxy ordinal de target. Galli (2022) cap. 3.\n"
-    ),
-    _code(
-        "# (3.1) Ordinal sobre season derivada de peak_doy.\n"
-        "if 'peak_doy' in X.columns:\n"
-        "    season_series = derive_season_from_doy(X.get_column('peak_doy'))\n"
-        "    X_with_season = X.with_columns(season_series.rename('season'))\n"
-        "    season_map = {'winter': 0, 'spring': 1, 'summer': 2, 'autumn': 3, 'unknown': -1}\n"
-        "    X_ord, ord_report = encode_ordinal(X_with_season, {'season': season_map})\n"
-        "    print('Ordinal encoding aplicado sobre season:')\n"
-        "    print(f\"  mapping: {ord_report['season']['mapping']}\")\n"
-        "    print(f\"  unknown_count: {ord_report['season']['unknown_count']}\")\n"
-        "    season_counts = X_ord.group_by('season').agg(pl.len().alias('n')).sort('season')\n"
-        "    print(season_counts)\n"
-        "else:\n"
-        "    print('peak_doy no disponible; saltando ordinal')\n"
-        "    X_ord = X\n"
-    ),
-    _code(
-        "# (3.2) One-hot sobre crop_group derivado de class_id.\n"
-        "crop_group_series = derive_crop_group_from_class_id(class_ids).rename('crop_group')\n"
-        "n_groups = len(set(crop_group_series.to_list()))\n"
-        "print(f'crop_group derivado: {n_groups} grupos agronomicos')\n"
-        "\n"
-        "X_with_group = X_ord.with_columns(crop_group_series)\n"
-        "X_oh, oh_report = encode_onehot(X_with_group, columns=['crop_group'])\n"
-        "print(f'One-hot expandio crop_group -> {len(oh_report[\"crop_group\"])} columnas:')\n"
-        "for c in oh_report['crop_group']:\n"
-        "    print(f'  - {c}')\n"
-        "print(f'Shape antes/despues: {X_with_group.shape} -> {X_oh.shape}')\n"
-    ),
-    _code(
-        "# (3.3) Target mean encoding con smoothing bayesiano (Galli 2022).\n"
-        "# Usamos el numero de clase como proxy ordinal de target (severidad/dificultad).\n"
-        "X_te_input = X_with_group.with_columns(class_ids.cast(pl.Float64).alias('class_id_num'))\n"
-        "X_te, te_report = encode_target_mean(\n"
-        "    X_te_input,\n"
-        "    target_col='class_id_num',\n"
-        "    columns=['crop_group'],\n"
-        "    smoothing=10.0,\n"
-        ")\n"
-        "print(f\"Target mean encoding (smoothing=10, global_mean={te_report['global_mean']:.3f}):\")\n"
-        "for cat, enc_val in sorted(te_report['per_column']['crop_group'].items()):\n"
-        "    print(f'  {cat:30s} -> {enc_val:.4f}')\n"
-    ),
-    _code(
-        "# Tabla comparativa de cardinalidad antes/despues por estrategia.\n"
-        "card_rows = [\n"
-        "    {'estrategia': 'original (categorica)', 'cols_generadas': 1, 'descripcion': 'crop_group Utf8 con N categorias'},\n"
-        "    {'estrategia': 'ordinal', 'cols_generadas': 1, 'descripcion': 'season Int64 (1 columna)'},\n"
-        "    {'estrategia': 'one-hot', 'cols_generadas': len(oh_report['crop_group']), 'descripcion': 'crop_group__{cat} expandido'},\n"
-        "    {'estrategia': 'target_mean', 'cols_generadas': 1, 'descripcion': 'crop_group_target_enc Float64'},\n"
-        "]\n"
-        "card_df = pl.DataFrame(card_rows)\n"
-        "card_path = REPORTS_DIR / 'encoding_cardinality.csv'\n"
-        "card_df.write_csv(card_path)\n"
-        "print(f'Cardinalidad por estrategia guardada en {card_path}')\n"
-        "print(card_df)\n"
-    ),
-    _md(
-        "## §4. Transformaciones para correccion de sesgo\n"
-        "\n"
-        "Familia de transformaciones aplicadas segun la regla de routing en\n"
-        "`select_normalizer`:\n"
-        "\n"
-        "- `log1p` para LAI/biomasa (estrictamente positivas, sesgadas a derecha).\n"
-        "- **Yeo-Johnson** para indices con `|skew| > 1.0` (incluido NDVI que puede\n"
-        "  ser negativo en agua/sombras — Box-Cox no aplica).\n"
-        "- `StandardScaler` para modelos lineales/SVM.\n"
-        "- `MinMaxScaler` para redes neuronales.\n"
-    ),
-    _code(
-        "from scipy.stats import skew as sp_skew\n"
-        "from sklearn.preprocessing import PowerTransformer\n"
-        "\n"
-        "demo_col = 'LAI_mean' if 'LAI_mean' in X.columns else (candidate_cols[0] if candidate_cols else None)\n"
-        "if demo_col:\n"
-        "    vals = X.get_column(demo_col).to_numpy()\n"
-        "    vals_clean = vals[np.isfinite(vals)]\n"
-        "    raw_skew = float(sp_skew(vals_clean, bias=False)) if vals_clean.size > 2 else 0.0\n"
-        "    yj = PowerTransformer(method='yeo-johnson', standardize=True)\n"
-        "    transformed = yj.fit_transform(vals_clean.reshape(-1, 1)).flatten()\n"
-        "    transformed_skew = float(sp_skew(transformed, bias=False)) if transformed.size > 2 else 0.0\n"
-        "    fig, axes = plt.subplots(1, 2, figsize=(11, 4))\n"
-        "    axes[0].hist(vals_clean, bins=30, color='tomato', alpha=0.8)\n"
-        "    axes[0].set_title(f'{demo_col} crudo (skew={raw_skew:.2f})')\n"
-        "    axes[1].hist(transformed, bins=30, color='steelblue', alpha=0.8)\n"
-        "    axes[1].set_title(f'Yeo-Johnson (skew={transformed_skew:.2f})')\n"
-        "    plt.tight_layout()\n"
-        "    plt.show()\n"
-        "    plt.close(fig)\n"
-        "else:\n"
-        "    print('Sin columna disponible para demo de Yeo-Johnson')\n"
-    ),
-    _md(
-        "## §5. Escalamiento (StandardScaler vs MinMaxScaler vs categorico)\n"
-        "\n"
-        "`make_preprocessor(strategy=...)` agrupa las columnas en buckets y construye\n"
-        "un `ColumnTransformer` serializable con joblib (requisito Backend Aaron). La\n"
-        "extension fase 5 (US-018) agrega `categorical_cols` para integrar columnas\n"
-        "categoricas con `OneHotEncoder` o `OrdinalEncoder` en el mismo pipeline,\n"
-        "preservando retro-compatibilidad cuando `categorical_cols=()`.\n"
-    ),
-    _code(
-        "# Tres preprocessors: linear puro, nn puro, linear + categoricas.\n"
-        "pre_lin = make_preprocessor(X, strategy='linear')\n"
-        "pre_nn = make_preprocessor(X, strategy='nn')\n"
-        "# Si tenemos crop_group derivado, demostramos integracion numerico+categorico.\n"
-        "X_with_group_only = X.with_columns(crop_group_series)\n"
-        "pre_mixed = make_preprocessor(\n"
-        "    X_with_group_only, strategy='linear', categorical_cols=('crop_group',)\n"
-        ")\n"
-        "print('Buckets de cada preprocessor:')\n"
-        "print(f'  linear -> {[t[0] for t in pre_lin.transformers]}')\n"
-        "print(f'  nn     -> {[t[0] for t in pre_nn.transformers]}')\n"
-        "print(f'  mixed  -> {[t[0] for t in pre_mixed.transformers]}')\n"
-    ),
-    _md("## §6. Filtrado para seleccion (VarianceThreshold + correlacion + chi2 + ANOVA F)"),
-    _code(
-        "X_var, var_report = apply_variance_threshold(X, threshold=0.01)\n"
-        "print(f'Variance Threshold (0.01): removidas={len(var_report[\"removed\"])}, kept={len(var_report[\"kept\"])}')\n"
-        "\n"
-        "X_corr, corr_report = drop_correlated_features(X_var, threshold=0.95, method='pearson')\n"
-        "print(f'Correlacion Pearson |r|>0.95: removidas={len(corr_report[\"removed\"])}, kept={len(corr_report[\"kept\"])}')\n"
-        "\n"
-        "_, chi2_scores = chi2_select(X_corr, y, k_best=10, binning_strategy='quartiles')\n"
-        "print(f'Chi2 top-10: {list(chi2_scores.keys())[:5]}...')\n"
-        "\n"
-        "_, anova_scores = anova_f_select(X_corr, y, k_best=10)\n"
-        "print(f'ANOVA F top-10: {list(anova_scores.keys())[:5]}...')\n"
-    ),
-    _md("## §7. Extraccion (PCA target_variance=0.95 + Factor Analysis + UMAP 2D)"),
-    _code(
-        "from sklearn.preprocessing import StandardScaler\n"
-        "\n"
-        "matrix = X_corr.drop(['parcel_id', 'year']).to_numpy().astype(np.float64)\n"
-        "matrix = np.nan_to_num(matrix, nan=0.0)\n"
-        "matrix_std = StandardScaler().fit_transform(matrix)\n"
-        "\n"
-        "pca_result = fit_pca(matrix_std, target_variance=0.95)\n"
-        "print(f'PCA n_components para 95% varianza: {pca_result[\"n_components\"]}')\n"
-        "print(f'Reduccion dimensional: {matrix.shape[1]} -> {pca_result[\"n_components\"]} '\n"
-        "      f'({100 * pca_result[\"n_components\"] / matrix.shape[1]:.1f}% del original)')\n"
-        "\n"
-        "fa_result = fit_factor_analysis(matrix_std, n_factors=min(5, matrix.shape[1] - 1, matrix.shape[0] - 1))\n"
-        "print(f'Factor Analysis: loadings shape = {fa_result[\"loadings\"].shape}')\n"
-    ),
-    _code(
-        "# UMAP 2D para visualizacion (D4: prepro/EDA, NO feature engineering productivo).\n"
-        "sample_n = min(matrix_std.shape[0], 500)\n"
-        "sample_idx = np.random.default_rng(42).choice(matrix_std.shape[0], size=sample_n, replace=False)\n"
-        "umap_emb = fit_umap_2d(matrix_std[sample_idx])\n"
-        "fig, ax = plt.subplots(figsize=(8, 6))\n"
-        "y_sample = np.asarray(y.to_list())[sample_idx]\n"
-        "scatter = ax.scatter(umap_emb[:, 0], umap_emb[:, 1], c=y_sample, cmap='tab20', s=12, alpha=0.7)\n"
-        "ax.set_title('UMAP 2D coloreado por clase PASTIS (Avance 2)')\n"
-        "ax.set_xlabel('UMAP-1')\n"
-        "ax.set_ylabel('UMAP-2')\n"
-        "plt.colorbar(scatter, ax=ax, label='class_id')\n"
-        "plt.tight_layout()\n"
-        "plt.show()\n"
-        "plt.close(fig)\n"
-    ),
-    _md(
-        "# Conclusiones CRISP-ML(Q) Data Preparation\n"
-        "\n"
-        "Cierre del Avance 2 (100 / 100 pts) — Equipo 17.\n"
-        "\n"
-        "## (a) Features construidas\n"
-        "\n"
-        "El input al notebook son 187 columnas por `(parcel_id, year)`: 17 indices\n"
-        "espectrales (US-014 via `spyndex`) x 9 estadisticos (US-015) + 24 componentes\n"
-        "FFT (8 x 3 indices) + 8 features de fenologia (`sog_doy`, `peak_doy`, ...)\n"
-        "+ 2 indices auxiliares. La derivacion adicional incluye:\n"
-        "\n"
-        "- `season` (Utf8 / Int64 ordinal) derivada de `peak_doy` via\n"
-        "  `derive_season_from_doy` (hemisferio norte, convencion meteorologica).\n"
-        "- `crop_group` (Utf8) derivado de `class_id` via\n"
-        "  `derive_crop_group_from_class_id` colapsando las 20 clases PASTIS-R en 5\n"
-        "  grupos agronomicos (`cereals`, `root_crops`, `oilseeds_legumes`,\n"
-        "  `permanent_long_cycle`, `special_crops`) segun la agrupacion oficial\n"
-        "  `PASTIS_R_GROUPINGS['agronomic_group']`.\n"
-        "\n"
-        "## (b) Discretizacion aplicada\n"
-        "\n"
-        "Tres estrategias cubiertas via `discretize_features`:\n"
-        "\n"
-        "1. **Quantile** sobre indices espectrales (4 bins equiprobables) — preserva\n"
-        "   masa para distribuciones no normales.\n"
-        "2. **KMeans 1D** sobre EVI (4 clusters) — agrupa por proximidad espectral.\n"
-        "3. **Dominio agronomico** sobre NDVI (5 bins Tucker/Pettorelli:\n"
-        "   `water/bare/sparse/moderate/dense`) via\n"
-        "   `discretize_ndvi_phenology_domain`.\n"
-        "\n"
-        "Las tres devuelven `{col}__bin` (Int64) o `{col}__pheno` (Utf8) sin destruir\n"
-        "el feature continuo original.\n"
-        "\n"
-        "## (c) Categoricas codificadas\n"
-        "\n"
-        "Tres esquemas aplicados con API Polars-first (regla CLAUDE.md):\n"
-        "\n"
-        "- **Ordinal** sobre `season` con mapping explicito (winter=0..autumn=3)\n"
-        "  preservando la semantica del ciclo anual.\n"
-        "- **One-hot** sobre `crop_group` via `pl.DataFrame.to_dummies`. NO `pd.get_dummies`.\n"
-        "  Cardinalidad expande de 1 -> N columnas `crop_group__{cat}`.\n"
-        "- **Target mean encoding** con smoothing bayesiano (Galli 2022 cap. 3,\n"
-        "  `smoothing=10`) como alternativa de baja dimensionalidad cuando el\n"
-        "  one-hot explotaria el ancho de la matriz (escala a categoricas de alta\n"
-        "  cardinalidad sin penalizar la regresion lineal).\n"
-        "\n"
-        "## (d) Normalizacion por familia de modelo\n"
-        "\n"
-        "Reglas implementadas en `select_normalizer` + materializadas via\n"
-        "`make_preprocessor(strategy=...)`:\n"
-        "\n"
-        "- **Lineales / SVM**: `StandardScaler` por defecto + `PowerTransformer`\n"
-        "  Yeo-Johnson para `|skew| > 1.0`. Yeo-Johnson elegido sobre Box-Cox para\n"
-        "  soportar NDVI negativo (agua, sombras).\n"
-        "- **Redes neuronales**: `MinMaxScaler` a [0, 1] excepto features sesgadas\n"
-        "  (Yeo-Johnson estandarizado).\n"
-        "- **LAI / biomasa**: `log1p` por construccion (positivas, sesgadas a derecha).\n"
-        "- **Categoricas**: integradas al `ColumnTransformer` via `categorical_cols`\n"
-        "  + `OneHotEncoder(handle_unknown='ignore')` o\n"
-        "  `OrdinalEncoder(handle_unknown='use_encoded_value', unknown_value=-1)`.\n"
-        "\n"
-        "Resultado: pipeline serializable con joblib para carga remota desde GCS\n"
-        "(requisito Backend Aaron).\n"
-        "\n"
-        "## (e) Seleccion final\n"
-        "\n"
-        "Cadena documentada en `reports/feature_selection/`:\n"
-        "\n"
-        "- `VarianceThreshold(0.01)` -> `drop_correlated_features(|r|>0.95)` reduce\n"
-        "  redundancia (cluster `{NDVI, NDRE, NDWI, SAVI}` verificado en EDA Avance 1).\n"
-        "- `chi2_select(quartiles)` y `anova_f_select` rankean por relevancia\n"
-        "  univariada.\n"
-        "- `fit_pca(target_variance=0.95)` reduce dimensionalidad parametricamente\n"
-        "  segun varianza acumulada (NO `n_components` fijo).\n"
-        "- `compute_feature_importance(model='rf'|'xgb')` complementa con importance\n"
-        "  multivariada (exploratorio, NO production — decision D7).\n"
-        "\n"
-        "## (f) Cinco hallazgos no triviales\n"
-        "\n"
-        "1. **Cluster espectral redundante confirmado** (cruzado con EDA Avance 1\n"
-        "   hallazgo 9): el filtro `drop_correlated_features(0.95)` elimina\n"
-        "   ≥3 features del cluster `{NDVI, NDRE, NDWI, SAVI}` sin perdida semantica.\n"
-        "2. **Senal espectro-temporal domina la rubrica univariada**: el top-3 de\n"
-        "   ANOVA F en el subset PASTIS real incluye GCVI/MSAVI2/LAI/CCCI antes que\n"
-        "   los estadisticos puntuales puros (cruzado con EDA hallazgo 18 sobre\n"
-        "   bandas B07/B8A redundantes — justifica PCA).\n"
-        "3. **PCA recupera la varianza con < 50 componentes** (sobre 185 features\n"
-        "   post-filtro): la matriz admite compresion fuerte porque los 17 indices\n"
-        "   comparten subespacio espectral (EDA hallazgo 14).\n"
-        "4. **Agrupacion agronomica balancea el target**: las 18 clases PASTIS-R\n"
-        "   se colapsan en 5 grupos con cardinalidad ~10000-30000 parcelas cada uno,\n"
-        "   reduciendo el desbalanceo del problema multiclase original (EDA Avance 1\n"
-        "   hallazgo 21 sobre desbalance Meadow=31k vs Beet=871).\n"
-        "5. **Yeo-Johnson resuelve el NDVI negativo**: la regresion sobre subset\n"
-        "   verifica que la transformacion no rompe en presencia de agua/sombras\n"
-        "   (skew se reduce de ~2.0 a ~0.05 en LAI_mean), confirmando la decision\n"
-        "   D10 del planning.\n"
-        "\n"
-        "## (g) Limitaciones + mapeo final\n"
-        "\n"
-        "### Limitaciones declaradas\n"
-        "\n"
-        "- El subset PASTIS-R usado tiene 77 muestras estratificadas (vs 500\n"
-        "   planeadas); algunos resultados empiricos requieren validacion sobre\n"
-        "   el set completo (~30k parcelas Italia + Francia).\n"
-        "- `chi2` se ejecuta con binning sintetico en cuartiles porque las\n"
-        "   features upstream son numericas (decision D6 documentada).\n"
-        "- UMAP es prepro/EDA, NO feature engineering productivo (decision D4):\n"
-        "   los `pc_*` de PCA se usan en el `ColumnTransformer` downstream; UMAP\n"
-        "   solo aparece como evidencia visual.\n"
-        "- Target mean encoding se demuestra con `class_id` como proxy ordinal\n"
-        "   (datasets reales requeririan una variable continua de yield).\n"
-        "\n"
-        "### Mapeo CA -> seccion\n"
-        "\n"
-        "| Criterio aceptacion (US-018) | Seccion | Modulo Python |\n"
-        "|------------------------------|---------|---------------|\n"
-        "| AC-1 VarianceThreshold | §6 | `apply_variance_threshold` |\n"
-        "| AC-2 Correlacion Pearson | §6 | `drop_correlated_features` |\n"
-        "| AC-3 Chi-cuadrado | §6 | `chi2_select` |\n"
-        "| AC-4 ANOVA F | §6 | `anova_f_select` |\n"
-        "| AC-5 PCA 0.95 | §7 | `fit_pca` |\n"
-        "| AC-6 Factor Analysis | §7 | `fit_factor_analysis` |\n"
-        "| AC-7 UMAP 2D | §7 | `fit_umap_2d` |\n"
-        "| AC-8 RF + XGB importance | §6 (cita) | `compute_feature_importance` |\n"
-        "| AC-9 Antes/Despues PASTIS folds | §6 (cita) | `compare_before_after` |\n"
-        "| AC-10 Normalizacion | §5 | `select_normalizer` + `make_preprocessor` |\n"
-        "| AC-11 Conclusiones CRISP-ML(Q) | §8 (esta celda) | — |\n"
-        "| Construccion §1 features | §1 | `compute_index`, `extract_temporal_features` |\n"
-        "| Construccion §2 discretizacion | §2 | `discretize_features`, `discretize_ndvi_phenology_domain` |\n"
-        "| Construccion §3 codificacion | §3 | `encode_ordinal`, `encode_onehot`, `encode_target_mean` |\n"
-        "\n"
-        "### Mapeo rubrica Avance 2 -> seccion\n"
-        "\n"
-        "| Criterio rubrica | Pts | Seccion |\n"
-        "|------------------|-----|---------|\n"
-        "| Construccion de features | 30 | §1 + §2 + §3 |\n"
-        "| Normalizacion | 30 | §4 + §5 |\n"
-        "| Seleccion / Extraccion | 30 | §6 + §7 |\n"
-        "| Conclusiones CRISP-ML(Q) | 10 | §8 |\n"
-        "| **Total Avance 2** | **100** | — |\n"
-    ),
-]
+        'display(Markdown(f"**Configuracion lista** - repo = `{_REPO.name}` - '
+        'figuras = `{FIGURES.relative_to(_REPO)}`"))\n'
+    )
+    return _code_cell(src)
 
 
-@app.command()
-def build(
-    out: Path = typer.Option(
-        Path("notebooks/feature_engineering/Avance2.Equipo17.ipynb"),
-        help="Ruta destino del .ipynb generado.",
-    ),
-) -> None:
-    """Construye el notebook integrador Avance 2 desde ``CELLS``."""
-    nb = nbf.v4.new_notebook()
-    nb.cells = CELLS
-    nb.metadata.update(
-        {
+def _kpi_table_cell(card: NotebookCard) -> dict[str, Any] | None:
+    """Tabla markdown de KPIs por capitulo."""
+    if not card.kpis:
+        return None
+    lines = [
+        "**Indicadores principales**\n",
+        "\n",
+        "| Indicador | Valor | Detalle |\n",
+        "| --- | --- | --- |\n",
+    ]
+    for kpi in card.kpis:
+        lines.append(f"| {kpi.label} | **{kpi.value}** | {kpi.delta} |\n")
+    lines.append("\n")
+    return _md_cell("".join(lines))
+
+
+def _cover_cell() -> dict[str, Any]:
+    """Portada del notebook + resumen ejecutivo."""
+    return _md_cell(
+        "# Avance 2 — Ingenieria de Caracteristicas\n"
+        "## Equipo 17 · AgroSatCopilot · Proyecto Integrador MNA\n"
+        "\n"
+        "**Equipo 17**\n"
+        "- Carlos Isaac Ávila Gutiérrez — A01796035\n"
+        "- Carlos Aaron Bocanegra Buitrón — A01796345\n"
+        "- Arthur Jafed Zizumbo Velasco — A01796363\n"
+        "\n"
+        "**Curso:** MNA — Tec de Monterrey · 20-abr → 3-jul-2026\n"
+        "**Fecha de entrega:** 2026-05-17\n"
+        "\n"
+        "**Datasets utilizados:** Sentinel-2 L2A (Copernicus), PASTIS-R "
+        "(Sainte-Fare-Garnot et al. 2021), AlphaEarth Foundations (Google "
+        "DeepMind), SRTM, ERA5 y BreizhCrops.\n"
+        "\n"
+        "---\n"
+        "\n"
+        "## Resumen ejecutivo\n"
+        "\n"
+        "Este notebook consolida el trabajo de ingenieria de caracteristicas "
+        "que realizamos sobre tres fuentes de datos complementarias y lo "
+        "presenta como un unico recorrido coherente.\n"
+        "\n"
+        "La ingenieria de caracteristicas es el puente entre los datos crudos "
+        "y los modelos: transforma imagenes satelitales y series temporales "
+        "en tablas numericas listas para entrenar, decidiendo que construir, "
+        "que transformar y que conservar. Lo abordamos desde tres angulos:\n"
+        "\n"
+        "- **Imagen cruda de Sentinel-2** — construccion de indices "
+        "espectrales, discretizacion y codificacion de variables a nivel de "
+        "pixel.\n"
+        "- **Parcelas de PASTIS-R** — seleccion, extraccion y normalizacion "
+        "sobre 185 caracteristicas espectro-temporales por parcela.\n"
+        "- **Embeddings AlphaEarth** — fusion multisensor sobre el vector de "
+        "64 dimensiones aprendido por un modelo de base.\n"
+        "\n"
+        "Cada capitulo resume uno de los tres notebooks de trabajo detallado, "
+        "con sus figuras y sus conclusiones interpretadas con numeros reales. "
+        "Un cuarto capitulo cruza los hallazgos y los traduce en decisiones "
+        "concretas para la fase de modelado base.\n"
+        "\n"
+        "Los notebooks de trabajo detallado viven en:\n"
+        "- [`03a_fe_sentinel2.ipynb`](03a_fe_sentinel2.ipynb)\n"
+        "- [`03b_fe_spectral_temporal_pastis.ipynb`](03b_fe_spectral_temporal_pastis.ipynb)\n"
+        "- [`03c_fe_alphaearth_pastis.ipynb`](03c_fe_alphaearth_pastis.ipynb)\n"
+    )
+
+
+def _toc_cell() -> dict[str, Any]:
+    """Indice general del notebook."""
+    lines = ["# Indice\n", "\n"]
+    for idx, card in enumerate(FE_CARDS, start=1):
+        anchor = card.notebook_id.replace("-", "")
+        lines.append(f"{idx}. [{card.title}](#{anchor})\n")
+    lines.append(f"{len(FE_CARDS) + 1}. [Atribuciones de licencias](#atribuciones)\n")
+    return _md_cell("".join(lines))
+
+
+def _chapter_header_cell(idx: int, card: NotebookCard) -> dict[str, Any]:
+    """Header del capitulo: titulo, subtitulo, notebook fuente, indice."""
+    anchor = card.notebook_id.replace("-", "")
+    lines = [
+        f'<a id="{anchor}"></a>\n',
+        f"## {idx}. {card.title}\n",
+        "\n",
+        f"_{card.subtitle}_\n",
+        "\n",
+    ]
+    if not card.notebook_path.startswith("("):
+        lines.append(f"**Notebook de trabajo:** `{card.notebook_path}`\n\n")
+    if card.sections:
+        label = (
+            "**Contenido de este capitulo:**\n\n"
+            if card.notebook_path.startswith("(")
+            else "**Indice del notebook de trabajo:**\n\n"
+        )
+        lines.append(label)
+        for section in card.sections:
+            lines.append(f"- {section}\n")
+        lines.append("\n")
+    return _md_cell("".join(lines))
+
+
+def _figure_cells(card: NotebookCard) -> list[dict[str, Any]]:
+    """Celdas markdown + code con figuras embebidas y narrativa por figura.
+
+    Cada figura genera:
+        1. Markdown con titulo + narrativa interpretativa + metodo.
+        2. Code cell con ``display(Image(...))`` + el PNG embebido como output.
+
+    Replica el patron del notebook integrador del Avance 1: la narrativa
+    se resuelve con :func:`ml.report.figure_narratives.get_narrative` usando
+    el ``notebook_id`` de la ficha. Si una figura no tiene narrativa
+    registrada, se usa un fallback con el nombre del archivo.
+    """
+    cells: list[dict[str, Any]] = []
+    pngs = list_figures(card, FIGURES_ROOT)
+    if not pngs:
+        return cells
+
+    cells.append(_md_cell(f"### Figuras del analisis ({len(pngs)} figuras)\n"))
+
+    for png in pngs:
+        narrative = get_narrative(card.notebook_id, png.name)
+        if narrative is not None:
+            md_lines = [
+                f"**{narrative.title}**\n",
+                "\n",
+                f"{narrative.narrative}\n",
+                "\n",
+                f"> _Como se construyo: {narrative.method}_\n",
+            ]
+        else:
+            stem = png.stem.replace("_", " ").capitalize()
+            md_lines = [
+                f"**{stem}**\n",
+                "\n",
+                f"_Figura: `{png.name}`. Narrativa interpretativa pendiente._\n",
+            ]
+        cells.append(_md_cell("".join(md_lines)))
+
+        rel_to_figures = png.relative_to(FIGURES_ROOT).as_posix()
+        code_src = f'display(Image(str(FIGURES / "{rel_to_figures}")))\n'
+        cells.append(_code_cell(code_src, outputs=[_image_output(png)]))
+
+    return cells
+
+
+def _conclusions_cells(card: NotebookCard) -> list[dict[str, Any]]:
+    """Celdas markdown con las conclusiones interpretadas del capitulo."""
+    if not card.conclusions:
+        return []
+
+    cells: list[dict[str, Any]] = [
+        _md_cell(
+            f"### Conclusiones e interpretacion ({len(card.conclusions)} hallazgos)\n"
+        )
+    ]
+    for heading, body in card.conclusions:
+        cells.append(_md_cell(f"**{heading}**\n\n{body}\n"))
+    return cells
+
+
+def _attributions_cell() -> dict[str, Any]:
+    """Cierre con atribuciones de licencias."""
+    return _md_cell(
+        '<a id="atribuciones"></a>\n'
+        "## Atribuciones de licencias\n"
+        "\n"
+        "- **PASTIS-R** — Sainte-Fare-Garnot et al. 2021 · CC-BY-SA 4.0\n"
+        "- **Sentinel-2 L2A / Sentinel-1 GRD** — Copernicus Programme "
+        "(European Union / ESA) · términos Copernicus\n"
+        "- **AlphaEarth Foundations** — Google DeepMind vía Google Earth "
+        "Engine · términos GEE\n"
+        "- **SRTM** — NASA / USGS · dominio público\n"
+        "- **ERA5** — Copernicus Climate Change Service (C3S) · licencia "
+        "Copernicus\n"
+        "- **BreizhCrops** — Rußwurm et al. 2020 · licencia abierta de "
+        "investigación\n"
+        "\n"
+        "Detalle completo en `docs/licenses/DATA_LICENSE.md`.\n"
+        "\n"
+        "---\n"
+        "\n"
+        "_Notebook generado por_ `scripts/build_avance2_notebook.py` _a "
+        "partir de_ `ml/report/avance2_content.py`."
+    )
+
+
+def build_notebook() -> dict[str, Any]:
+    """Construye el dict del notebook listo para escribir a JSON."""
+    cells: list[dict[str, Any]] = [
+        _cover_cell(),
+        _parameters_cell(),
+        _bootstrap_cell(),
+        _toc_cell(),
+    ]
+
+    for idx, card in enumerate(FE_CARDS, start=1):
+        cells.append(_chapter_header_cell(idx, card))
+        kpi_cell = _kpi_table_cell(card)
+        if kpi_cell is not None:
+            cells.append(kpi_cell)
+        cells.extend(_figure_cells(card))
+        cells.extend(_conclusions_cells(card))
+
+    cells.append(_attributions_cell())
+
+    return {
+        "cells": cells,
+        "metadata": {
             "kernelspec": {
                 "display_name": "Python 3 (ipykernel)",
                 "language": "python",
                 "name": "python3",
             },
-            "language_info": {"name": "python", "version": "3.12"},
-        }
-    )
+            "language_info": {
+                "codemirror_mode": {"name": "ipython", "version": 3},
+                "file_extension": ".py",
+                "mimetype": "text/x-python",
+                "name": "python",
+                "nbconvert_exporter": "python",
+                "pygments_lexer": "ipython3",
+                "version": "3.12",
+            },
+        },
+        "nbformat": 4,
+        "nbformat_minor": 5,
+    }
+
+
+@app.command()
+def build(
+    out: Path = typer.Option(
+        REPO_ROOT / "notebooks" / "feature_engineering" / "Avance2.Equipo17.ipynb",
+        "--out",
+        "-o",
+        help="Ruta destino del .ipynb generado.",
+    ),
+) -> None:
+    """Genera el notebook integrador Avance 2 con figuras embebidas."""
+    nb = build_notebook()
     out_path = out if out.is_absolute() else Path.cwd() / out
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    nbf.write(nb, str(out_path))
-    typer.echo(f"Notebook escrito en {out_path} ({len(CELLS)} celdas)")
+    with out_path.open("w", encoding="utf-8") as fh:
+        json.dump(nb, fh, ensure_ascii=False, indent=1)
+
+    size_kb = out_path.stat().st_size / 1024
+    n_cells = len(nb["cells"])
+    n_md = sum(1 for c in nb["cells"] if c["cell_type"] == "markdown")
+    n_code = sum(1 for c in nb["cells"] if c["cell_type"] == "code")
+    typer.echo(f"OK notebook generado: {out_path}")
+    typer.echo(
+        f"   {n_cells} celdas ({n_md} markdown + {n_code} code) - {size_kb:.1f} KB"
+    )
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     app()

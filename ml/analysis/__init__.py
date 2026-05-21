@@ -1,4 +1,4 @@
-"""Modulo de analisis exploratorio para US-010/011/012."""
+"""Modulo de analisis exploratorio para US-010/011/012/018."""
 
 from ml.analysis.correlations import (
     SPECTRAL_INDICES_CORE,
@@ -21,21 +21,39 @@ from ml.analysis.embeddings import (
     tsne_2d,
     umap_2d,
 )
+from ml.analysis.paper_methods import (
+    aggregate_rare_classes,
+    boundary_interior_stats,
+    boundary_pixel_mask,
+    cloud_gap_robustness,
+    compute_boundary_ratio,
+    confusion_symmetry_analysis,
+    phenology_calendar_features,
+    temporal_sampling_stats,
+)
 
 __all__ = [
     "DIM_COLS",
     "SPECTRAL_INDICES_CORE",
     "acf_pacf_per_parcel",
+    "aggregate_rare_classes",
+    "boundary_interior_stats",
+    "boundary_pixel_mask",
+    "cloud_gap_robustness",
     "compare_alphaearth_vs_ndvi",
+    "compute_boundary_ratio",
     "compute_indices_subset",
+    "confusion_symmetry_analysis",
     "correlation_matrix",
     "correlation_pair",
     "cross_region_consistency",
     "dtw_cluster_temporal",
     "era5_ndvi_anomaly",
+    "phenology_calendar_features",
     "phenology_peaks",
     "qq_test_dims",
     "rf_feature_importance",
+    "temporal_sampling_stats",
     "temporal_stability",
     "tsne_2d",
     "umap_2d",

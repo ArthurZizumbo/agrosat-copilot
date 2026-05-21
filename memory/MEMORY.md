@@ -1,0 +1,2 @@
+- [AlphaEarth aggregation patch vs parcel](feedback_alphaearth_aggregation.md) — caveat de muestreo centroide en PASTIS-R y plan para reduceRegions parcel-level
+- [US-018 QA ready-to-close](project_us018_qa_ready_to_close.md) — QA final feature selection cerrado 2026-05-21, bugs verificados, gates verdes

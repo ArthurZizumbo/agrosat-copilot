@@ -1,34 +1,25 @@
 {
-  "pixel_level": {
-    "path": "reports\\feature_fusion\\ae_pixel_level.parquet",
-    "n_pixels": 6000,
-    "n_features": 64,
-    "feature_prefix": "dim_",
-    "label_cols": [
-      "class_id",
-      "class_name",
-      "agronomic_group"
-    ],
-    "coord_cols": [
-      "lon",
-      "lat"
-    ]
-  },
   "parcel_level": {
     "path": "reports\\feature_fusion\\ae_parcel_level.parquet",
-    "n_parcels": 10,
+    "n_parcels": 85951,
     "n_features": 64,
     "feature_prefix": "ae_",
     "label_cols": [
       "class_id",
       "agronomic_group"
     ],
-    "aggregation": "mean per parcel; class_id and agronomic_group via mode"
+    "fold_col": "fold",
+    "aggregation": "AlphaEarth sampled at PASTIS patch centroid; no pixel->parcel reduction"
+  },
+  "source_cache": {
+    "path": "data\\cache\\gee\\alphaearth_pastis_parcels_2019_85951_enriched.parquet",
+    "description": "AlphaEarth annual embedding 2019 over 2433 PASTIS-R patch centroids",
+    "year": 2019
   },
   "scaler": {
     "path": "reports\\feature_fusion\\parcel_features_scaler_v1.pkl",
     "version": "v1_fusion_notebook",
-    "fitted_on": "train split of fold 0 (6 parcels)",
+    "fitted_on": "train split of official PASTIS fold-1 (54978 parcels)",
     "feature_cols": [
       "ae_00",
       "ae_01",
@@ -97,9 +88,8 @@
     ]
   },
   "spatial_folds": {
-    "k": 3,
-    "h3_resolution": 5,
-    "buffer_km": 1.0,
+    "source": "official PASTIS-R folds 1-5 from metadata.geojson",
+    "k": 5,
     "val_fraction": 0.2,
     "random_state": 42
   },
@@ -107,5 +97,5 @@
     "apply_variance_threshold(threshold=0.0001)",
     "drop_correlated_features(threshold=0.9, method=pearson)"
   ],
-  "pca_n_components_95pct": 7
+  "pca_n_components_95pct": 23
 }

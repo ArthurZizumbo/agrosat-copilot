@@ -35,7 +35,7 @@ _PARCELS_FIXTURE_PATH = _REPO_ROOT / "data" / "test_fixtures" / "parcels_demo_3r
 
 
 @pytest.fixture
-def parcels_fixture_3regions() -> "gpd.GeoDataFrame":
+def parcels_fixture_3regions() -> gpd.GeoDataFrame:
     """Carga el fixture de 9 parcelas sinteticas (3 regiones italianas).
 
     Devuelve un GeoDataFrame con ``parcel_id``, ``year``, ``geometry``
@@ -60,7 +60,7 @@ def parcels_fixture_3regions() -> "gpd.GeoDataFrame":
 
 
 @pytest.fixture
-def synthetic_alphaearth_64d(parcels_fixture_3regions: "gpd.GeoDataFrame") -> pl.DataFrame:
+def synthetic_alphaearth_64d(parcels_fixture_3regions: gpd.GeoDataFrame) -> pl.DataFrame:
     """``pl.DataFrame`` con 64 dims AlphaEarth deterministas por parcela.
 
     Valor de la dim ``j`` para la parcela ``i`` = ``round((i * 0.13 + j * 0.011),
