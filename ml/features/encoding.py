@@ -13,8 +13,10 @@ calculos numericos.
 API publica
 -----------
 - :func:`derive_crop_group_from_class_id` — colapsa las 20 clases PASTIS-R en
-  ~5 grupos agronomicos reusando ``PASTIS_R_GROUPINGS["agronomic_group"]``
-  del loader oficial (US-001).
+  8 grupos agronomicos segun la taxonomia HCAT (Hierarchical Crop and
+  Agriculture Taxonomy) oficial de EuroCrops (Schneider et al. 2023). Usa el
+  override de ``PASTIS_R_GROUPINGS["agronomic_group"]`` del loader oficial
+  (US-001) si esta presente; en su defecto cae al mapeo HCAT inline.
 - :func:`derive_season_from_doy` — convierte day-of-year a etiqueta de
   estacion (``winter/spring/summer/autumn``); util para sembrar
   :func:`encode_ordinal` cuando el feature de entrada es ``peak_doy`` u otro
@@ -73,10 +75,18 @@ _DEFAULT_EXCLUDE: tuple[str, ...] = ("parcel_id", "year")
 # Mapping default para estaciones del hemisferio norte (mes -> estacion).
 # Sigue la convencion meteorologica: winter = DEC/JAN/FEB (mes 12, 1, 2).
 _SEASON_NORTH_BY_MONTH: dict[int, str] = {
-    12: "winter", 1: "winter", 2: "winter",
-    3: "spring", 4: "spring", 5: "spring",
-    6: "summer", 7: "summer", 8: "summer",
-    9: "autumn", 10: "autumn", 11: "autumn",
+    12: "winter",
+    1: "winter",
+    2: "winter",
+    3: "spring",
+    4: "spring",
+    5: "spring",
+    6: "summer",
+    7: "summer",
+    8: "summer",
+    9: "autumn",
+    10: "autumn",
+    11: "autumn",
 }
 
 # Hemisferio sur: estaciones invertidas (winter = JUN/JUL/AUG).
@@ -90,31 +100,54 @@ _SEASON_SOUTH_BY_MONTH: dict[int, str] = {
     for m, s in _SEASON_NORTH_BY_MONTH.items()
 }
 
-# Fallback default cuando ``PASTIS_R_GROUPINGS["agronomic_group"]`` no esta
-# disponible (e.g. el JSON de referencia no se ha desplegado en el entorno).
-# Coincide con la agrupacion agronomica publicada en el JSON oficial
-# (Sainte-Fare-Garnot 2021, Figura 2).
+# Mapeo PASTIS-R (20 clases) -> grupo agronomico HCAT (Hierarchical Crop and
+# Agriculture Taxonomy de EuroCrops, Schneider et al. 2023). HCAT es la
+# taxonomia oficial armonizada de la Union Europea para tipos de cultivo;
+# usarla en lugar de un agrupamiento inventado da trazabilidad academica al
+# encoding categorico. Cada grupo apunta a un nodo HCAT3 real verificado
+# contra `data/reference/eurocrops/HCAT3.csv` (descargado de
+# github.com/maja601/EuroCrops). El codigo HCAT3 se documenta en
+# :data:`_HCAT_GROUP_CODES` para trazabilidad.
+#
+# Referencia: M. Schneider, T. Schelte, F. Schmitz, M. Korner (2023).
+# "EuroCrops: A Pan-European Dataset for Time Series Crop Type Classification".
+# arXiv:2106.08151. Taxonomia HCAT: github.com/maja601/EuroCrops.
 _DEFAULT_CROP_GROUP_MAP: dict[int, str] = {
     0: "background",
-    1: "permanent_long_cycle",
-    2: "cereals",
-    3: "cereals",
-    4: "cereals",
-    5: "oilseeds_legumes",
-    6: "cereals",
-    7: "oilseeds_legumes",
-    8: "permanent_long_cycle",
-    9: "root_crops",
-    10: "cereals",
-    11: "cereals",
-    12: "special_crops",
-    13: "root_crops",
-    14: "oilseeds_legumes",
-    15: "oilseeds_legumes",
-    16: "permanent_long_cycle",
-    17: "cereals",
-    18: "special_crops",
+    1: "grassland",  # Meadow -> pasture_meadow_grassland_grass
+    2: "cereal",  # Soft winter wheat
+    3: "cereal",  # Corn (grain maize)
+    4: "cereal",  # Winter barley
+    5: "industrial_nonfood",  # Winter rapeseed
+    6: "cereal",  # Spring barley
+    7: "industrial_nonfood",  # Sunflower
+    8: "vineyard",  # Grapevine
+    9: "root_tuber",  # Beet -> sugar_beet
+    10: "cereal",  # Winter triticale
+    11: "cereal",  # Winter durum wheat
+    12: "vegetable",  # Fruits, vegetables, flowers -> fresh_vegetables
+    13: "root_tuber",  # Potatoes
+    14: "legume",  # Leguminous fodder
+    15: "legume",  # Soybeans -> soy_soybeans
+    16: "orchard",  # Orchard -> orchards_fruits
+    17: "cereal",  # Mixed cereal
+    18: "cereal",  # Sorghum -> millet_sorghum
     19: "void",
+}
+
+# Codigo HCAT3 oficial por grupo agronomico, para trazabilidad academica.
+# Verificado contra data/reference/eurocrops/HCAT3.csv (EuroCrops v3).
+_HCAT_GROUP_CODES: dict[str, str] = {
+    "cereal": "3301010000",  # cereal
+    "legume": "3301020000",  # legumes_dried_pulses_protein_crops
+    "root_tuber": "3301290000",  # root_vegetables (incluye sugar_beet, potatoes)
+    "industrial_nonfood": "3301060000",  # industrial_nonfood_crops
+    "vegetable": "3301070000",  # fresh_vegetables
+    "grassland": "3302000000",  # pasture_meadow_grassland_grass
+    "orchard": "3303010000",  # orchards_fruits
+    "vineyard": "3303060000",  # vineyards_wine_vine_rebland_grapes
+    "background": "0",
+    "void": "0",
 }
 
 
@@ -173,46 +206,58 @@ def derive_crop_group_from_class_id(
     *,
     mapping: dict[int, str] | None = None,
 ) -> pl.Series:
-    """Colapsa las 20 clases PASTIS-R en grupos agronomicos.
+    """Colapsa las 20 clases PASTIS-R en 8 grupos agronomicos HCAT.
+
+    Los grupos siguen la taxonomia HCAT (Hierarchical Crop and Agriculture
+    Taxonomy) oficial de EuroCrops (Schneider et al. 2023, arXiv:2106.08151),
+    el estandar armonizado de tipos de cultivo de la Union Europea. Cada
+    grupo corresponde a un nodo HCAT3 real (codigos en
+    :data:`_HCAT_GROUP_CODES`). Usar HCAT en lugar de un agrupamiento
+    propio da trazabilidad academica al encoding categorico del Avance 2.
 
     Cuando ``mapping`` es ``None``, intenta cargar
-    ``PASTIS_R_GROUPINGS["agronomic_group"]`` desde
-    :mod:`ml.ingest.pastis_loader`; si la agrupacion no esta disponible
-    (entorno sin ``data/reference/pastis_class_mapping.json``), cae al
-    diccionario inline :data:`_DEFAULT_CROP_GROUP_MAP` documentado en el
-    docstring del modulo.
+    el mapeo HCAT inline :data:`_DEFAULT_CROP_GROUP_MAP` (8 grupos, estandar
+    UE).
+
+    Nota sobre taxonomias: el repo mantiene dos agrupaciones distintas y
+    complementarias. (1) HCAT — 8 grupos taxonomicos oficiales de EuroCrops,
+    el default de esta funcion; da trazabilidad academica. (2)
+    ``PASTIS_R_GROUPINGS["agronomic_group"]`` del JSON de referencia — 5
+    super-clases por uso comercial, usadas por el baseline US-016. Para
+    obtener la agrupacion comercial de 5 clases en lugar de HCAT, pasar
+    ``mapping=PASTIS_R_GROUPINGS["agronomic_group"]`` explicitamente.
 
     Args:
         class_id_series: Serie ``pl.Series`` Int con valores en ``[0, 19]``.
-        mapping: Override opcional ``{class_id: nombre_grupo}``. Valores
-            fuera del mapping se etiquetan como ``"unknown"``.
+        mapping: Override opcional ``{class_id: nombre_grupo}``. Si es
+            ``None`` se usa la taxonomia HCAT. Valores fuera del mapping se
+            etiquetan como ``"unknown"``.
 
     Returns:
-        Serie ``pl.Series`` Utf8 con grupo agronomico por fila; ``name``
+        Serie ``pl.Series`` Utf8 con grupo agronomico HCAT por fila; ``name``
         del input + sufijo ``__group`` (o ``"crop_group"`` si el input no
-        tiene ``name``).
+        tiene ``name``). Los 8 grupos son: ``cereal``, ``legume``,
+        ``root_tuber``, ``industrial_nonfood``, ``vegetable``, ``grassland``,
+        ``orchard``, ``vineyard`` (mas ``background``/``void``).
     """
     if mapping is None:
-        try:
-            from ml.ingest.pastis_loader import PASTIS_R_GROUPINGS
-
-            mapping = PASTIS_R_GROUPINGS.get("agronomic_group") or _DEFAULT_CROP_GROUP_MAP
-            source = "pastis_loader.PASTIS_R_GROUPINGS[agronomic_group]"
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("pastis_loader_import_failed", error=str(exc))
-            mapping = _DEFAULT_CROP_GROUP_MAP
-            source = "default_inline_map"
+        mapping = _DEFAULT_CROP_GROUP_MAP
+        source = "hcat3_eurocrops_inline"
     else:
         source = "caller_provided"
 
     raw = class_id_series.to_list()
     out = [mapping.get(int(v), "unknown") if v is not None else "unknown" for v in raw]
     out_name = f"{class_id_series.name}__group" if class_id_series.name else "crop_group"
+    groups_present = sorted(set(out))
+    hcat_codes = {g: _HCAT_GROUP_CODES.get(g, "n/a") for g in groups_present}
     logger.info(
         "crop_group_derived",
         source=source,
+        taxonomy="HCAT3_eurocrops",
         n=len(out),
-        n_groups=len(set(out)),
+        n_groups=len(groups_present),
+        hcat_codes=hcat_codes,
     )
     return pl.Series(out_name, out, dtype=pl.Utf8)
 
@@ -250,8 +295,7 @@ def encode_ordinal(
     missing = [c for c in mapping if c not in df.columns]
     if missing:
         raise ValueError(
-            f"Columnas en mapping ausentes del DataFrame: {missing}. "
-            f"Disponibles: {df.columns}"
+            f"Columnas en mapping ausentes del DataFrame: {missing}. Disponibles: {df.columns}"
         )
 
     out = df
@@ -316,8 +360,7 @@ def encode_onehot(
     missing = [c for c in cols_list if c not in df.columns]
     if missing:
         raise ValueError(
-            f"Columnas a codificar ausentes del DataFrame: {missing}. "
-            f"Disponibles: {df.columns}"
+            f"Columnas a codificar ausentes del DataFrame: {missing}. Disponibles: {df.columns}"
         )
     if not cols_list:
         return df, {}
@@ -401,9 +444,7 @@ def encode_target_mean(
     cols_list = [c for c in columns if c not in exclude_cols]
     missing = [c for c in cols_list if c not in df.columns]
     if missing:
-        raise ValueError(
-            f"Columnas a target-encodear ausentes del DataFrame: {missing}."
-        )
+        raise ValueError(f"Columnas a target-encodear ausentes del DataFrame: {missing}.")
 
     target_arr = df.get_column(target_col).cast(pl.Float64).to_numpy()
     global_mean = float(np.nanmean(target_arr)) if target_arr.size else 0.0

@@ -1,4 +1,4 @@
-.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip notebooks-check i18n-check db-migrate db-rollback db-new db-status db-seed db-test-us015 features-extract-demo features-persist features-fuse-demo features-fuse-italy dagster-materialize-features feature-selection-subset feature-selection-build feature-selection-notebook feature-selection-test feature-fusion-build feature-fusion-notebook avance2-build avance2-notebook train-l4 train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eda-sentinel2 eda-alphaearth eda-bivariado eda-figures-avance1 eda-pastis-subset eda-notebook-avance1 eda-pdf eda-dashboard eda-dashboard-test eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate farslip-dataset-build farslip-dataset-check farslip-train farslip-eval-pastis farslip-smoke-eval
+.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip notebooks-check i18n-check db-migrate db-rollback db-new db-status db-seed db-test-us015 features-extract-demo features-persist features-fuse-demo features-fuse-italy dagster-materialize-features feature-selection-subset feature-selection-build feature-selection-notebook feature-selection-test feature-fusion-build feature-fusion-notebook avance2-figures avance2-build train-l4 train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eda-sentinel2 eda-alphaearth eda-bivariado eda-figures-avance1 eda-figures-paper-methods eda-pastis-subset eda-notebook-avance1 paper-methods-notebook eda-pdf eda-dashboard eda-dashboard-test eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate farslip-dataset-build farslip-dataset-check farslip-train farslip-eval-pastis farslip-smoke-eval
 
 help:
 	@echo "AgroSatCopilot — comandos disponibles:"
@@ -158,14 +158,21 @@ feature-fusion-notebook:  ## US-018 ext — Papermill end-to-end sobre 03c_fe_al
 	MPLBACKEND=Agg poetry run papermill notebooks/feature_engineering/03c_fe_alphaearth_pastis.ipynb \
 	  notebooks/feature_engineering/03c_fe_alphaearth_pastis.ipynb --no-progress-bar
 
-# === Avance 2 — Feature Engineering (entregable del curso, US-018 ext) ===
-avance2-build:  ## US-018 ext — Reconstruye notebooks/feature_engineering/Avance2.Equipo17.ipynb desde scripts/build_avance2_notebook.py
+# === Avance 2 — Feature Engineering (notebook integrador del curso) ===
+avance2-figures:  ## Extrae figuras inline de los 3 notebooks FE a paper/figures/feature-engineering/
+	poetry run python -m ml.report.extract_notebook_figures \
+	  notebooks/feature_engineering/03a_fe_sentinel2.ipynb \
+	  --output paper/figures/feature-engineering/sentinel2
+	poetry run python -m ml.report.extract_notebook_figures \
+	  notebooks/feature_engineering/03b_fe_spectral_temporal_pastis.ipynb \
+	  --output paper/figures/feature-engineering/spectral-temporal
+	poetry run python -m ml.report.extract_notebook_figures \
+	  notebooks/feature_engineering/03c_fe_alphaearth_pastis.ipynb \
+	  --output paper/figures/feature-engineering/alphaearth
+
+avance2-build: avance2-figures  ## Regenera el notebook integrador Avance2.Equipo17.ipynb (figuras embebidas, sin papermill)
 	poetry run python scripts/build_avance2_notebook.py \
 	  --out notebooks/feature_engineering/Avance2.Equipo17.ipynb
-
-avance2-notebook:  ## US-018 ext — Papermill end-to-end sobre Avance2.Equipo17.ipynb
-	MPLBACKEND=Agg poetry run papermill notebooks/feature_engineering/Avance2.Equipo17.ipynb \
-	  notebooks/feature_engineering/Avance2.Equipo17.ipynb --no-progress-bar
 
 # === ML / Training ===
 train-l4:  ## Spot L4 24GB (baselines, dev)
@@ -217,16 +224,30 @@ eda-bivariado:  ## Ejecuta el notebook US-012 bivariado/multivariado/temporal (n
 eda-figures-avance1:  ## Extrae figuras inline del notebook Avance1.Equipo17 a paper/figures/avance1/
 	poetry run python -m ml.report.extract_notebook_figures notebooks/eda/Avance1.Equipo17.ipynb
 
+eda-figures-paper-methods:  ## Copia las figuras de 02e_eda_metodos_paper a paper/figures/paper-methods/
+	mkdir -p paper/figures/paper-methods
+	cp reports/paper_methods/boundary_interior_histograms.png \
+	   reports/paper_methods/temporal_gap_distribution.png \
+	   reports/paper_methods/confusion_symmetry_scatter.png \
+	   reports/paper_methods/phenology_calendar_distribution.png \
+	   reports/paper_methods/cloud_gap_drift.png \
+	   paper/figures/paper-methods/
+
 eda-pastis-subset:  ## Genera subset compacto de PASTIS-R (~500KB) para el mapa folium del dashboard
 	poetry run python -m ml.report.generate_pastis_subset
 
 eda-notebook-avance1:  ## Regenera notebooks/eda/Avance1.Equipo17.ipynb desde notebook_content.py + figure_narratives.py
 	poetry run python scripts/build_avance1_notebook.py
 
-eda-pdf:  ## Genera el reporte PDF del Avance 1 con las 5 fichas (S2, AlphaEarth, Bivariado, PASTIS, Globales)
+paper-methods-notebook:  ## Regenera y ejecuta notebooks/eda/02e_eda_metodos_paper.ipynb (7 metodos de 4 papers)
+	poetry run python scripts/build_paper_methods_notebook.py
+	MPLBACKEND=Agg poetry run papermill notebooks/eda/02e_eda_metodos_paper.ipynb \
+	  notebooks/eda/02e_eda_metodos_paper.ipynb --no-progress-bar
+
+eda-pdf:  ## Genera el reporte PDF del Avance 1 con las 7 fichas (S2, AlphaEarth, Bivariado, PASTIS, BreizhCrops, Literatura, Globales)
 	poetry run python -m ml.report.export_pdf --output paper/avance1_eda_report.pdf
 
-eda-dashboard:  ## Arranca el dashboard Streamlit del Avance 1 (6 tabs: 5 fichas + mapa espacial)
+eda-dashboard:  ## Arranca el dashboard Streamlit del Avance 1 (8 tabs: 7 fichas + mapa espacial)
 	poetry run streamlit run app/eda_dashboard.py --server.port 8501 --server.headless true
 
 eda-dashboard-test:  ## Smoke test opcional con Playwright para el dashboard (US-013 AC-11 bonus)

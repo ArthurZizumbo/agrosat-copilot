@@ -162,7 +162,19 @@ Cuatro ensambles (EPIC 6) combinan las salidas: voting homogéneo sobre top-3 te
 
 ## 3. Antecedentes Académicos {#3-antecedentes-academicos}
 
-Cuatro artículos científicos delimitan el espacio conceptual del proyecto. Dos provistos por el patrocinador (TSViT y Phenology Description) fundamentan el pipeline de modelado temporal y de generación fenológica; dos adicionales publicados en noviembre de 2025 (Be My Eyes y FarSLIP) fundamentan la arquitectura multi-agente del copiloto y la técnica de adaptación CLIP para teledetección fine-grained.
+Seis artículos científicos delimitan el espacio conceptual del proyecto. Cuatro provistos por el patrocinador Dr. Camacho (TSViT, Phenology Description, y los dos sumados en mayo de 2026: Rußwurm & Körner sobre encoders recurrentes secuenciales y Tarasiou et al. sobre pre-entrenamiento contrastivo Context-Self) fundamentan el pipeline de modelado temporal, la generación fenológica y las decisiones de preparación de datos en EPIC 2 (EDA) y EPIC 3 (Feature Engineering); dos adicionales publicados en noviembre de 2025 (Be My Eyes y FarSLIP) fundamentan la arquitectura multi-agente del copiloto y la técnica de adaptación CLIP para teledetección fine-grained.
+
+> **Nota de trazabilidad (sponsor, 18-may-2026).** El Dr. Camacho recomendó
+> evaluar dos datasets/artículos adicionales — Rußwurm & Körner (ISPRS IJGI
+> 2018, dataset BavarianCrops) y Tarasiou et al. (IEEE TGRS, *Context-self
+> contrastive pre-training*). Se incorporan como §3.5 y §3.6. El §3.1 (TSViT,
+> *ViTs for SITS*, arXiv:2301.04944) **se conserva**: el artículo Context-Self
+> es una contribución distinta y complementaria del mismo autor (técnica de
+> pre-entrenamiento, no arquitectura). Los métodos de EDA/FE extraídos de la
+> lectura completa de ambos papers se implementan en
+> [`ml/analysis/paper_methods.py`](../ml/analysis/paper_methods.py) y se
+> demuestran en `notebooks/eda/02e_eda_metodos_paper.ipynb`. Ver el informe
+> [`docs/research/datasets-investigacion-adicional.md`](../docs/research/datasets-investigacion-adicional.md).
 
 ### 3.1 Paper 1 — TSViT: Vision Transformers for Satellite Image Time Series
 
@@ -228,6 +240,31 @@ Reporta estado del arte en open-vocabulary semantic segmentation, zero-shot clas
 
 Esta técnica reduce el margen de error sistemático en la cuantificación de superficies en hectáreas y mejora la consistencia espacial de las fronteras de cultivo, dos atributos críticos para que el copiloto reporte cifras trazables.
 
+### 3.5 Paper 5 — Multi-Temporal Land Cover Classification with Sequential Recurrent Encoders
+
+**Cita:** M. Rußwurm y M. Körner, "Multi-Temporal Land Cover Classification with Sequential Recurrent Encoders", ISPRS International Journal of Geo-Information, vol. 7, núm. 4, art. 129, 2018. DOI 10.3390/ijgi7040129. arXiv:1802.02080. Dataset asociado: BavarianCrops / MTLCC (`github.com/MarcCoru/MTLCC`).
+
+**Aporte nuclear.** Adapta los encoders secuenciales del aprendizaje sequence-to-sequence (traducción automática, reconocimiento de voz) a la clasificación multitemporal de cobertura del suelo. Cuatro elementos extraídos de la lectura completa del artículo:
+
+1. **Codificador recurrente convolucional bidireccional** (LSTM/GRU convolucionales) que comprime una serie Sentinel-2 de longitud variable en un estado de celda de tamaño fijo, leído en orden directo e invertido para eliminar el sesgo hacia las últimas observaciones.
+2. **Preprocesamiento mínimo deliberado.** No aplican corrección atmosférica ni enmascaramiento de nubes: usan reflectancia top-of-atmosphere cruda y filtran únicamente productos con menos de 80 % de nubosidad. La red aprende un filtrado interno de nubes (visualizan la celda 47 que se activa diferencialmente en observaciones nubladas). Profundidad de entrada d=15: diez bandas Sentinel-2 más año y día-del-año como canales explícitos.
+3. **Análisis de confusiones simétricas vs asimétricas.** Distinguen confusiones simétricas consistentes entre años (triticale↔centeno) — atribuibles a similitud espectral/fenológica — de confusiones asimétricas que aparecen solo en un año — atribuibles a factores externos (clima estacional, exposición solar).
+4. **Agregación de clases raras por umbral de frecuencia.** Colapsan aproximadamente 200 etiquetas en 17 clases reteniendo solo las que ocurren al menos 400 veces; reportan Cohen's kappa además de accuracy para compensar la distribución no uniforme.
+
+**Aplicación en AgroSatCopilot.** Este artículo fundamenta decisiones de **EPIC 2 (EDA)** y **EPIC 3 (Feature Engineering)**, no de arquitectura. Tres métodos se implementan en [`ml/analysis/paper_methods.py`](../ml/analysis/paper_methods.py): `temporal_sampling_stats` (análisis de irregularidad de revisita), `confusion_symmetry_analysis` (descomposición simétrica/asimétrica de la matriz de confusión) y `aggregate_rare_classes` (agregación por umbral de frecuencia). El dataset BavarianCrops se incorpora como referencia de validación cross-regional Francia↔Alemania; BreizhCrops (Bretaña) cumple un rol análogo y ya está integrado vía [`ml/ingest/breizhcrops_loader.py`](../ml/ingest/breizhcrops_loader.py).
+
+### 3.6 Paper 6 — Context-Self Contrastive Pre-training for Crop Type Semantic Segmentation
+
+**Cita:** M. Tarasiou, R. A. Güler y S. Zafeiriou, "Context-self contrastive pretraining for crop type semantic segmentation", IEEE Transactions on Geoscience and Remote Sensing, 2022. arXiv:2104.04310. Código y dataset T31TFM-1618: `github.com/michaeltrs/DeepSatModels`.
+
+**Aporte nuclear.** Propone un esquema de pre-entrenamiento totalmente supervisado basado en aprendizaje contrastivo, diseñado específicamente para tareas de clasificación densa. Tres elementos extraídos de la lectura completa:
+
+1. **Context-Self Contrastive Loss (CSCL).** Aprende un espacio de embeddings donde las fronteras semánticas "emergen" comparando cada localización con su contexto local; el cuello de botella de la segmentación de cultivos está en las fronteras de parcela, no en el interior homogéneo.
+2. **Hallazgo de EDA (Figura 2).** La varianza espectral de una parcela agrícola proviene casi en su totalidad de los píxeles de frontera; los píxeles interiores forman regiones homogéneas de baja variación. Lo demuestran con histogramas de la banda B08 sobre conjuntos {interior / interior+frontera / exterior}.
+3. **Dataset T31TFM-1618.** Cobertura densamente anotada de un tile Sentinel-2 de Francia, tres años, 575k parcelas; de 166 clases retienen 20 con umbral de ≥20k píxeles en entrenamiento.
+
+**Aplicación en AgroSatCopilot.** El hallazgo de la Figura 2 fundamenta dos contribuciones de **EPIC 3 (Feature Engineering)** implementadas en [`ml/analysis/paper_methods.py`](../ml/analysis/paper_methods.py): `boundary_interior_stats` (análisis interior-vs-frontera replicando la Figura 2 sobre PASTIS-R) y `compute_boundary_ratio` (feature nuevo por parcela: proporción de píxeles de frontera, justificado como portador de la señal discriminativa). El esquema CSCL de pre-entrenamiento contrastivo se incorpora como rama de inicialización de pesos para los modelos de **EPIC 5** (en particular TSViT y SegFormer-B2), complementando — no sustituyendo — la arquitectura TSViT del §3.1.
+
 ---
 
 ## 4. Estado del Arte 2025-2026 {#4-estado-del-arte}
@@ -284,6 +321,15 @@ La revisión bibliográfica abarca treinta fuentes publicadas en los años 2025 
 | 27 | Hierarchical Crop EnMAP + S2, arXiv:2506.06155 | 2025 | Referencia para features hiperespectrales (futuro) |
 | 28 | **Swin-UNETR para Crop Seg SITS, arXiv:2412.01944** | 2024-25 | **Implementado** en EPIC 5 como modelo 6 |
 | 29 | ViTs in Precision Agriculture Survey, arXiv:2504.21706 | 2025 | Referencia metodológica para selección de arquitecturas |
+| 39 | **Rußwurm & Körner — Sequential Recurrent Encoders, ISPRS IJGI 7(4):129, arXiv:1802.02080** | 2018 | **Sponsor.** Métodos de EDA/FE en `paper_methods.py` (revisita temporal, confusiones simétricas, agregación de clases raras); dataset BavarianCrops cross-regional. Ver §3.5 |
+| 40 | **Tarasiou et al. — Context-Self Contrastive Pre-training, IEEE TGRS, arXiv:2104.04310** | 2022 | **Sponsor.** Hallazgo interior-vs-frontera en `paper_methods.py` (`boundary_interior_stats`, `compute_boundary_ratio`); CSCL como pre-entrenamiento EPIC 5. Ver §3.6 |
+| 41 | Phenology-Aware Transformer (PVM), Remote Sensing 17(14):2346 | 2025 | Crop-growth calendar → `phenology_calendar_features` en `paper_methods.py`. Ver §3.5 nota EDA/FE |
+| 42 | Qin et al. — Spatiotemporal Masked Pre-training (STCLN), Int. J. Appl. Earth Obs. Geoinf. | 2025 | Enmascaramiento espaciotemporal → auditoría de robustez `cloud_gap_robustness` en `paper_methods.py` |
+
+> **Nota de numeración.** Las referencias #39-#42 se añadieron en mayo de 2026
+> tras la recomendación del sponsor; conservan numeración incremental sobre el
+> bloque original #1-#38 para no reescribir citas previas. Las cuatro
+> fundamentan los métodos de `ml/analysis/paper_methods.py` (EPIC 2/3).
 
 ### 4.5 Feature Extraction Self-Supervised y Detección de Cambios
 
@@ -608,7 +654,17 @@ El proyecto utiliza exclusivamente fuentes abiertas con licencia verificable. Ca
 | **USGS Spectral Library** | USGS Digital Spectral Library | Dominio Público | Sin restricciones | Descarga directa |
 | **AgroMind Benchmark** (28,482 QA pairs) | HuggingFace `AgroMind/AgroMind` | CC-BY | Atribución autores | `datasets.load_dataset` |
 | **GEO-Bench-2** (Paper Track) | HuggingFace + IBM repo | Mixed open (CC-BY / MIT) | Atribución por subdataset | `huggingface_hub.snapshot_download` |
+| **BreizhCrops** (Bretaña, Francia) | `github.com/dl4sits/BreizhCrops` | Open (uso académico, atribución) | Atribución a Rußwurm et al. | `bash scripts/download_breizhcrops.sh` + DVC (`data/breizhcrops.dvc`) |
+| **BavarianCrops / MTLCC** (Baviera, Alemania) | `github.com/MarcCoru/MTLCC` | Open (uso académico, atribución) | Atribución a Rußwurm & Körner 2018 | Referencia cross-regional; descarga opcional (ver `docs/research/datasets-investigacion-adicional.md`) |
 | **AgroMind-IT/ES** (propio) | Construido por el equipo | CC-BY-4.0 (a publicar Zenodo) | Atribución al equipo AgroSatCopilot | Semilla sintética con Gemini 3.1 Pro, validación humana nativa |
+
+> **Datasets adicionales investigados (mayo 2026).** Tras la recomendación del
+> sponsor se evaluaron diez datasets/recursos complementarios para EDA y FE
+> (EuroCrops/HCAT, EuroCropsML, TimeSen2Crop, TimeMatch, Sen4AgriNet, ECOSTRESS
+> Spectral Library, USGS GHISA, USGS Phenology Metrics, H2Crop, BavarianCrops).
+> El análisis completo — reproducibilidad, tamaño, aporte a cada criterio de
+> rúbrica y enlaces de descarga — está en
+> [`docs/research/datasets-investigacion-adicional.md`](../docs/research/datasets-investigacion-adicional.md).
 
 ### 9.2 Modelos (IDs verificados en HuggingFace)
 
@@ -1210,11 +1266,11 @@ S10-S11 (22-jun a 3-jul): Buffer + Paper Track opcional
 
 **Tareas técnicas:**
 
-- [ ] Notebook `notebooks/03_feature_engineering.ipynb` secuencial
-- [ ] Funciones reutilizables en `ml/features/selection.py`
-- [ ] Reporte tabular antes/después
+- [x] Notebook secuencial de feature engineering (`notebooks/feature_engineering/03b_fe_spectral_temporal_pastis.ipynb` + `03a` + `03c`; entregable integrador `Avance2.Equipo17.ipynb`)
+- [x] Funciones reutilizables en `ml/features/selection.py` (11 funciones publicas) + `ml/features/encoding.py` (codificacion categorica)
+- [x] Reporte tabular antes/despues (`reports/feature_selection/before_after.csv` + `.md`)
 
-**Estimación:** 4 puntos (~2 días).
+**Estimación:** 4 puntos (~2 días). **Cerrada 2026-05-21** — ver [`docs/us-resolved/us-018.md`](../docs/us-resolved/us-018.md).
 
 ---
 

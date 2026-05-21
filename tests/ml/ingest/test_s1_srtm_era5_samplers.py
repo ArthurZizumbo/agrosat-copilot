@@ -29,7 +29,6 @@ from ml.ingest.gee_sampler import (
     sample_srtm_terrain,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures locales.
 # ---------------------------------------------------------------------------
@@ -156,7 +155,10 @@ def _make_srtm_fake_ee(features_payload: list[dict[str, Any]]) -> MagicMock:
     return fake
 
 
-def _make_era5_fake_ee(t_per_month: dict[int, dict[int, float]], p_per_month: dict[int, dict[int, float]]) -> MagicMock:
+def _make_era5_fake_ee(
+    t_per_month: dict[int, dict[int, float]],
+    p_per_month: dict[int, dict[int, float]],
+) -> MagicMock:
     """Mock ERA5 — `t_per_month[m][pid]` y `p_per_month[m][pid]` en Kelvin / metros."""
     fake = MagicMock(name="ee")
     # Por cada mes el sampler hace 2 .getInfo() (tmean y prec).
@@ -520,7 +522,7 @@ def _ee_uninitialized() -> bool:
 
         # ee.data._initialized expone el estado; fallback a getattr.
         return not bool(getattr(ee.data, "_initialized", False))
-    except Exception:
+    except Exception:  # noqa: BLE001 - cualquier fallo importando ee = no inicializado
         return True
 
 

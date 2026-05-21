@@ -6,11 +6,11 @@ dashboard Streamlit y el reporte PDF, garantizando que los tres canales
 muestren el mismo contenido (DRY).
 
 Estructura del notebook generado:
-    1. Portada (título, equipo, fecha, sponsor, datasets)
+    1. Portada (título, equipo, fecha, datasets)
     2. Resumen ejecutivo + índice general
-    3-7. Cinco capítulos (uno por ficha): título, subtítulo, índice del
+    3-N. Capítulos (uno por ficha): título, subtítulo, índice del
         notebook fuente, figuras con narrativa + método, conclusiones
-    8. Atribuciones de licencias
+    N+1. Atribuciones de licencias
 
 Uso:
     poetry run python scripts/build_avance1_notebook.py
@@ -199,11 +199,13 @@ def _cover_cell() -> dict[str, Any]:
         "\n"
         "## Resumen ejecutivo\n"
         "\n"
-        "Este notebook integra el trabajo de los cuatro análisis exploratorios "
+        "Este notebook integra el trabajo de los seis análisis exploratorios "
         "que produjimos para el Avance 1 — Sentinel-2 univariado, AlphaEarth "
-        "Foundations, bivariado/multivariado/temporal y PASTIS-R consolidado — "
-        "más un capítulo de conclusiones globales que cruza los hallazgos y "
-        "los traduce en decisiones concretas para los próximos Avances "
+        "Foundations, bivariado/multivariado/temporal, PASTIS-R consolidado, "
+        "validación cross-region con BreizhCrops y métodos avanzados "
+        "derivados de la literatura — más un capítulo de conclusiones "
+        "globales que cruza los hallazgos y los traduce en decisiones "
+        "concretas para los próximos Avances "
         "(Feature Engineering, Baseline y Modelos).\n"
         "\n"
         "Los notebooks individuales por sección viven en:\n"
@@ -211,6 +213,8 @@ def _cover_cell() -> dict[str, Any]:
         "- [`02b_eda_alphaearth.ipynb`](02b_eda_alphaearth.ipynb)\n"
         "- [`02c_eda_bivariado_temporal.ipynb`](02c_eda_bivariado_temporal.ipynb)\n"
         "- [`02c_eda_pastis.ipynb`](02c_eda_pastis.ipynb)\n"
+        "- [`02d_eda_breizhcrops.ipynb`](02d_eda_breizhcrops.ipynb)\n"
+        "- [`02e_eda_metodos_paper.ipynb`](02e_eda_metodos_paper.ipynb)\n"
         "\n"
         "Las mismas fichas se sirven en el dashboard Streamlit "
         "(`make eda-dashboard`) y en el reporte PDF (`make eda-pdf`). El "
@@ -226,7 +230,7 @@ def _toc_cell() -> dict[str, Any]:
     for idx, card in enumerate(CARDS, start=1):
         anchor = card.notebook_id.replace("-", "")
         lines.append(f"{idx}. [{card.title}](#{anchor})\n")
-    lines.append("6. [Atribuciones de licencias](#atribuciones)\n")
+    lines.append(f"{len(CARDS) + 1}. [Atribuciones de licencias](#atribuciones)\n")
     return _md_cell("".join(lines))
 
 

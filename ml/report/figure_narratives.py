@@ -711,6 +711,624 @@ BREIZHCROPS_NARRATIVES: tuple[FigureNarrative, ...] = (
 
 
 # ---------------------------------------------------------------------------
+# Métodos derivados de la literatura — cuatro artículos de referencia
+# ---------------------------------------------------------------------------
+
+PAPER_METHODS_NARRATIVES: tuple[FigureNarrative, ...] = (
+    FigureNarrative(
+        filename="boundary_interior_histograms.png",
+        title="Distribución espectral en interior, frontera y exterior de parcela",
+        narrative=(
+            "Tres histogramas comparan los valores de la banda infrarroja "
+            "cercana entre los píxeles interiores de una parcela, los de su "
+            "frontera y los del fondo. El análisis replica la Figura 2 de "
+            "Tarasiou et al. (2021): los bordes de parcela son la zona "
+            "espectralmente más sensible, donde se mezclan firmas de "
+            "cultivos vecinos. En el patch analizado la desviación estándar "
+            "de la frontera es 0,91 veces la del interior — el artículo "
+            "describe la mayor variabilidad de borde como una tendencia "
+            "sobre el conjunto completo, no como una regla que se cumpla "
+            "patch a patch. Aun así, los límites de parcela quedan "
+            "señalados como el punto débil de la segmentación de cultivos."
+        ),
+        method=(
+            "Clasificación de cada píxel del patch PASTIS-R en interior, "
+            "frontera o exterior según una vecindad de 3×3 sobre el mapa "
+            "semántico. Histogramas de la banda B08 (infrarrojo cercano) "
+            "promediada en el tiempo, con la media marcada por grupo."
+        ),
+    ),
+    FigureNarrative(
+        filename="temporal_gap_distribution.png",
+        title="Revisita irregular de Sentinel-2 entre adquisiciones",
+        narrative=(
+            "Cada barra mide los días que transcurren entre dos imágenes "
+            "válidas consecutivas de una parcela. Los intervalos no son "
+            "constantes: el patch tiene 43 imágenes al año con un hueco "
+            "medio de 9,3 días, pero el mayor llega a 55 días y el menor a "
+            "5. Esa irregularidad — consecuencia del preprocesamiento "
+            "mínimo que defienden Rußwurm y Körner (2018), que trata la "
+            "nube como ruido temporal — justifica interpolar la serie a "
+            "una rejilla diaria antes de calcular las características "
+            "temporales por transformada de Fourier."
+        ),
+        method=(
+            "Conversión de las fechas de adquisición Sentinel-2 a días "
+            "calendario y cálculo de las diferencias entre observaciones "
+            "consecutivas. La línea roja marca el hueco medio."
+        ),
+    ),
+    FigureNarrative(
+        filename="confusion_symmetry_scatter.png",
+        title="Confusiones simétricas vs asimétricas entre cultivos",
+        narrative=(
+            "Cada punto es un par de cultivos que un clasificador confunde. "
+            "El eje horizontal mide la componente simétrica (ambos cultivos "
+            "se confunden mutuamente en proporciones parecidas, señal de "
+            "similitud espectral o fenológica real) y el vertical la "
+            "componente asimétrica (la confusión va sobre todo en un "
+            "sentido, señal de desbalance de clases o errores de "
+            "anotación). De los 31 pares confundidos, solo 3 quedan "
+            "dominados por la componente simétrica y 28 por la asimétrica. "
+            "Distinguir ambos tipos, como proponen Rußwurm y Körner (2018), "
+            "orienta dónde invertir: características más finas para las "
+            "confusiones reales y rebalanceo o limpieza de etiquetas para "
+            "las espurias."
+        ),
+        method=(
+            "Matriz de confusión de un Random Forest entrenado en cuatro "
+            "folds espaciales y evaluado en uno distinto. Para cada par de "
+            "clases se calcula la componente simétrica como el mínimo de "
+            "los dos sentidos de confusión y la asimétrica como su "
+            "diferencia absoluta."
+        ),
+    ),
+    FigureNarrative(
+        filename="phenology_calendar_distribution.png",
+        title="Distribución de parcelas por etapa fenológica",
+        narrative=(
+            "El gráfico cuenta cuántas parcelas alcanzan su pico de "
+            "vegetación en cada una de las 4 etapas de crecimiento "
+            "(dormancia, crecimiento, pico y senescencia). El concepto "
+            "viene del Phenology-Aware Transformer (2025), que codifica las "
+            "etapas de crecimiento como un calendario indexado por día del "
+            "año. Aquí se usa como característica exploratoria: la etapa "
+            "dominante separa familias de cultivos con claridad — praderas "
+            "y trigo de invierno concentran su pico en la etapa de máximo "
+            "verdor, el maíz y los girasoles en senescencia, y la vid y los "
+            "frutales en dormancia."
+        ),
+        method=(
+            "Discretización del día del año del pico de vegetación "
+            "(`peak_doy`) de las 2.433 parcelas con dato en 4 etapas "
+            "fenológicas. Conteo de parcelas por etapa."
+        ),
+    ),
+    FigureNarrative(
+        filename="cloud_gap_drift.png",
+        title="Robustez de las características temporales ante huecos de nubes",
+        narrative=(
+            "Cada curva muestra cuánto se desplaza una característica "
+            "temporal cuando se ocultan fracciones crecientes de imágenes "
+            "de la parcela, simulando que las nubes las tapan. Una "
+            "pendiente suave indica un proceso robusto; una abrupta delata "
+            "características frágiles. La deriva media al ocultar el 60 % de "
+            "las observaciones es de 0,73, un valor moderado que confirma "
+            "que el proceso de ingeniería de características tolera la "
+            "pérdida de datos por cobertura nubosa. La técnica adapta el "
+            "enmascaramiento espaciotemporal de Qin et al. (2025) como "
+            "herramienta de diagnóstico."
+        ),
+        method=(
+            "Eliminación aleatoria del 20 %, 40 % y 60 % de las "
+            "observaciones de una serie temporal de parcela, recálculo de "
+            "las características temporales y medición de la deriva "
+            "absoluta respecto al valor original."
+        ),
+    ),
+)
+
+
+# ---------------------------------------------------------------------------
+# Avance 2 — Ingeniería de Características sobre Sentinel-2 (03a)
+# ---------------------------------------------------------------------------
+
+FE_SENTINEL2_NARRATIVES: tuple[FigureNarrative, ...] = (
+    FigureNarrative(
+        filename="cell_011_3_generacion_de_nuevas_caracteristicas_indices_espectrales.png",
+        title="Distribuciones de los 8 índices espectrales generados",
+        narrative=(
+            "Cada panel muestra cómo se reparten los valores de uno de los "
+            "ocho índices espectrales construidos a partir de las 10 bandas "
+            "de Sentinel-2: NDVI y NDRE (vigor de la vegetación), NDWI "
+            "(contenido de agua), EVI (vegetación densa con corrección "
+            "atmosférica), SAVI (ajustado por suelo desnudo), MSI (estrés "
+            "hídrico), BSI (suelo desnudo) y NBR (zonas quemadas). La línea "
+            "roja punteada marca la media de cada índice. El NDVI se "
+            "distribuye alrededor de 0,42 y NDWI alrededor de −0,45, valores "
+            "coherentes con paisajes agrícolas activos. El EVI presenta una "
+            "cola muy larga porque su fórmula con denominador combinado "
+            "amplifica los píxeles ruidosos; por eso conviene transformarlo "
+            "antes de modelar. Estos índices condensan combinaciones de "
+            "bandas en métricas con significado agronómico, de modo que el "
+            "modelo recibe conocimiento del dominio en lugar de aprenderlo "
+            "desde cero."
+        ),
+        method=(
+            "Histogramas de 80 bins por índice. Cada índice se calcula sobre "
+            "las bandas Sentinel-2 ya filtradas con la máscara de calidad "
+            "(clip al percentil 99,5). Los valores no finitos producto de "
+            "divisiones por cero se imputan con la mediana de la columna "
+            "antes de graficar."
+        ),
+    ),
+    FigureNarrative(
+        filename="cell_014_4_discretizacion_binning.png",
+        title="Discretización del NDVI por dominio y del EVI por k-means",
+        narrative=(
+            "Los dos paneles comparan dos estrategias de binning. A la "
+            "izquierda, el NDVI se discretiza con umbrales físicos conocidos "
+            "en cuatro categorías (agua o sombra, suelo desnudo, vegetación "
+            "escasa y vegetación densa): las bins quedan alineadas con clases "
+            "del mundo real, no con cortes arbitrarios. A la derecha, el EVI "
+            "se discretiza por agrupamiento k-means en cinco bins, dejando "
+            "que el propio algoritmo encuentre los cortes naturales de la "
+            "distribución. La discretización permite a los modelos capturar "
+            "relaciones no lineales y, de paso, habilita la prueba "
+            "chi-cuadrado, que exige variables discretas. En todos los casos "
+            "se conserva la columna continua original: el binning agrega "
+            "información, no la sustituye."
+        ),
+        method=(
+            "Binning por umbrales de dominio del NDVI con cortes en −0,1, "
+            "0,2 y 0,5. Binning k-means del EVI con cinco bins mediante "
+            "KBinsDiscretizer. Diagramas de barras con el conteo de píxeles "
+            "por bin."
+        ),
+    ),
+    FigureNarrative(
+        filename="cell_017_5_transformaciones_para_correccion_de_sesgo.png",
+        title="Comparación de transformaciones de corrección de sesgo (banda B08)",
+        narrative=(
+            "La banda B08 (infrarrojo cercano) es la más informativa para "
+            "vegetación y también la más sesgada, así que sirve de ejemplo "
+            "para comparar cuatro tratamientos. El primer panel muestra la "
+            "distribución original, con una cola larga hacia valores altos. "
+            "Los tres siguientes aplican log1p, raíz cuadrada y "
+            "Yeo-Johnson; cada título reporta el sesgo resultante. "
+            "Yeo-Johnson y log1p son los que dejan la distribución más "
+            "simétrica, cercana a una campana. Corregir el sesgo es "
+            "importante porque las distribuciones asimétricas penalizan a "
+            "los modelos lineales y a los basados en distancias."
+        ),
+        method=(
+            "Histogramas de 80 bins de la banda B08. Se aplican log1p, raíz "
+            "cuadrada y PowerTransformer Yeo-Johnson sobre los mismos "
+            "valores; el coeficiente de sesgo se calcula con scipy.stats."
+        ),
+    ),
+    FigureNarrative(
+        filename="cell_018_5_transformaciones_para_correccion_de_sesgo_1.png",
+        title="Distribuciones de las 10 bandas tras la transformación automática",
+        narrative=(
+            "Esta rejilla muestra las 10 bandas Sentinel-2 después de "
+            "aplicar la transformación elegida automáticamente para cada "
+            "una. La regla es simple: si el mínimo de la banda es positivo "
+            "se usa log1p, y si puede haber valores negativos se usa "
+            "Yeo-Johnson. Las bandas del visible (B02, B03, B04) recibieron "
+            "Yeo-Johnson por contener negativos producto de artefactos de "
+            "corrección atmosférica; el resto recibió log1p. El sesgo, que "
+            "antes superaba 2,0 en todas las bandas, baja a valores cercanos "
+            "a cero tras la transformación, dejando las distribuciones "
+            "aptas para el escalado posterior."
+        ),
+        method=(
+            "Histogramas de 70 bins por banda. Selección automática del "
+            "método por el signo del mínimo de cada banda; el sesgo previo y "
+            "posterior se registra para verificar la corrección."
+        ),
+    ),
+    FigureNarrative(
+        filename="cell_021_6_escalamiento.png",
+        title="Comparación de escaladores Min-Max, Z-score y Robust (banda B08)",
+        narrative=(
+            "Los cuatro paneles muestran la banda B08 ya transformada y "
+            "luego escalada con tres técnicas distintas. El escalado Min-Max "
+            "comprime el rango a [0, 1] (útil para redes neuronales); el "
+            "Z-score centra en cero con desviación uno (requisito para PCA y "
+            "modelos lineales); el escalador robusto usa mediana e IQR, por "
+            "lo que es menos sensible a valores extremos. Las bandas "
+            "Sentinel-2 tienen magnitudes muy distintas entre el visible y "
+            "el infrarrojo, así que sin escalado los modelos basados en "
+            "distancias o gradiente darían más peso implícito a las bandas "
+            "de mayor magnitud. El escalado se aplica sobre las features ya "
+            "transformadas para que opere sobre distribuciones más "
+            "simétricas."
+        ),
+        method=(
+            "Histogramas de 70 bins de la banda B08. Se aplican "
+            "MinMaxScaler, StandardScaler y RobustScaler de scikit-learn "
+            "sobre las features transformadas; el Z-score queda como "
+            "escalador por defecto del conjunto."
+        ),
+    ),
+    FigureNarrative(
+        filename="cell_027_8_seleccion_de_caracteristicas_fase_2.png",
+        title="Varianza por feature continua y umbral de descarte",
+        narrative=(
+            "El gráfico de barras ordena las 18 features continuas "
+            "(10 bandas transformadas más 8 índices) por su varianza. La "
+            "línea negra punteada marca el umbral de 0,01: las features por "
+            "debajo se descartarían por aportar poca capacidad "
+            "discriminativa. En este caso todas las barras quedan en verde "
+            "porque ninguna feature continua cae por debajo del umbral: la "
+            "fase de generación produjo features informativas, sin columnas "
+            "casi constantes. El filtro de varianza es el primer paso de la "
+            "selección, antes de revisar redundancia entre features."
+        ),
+        method=(
+            "VarianceThreshold de scikit-learn con umbral 0,01 sobre las "
+            "features continuas. Diagrama de barras con la varianza de cada "
+            "feature; el color distingue conservadas (verde) de eliminadas "
+            "(rojo)."
+        ),
+    ),
+    FigureNarrative(
+        filename="cell_029_8_2_correlacion_de_pearson_y_spearman.png",
+        title="Matrices de correlación de Pearson y Spearman entre features",
+        narrative=(
+            "Los dos mapas de calor muestran cuánto se parecen entre sí las "
+            "features continuas conservadas: a la izquierda con correlación "
+            "de Pearson (asume relación lineal) y a la derecha con Spearman "
+            "(basada en rangos, robusta a valores extremos). Los bloques "
+            "rojos intensos señalan pares muy redundantes. A partir de esta "
+            "lectura se eliminan cuatro features con correlación absoluta "
+            "mayor a 0,90: las bandas B07, B08 y B12 transformadas y el "
+            "índice SAVI, que es prácticamente idéntico al NDVI "
+            "(correlación de 1,00). Reducir la redundancia disminuye la "
+            "colinealidad sin sacrificar información."
+        ),
+        method=(
+            "Correlación de Pearson y Spearman sobre las features continuas "
+            "conservadas tras el filtro de varianza. Mapas de calor "
+            "triangulares con escala divergente centrada en cero."
+        ),
+    ),
+    FigureNarrative(
+        filename="cell_032_8_3_chi_cuadrado.png",
+        title="Ranking chi-cuadrado de las features discretizadas",
+        narrative=(
+            "El gráfico de barras horizontales ordena las features "
+            "discretizadas por su estadístico chi-cuadrado, que mide la "
+            "dependencia entre cada bin y la clase de cultivo. Las bins de "
+            "las bandas del infrarrojo de onda corta (B12, B11) y del "
+            "infrarrojo cercano (B08, B8A) encabezan el ranking, todas "
+            "estadísticamente significativas. En el extremo opuesto, las "
+            "bins k-means del EVI quedan en último lugar y no resultan "
+            "significativas. La lectura es clara: las bandas crudas "
+            "discretizadas por cuantiles aportan más señal para distinguir "
+            "cultivos que el EVI discretizado por agrupamiento."
+        ),
+        method=(
+            "Prueba chi-cuadrado de scikit-learn entre las 12 features "
+            "discretizadas y la clase de cultivo. Diagrama de barras "
+            "horizontales con el estadístico; el color marca las "
+            "significativas (p < 0,05)."
+        ),
+    ),
+    FigureNarrative(
+        filename="cell_034_8_4_anova_f_score.png",
+        title="Ranking ANOVA F-score de las features continuas",
+        narrative=(
+            "El gráfico ordena las features continuas por su F-score de "
+            "ANOVA, que compara la varianza entre clases de cultivo con la "
+            "varianza dentro de cada clase: un valor alto indica que la "
+            "media de la feature difiere mucho de un cultivo a otro. Los "
+            "índices NBR, BSI, MSI, NDVI y NDRE encabezan el ranking, todos "
+            "significativos, lo que confirma que los índices espectrales "
+            "construidos con conocimiento del dominio separan cultivos mejor "
+            "que la mayoría de las bandas crudas transformadas. Este "
+            "ranking guía la versión reducida del conjunto de features."
+        ),
+        method=(
+            "Prueba ANOVA F (f_classif de scikit-learn) entre las features "
+            "continuas tras el filtro de correlación y la clase de cultivo. "
+            "Diagrama de barras horizontales con el F-score; el color marca "
+            "las significativas (p < 0,01)."
+        ),
+    ),
+    FigureNarrative(
+        filename="cell_036_8_5_analisis_de_componentes_principales_pca.png",
+        title="Varianza explicada por componente del PCA",
+        narrative=(
+            "Los dos paneles resumen el análisis de componentes principales "
+            "sobre las 10 bandas escaladas. A la izquierda, la varianza que "
+            "aporta cada componente: la primera concentra el 62,2 % y la "
+            "segunda el 17,1 %. A la derecha, la varianza acumulada: con "
+            "solo 6 componentes se alcanza el 96,8 %, y las dos primeras ya "
+            "explican el 79,3 %. Esta fuerte compresión confirma que las 10 "
+            "bandas son altamente redundantes, algo coherente con las "
+            "matrices de correlación. El PCA elimina esa redundancia "
+            "residual conservando casi toda la información."
+        ),
+        method=(
+            "PCA de scikit-learn sobre las 10 bandas escaladas con Z-score. "
+            "Diagrama de barras de varianza por componente más curva de "
+            "varianza acumulada, con el corte del 95 % señalado."
+        ),
+    ),
+    FigureNarrative(
+        filename="cell_037_8_5_analisis_de_componentes_principales_pca_1.png",
+        title="Biplot del PCA: primeras dos componentes por clase de cultivo",
+        narrative=(
+            "El biplot proyecta cada píxel sobre las dos primeras "
+            "componentes principales, coloreado por clase de cultivo. Las "
+            "flechas rojas son los vectores de carga: indican en qué "
+            "dirección crece cada banda original dentro del nuevo espacio. "
+            "Bandas que apuntan en la misma dirección están correlacionadas; "
+            "la longitud de la flecha refleja su peso en esas dos "
+            "componentes. El gráfico permite verificar visualmente que la "
+            "proyección PCA conserva la estructura de los datos: la nube de "
+            "píxeles muestra gradientes de color, señal de que las "
+            "componentes capturan diferencias agronómicas reales."
+        ),
+        method=(
+            "PCA con el número de componentes que alcanza el 95 % de "
+            "varianza. Diagrama de dispersión de las componentes 1 y 2 "
+            "coloreado por clase, con los vectores de carga de cada banda "
+            "superpuestos."
+        ),
+    ),
+    FigureNarrative(
+        filename="cell_039_8_6_analisis_factorial_fa.png",
+        title="Matriz de cargas del análisis factorial",
+        narrative=(
+            "El mapa de calor muestra cómo se relacionan las 10 bandas con "
+            "cinco factores latentes. A diferencia del PCA, que maximiza la "
+            "varianza total, el análisis factorial busca causas subyacentes "
+            "compartidas que expliquen la correlación observada entre "
+            "bandas. El primer factor carga fuerte sobre casi todas las "
+            "bandas (es un factor general de brillo), mientras que el "
+            "segundo separa el infrarrojo (B06, B07, B08, B8A) del resto. "
+            "Esta lectura es interpretable en términos físicos: los factores "
+            "agrupan bandas que responden a un mismo fenómeno, como el vigor "
+            "vegetativo o el contenido de agua."
+        ),
+        method=(
+            "FactorAnalysis de scikit-learn con 5 factores sobre las 10 "
+            "bandas escaladas. Mapa de calor de la matriz de cargas, con "
+            "valores anotados y escala divergente centrada en cero."
+        ),
+    ),
+)
+
+
+# ---------------------------------------------------------------------------
+# Avance 2 — Selección y extracción sobre PASTIS-R espectro-temporal (03b)
+# ---------------------------------------------------------------------------
+
+FE_SPECTRAL_TEMPORAL_NARRATIVES: tuple[FigureNarrative, ...] = (
+    FigureNarrative(
+        filename="cell_008_3_balance_de_clases_y_muestras_por_categoria.png",
+        title="Balance de clases en el subconjunto estratificado de PASTIS-R",
+        narrative=(
+            "Cada barra cuenta cuántas parcelas hay de cada clase de cultivo "
+            "en el subconjunto analizado de 11.999 parcelas. El reparto es "
+            "muy desigual: la clase mayoritaria reúne 4.251 parcelas y la "
+            "más pequeña apenas 68, con una mediana de 262. La línea "
+            "punteada gris marca el umbral mínimo de 5 muestras por debajo "
+            "del cual los rankings supervisados se vuelven poco fiables; "
+            "ninguna clase cae por debajo de él. Dejar este desbalance "
+            "visible antes de operar es importante porque condiciona la "
+            "interpretación del F1-macro y de las importancias de Random "
+            "Forest y XGBoost en las secciones siguientes."
+        ),
+        method=(
+            "Conteo de parcelas por clase sobre el subconjunto estratificado "
+            "por bloque espacial. Diagrama de barras con el número de "
+            "muestras; el color distingue las clases por encima y por debajo "
+            "del umbral de 5."
+        ),
+    ),
+    FigureNarrative(
+        filename="cell_012_4_filtros_estadisticos_umbral_de_varianza_y_correlacion_de_p.png",
+        title="Matriz de correlación de Pearson entre las primeras features",
+        narrative=(
+            "El mapa de calor muestra la correlación de Pearson entre las "
+            "primeras 30 features espectro-temporales, en el orden original "
+            "del conjunto. Los bloques rojos intensos revelan grupos de "
+            "features muy redundantes, típicamente estadísticos del mismo "
+            "índice (por ejemplo, la media y la mediana del NDVI casi "
+            "coinciden cuando la distribución es simétrica). Esta redundancia "
+            "es el motivo por el que el filtro de correlación elimina 52 "
+            "columnas: conservarlas no mejora el modelo y aumenta la "
+            "colinealidad."
+        ),
+        method=(
+            "Correlación de Pearson sobre el conjunto tras el filtro de "
+            "varianza. Mapa de calor de las primeras 30 features en orden "
+            "original, con escala divergente centrada en cero."
+        ),
+    ),
+    FigureNarrative(
+        filename="cell_013_4_filtros_estadisticos_umbral_de_varianza_y_correlacion_de_p_1.png",
+        title="Matriz de correlación reordenada por agrupamiento jerárquico",
+        narrative=(
+            "Es la misma información de correlación que el mapa anterior, "
+            "pero con las features reordenadas mediante agrupamiento "
+            "jerárquico. El reordenamiento hace que los grupos de features "
+            "fuertemente correlacionadas aparezcan como bloques rojos "
+            "cuadrados sobre la diagonal: cada bloque es un cluster de "
+            "redundancia. Justamente esos bloques son los que el filtro de "
+            "correlación colapsa, conservando una sola feature representante "
+            "por grupo. Visualizar la estructura de redundancia de esta "
+            "forma confirma que el recorte de columnas no es arbitrario."
+        ),
+        method=(
+            "Distancia 1 − |r| entre features y enlace jerárquico por el "
+            "método de promedio (scipy). Las features se reordenan según las "
+            "hojas del dendrograma; mapa de calor de las primeras 40."
+        ),
+    ),
+    FigureNarrative(
+        filename="cell_018_6_extractores_no_supervisados_pca_factor_analysis_y_umap_2d.png",
+        title="Varianza acumulada del PCA sobre las features filtradas",
+        narrative=(
+            "La curva muestra cuánta varianza se acumula a medida que se "
+            "añaden componentes principales. La línea roja marca el objetivo "
+            "del 95 % y la verde el número de componentes que lo alcanza: "
+            "42 componentes capturan el 95,3 % de la varianza, reduciendo el "
+            "conjunto de 82 features filtradas a 42. La compresión es fuerte "
+            "porque los 17 índices espectrales comparten un subespacio "
+            "común. Aun así, el espacio reducido sigue siendo interpretable: "
+            "la primera componente carga sobre indicadores de amplitud "
+            "vegetativa (LAI, NDVI alto, NDCI, GCVI)."
+        ),
+        method=(
+            "PCA de scikit-learn con objetivo de varianza 0,95 sobre las "
+            "features filtradas y estandarizadas. Curva de varianza "
+            "acumulada por número de componentes."
+        ),
+    ),
+    FigureNarrative(
+        filename="cell_021_6_extractores_no_supervisados_pca_factor_analysis_y_umap_2d_1.png",
+        title="Proyección UMAP 2D coloreada por clase de cultivo",
+        narrative=(
+            "La proyección UMAP comprime las features espectro-temporales en "
+            "un plano de dos dimensiones, coloreando cada parcela por su "
+            "clase de cultivo. Es una herramienta estrictamente visual: las "
+            "dos dimensiones resultantes no entran en el pipeline de "
+            "modelado, solo sirven para inspeccionar si las clases forman "
+            "grupos separables. Cuando se observan clusters de un mismo "
+            "color, es señal de que las features capturan estructura "
+            "agronómica real y no ruido. La superposición parcial entre "
+            "clases es esperable, porque varios cultivos comparten perfiles "
+            "temporales parecidos."
+        ),
+        method=(
+            "UMAP 2D sobre una submuestra de 500 parcelas de las features "
+            "filtradas y estandarizadas. Diagrama de dispersión coloreado "
+            "por clase de cultivo."
+        ),
+    ),
+    FigureNarrative(
+        filename="cell_025_7_importancia_supervisada_random_forest_y_xgboost.png",
+        title="Importancia supervisada agregada por familia agronómica",
+        narrative=(
+            "El gráfico de barras horizontales suma la importancia de todas "
+            "las columnas de cada familia de índice espectral, comparando "
+            "Random Forest (azul) y XGBoost (naranja). Agregar por familia "
+            "da una lectura mucho más rápida del peso agronómico real que "
+            "revisar feature por feature. La familia NDVI lidera con 0,1769 "
+            "puntos de importancia acumulada en Random Forest, seguida del "
+            "EVI; los dos modelos coinciden en señalar el NDVI y el EVI como "
+            "las familias más relevantes. Esa coincidencia entre dos "
+            "algoritmos independientes es la señal más robusta de "
+            "relevancia."
+        ),
+        method=(
+            "Importancia de features de Random Forest y XGBoost (100 árboles "
+            "cada uno) sobre las features filtradas. Las importancias se "
+            "suman por familia agronómica; diagrama de barras horizontales "
+            "agrupado por modelo."
+        ),
+    ),
+)
+
+
+# ---------------------------------------------------------------------------
+# Avance 2 — Fusión multisensor y embeddings AlphaEarth (03c)
+# ---------------------------------------------------------------------------
+
+FE_ALPHAEARTH_NARRATIVES: tuple[FigureNarrative, ...] = (
+    FigureNarrative(
+        filename="cell_007_2_caracterizacion_diagnostica_del_bloque_alphaearth.png",
+        title="Distribución de las 64 dimensiones del embedding AlphaEarth",
+        narrative=(
+            "La rejilla de 64 histogramas muestra, una por una, cómo se "
+            "reparten los valores de cada dimensión del embedding AlphaEarth "
+            "a nivel de parcela. La línea roja vertical marca el cero. La "
+            "mayoría de las dimensiones están centradas cerca de cero y son "
+            "aproximadamente simétricas, un comportamiento esperado en un "
+            "modelo de base bien entrenado. El diagnóstico confirma además "
+            "que no hay dimensiones muertas (todas tienen varianza útil): "
+            "las 64 dimensiones aportan información, así que ninguna se "
+            "descarta de entrada."
+        ),
+        method=(
+            "Histogramas de 30 bins por dimensión sobre las 85.951 parcelas "
+            "PASTIS-R vectorizadas. Las dimensiones muertas se identifican "
+            "como aquellas con más del 95 % de valores cercanos a cero."
+        ),
+    ),
+    FigureNarrative(
+        filename="cell_008_2_caracterizacion_diagnostica_del_bloque_alphaearth_1.png",
+        title="Correlación cruzada entre las 64 dimensiones de AlphaEarth",
+        narrative=(
+            "El mapa de calor de 64 por 64 muestra cuánto se parecen entre "
+            "sí las dimensiones del embedding. El predominio de tonos "
+            "neutros indica baja correlación: la correlación absoluta media "
+            "es de 0,26 y la máxima de 0,82. El 22,0 % de los pares de "
+            "dimensiones es casi ortogonal (|r| < 0,1) y solo el 11,8 % "
+            "está acoplado (|r| > 0,5). El modelo de base aprendió una "
+            "representación compacta y poco redundante; por eso conviene "
+            "usar el embedding crudo sin aplicar un PCA agresivo antes de "
+            "modelar."
+        ),
+        method=(
+            "Matriz de correlación de Pearson entre las 64 dimensiones sobre "
+            "las 85.951 parcelas. Mapa de calor con escala divergente "
+            "centrada en cero."
+        ),
+    ),
+    FigureNarrative(
+        filename="cell_010_3_estabilidad_inter_anual_del_embedding_2022_2025_italia.png",
+        title="Estabilidad inter-anual del embedding AlphaEarth (2022-2025)",
+        narrative=(
+            "El diagrama de cajas muestra la similitud coseno entre el "
+            "vector AlphaEarth de un mismo punto en años consecutivos, sobre "
+            "500 píxeles italianos comunes a los cuatro años. Las cajas se "
+            "sitúan muy cerca de 1,0 (la media ronda 0,953 en los tres "
+            "pares de años), bien por encima de la línea verde de alta "
+            "estabilidad (0,9). Esto significa que la misma parcela produce "
+            "vectores casi idénticos en años distintos: el embedding es "
+            "estable en el tiempo, lo que habilita entrenar con un año y "
+            "predecir en años cercanos, y hace fiables las comparaciones "
+            "temporales."
+        ),
+        method=(
+            "Similitud coseno por píxel entre dimensiones AlphaEarth de años "
+            "consecutivos (2022-2023, 2023-2024, 2024-2025) sobre 500 "
+            "píxeles comunes. Diagrama de cajas con la media marcada y "
+            "líneas de referencia de alta y baja estabilidad."
+        ),
+    ),
+    FigureNarrative(
+        filename="cell_017_6_frame_parcel_level_final_y_umap_por_clase_y_grupo_agronomi.png",
+        title="UMAP del embedding por clase de cultivo y por grupo agronómico",
+        narrative=(
+            "Los dos paneles proyectan el embedding AlphaEarth en un plano "
+            "de dos dimensiones con UMAP. El panel izquierdo colorea cada "
+            "parcela por su clase PASTIS fina (18 clases) y el derecho por "
+            "su grupo agronómico (cereales, oleaginosas y legumbres, "
+            "cultivos perennes de ciclo largo, cultivos de raíz y cultivos "
+            "especiales). La vista por grupo muestra clusters más limpios "
+            "que la vista por clase fina, lo que sugiere que el embedding "
+            "captura sobre todo la jerarquía botánica de alto nivel: separa "
+            "bien familias de cultivos, aunque las distinciones finas dentro "
+            "de cada familia quedan más mezcladas."
+        ),
+        method=(
+            "UMAP 2D sobre una submuestra de 2.000 parcelas del embedding "
+            "AlphaEarth. Dos diagramas de dispersión con la misma "
+            "proyección: uno coloreado por clase PASTIS, otro por grupo "
+            "agronómico."
+        ),
+    ),
+)
+
+
+# ---------------------------------------------------------------------------
 # Índice global: notebook_id -> narrativas
 # ---------------------------------------------------------------------------
 
@@ -720,7 +1338,11 @@ NARRATIVES_BY_NOTEBOOK: dict[str, tuple[FigureNarrative, ...]] = {
     "bivariate-temporal": BIVARIATE_NARRATIVES,
     "pastis-consolidado": PASTIS_NARRATIVES,
     "breizhcrops": BREIZHCROPS_NARRATIVES,
+    "paper-methods": PAPER_METHODS_NARRATIVES,
     "globales": (),
+    "fe-sentinel2": FE_SENTINEL2_NARRATIVES,
+    "fe-pastis-spectral-temporal": FE_SPECTRAL_TEMPORAL_NARRATIVES,
+    "fe-alphaearth-fusion": FE_ALPHAEARTH_NARRATIVES,
 }
 
 

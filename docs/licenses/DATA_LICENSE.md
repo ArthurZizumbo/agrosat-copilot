@@ -58,6 +58,19 @@ Documenta TODOS los datasets y modelos usados durante el proyecto. Sin esto, el 
 - Contents: series temporales Sentinel-2 por parcela (Bretaña, Francia, 2017), nivel L2A con 10 bandas ópticas + máscaras CLD/EDG/SAT, índice tabular por región (`frh01`..`frh04`), `classmapping.csv` con 9 clases agronómicas (barley, wheat, rapeseed, corn, sunflower, orchards, nuts, permanent meadows, temporary meadows). Bases HDF5 ~640 MB (frh04) / ~987 MB (frh01).
 - Use scope EPIC 2: BreizhCrops es el sucesor moderno y mantenido del dataset de Rußwurm & Körner 2018 (pedido en feedback del profesor). Se usa como conjunto de control cross-region para validar que las features temporales (FFT + fenología) calibradas sobre PASTIS-R generalizan a otra región francesa. Descarga manual única vía `scripts/download_breizhcrops.sh`; versionado en DVC (`data/breizhcrops.dvc`).
 
+### BavarianCrops / MTLCC — Rußwurm & Körner (TUM)
+- Source: `github.com/MarcCoru/MTLCC`
+- License: distribuido para uso académico con atribución
+- Citation: Rußwurm, M. & Körner, M. (2018). _Multi-Temporal Land Cover Classification with Sequential Recurrent Encoders_. ISPRS International Journal of Geo-Information 7(4), 129. DOI [10.3390/ijgi7040129](https://doi.org/10.3390/ijgi7040129). arXiv:1802.02080.
+- Contents: series temporales Sentinel-2 (Baviera, Alemania, 2016-2017), 17 clases de cultivo agregadas, labels del Bavarian StMELF.
+- Use scope EPIC 2/3: **referencia** del paper provisto por el sponsor. No se descarga por defecto (BreizhCrops cumple el rol cross-regional operativo); citado en el plan v6 §3.5 y en `docs/research/datasets-investigacion-adicional.md`. Los métodos de EDA/FE extraídos de su lectura están en `ml/analysis/paper_methods.py`.
+
+### Context-Self Contrastive Pre-training (T31TFM-1618) — Tarasiou et al. (Imperial College London)
+- Source: `github.com/michaeltrs/DeepSatModels`
+- License: código MIT; dataset T31TFM-1618 distribuido para uso académico con atribución
+- Citation: Tarasiou, M., Güler, R. A. & Zafeiriou, S. (2022). _Context-self contrastive pretraining for crop type semantic segmentation_. IEEE Transactions on Geoscience and Remote Sensing. arXiv:2104.04310.
+- Use scope EPIC 3/5: **referencia** del segundo paper provisto por el sponsor. El hallazgo interior-vs-frontera (Fig. 2) se implementa como método de FE en `ml/analysis/paper_methods.py` (`boundary_interior_stats`, `compute_boundary_ratio`). Citado en el plan v6 §3.6.
+
 ### ERA5-Land Daily Aggregates — Copernicus Climate Change Service (C3S)
 - Source: GEE `ECMWF/ERA5_LAND/DAILY_AGGR`
 - License: Copernicus C3S Climate Data Store ToS (free, full, open)

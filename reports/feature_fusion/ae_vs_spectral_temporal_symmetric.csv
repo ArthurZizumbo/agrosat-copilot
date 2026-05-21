@@ -1,0 +1,3 @@
+fuente,n_features,n_samples,n_classes,f1_macro_mean,f1_macro_std
+"AlphaEarth 64-dim (parcel-level, folds oficiales)",64,85951,18,0.5202,0.0078
+"Spectral-temporal manual 187-dim (parcel-level, folds oficiales)",185,85951,18,0.5394,0.0072
