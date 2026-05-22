@@ -3,7 +3,7 @@
 # Secret Manager, Artifact Registry, IAM (least privilege).
 #
 # Decisions enforced (ADR-002 + irrevocables):
-# - region: europe-west1
+# - region: us-central1
 # - Cloud Run min_instances = 0 (scale-to-zero)
 # - Cloud SQL with backups + PITR
 # - NO roles/owner on runtime SAs
@@ -249,10 +249,13 @@ resource "google_sql_user" "agrosat" {
 # GCS buckets
 # ----------------------------------------------------------------------------
 locals {
+  # Nombres canonicos sin sufijo de entorno: la fuente de verdad es
+  # `.env.local` (GCS_DATA_BUCKET / GCS_ARTIFACTS_BUCKET / GCS_DVC_BUCKET)
+  # y `.dvc/config`. Un sufijo `-dev` rompe `dvc push` (US-019 D14).
   buckets = {
-    data       = "agrosat-data-${local.name_suffix}"
-    artifacts  = "agrosat-artifacts-${local.name_suffix}"
-    dvc_remote = "agrosat-dvc-remote-${local.name_suffix}"
+    data       = "agrosat-data"
+    artifacts  = "agrosat-artifacts"
+    dvc_remote = "agrosat-dvc-remote"
     tfstate    = "agrosat-tfstate"
   }
 }

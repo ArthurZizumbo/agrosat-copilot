@@ -115,6 +115,11 @@ typer = "^0.25.0"
 # safetensors para persistir pesos student FarSLIP (formato HF estandar).
 safetensors = "^0.7.0"
 breizhcrops = "^0.0.4.1"
+# US-020 — interpretabilidad del baseline: SHAP TreeExplainer (RF/XGB). MIT.
+# Pinneado a 0.50.x: shap >=0.51 fija `numba <0.63` (marker Darwin que poetry
+# universaliza) y choca con `numba 0.65` de vllm; shap 0.50 pide `numba >=0.54`
+# en Python <3.14 — compatible con el resto del stack.
+shap = "^0.50.0"
 
 [tool.poetry.group.ml-gpu]
 optional = true
@@ -131,8 +136,10 @@ optional = true
 [tool.poetry.group.ml-gpu-linux.dependencies]
 # Linux-only: flash-attn (build con CUDA toolkit) + vllm (sin soporte oficial Win).
 # Solo para Cloud Run GPU L4 / Azure H100. NO se instala en Windows local.
-flash-attn = "^2.8.3"
-vllm = "^0.20.2"
+# Marker `sys_platform == "linux"` explicito: refleja el comentario y acota la
+# resolucion a Linux (estos paquetes no tienen wheels para Win/Mac).
+flash-attn = { version = "^2.8.3", markers = "sys_platform == 'linux'" }
+vllm = { version = "^0.20.2", markers = "sys_platform == 'linux'" }
 
 [tool.poetry.group.geo]
 optional = true
