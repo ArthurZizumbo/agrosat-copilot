@@ -15,9 +15,14 @@ Secciones que produce US-020 (criterio "Caracteristicas importantes", 20 pts):
     AlphaEarth).
   - 5: Conclusiones de feature engineering (cruce con el FE de US-018).
 
-La seccion 5b (curvas) y 7-8 (comparativa) siguen siendo placeholders
-documentados que completan US-021 y US-022 — asi se evita un merge conflict
-masivo sobre el .ipynb (decision D10).
+Seccion que produce US-021 (criterio "Sub/sobreajuste", 10 pts):
+  - 5b: Curvas de aprendizaje (RF+XGB) + 3 curvas de validacion +
+    diagnostico textual de sub/sobreajuste (`diagnose_fit`) + criterio de
+    validacion cruzada espacial.
+
+Las secciones 7-8 (comparativa) siguen siendo placeholders documentados
+que completa US-022 — asi se evita un merge conflict masivo sobre el .ipynb
+(decision D10).
 
 Patron: ``scripts/build_us018_notebook.py``.
 
@@ -417,10 +422,114 @@ CELLS: list[nbf.NotebookNode] = [
         "5 la incorpore antes de entrenar las arquitecturas de "
         "segmentacion."
     ),
+    # --- Seccion 5b (US-021) --------------------------------------------
     _md(
-        "## 5b. Curvas de aprendizaje y validacion\n"
+        "## 5b. Curvas de aprendizaje y validacion — diagnostico de "
+        "sub/sobreajuste\n"
         "\n"
-        "_Placeholder — completado por US-021 (Curvas de aprendizaje)._"
+        "Esta seccion diagnostica si el baseline sub o sobreajusta. Se "
+        "usan dos herramientas:\n"
+        "\n"
+        "- **Curva de aprendizaje**: accuracy de train y de validacion al "
+        "crecer el numero de muestras de entrenamiento. Un gap grande "
+        "train-val indica sobreajuste; ambas curvas bajas y juntas, "
+        "subajuste.\n"
+        "- **Curva de validacion**: accuracy frente a un hiperparametro "
+        "critico (`max_depth` para RF, `n_estimators` y `learning_rate` "
+        "para XGBoost), para localizar la zona de equilibrio.\n"
+        "\n"
+        "Toda la evaluacion usa el **mismo CV espacial 5-fold** (H3 + "
+        "KMeans + buffer 1 km) del resto del notebook — los splits se "
+        "materializan en una lista porque `learning_curve` reusa el `cv` "
+        "una vez por cada tamano. El criterio de spatial CV esta "
+        "documentado en `docs/spatial_cv_baseline.md`."
+    ),
+    _code(
+        "from ml.eval.learning_curves import (\n"
+        "    diagnose_fit,\n"
+        "    plot_learning_curve,\n"
+        "    plot_validation_curve,\n"
+        ")\n"
+        "from ml.train.baseline import _build_cv_splits\n"
+        "\n"
+        "# CV espacial materializado (lista de splits posicionales).\n"
+        "cv_splits_5b = _build_cv_splits(\n"
+        "    df, k_folds=5, buffer_km=1.0, random_state=42\n"
+        ")\n"
+        "print(f'CV espacial: {len(cv_splits_5b)} folds materializados')"
+    ),
+    _code(
+        "# Curva de aprendizaje RF y XGB (accuracy train/val vs n muestras).\n"
+        "from pathlib import Path\n"
+        "\n"
+        "from ml.train.baseline import build_estimator\n"
+        "\n"
+        "reports_dir = Path('reports/baseline')\n"
+        "reports_dir.mkdir(parents=True, exist_ok=True)\n"
+        "curve_train_sizes = [0.1, 0.25, 0.4, 0.55, 0.7, 0.85, 1.0]\n"
+        "learning_results = {}\n"
+        "for kind in ('rf', 'xgb'):\n"
+        "    estimator = build_estimator(kind, {})\n"
+        "    lc_result, lc_fig = plot_learning_curve(\n"
+        "        estimator, df, cv_splits_5b,\n"
+        "        train_sizes=curve_train_sizes,\n"
+        "        max_samples=MAX_SAMPLES,\n"
+        "    )\n"
+        "    learning_results[kind] = lc_result\n"
+        "    lc_fig.suptitle(f'Curva de aprendizaje — {kind.upper()}')\n"
+        "    lc_fig.savefig(\n"
+        "        reports_dir / f'learning_curve_{kind}.png',\n"
+        "        dpi=200, bbox_inches='tight',\n"
+        "    )\n"
+        "    plt.show()"
+    ),
+    _code(
+        "# Diagnostico explicito de sub/sobreajuste por modelo.\n"
+        "for kind, lc_result in learning_results.items():\n"
+        "    diag = diagnose_fit(lc_result)\n"
+        "    print(f'{kind.upper()}: veredicto={diag.verdict}  '\n"
+        "          f'gap={diag.gap:.4f}  '\n"
+        "          f'train_acc={diag.train_acc_max:.4f}  '\n"
+        "          f'val_acc={diag.val_acc_max:.4f}')\n"
+        "    print(f'  {diag.explanation}')"
+    ),
+    _code(
+        "# Curva de validacion RF — max_depth.\n"
+        "vc_rf, vc_rf_fig = plot_validation_curve(\n"
+        "    build_estimator('rf', {}), df, 'max_depth',\n"
+        "    [5, 10, 15, 20, 30, None], cv_splits_5b,\n"
+        "    max_samples=MAX_SAMPLES,\n"
+        ")\n"
+        "vc_rf_fig.suptitle('Curva de validacion — RF max_depth')\n"
+        "vc_rf_fig.savefig(\n"
+        "    reports_dir / 'validation_curve_rf_max_depth.png',\n"
+        "    dpi=200, bbox_inches='tight',\n"
+        ")\n"
+        "plt.show()"
+    ),
+    _code(
+        "# Curva de validacion XGB — n_estimators.\n"
+        "vc_xgb_ne, vc_xgb_ne_fig = plot_validation_curve(\n"
+        "    build_estimator('xgb', {}), df, 'n_estimators',\n"
+        "    [100, 200, 300, 400, 500], cv_splits_5b,\n"
+        "    max_samples=MAX_SAMPLES,\n"
+        ")\n"
+        "vc_xgb_ne_fig.suptitle('Curva de validacion — XGB n_estimators')\n"
+        "vc_xgb_ne_fig.savefig(\n"
+        "    reports_dir / 'validation_curve_xgb_n_estimators.png',\n"
+        "    dpi=200, bbox_inches='tight',\n"
+        ")\n"
+        "plt.show()"
+    ),
+    _md(
+        "El diagnostico `diagnose_fit` reporta un veredicto explicito "
+        "(`overfit` / `underfit` / `good_fit`) con el gap train-val "
+        "numerico. El baseline tabular sobre embeddings genericos tiende "
+        "a un accuracy modesto: si el veredicto es `good_fit` con "
+        "accuracy de validacion baja, el limite es la **capacidad del "
+        "modelo**, no el sobreajuste — justificacion directa de por que "
+        "el EPIC 5 incorpora arquitecturas temporales (U-TAE, TSViT) con "
+        "mayor capacidad."
     ),
     # --- Seccion 6 -------------------------------------------------------
     _md(
