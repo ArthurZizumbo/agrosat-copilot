@@ -1,4 +1,4 @@
-.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip notebooks-check i18n-check db-migrate db-rollback db-new db-status db-seed db-test-us015 features-extract-demo features-persist features-fuse-demo features-fuse-italy dagster-materialize-features feature-selection-subset feature-selection-build feature-selection-notebook feature-selection-test feature-fusion-build feature-fusion-notebook avance2-figures avance2-build mlflow-up mlflow-down train-baseline baseline-test baseline-notebook interpretability-test learning-curves-test train-l4 train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eda-sentinel2 eda-alphaearth eda-bivariado eda-figures-avance1 eda-figures-paper-methods eda-pastis-subset eda-notebook-avance1 paper-methods-notebook eda-pdf eda-dashboard eda-dashboard-test eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate farslip-dataset-build farslip-dataset-check farslip-train farslip-eval-pastis farslip-smoke-eval
+.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip notebooks-check i18n-check db-migrate db-rollback db-new db-status db-seed db-test-us015 features-extract-demo features-persist features-fuse-demo features-fuse-italy dagster-materialize-features feature-selection-subset feature-selection-build feature-selection-notebook feature-selection-test feature-fusion-build feature-fusion-notebook avance2-figures avance2-build mlflow-up mlflow-down train-baseline baseline-test baseline-notebook baseline-notebook-check s2-raw-parcels interpretability-test learning-curves-test train-l4 train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eda-sentinel2 eda-alphaearth eda-bivariado eda-figures-avance1 eda-figures-paper-methods eda-pastis-subset eda-notebook-avance1 paper-methods-notebook eda-pdf eda-dashboard eda-dashboard-test eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate farslip-dataset-build farslip-dataset-check farslip-train farslip-eval-pastis farslip-smoke-eval
 
 help:
 	@echo "AgroSatCopilot — comandos disponibles:"
@@ -187,10 +187,23 @@ train-baseline:  ## US-019 — Entrena RF + XGB con tuning y registra runs MLflo
 baseline-test:  ## US-019 — pytest baseline.py + metrics.py + mlflow_utils.py
 	poetry run python -m pytest tests/ml/train tests/ml/eval tests/ml/utils -q
 
-baseline-notebook:  ## US-019/020 — Reconstruye y ejecuta notebooks/04_baseline.ipynb (secciones 1-6)
+baseline-notebook:  ## US-019/020/021/022 — Reconstruye y ejecuta notebooks/04_baseline.ipynb (secciones 1-8)
 	poetry run python scripts/build_baseline_notebook.py --out notebooks/04_baseline.ipynb
 	MPLBACKEND=Agg poetry run papermill notebooks/04_baseline.ipynb \
 	  notebooks/04_baseline.ipynb --no-progress-bar
+
+baseline-notebook-check:  ## US-022 — papermill end-to-end de 04_baseline.ipynb con parametros reducidos (CI, ~5 min)
+	poetry run python scripts/build_baseline_notebook.py --out notebooks/04_baseline.ipynb
+	MPLBACKEND=Agg poetry run papermill notebooks/04_baseline.ipynb /tmp/04_baseline_check.ipynb \
+	  -p MAX_SAMPLES 4000 -p TUNE False -p COMPARISON_MAX_SAMPLES 4000 \
+	  -p COMPARISON_K_FOLDS 3 --no-progress-bar
+
+s2-raw-parcels:  ## US-022 — genera el escenario (b): Sentinel-2 crudo a nivel parcela
+	poetry run python scripts/build_s2_raw_parcels.py \
+	  --pastis-root data/PASTIS-R \
+	  --parcels data/processed/pastis_parcels_full.geoparquet \
+	  --out data/cache/pastis/s2_raw_parcels_2019_85951.parquet \
+	  --n-jobs -1
 
 interpretability-test:  ## US-020 — pytest del modulo ml/eval/interpretability.py
 	poetry run python -m pytest tests/ml/eval/test_interpretability.py -q

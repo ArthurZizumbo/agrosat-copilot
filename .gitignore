@@ -137,6 +137,8 @@ mlflow-artifacts/*
 artifacts/*.joblib
 # US-019: cache regenerable de los folds del CV espacial del baseline
 data/test_fixtures/baseline_spatial_folds_*.parquet
+# US-022: escenario (b) Sentinel-2 crudo a nivel parcela (regenerable, candidato DVC)
+data/cache/pastis/s2_raw_parcels_*.parquet
 
 # ── Dagster ───────────────────────────────────────────────────────────────────
 dagster_project/.dagster/
@@ -283,6 +285,8 @@ reports/baseline/*
 !reports/baseline/shap_dependence_1_*.png
 !reports/baseline/learning_curve_rf.png
 !reports/baseline/validation_curve_rf_max_depth.png
+!reports/baseline/comparison_barplot.png
+!reports/baseline/comparison_table.tex
 
 # ── Misc ──────────────────────────────────────────────────────────────────────
 *.bak

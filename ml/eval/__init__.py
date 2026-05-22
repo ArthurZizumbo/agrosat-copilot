@@ -1,7 +1,12 @@
-"""Paquete de evaluacion: metricas, interpretabilidad y curvas (US-019+)."""
+"""Paquete de evaluacion: metricas, interpretabilidad, curvas y comparativa (US-019+)."""
 
 from __future__ import annotations
 
+from ml.eval.comparison import (
+    ComparisonResult,
+    build_comparison_table,
+    export_comparison_latex,
+)
 from ml.eval.interpretability import (
     ShapResult,
     alphaearth_dominance_table,
@@ -27,16 +32,19 @@ from ml.eval.metrics import (
 )
 
 __all__ = [
+    "ComparisonResult",
     "FitDiagnosis",
     "LearningCurveResult",
     "ShapResult",
     "ValidationCurveResult",
     "alphaearth_dominance_table",
+    "build_comparison_table",
     "classification_report_text",
     "compute_baseline_metrics",
     "compute_shap_values",
     "confusion_matrix_figure",
     "diagnose_fit",
+    "export_comparison_latex",
     "feature_importance_table",
     "is_alphaearth_dim",
     "plot_learning_curve",
