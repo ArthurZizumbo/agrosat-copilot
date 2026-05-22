@@ -179,6 +179,18 @@ Documenta TODOS los datasets y modelos usados durante el proyecto. Sin esto, el 
   servidor local corre en Docker (`infrastructure/docker/mlflow.Dockerfile`)
   con backend store en PostgreSQL.
 
+### shap — Scott Lundberg et al. / SHAP contributors
+- Repo: [shap/shap](https://github.com/shap/shap) `^0.50.0`
+- License: MIT
+- Citation: Lundberg, S. M. & Lee, S.-I. (2017). *A Unified Approach to
+  Interpreting Model Predictions*. Advances in Neural Information Processing
+  Systems 30 (NeurIPS).
+- Use scope US-020: interpretabilidad del baseline tabular
+  (`ml/eval/interpretability.py`). `TreeExplainer` (algoritmo TreeSHAP exacto,
+  CPU) sobre los modelos RF/XGB production — summary, dependence y waterfall
+  plots multiclase. Pinneado a `0.50.x`: `shap >=0.51` fija `numba <0.63`
+  (marker Darwin que poetry universaliza) y choca con `numba 0.65` de vllm.
+
 ## Bibliografía agronómica de los índices custom (US-014)
 
 Las 3 fórmulas custom del catálogo (`LAI`, `FAPAR`, `CCCI`) implementan

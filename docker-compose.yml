@@ -79,9 +79,19 @@ services:
       dockerfile: infrastructure/docker/dagster.Dockerfile
     ports: ["${DAGSTER_HOST_PORT:-3011}:3000"]
     env_file: .env.local
+    # DAGSTER_HOME debe ser una ruta absoluta dentro del contenedor; el
+    # valor de `.env.local` (`./dagster_home`) es relativo al host y Dagster
+    # lo rechaza. `DAGSTER_PG_URL` usa el driver psycopg2 sincrono y el
+    # hostname `postgres` de la red Docker (dagster-postgres no soporta el
+    # driver asyncpg del `DATABASE_URL` de la app).
+    environment:
+      DAGSTER_HOME: /app/dagster_home
+      DAGSTER_PG_URL: postgresql://agrosat:agrosat@postgres:5432/agrosat
     depends_on:
       postgres: { condition: service_healthy }
-    volumes: ["./dagster_project:/app/dagster_project"]
+    volumes:
+      - "./dagster_project:/app/dagster_project"
+      - dagster_home:/app/dagster_home
     command: dagster dev -m dagster_project.definitions -h 0.0.0.0
 
   ollama:
@@ -92,3 +102,4 @@ services:
 volumes:
   postgres_data:
   ollama_data:
+  dagster_home:

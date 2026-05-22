@@ -4,28 +4,30 @@
 # - `dagster.core.*` es la ruta publica documentada para `run_launcher` y
 #   `run_coordinator` en `dagster.yaml`. `dagster._core.*` es interno y no debe
 #   usarse en configuracion declarativa.
-# - `DATABASE_URL` se inyecta desde `.env.local` (dev) o Secret Manager (prod).
+# - `DAGSTER_PG_URL` se inyecta desde el entorno (driver psycopg2 sincrono;
+#   distinto del `DATABASE_URL` asyncpg de la app FastAPI — dagster-postgres
+#   no soporta el driver async).
 
 run_storage:
   module: dagster_postgres.run_storage
   class: PostgresRunStorage
   config:
     postgres_url:
-      env: DATABASE_URL
+      env: DAGSTER_PG_URL
 
 event_log_storage:
   module: dagster_postgres.event_log
   class: PostgresEventLogStorage
   config:
     postgres_url:
-      env: DATABASE_URL
+      env: DAGSTER_PG_URL
 
 schedule_storage:
   module: dagster_postgres.schedule_storage
   class: PostgresScheduleStorage
   config:
     postgres_url:
-      env: DATABASE_URL
+      env: DAGSTER_PG_URL
 
 run_launcher:
   module: dagster.core.launcher

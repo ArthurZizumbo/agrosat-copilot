@@ -275,6 +275,13 @@ reports/feature_selection/*
 !reports/feature_selection/correlation_matrix.png
 !reports/feature_selection/umap_2d.png
 
+# ── US-020 reports: ignore all except gitkeep + 3 PNG entregable ─────────────
+reports/baseline/*
+!reports/baseline/.gitkeep
+!reports/baseline/shap_summary_rf.png
+!reports/baseline/importance_rf_top20.png
+!reports/baseline/shap_dependence_1_*.png
+
 # ── Misc ──────────────────────────────────────────────────────────────────────
 *.bak
 *.tmp

@@ -73,6 +73,7 @@ files = [
     {file = "aiohappyeyeballs-2.6.1-py3-none-any.whl", hash = "sha256:f349ba8f4b75cb25c99c5c2d84e997e485204d2902a9597802b0371f09331fb8"},
     {file = "aiohappyeyeballs-2.6.1.tar.gz", hash = "sha256:c3f9d0113123803ccadfdf3f0faa505bc78e6a72d1cc4806cbd719826e943558"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [[package]]
 name = "aiohttp"
@@ -203,6 +204,7 @@ files = [
     {file = "aiohttp-3.13.5-cp39-cp39-win_amd64.whl", hash = "sha256:cb979826071c0986a5f08333a36104153478ce6018c58cba7f9caddaf63d5d67"},
     {file = "aiohttp-3.13.5.tar.gz", hash = "sha256:9d98cc980ecc96be6eb4c1994ce35d28d8b1f5e5208a23b421187d1209dbb7d1"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [package.dependencies]
 aiohappyeyeballs = ">=2.5.0"
@@ -242,6 +244,7 @@ files = [
     {file = "aiosignal-1.4.0-py3-none-any.whl", hash = "sha256:053243f8b92b990551949e63930a839ff0cf0b0ebbe0597b0f3fb19e1a0fe82e"},
     {file = "aiosignal-1.4.0.tar.gz", hash = "sha256:f47eecd9468083c2029cc99945502cb7708b082c232f9aca65da147157b251c7"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [package.dependencies]
 frozenlist = ">=1.1.0"
@@ -354,6 +357,7 @@ description = "The official Python library for the anthropic API"
 optional = false
 python-versions = ">=3.9"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "anthropic-0.101.0-py3-none-any.whl", hash = "sha256:cc3cc6576989471e2aa9132258034ad0ff0d8fe500b04ac499e4e46ed68c5ed0"},
     {file = "anthropic-0.101.0.tar.gz", hash = "sha256:1116a6a87c55757e0fbe3e1ba40804fbd04de7963601a6dd6b539a889f18de3e"},
@@ -434,6 +438,7 @@ description = "tvm ffi"
 optional = false
 python-versions = ">=3.8"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "apache_tvm_ffi-0.1.9-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:d911cbbc83bf12a0d9ec03e5315ff1bb92d95702fe912cd7a050393274382e71"},
     {file = "apache_tvm_ffi-0.1.9-cp310-cp310-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:1c8dd4018420c0d14bace688594710909ce198056ff8ac2ad1cd462b30fe1bdd"},
@@ -627,6 +632,7 @@ description = "Read/rewrite/write Python ASTs"
 optional = false
 python-versions = "!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,>=2.7"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "astor-0.8.1-py2.py3-none-any.whl", hash = "sha256:070a54e890cefb5b3739d19f30f5a5ec840ffc9c50ffa7d23cc9fc1a38ebbfc5"},
     {file = "astor-0.8.1.tar.gz", hash = "sha256:6a6effda93f4e1ce9f618779b2dd1d9d84f1e32812c23a29b3fff6fd7f63fa5e"},
@@ -778,6 +784,7 @@ files = [
     {file = "attrs-26.1.0-py3-none-any.whl", hash = "sha256:c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309"},
     {file = "attrs-26.1.0.tar.gz", hash = "sha256:d03ceb89cb322a8fd706d4fb91940737b6642aa36998fe130a9bc96c985eff32"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [[package]]
 name = "authlib"
@@ -889,6 +896,7 @@ description = "Python bindings for the Rust blake3 crate"
 optional = false
 python-versions = ">=3.8"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "blake3-1.0.8-cp310-cp310-macosx_10_12_x86_64.whl", hash = "sha256:8956bb9aec47b6c37ccce935a943588f1f5e6e2e85d43bb7cb76a574238f8a9b"},
     {file = "blake3-1.0.8-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:7adbbee5dd0c302218eb8acdfd82b7006930eb5798f56f79f9cca89f6f192662"},
@@ -1262,6 +1270,7 @@ files = [
     {file = "cachetools-6.0.0-py3-none-any.whl", hash = "sha256:82e73ba88f7b30228b5507dce1a1f878498fc669d972aef2dde4f3a3c24f103e"},
     {file = "cachetools-6.0.0.tar.gz", hash = "sha256:f225782b84438f828328fc2ad74346522f27e5b1440f4e9fd18b20ebfd1aa2cf"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [[package]]
 name = "cbor2"
@@ -1270,6 +1279,7 @@ description = "CBOR (de)serializer with extensive tag support"
 optional = false
 python-versions = ">=3.10"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "cbor2-6.1.0-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:9b0472da47777fef7b5b81c1773172026be47871f0ff8ba7258fc4b85f0c1630"},
     {file = "cbor2-6.1.0-cp310-cp310-manylinux_2_28_aarch64.whl", hash = "sha256:4294246096ff528981db137473ea90f99475f25be7e5e1e1c402bb468bc972fb"},
@@ -1485,7 +1495,7 @@ files = [
     {file = "cffi-2.0.0-cp39-cp39-win_amd64.whl", hash = "sha256:b882b3df248017dba09d6b16defe9b5c407fe32fc7c65a9c69798e6175601be9"},
     {file = "cffi-2.0.0.tar.gz", hash = "sha256:44d1b5909021139fe36001ae048dbdde8214afa20200eda0f64c068cac5d5529"},
 ]
-markers = {main = "platform_python_implementation != \"PyPy\"", dagster = "platform_python_implementation != \"PyPy\"", geo = "platform_python_implementation != \"PyPy\"", ml-gpu-linux = "platform_python_implementation != \"PyPy\" or implementation_name == \"pypy\""}
+markers = {main = "platform_python_implementation != \"PyPy\"", dagster = "platform_python_implementation != \"PyPy\"", geo = "platform_python_implementation != \"PyPy\"", ml-gpu-linux = "sys_platform == \"linux\" and platform_python_implementation != \"PyPy\" or sys_platform == \"linux\" and implementation_name == \"pypy\""}
 
 [package.dependencies]
 pycparser = {version = "*", markers = "implementation_name != \"PyPy\""}
@@ -1628,6 +1638,7 @@ files = [
     {file = "charset_normalizer-3.4.7-py3-none-any.whl", hash = "sha256:3dce51d0f5e7951f8bb4900c257dad282f49190fdbebecd4ba99bcc41fef404d"},
     {file = "charset_normalizer-3.4.7.tar.gz", hash = "sha256:ae89db9e5f98a11a4bf50407d4363e7b09b31e55bc117b4f7d80aab97ba009e5"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [[package]]
 name = "clerk-sdk"
@@ -1749,6 +1760,7 @@ files = [
     {file = "cloudpickle-3.1.2-py3-none-any.whl", hash = "sha256:9acb47f6afd73f60dc1df93bb801b472f05ff42fa6c84167d25cb206be1fbf4a"},
     {file = "cloudpickle-3.1.2.tar.gz", hash = "sha256:7fda9eb655c9c230dab534f1983763de5835249750e85fbcef43aaa30a9a2414"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [[package]]
 name = "color-operations"
@@ -1869,6 +1881,7 @@ description = "Library for utilization of compressed safetensors of neural netwo
 optional = false
 python-versions = "*"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "compressed_tensors-0.15.0.1-py3-none-any.whl", hash = "sha256:e1b1f322e82e475715e242bad46925a304ea8e5c98b5055a15b8eb22fb6bfea9"},
     {file = "compressed_tensors-0.15.0.1.tar.gz", hash = "sha256:a8e93054e8a5ec49c980b09ed36c4c1249b4a8ee167920a8e461c4da26e78d99"},
@@ -2165,6 +2178,7 @@ files = [
     {file = "cryptography-46.0.7-pp311-pypy311_pp73-win_amd64.whl", hash = "sha256:258514877e15963bd43b558917bc9f54cf7cf866c38aa576ebf47a77ddbc43a4"},
     {file = "cryptography-46.0.7.tar.gz", hash = "sha256:e4cfd68c5f3e0bfdad0d38e023239b96a2fe84146481852dffbcca442c245aa5"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [package.dependencies]
 cffi = {version = ">=2.0.0", markers = "python_full_version >= \"3.9.0\" and platform_python_implementation != \"PyPy\""}
@@ -2226,7 +2240,7 @@ files = [
     {file = "cuda_bindings-13.2.0-cp314-cp314t-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:e8a16384c6494e5485f39314b0b4afb04bee48d49edb16d5d8593fd35bbd231b"},
     {file = "cuda_bindings-13.2.0-cp314-cp314t-win_amd64.whl", hash = "sha256:6ccf14e0c1def3b7200100aafff3a9f7e210ecb6e409329e92dcf6cd2c00d5c7"},
 ]
-markers = {ml = "platform_system == \"Linux\"", ml-gpu = "platform_system == \"Linux\""}
+markers = {ml = "platform_system == \"Linux\"", ml-gpu = "platform_system == \"Linux\"", ml-gpu-linux = "platform_system == \"Linux\" or sys_platform == \"linux\""}
 
 [package.dependencies]
 cuda-pathfinder = ">=1.1,<2.0"
@@ -2244,7 +2258,7 @@ groups = ["ml", "ml-gpu", "ml-gpu-linux"]
 files = [
     {file = "cuda_pathfinder-1.5.4-py3-none-any.whl", hash = "sha256:9563d3175ce1828531acf4b94e1c1c7d67208c347ca002493e2654878b26f4b7"},
 ]
-markers = {ml = "platform_system == \"Linux\"", ml-gpu = "platform_system == \"Linux\""}
+markers = {ml = "platform_system == \"Linux\"", ml-gpu = "platform_system == \"Linux\"", ml-gpu-linux = "platform_system == \"Linux\" or sys_platform == \"linux\""}
 
 [[package]]
 name = "cuda-python"
@@ -2253,6 +2267,7 @@ description = "CUDA Python: Performance meets Productivity"
 optional = false
 python-versions = ">=3.10"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "cuda_python-13.2.0-py3-none-any.whl", hash = "sha256:2f092b0ec13a860115fa595411889ee939ad203450ea4f91e9461b174ea7b084"},
 ]
@@ -2271,6 +2286,7 @@ description = "CUDA Tile Compiler"
 optional = false
 python-versions = "<3.14,>=3.10"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "cuda_tile-1.3.0-cp310-cp310-manylinux2014_aarch64.whl", hash = "sha256:c55616c648f06f84808648a521c67f2d7c790574d6b53ddf8c3bfbc995d36d45"},
     {file = "cuda_tile-1.3.0-cp310-cp310-manylinux2014_x86_64.whl", hash = "sha256:8c71c2fd9b96c054c126a218f9927c8c8dde72441a532464551b865b416d452a"},
@@ -2808,6 +2824,7 @@ description = "Decompile python functions, from bytecode to source code!"
 optional = false
 python-versions = ">=3.7"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "depyf-0.20.0-py3-none-any.whl", hash = "sha256:d31effad4261cebecb58955d832e448ace88f432328f95f82fd99c30fd9308d4"},
     {file = "depyf-0.20.0.tar.gz", hash = "sha256:fb7683bd72c44f67b56029df2c47721e9a02ffa4d7b19095f1c54c4ebf797a98"},
@@ -2845,6 +2862,7 @@ description = "serialize all of Python"
 optional = false
 python-versions = ">=3.9"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "dill-0.4.1-py3-none-any.whl", hash = "sha256:1e1ce33e978ae97fcfcff5638477032b801c46c7c65cf717f95fbc2248f79a9d"},
     {file = "dill-0.4.1.tar.gz", hash = "sha256:423092df4182177d4d8ba8290c8a5b640c66ab35ec7da59ccfa00f6fa3eea5fa"},
@@ -2865,6 +2883,7 @@ files = [
     {file = "diskcache-5.6.3-py3-none-any.whl", hash = "sha256:5e31b2d5fbad117cc363ebaf6b689474db18a1f6438bc82358b024abd4c2ca19"},
     {file = "diskcache-5.6.3.tar.gz", hash = "sha256:2c3a3fa2743d8535d832ec61c2054a1641f41775aa7c556758a109941e33e4fc"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [[package]]
 name = "distro"
@@ -2877,6 +2896,7 @@ files = [
     {file = "distro-1.9.0-py3-none-any.whl", hash = "sha256:7bffd925d65168f85027d8da9af6bddab658135b840670a223589bc0c8ef02b2"},
     {file = "distro-1.9.0.tar.gz", hash = "sha256:2fa77c6fd8940f116ee1d6b94a2f90b13b5ea8d019b98bc8bafdcabcdd9bdbed"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [[package]]
 name = "dnspython"
@@ -2885,6 +2905,7 @@ description = "DNS toolkit"
 optional = false
 python-versions = ">=3.10"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "dnspython-2.8.0-py3-none-any.whl", hash = "sha256:01d9bbc4a2d76bf0db7c1f729812ded6d912bd318d3b1cf81d30c0f845dbf3af"},
     {file = "dnspython-2.8.0.tar.gz", hash = "sha256:181d3c6996452cb1189c4046c61599b84a5a86e099562ffde77d26984ff26d0f"},
@@ -2933,6 +2954,7 @@ files = [
     {file = "docstring_parser-0.18.0-py3-none-any.whl", hash = "sha256:b3fcbed555c47d8479be0796ef7e19c2670d428d72e96da63f3a40122860374b"},
     {file = "docstring_parser-0.18.0.tar.gz", hash = "sha256:292510982205c12b1248696f44959db3cdd1740237a968ea1e2e7a900eeb2015"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [package.extras]
 dev = ["pre-commit (>=2.16.0) ; python_version >= \"3.9\"", "pydoctor (>=25.4.0)", "pytest"]
@@ -3397,6 +3419,7 @@ description = "A new flavour of deep learning operations"
 optional = false
 python-versions = ">=3.9"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "einops-0.8.2-py3-none-any.whl", hash = "sha256:54058201ac7087911181bfec4af6091bb59380360f069276601256a76af08193"},
     {file = "einops-0.8.2.tar.gz", hash = "sha256:609da665570e5e265e27283aab09e7f279ade90c4f01bcfca111f3d3e13f2827"},
@@ -3409,6 +3432,7 @@ description = "A robust email address syntax and deliverability validation libra
 optional = false
 python-versions = ">=3.8"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "email_validator-2.3.0-py3-none-any.whl", hash = "sha256:80f13f623413e6b197ae73bb10bf4eb0908faf509ad8362c5edeb0be7fd450b4"},
     {file = "email_validator-2.3.0.tar.gz", hash = "sha256:9fc05c37f2f6cf439ff414f8fc46d917929974a82244c20eb10231ba60c54426"},
@@ -3592,6 +3616,7 @@ description = "Run and manage FastAPI apps from the command line with FastAPI CL
 optional = false
 python-versions = ">=3.10"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "fastapi_cli-0.0.24-py3-none-any.whl", hash = "sha256:4a1f78ed798f106b4fee85ca93b85d8fe33c0a3570f775964d37edb80b8f0edc"},
     {file = "fastapi_cli-0.0.24.tar.gz", hash = "sha256:1afc9c9e21d7ebc8a3ca5e31790cd8d837742be7e4f8b9236e99cb3451f0de00"},
@@ -3615,6 +3640,7 @@ description = "Deploy and manage FastAPI Cloud apps from the command line 🚀"
 optional = false
 python-versions = ">=3.10"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "fastapi_cloud_cli-0.17.1-py3-none-any.whl", hash = "sha256:325e0199bdac7cb86f5df4f4a1d2070054095588088ef7b923a60cec458dcd63"},
     {file = "fastapi_cloud_cli-0.17.1.tar.gz", hash = "sha256:0baece208fa88063bec46dccb5fb512f3199162092165e57654b44e64adbc44d"},
@@ -3640,6 +3666,7 @@ description = "High-level bindings for the Rust tar crate"
 optional = false
 python-versions = ">=3.8"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "fastar-0.11.0-cp310-cp310-macosx_10_12_x86_64.whl", hash = "sha256:e7c906ad371ca365591ebcb7630009923f3eceb20956814494d15591a78e9e46"},
     {file = "fastar-0.11.0-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:6919497b35fa5bd978d2c26ee117cf1771b90ee5073f7518e44b9bc364b57715"},
@@ -3804,6 +3831,7 @@ description = "High-performance safetensors model loader"
 optional = false
 python-versions = "<3.15,>=3.10"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "fastsafetensors-0.3.1-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:acc0971b006f381598d32c5f7aae3a07d9a10d87c701f26b65215083e15a4733"},
     {file = "fastsafetensors-0.3.1-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:32cf4b531b5d77de41d777106ea69036a16bdea80062646dabc93a11b4cf88ee"},
@@ -3947,6 +3975,7 @@ description = "Flash Attention: Fast and Memory-Efficient Exact Attention"
 optional = false
 python-versions = ">=3.9"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "flash_attn-2.8.3.tar.gz", hash = "sha256:1e71dd64a9e0280e0447b8a0c2541bad4bf6ac65bdeaa2f90e51a9e57de0370d"},
 ]
@@ -3962,6 +3991,7 @@ description = "Pre-compiled cubins for FlashInfer"
 optional = false
 python-versions = ">=3.8"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "flashinfer_cubin-0.6.8.post1-py3-none-any.whl", hash = "sha256:43636d4cd39e694a83d76a89f87fefcdf4cecb4c4f7dd22dac25ec368c1e901f"},
 ]
@@ -3973,6 +4003,7 @@ description = "FlashInfer: Kernel Library for LLM Serving"
 optional = false
 python-versions = "<4.0,>=3.10"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "flashinfer_python-0.6.8.post1-py3-none-any.whl", hash = "sha256:818f9b8cc2fe66c42a1f6264be4841ac8821ada703685a02cfccb2b5124a710b"},
     {file = "flashinfer_python-0.6.8.post1.tar.gz", hash = "sha256:b18e4121baf9b93fa9a9f368ba9b981a0342895f50ab9dddc224aeb964ed346f"},
@@ -4317,6 +4348,7 @@ files = [
     {file = "frozenlist-1.8.0-py3-none-any.whl", hash = "sha256:0c18a16eab41e82c295618a77502e17b195883241c563b00f0aa5106fc4eaa0d"},
     {file = "frozenlist-1.8.0.tar.gz", hash = "sha256:3ede829ed8d842f6cd48fc7081d7a41001a56f1f38603f9d49bf3020d59a31ad"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [[package]]
 name = "fsspec"
@@ -4590,6 +4622,7 @@ description = "Read and write ML models in GGUF for GGML"
 optional = false
 python-versions = ">=3.10"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "gguf-0.19.0-py3-none-any.whl", hash = "sha256:70bcd10edfe697fb2dad6e40af2234b9d8ece9a41a99761405121ebda1c3c1cd"},
     {file = "gguf-0.19.0.tar.gz", hash = "sha256:dbadcd6cc7ccd44256f2229fe7c2dff5e8aa5cf0612ab987fd2b1a57e428923f"},
@@ -5411,6 +5444,7 @@ files = [
     {file = "googleapis_common_protos-1.75.0-py3-none-any.whl", hash = "sha256:961ed60399c457ceb0ee8f285a84c870aabc9c6a832b9d37bb281b5bebde43ed"},
     {file = "googleapis_common_protos-1.75.0.tar.gz", hash = "sha256:53a062ff3c32552fbd62c11fe23768b78e4ddf0494d5e5fd97d3f4689c75fbbd"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [package.dependencies]
 grpcio = {version = ">=1.44.0,<2.0.0", optional = true, markers = "extra == \"grpc\""}
@@ -5714,6 +5748,7 @@ files = [
     {file = "grpcio-1.80.0-cp39-cp39-win_amd64.whl", hash = "sha256:05d55e1798756282cddd52d56c896b3e7d673e3a8798c2f1cd05ba249a3bb4de"},
     {file = "grpcio-1.80.0.tar.gz", hash = "sha256:29aca15edd0688c22ba01d7cc01cb000d72b2033f4a3c72a81a19b56fd143257"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [package.dependencies]
 typing-extensions = ">=4.12,<5.0"
@@ -6218,6 +6253,7 @@ files = [
     {file = "httpx_sse-0.4.3-py3-none-any.whl", hash = "sha256:0ac1c9fe3c0afad2e0ebb25a934a59f4c7823b60792691f779fad2c5568830fc"},
     {file = "httpx_sse-0.4.3.tar.gz", hash = "sha256:9b1ed0127459a66014aec3c56bebd93da3c1bc8bb6618c8082039a44889a755d"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [[package]]
 name = "huey"
@@ -6419,6 +6455,7 @@ description = "Iterative JSON parser with standard Python iterator interfaces"
 optional = false
 python-versions = ">=3.9"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "ijson-3.5.0-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:ea8dcac10d86adaeead454bc25c97b68d0bda573d5fd6f86f5e21cf8f7906f88"},
     {file = "ijson-3.5.0-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:92b0495bbb2150bbf14fc5d98fb6d76bcd1c526605a172709e602e6fedc96495"},
@@ -6528,6 +6565,7 @@ files = [
     {file = "importlib_metadata-8.7.1-py3-none-any.whl", hash = "sha256:5a1f80bf1daa489495071efbb095d75a634cf28a8bc299581244063b53176151"},
     {file = "importlib_metadata-8.7.1.tar.gz", hash = "sha256:49fef1ae6440c182052f407c8d34a68f72efc36db9ca90dc0113398f2fdde8bb"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [package.dependencies]
 zipp = ">=3.20"
@@ -6560,6 +6598,7 @@ description = "a regex intersection checker"
 optional = false
 python-versions = ">=3.7"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "interegular-0.3.3-py37-none-any.whl", hash = "sha256:b0c07007d48c89d6d19f7204972d369b2a77222722e126b6aa63aa721dc3b19c"},
     {file = "interegular-0.3.3.tar.gz", hash = "sha256:d9b697b21b34884711399ba0f0376914b81899ce670032486d0d048344a76600"},
@@ -6926,6 +6965,7 @@ files = [
     {file = "jiter-0.14.0-graalpy312-graalpy250_312_native-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:67f00d94b281174144d6532a04b66a12cb866cbdc47c3af3bfe2973677f9861a"},
     {file = "jiter-0.14.0.tar.gz", hash = "sha256:e8a39e66dac7153cf3f964a12aad515afa8d74938ec5cc0018adcdae5367c79e"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [[package]]
 name = "jmespath"
@@ -6934,6 +6974,7 @@ description = "JSON Matching Expressions"
 optional = false
 python-versions = ">=3.9"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "jmespath-1.1.0-py3-none-any.whl", hash = "sha256:a5663118de4908c91729bea0acadca56526eb2698e83de10cd116ae0f4e97c64"},
     {file = "jmespath-1.1.0.tar.gz", hash = "sha256:472c87d80f36026ae83c6ddd0f1d05d4e510134ed462851fd5f754c8c3cbb88d"},
@@ -7004,6 +7045,7 @@ files = [
     {file = "jsonschema-4.26.0-py3-none-any.whl", hash = "sha256:d489f15263b8d200f8387e64b4c3a75f06629559fb73deb8fdfb525f2dab50ce"},
     {file = "jsonschema-4.26.0.tar.gz", hash = "sha256:0c26707e2efad8aa1bfc5b7ce170f3fccc2e4918ff85989ba9ffa9facb2be326"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [package.dependencies]
 attrs = ">=22.2.0"
@@ -7035,6 +7077,7 @@ files = [
     {file = "jsonschema_specifications-2025.9.1-py3-none-any.whl", hash = "sha256:98802fee3a11ee76ecaca44429fda8a41bff98b00a0f2838151b113f210cc6fe"},
     {file = "jsonschema_specifications-2025.9.1.tar.gz", hash = "sha256:b540987f239e745613c7a9176f3edb72b832a4ac465cf02712288397832b5e8d"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [package.dependencies]
 referencing = ">=0.31.0"
@@ -7496,6 +7539,7 @@ files = [
     {file = "lark-1.2.2-py3-none-any.whl", hash = "sha256:c2276486b02f0f1b90be155f2c8ba4a8e194d42775786db622faccd652d8e80c"},
     {file = "lark-1.2.2.tar.gz", hash = "sha256:ca807d0162cd16cef15a8feecb862d7319e7a09bdb13aef927968e45040fed80"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [package.extras]
 atomic-cache = ["atomicwrites"]
@@ -7764,7 +7808,7 @@ description = "Bindings for the Low-level Guidance (llguidance) Rust library for
 optional = false
 python-versions = ">=3.9"
 groups = ["ml-gpu-linux"]
-markers = "platform_machine == \"x86_64\" or platform_machine == \"arm64\" or platform_machine == \"aarch64\" or platform_machine == \"ppc64le\""
+markers = "sys_platform == \"linux\" and (platform_machine == \"x86_64\" or platform_machine == \"arm64\" or platform_machine == \"aarch64\" or platform_machine == \"ppc64le\")"
 files = [
     {file = "llguidance-1.3.0-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:f7685222660a762e481ac633d49cc559c64980fe2ee59c8f932a5bb5cbc0c2c2"},
     {file = "llguidance-1.3.0-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:098030ff0687261a3f1bd54cf21fe951fc861d56d37a0671250dd36677eaf224"},
@@ -7810,6 +7854,7 @@ files = [
     {file = "llvmlite-0.47.0-cp314-cp314t-win_amd64.whl", hash = "sha256:6842cf6f707ec4be3d985a385ad03f72b2d724439e118fcbe99b2929964f0453"},
     {file = "llvmlite-0.47.0.tar.gz", hash = "sha256:62031ce968ec74e95092184d4b0e857e444f8fdff0b8f9213707699570c33ccc"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [[package]]
 name = "lm-format-enforcer"
@@ -7818,6 +7863,7 @@ description = "Enforce the output format (JSON Schema, Regex etc) of a language 
 optional = false
 python-versions = "<4.0,>=3.8"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "lm_format_enforcer-0.11.3-py3-none-any.whl", hash = "sha256:cf586350875def1ae7a8fba84fcbbfc8371424b6c9d05c1fcba70aa233fbf06f"},
     {file = "lm_format_enforcer-0.11.3.tar.gz", hash = "sha256:e68081c108719cce284a9bcc889709b26ffb085a1945b5eba3a12cfa96d528da"},
@@ -7848,14 +7894,11 @@ description = "Python logging made (stupidly) simple"
 optional = false
 python-versions = "<4.0,>=3.5"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "loguru-0.7.3-py3-none-any.whl", hash = "sha256:31a33c10c8e1e10422bfd431aeb5d351c7cf7fa671e3c4df004162264b28220c"},
     {file = "loguru-0.7.3.tar.gz", hash = "sha256:19480589e77d47b8d85b2c827ad95d49bf31b0dcde16593892eb51dd18706eb6"},
 ]
-
-[package.dependencies]
-colorama = {version = ">=0.3.4", markers = "sys_platform == \"win32\""}
-win32-setctime = {version = ">=1.0.0", markers = "sys_platform == \"win32\""}
 
 [package.extras]
 dev = ["Sphinx (==8.1.3) ; python_version >= \"3.11\"", "build (==1.2.2) ; python_version >= \"3.11\"", "colorama (==0.4.5) ; python_version < \"3.8\"", "colorama (==0.4.6) ; python_version >= \"3.8\"", "exceptiongroup (==1.1.3) ; python_version >= \"3.7\" and python_version < \"3.11\"", "freezegun (==1.1.0) ; python_version < \"3.8\"", "freezegun (==1.5.0) ; python_version >= \"3.8\"", "mypy (==v0.910) ; python_version < \"3.6\"", "mypy (==v0.971) ; python_version == \"3.6\"", "mypy (==v1.13.0) ; python_version >= \"3.8\"", "mypy (==v1.4.1) ; python_version == \"3.7\"", "myst-parser (==4.0.0) ; python_version >= \"3.11\"", "pre-commit (==4.0.1) ; python_version >= \"3.9\"", "pytest (==6.1.2) ; python_version < \"3.8\"", "pytest (==8.3.2) ; python_version >= \"3.8\"", "pytest-cov (==2.12.1) ; python_version < \"3.8\"", "pytest-cov (==5.0.0) ; python_version == \"3.8\"", "pytest-cov (==6.0.0) ; python_version >= \"3.9\"", "pytest-mypy-plugins (==1.9.3) ; python_version >= \"3.6\" and python_version < \"3.8\"", "pytest-mypy-plugins (==3.1.0) ; python_version >= \"3.8\"", "sphinx-rtd-theme (==3.0.2) ; python_version >= \"3.11\"", "tox (==3.27.1) ; python_version < \"3.8\"", "tox (==4.23.2) ; python_version >= \"3.8\"", "twine (==6.0.1) ; python_version >= \"3.11\""]
@@ -8131,6 +8174,7 @@ files = [
     {file = "mcp-1.27.1-py3-none-any.whl", hash = "sha256:1af3c4203b329430fde7a87b4fcb6392a041f5cb851fd68fc674016ab4e7c06f"},
     {file = "mcp-1.27.1.tar.gz", hash = "sha256:0f47e1820f8f8f941466b39749eb1d1839a04caddca2bc60e9d46e8a99914924"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [package.dependencies]
 anyio = ">=4.5"
@@ -8172,6 +8216,7 @@ description = "Mistral-common is a library of common utilities for Mistral AI."
 optional = false
 python-versions = "<3.15,>=3.10.0"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "mistral_common-1.11.2-py3-none-any.whl", hash = "sha256:ebb42062cd705a0aa2bc69b4cde2b83d446ae58150b7e29322c90cb08fcfca6c"},
     {file = "mistral_common-1.11.2.tar.gz", hash = "sha256:79f68fc2d1190f28637f40e053f919c8c2697e00b2aa679ddee562a95183f4ad"},
@@ -8219,6 +8264,7 @@ description = "ml_dtypes is a stand-alone implementation of several NumPy dtype 
 optional = false
 python-versions = ">=3.9"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "ml_dtypes-0.5.4-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:b95e97e470fe60ed493fd9ae3911d8da4ebac16bd21f87ffa2b7c588bf22ea2c"},
     {file = "ml_dtypes-0.5.4-cp310-cp310-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:b4b801ebe0b477be666696bda493a9be8356f1f0057a57f1e35cd26928823e5a"},
@@ -8521,6 +8567,7 @@ description = "Python toolkit for standardized model hosting container implement
 optional = false
 python-versions = ">=3.10"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "model_hosting_container_standards-0.1.15-py3-none-any.whl", hash = "sha256:849e08c4732203ee861c8c24966b4e916ea4420fa324b430f7f74a1e1fe8811a"},
     {file = "model_hosting_container_standards-0.1.15.tar.gz", hash = "sha256:ae8dd74d3250545c14f0a7068186c7b0f0ab6563d31e7137f556b6b660c8a6a9"},
@@ -8692,6 +8739,7 @@ files = [
     {file = "msgspec-0.21.1-cp314-cp314t-win_arm64.whl", hash = "sha256:0d2cc73df6058d811a126ac3a8ad63a4dfa210c82f9cf5a004802eaf4712de90"},
     {file = "msgspec-0.21.1.tar.gz", hash = "sha256:2313508e394b0d208f8f56892ca9b2799e2561329de9763b19619595a6c0f72c"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [package.extras]
 toml = ["tomli ; python_version < \"3.11\"", "tomli_w"]
@@ -8852,6 +8900,7 @@ files = [
     {file = "multidict-6.7.1-py3-none-any.whl", hash = "sha256:55d97cc6dae627efa6a6e548885712d4864b81110ac76fa4e534c03819fa4a56"},
     {file = "multidict-6.7.1.tar.gz", hash = "sha256:ec6652a1bee61c53a3e5776b6049172c53b6aaba34f18c9ad04f82712bac623d"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [[package]]
 name = "multipart"
@@ -9114,6 +9163,7 @@ description = "Ninja is a small build system with a focus on speed"
 optional = false
 python-versions = ">=3.8"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "ninja-1.13.0-py3-none-macosx_10_9_universal2.whl", hash = "sha256:fa2a8bfc62e31b08f83127d1613d10821775a0eb334197154c4d6067b7068ff1"},
     {file = "ninja-1.13.0-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:3d00c692fb717fd511abeb44b8c5d00340c36938c12d6538ba989fe764e79630"},
@@ -9238,6 +9288,7 @@ files = [
     {file = "numba-0.65.0-cp314-cp314t-win_amd64.whl", hash = "sha256:46fd679ae4f68c7a5d5721efbd29ecee0b0f3013211591891d79b51bfdf73113"},
     {file = "numba-0.65.0.tar.gz", hash = "sha256:edad0d9f6682e93624c00125a471ae4df186175d71fd604c983c377cdc03e68b"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [package.dependencies]
 llvmlite = "==0.47.*"
@@ -9477,6 +9528,7 @@ description = "CUDNN FrontEnd python library"
 optional = false
 python-versions = ">=3.9"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "nvidia_cudnn_frontend-1.18.0-cp310-cp310-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:baa6fbc8e7c55f1c78c0374ed9a890e1cf81acaca0c92d6135d18a8e3c985244"},
     {file = "nvidia_cudnn_frontend-1.18.0-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:2e4bcca42259e358002c8867e3624a558f66cd5dff2cc6c3aafd860ef2f41730"},
@@ -9602,6 +9654,7 @@ description = "NVIDIA CUTLASS Python DSL"
 optional = false
 python-versions = ">=3.10"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "nvidia_cutlass_dsl-4.5.0-py3-none-any.whl", hash = "sha256:3b051fe02ca69422ab840e64d9865667aba288a3984a7ca4ccd038a82aef1344"},
 ]
@@ -9619,6 +9672,7 @@ description = "NVIDIA CUTLASS Python DSL"
 optional = false
 python-versions = ">=3.10"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "nvidia_cutlass_dsl_libs_base-4.5.0-cp310-cp310-manylinux_2_28_aarch64.whl", hash = "sha256:c78b18f2b44ca10a91bc76380ebd65bb7b86aa97a9330bae9b73eb0a1bc51d55"},
     {file = "nvidia_cutlass_dsl_libs_base-4.5.0-cp310-cp310-manylinux_2_28_x86_64.whl", hash = "sha256:5cfdf52bea8feede5e512a094484956693cb87adaafa310991d2876653b1a88e"},
@@ -9644,6 +9698,7 @@ description = "Python Bindings for the NVIDIA Management Library"
 optional = false
 python-versions = "*"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "nvidia_ml_py-13.595.45-py3-none-any.whl", hash = "sha256:b65a7977f503d56154b14d683710125ef93594adb63fbf7e559336e3318f1376"},
     {file = "nvidia_ml_py-13.595.45.tar.gz", hash = "sha256:c9f34897fe0441ff35bc8f35baf80f830a20b0f4e6ce71e0a325bc0e66acf079"},
@@ -9779,6 +9834,7 @@ files = [
     {file = "openai-2.36.0-py3-none-any.whl", hash = "sha256:143f6194b548dbc2c921af1f1b03b9f14c85fed8a75b5b516f5bcc11a2a50c63"},
     {file = "openai-2.36.0.tar.gz", hash = "sha256:139dea0edd2f1b30c33d46ae1a6929e03906254140318e4608e98fe8c566f2e7"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [package.dependencies]
 anyio = ">=3.5.0,<5"
@@ -9803,6 +9859,7 @@ description = "OpenAI's response format for its open-weight model series gpt-oss
 optional = false
 python-versions = ">=3.8"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "openai_harmony-0.0.8-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:029ec25ca74abe48fdb58eb9fdd2a8c1618581fc33ce8e5653f8a1ffbfbd9326"},
     {file = "openai_harmony-0.0.8-cp38-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:e4f709815924ec325b9a890e6ab2bbb0ceec8e319a4e257328eb752cf36b2efc"},
@@ -9832,6 +9889,7 @@ description = "Wrapper package for OpenCV python bindings."
 optional = false
 python-versions = ">=3.6"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "opencv_python_headless-4.13.0.92-cp37-abi3-macosx_13_0_arm64.whl", hash = "sha256:1a7d040ac656c11b8c38677cc8cccdc149f98535089dbe5b081e80a4e5903209"},
     {file = "opencv_python_headless-4.13.0.92-cp37-abi3-macosx_14_0_x86_64.whl", hash = "sha256:3e0a6f0a37994ec6ce5f59e936be21d5d6384a4556f2d2da9c2f9c5dc948394c"},
@@ -9857,6 +9915,7 @@ files = [
     {file = "opentelemetry_api-1.41.1-py3-none-any.whl", hash = "sha256:a22df900e75c76dc08440710e51f52f1aa6b451b429298896023e60db5b3139f"},
     {file = "opentelemetry_api-1.41.1.tar.gz", hash = "sha256:0ad1814d73b875f84494387dae86ce0b12c68556331ce6ce8fe789197c949621"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [package.dependencies]
 importlib-metadata = ">=6.0,<8.8.0"
@@ -9923,6 +9982,7 @@ description = "OpenTelemetry Collector Exporters"
 optional = false
 python-versions = ">=3.9"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "opentelemetry_exporter_otlp-1.41.1-py3-none-any.whl", hash = "sha256:db276c5a80c02b063994e80950d00ca1bfddcf6520f608335b7dc2db0c0eb9c6"},
     {file = "opentelemetry_exporter_otlp-1.41.1.tar.gz", hash = "sha256:299a2f0541ca175df186f5ac58fd5db177ba1e9b72b0826049062f750d55b47f"},
@@ -9943,6 +10003,7 @@ files = [
     {file = "opentelemetry_exporter_otlp_proto_common-1.41.1-py3-none-any.whl", hash = "sha256:10da74dad6a49344b9b7b21b6182e3060373a235fde1528616d5f01f92e66aa9"},
     {file = "opentelemetry_exporter_otlp_proto_common-1.41.1.tar.gz", hash = "sha256:0e253156ea9c36b0bd3d2440c5c9ba7dd1f3fb64ba7a08fc85fbac536b56e1fb"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [package.dependencies]
 opentelemetry-proto = "1.41.1"
@@ -9954,6 +10015,7 @@ description = "OpenTelemetry Collector Protobuf over gRPC Exporter"
 optional = false
 python-versions = ">=3.9"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "opentelemetry_exporter_otlp_proto_grpc-1.41.1-py3-none-any.whl", hash = "sha256:537926dcef951136992479af1d9cd88f25e33d56c530e9f020ed57774dca2f94"},
     {file = "opentelemetry_exporter_otlp_proto_grpc-1.41.1.tar.gz", hash = "sha256:b05df8fa1333dc9a3fda36b676b96b5095ab6016d3f0c3296d430d629ba1443b"},
@@ -9982,6 +10044,7 @@ files = [
     {file = "opentelemetry_exporter_otlp_proto_http-1.41.1-py3-none-any.whl", hash = "sha256:1a21e8f49c7a946d935551e90947d6c3eb39236723c6624401da0f33d68edcb4"},
     {file = "opentelemetry_exporter_otlp_proto_http-1.41.1.tar.gz", hash = "sha256:4747a9604c8550ab38c6fd6180e2fcb80de3267060bef2c306bad3cb443302bc"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [package.dependencies]
 googleapis-common-protos = ">=1.52,<2.0"
@@ -10006,6 +10069,7 @@ files = [
     {file = "opentelemetry_proto-1.41.1-py3-none-any.whl", hash = "sha256:0496713b804d127a4147e32849fbaf5683fac8ee98550e8e7679cd706c289720"},
     {file = "opentelemetry_proto-1.41.1.tar.gz", hash = "sha256:4b9d2eb631237ea43b80e16c073af438554e32bc7e9e3f8ca4a9582f900020e5"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [package.dependencies]
 protobuf = ">=5.0,<7.0"
@@ -10039,6 +10103,7 @@ files = [
     {file = "opentelemetry_sdk-1.41.1-py3-none-any.whl", hash = "sha256:edee379c126c1bce952b0c812b48fe8ff35b30df0eecf17e98afa4d598b7d85d"},
     {file = "opentelemetry_sdk-1.41.1.tar.gz", hash = "sha256:724b615e1215b5aeacda0abb8a6a8922c9a1853068948bd0bd225a56d0c792e6"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [package.dependencies]
 opentelemetry-api = "1.41.1"
@@ -10059,6 +10124,7 @@ files = [
     {file = "opentelemetry_semantic_conventions-0.62b1-py3-none-any.whl", hash = "sha256:cf506938103d331fbb78eded0d9788095f7fd59016f2bda813c3324e5a74a93c"},
     {file = "opentelemetry_semantic_conventions-0.62b1.tar.gz", hash = "sha256:c5cc6e04a7f8c7cdd30be2ed81499fa4e75bfbd52c9cb70d40af1f9cd3619802"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [package.dependencies]
 opentelemetry-api = "1.41.1"
@@ -10071,6 +10137,7 @@ description = "OpenTelemetry Semantic Conventions Extension for Large Language M
 optional = false
 python-versions = "<4,>=3.9"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "opentelemetry_semantic_conventions_ai-0.5.1-py3-none-any.whl", hash = "sha256:25aeb22bd261543b4898a73824026d96770e5351209c7d07a0b1314762b1f6e4"},
     {file = "opentelemetry_semantic_conventions_ai-0.5.1.tar.gz", hash = "sha256:153906200d8c1d2f8e09bd78dbef526916023de85ac3dab35912bfafb69ff04c"},
@@ -10199,6 +10266,7 @@ description = "Structured Text Generation in Rust"
 optional = false
 python-versions = ">=3.8"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "outlines_core-0.2.14-cp310-cp310-macosx_14_0_arm64.whl", hash = "sha256:056f656ea6e4807338963377afb50b9d936593ba3545a819f1aba56fd6e14920"},
     {file = "outlines_core-0.2.14-cp310-cp310-macosx_14_0_x86_64.whl", hash = "sha256:c76f28feb6ea71b1ff4b0ba5901dc383273a32b156213dc1bc753fc634645a1e"},
@@ -10452,6 +10520,7 @@ description = "Parse partial JSON generated by LLM"
 optional = false
 python-versions = ">=3.6"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "partial_json_parser-0.2.1.1.post7-py3-none-any.whl", hash = "sha256:145119e5eabcf80cbb13844a6b50a85c68bf99d376f8ed771e2a3c3b03e653ae"},
     {file = "partial_json_parser-0.2.1.1.post7.tar.gz", hash = "sha256:86590e1ba6bcb6739a2dfc17d2323f028cb5884f4c6ce23db376999132c9a922"},
@@ -10668,6 +10737,7 @@ files = [
     {file = "pillow-12.2.0-pp311-pypy311_pp73-win_amd64.whl", hash = "sha256:bfa9c230d2fe991bed5318a5f119bd6780cda2915cca595393649fc118ab895e"},
     {file = "pillow-12.2.0.tar.gz", hash = "sha256:a830b1a40919539d07806aa58e1b114df53ddd43213d9c8b75847eee6c0182b5"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [package.extras]
 docs = ["furo", "olefile", "sphinx (>=8.2)", "sphinx-autobuild", "sphinx-copybutton", "sphinx-inline-tabs", "sphinxext-opengraph"]
@@ -10898,6 +10968,7 @@ files = [
     {file = "prometheus_client-0.25.0-py3-none-any.whl", hash = "sha256:d5aec89e349a6ec230805d0df882f3807f74fd6c1a2fa86864e3c2279059fed1"},
     {file = "prometheus_client-0.25.0.tar.gz", hash = "sha256:5e373b75c31afb3c86f1a52fa1ad470c9aace18082d39ec0d2f918d11cc9ba28"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [package.extras]
 aiohttp = ["aiohttp"]
@@ -10911,6 +10982,7 @@ description = "Instrument your FastAPI app with Prometheus metrics"
 optional = false
 python-versions = ">=3.8"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "prometheus_fastapi_instrumentator-7.1.0-py3-none-any.whl", hash = "sha256:978130f3c0bb7b8ebcc90d35516a6fe13e02d2eb358c8f83887cdef7020c31e9"},
     {file = "prometheus_fastapi_instrumentator-7.1.0.tar.gz", hash = "sha256:be7cd61eeea4e5912aeccb4261c6631b3f227d8924542d79eaf5af3f439cbe5e"},
@@ -11065,6 +11137,7 @@ files = [
     {file = "propcache-0.5.2-py3-none-any.whl", hash = "sha256:be1ddfcbb376e3de5d2e2db1d58d6d67463e6b4f9f040c000de8e300295465fe"},
     {file = "propcache-0.5.2.tar.gz", hash = "sha256:01c4fc7480cd0598bb4b57022df55b9ca296da7fc5a8760bd8451a7e63a7d427"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [[package]]
 name = "proto-plus"
@@ -11103,6 +11176,7 @@ files = [
     {file = "protobuf-6.33.6-py3-none-any.whl", hash = "sha256:77179e006c476e69bf8e8ce866640091ec42e1beb80b213c3900006ecfba6901"},
     {file = "protobuf-6.33.6.tar.gz", hash = "sha256:a6768d25248312c297558af96a9f9c929e8c4cee0659cb07e780731095f38135"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [[package]]
 name = "psutil"
@@ -11134,7 +11208,7 @@ files = [
     {file = "psutil-7.2.2-cp37-abi3-win_arm64.whl", hash = "sha256:8c233660f575a5a89e6d4cb65d9f938126312bca76d8fe087b947b3a1aaac9ee"},
     {file = "psutil-7.2.2.tar.gz", hash = "sha256:0746f5f8d406af344fd547f1c8daa5f5c33dbc293bb8d6a16d80b4bb88f59372"},
 ]
-markers = {dagster = "platform_system == \"Windows\""}
+markers = {dagster = "platform_system == \"Windows\"", ml-gpu-linux = "sys_platform == \"linux\""}
 
 [package.extras]
 dev = ["abi3audit", "black", "check-manifest", "colorama ; os_name == \"nt\"", "coverage", "packaging", "psleak", "pylint", "pyperf", "pypinfo", "pyreadline3 ; os_name == \"nt\"", "pytest", "pytest-cov", "pytest-instafail", "pytest-xdist", "pywin32 ; os_name == \"nt\" and implementation_name != \"pypy\"", "requests", "rstcheck", "ruff", "setuptools", "sphinx", "sphinx_rtd_theme", "toml-sort", "twine", "validate-pyproject[all]", "virtualenv", "vulture", "wheel", "wheel ; os_name == \"nt\" and implementation_name != \"pypy\"", "wmi ; os_name == \"nt\" and implementation_name != \"pypy\""]
@@ -11384,6 +11458,7 @@ description = "Get CPU info with pure Python"
 optional = false
 python-versions = "*"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "py-cpuinfo-9.0.0.tar.gz", hash = "sha256:3cdbbf3fac90dc6f118bfd64384f309edeadd902d7c8fb17f02ffa1fc3f49690"},
     {file = "py_cpuinfo-9.0.0-py3-none-any.whl", hash = "sha256:859625bc251f64e21f077d099d4162689c762b5d6a4c3c97553d56241c9674d5"},
@@ -11483,6 +11558,7 @@ description = "Fast Base64 encoding/decoding"
 optional = false
 python-versions = ">=3.8"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "pybase64-1.4.3-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:f63aa7f29139b8a05ce5f97cdb7fad63d29071e5bdc8a638a343311fe996112a"},
     {file = "pybase64-1.4.3-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:f5943ec1ae87a8b4fe310905bb57205ea4330c75e2c628433a7d9dd52295b588"},
@@ -11708,6 +11784,7 @@ description = "ISO country, subdivision, language, currency and script definitio
 optional = false
 python-versions = ">=3.10"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "pycountry-26.2.16-py3-none-any.whl", hash = "sha256:115c4baf7cceaa30f59a4694d79483c9167dbce7a9de4d3d571c5f3ea77c305a"},
     {file = "pycountry-26.2.16.tar.gz", hash = "sha256:5b6027d453fcd6060112b951dd010f01f168b51b4bf8a1f1fc8c95c8d94a0801"},
@@ -11724,7 +11801,7 @@ files = [
     {file = "pycparser-3.0-py3-none-any.whl", hash = "sha256:b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992"},
     {file = "pycparser-3.0.tar.gz", hash = "sha256:600f49d217304a5902ac3c37e1281c9fe94e4d0489de643a9504c5cdfdfc6b29"},
 ]
-markers = {main = "platform_python_implementation != \"PyPy\" and implementation_name != \"PyPy\"", dagster = "platform_python_implementation != \"PyPy\" and implementation_name != \"PyPy\"", dev = "implementation_name != \"PyPy\"", geo = "platform_python_implementation != \"PyPy\" and implementation_name != \"PyPy\"", ml = "implementation_name != \"PyPy\"", ml-gpu-linux = "platform_python_implementation != \"PyPy\" and implementation_name != \"PyPy\" or implementation_name == \"pypy\"", paper = "implementation_name != \"PyPy\""}
+markers = {main = "platform_python_implementation != \"PyPy\" and implementation_name != \"PyPy\"", dagster = "platform_python_implementation != \"PyPy\" and implementation_name != \"PyPy\"", dev = "implementation_name != \"PyPy\"", geo = "platform_python_implementation != \"PyPy\" and implementation_name != \"PyPy\"", ml = "implementation_name != \"PyPy\"", ml-gpu-linux = "sys_platform == \"linux\" and platform_python_implementation != \"PyPy\" and implementation_name != \"PyPy\" or sys_platform == \"linux\" and implementation_name == \"pypy\"", paper = "implementation_name != \"PyPy\""}
 
 [[package]]
 name = "pydantic"
@@ -11889,6 +11966,7 @@ description = "Extra Pydantic types."
 optional = false
 python-versions = ">=3.9"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "pydantic_extra_types-2.11.1-py3-none-any.whl", hash = "sha256:1722ea2bddae5628ace25f2aa685b69978ef533123e5638cfbddb999e0100ec1"},
     {file = "pydantic_extra_types-2.11.1.tar.gz", hash = "sha256:46792d2307383859e923d8fcefa82108b1a141f8a9c0198982b3832ab5ef1049"},
@@ -12110,6 +12188,7 @@ files = [
     {file = "pyjwt-2.12.1-py3-none-any.whl", hash = "sha256:28ca37c070cad8ba8cd9790cd940535d40274d22f80ab87f3ac6a713e6e8454c"},
     {file = "pyjwt-2.12.1.tar.gz", hash = "sha256:c74a7a2adf861c04d002db713dd85f84beb242228e671280bf709d765b03672b"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [package.dependencies]
 cryptography = {version = ">=3.4.0", optional = true, markers = "extra == \"crypto\""}
@@ -12649,6 +12728,7 @@ files = [
     {file = "python_json_logger-4.1.0-py3-none-any.whl", hash = "sha256:132994765cf75bf44554be9aa49b06ef2345d23661a96720262716438141b6b2"},
     {file = "python_json_logger-4.1.0.tar.gz", hash = "sha256:b396b9e3ed782b09ff9d6e4f1683d46c83ad0d35d2e407c09a9ebbf038f88195"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [package.extras]
 dev = ["black", "build", "freezegun", "mdx_truly_sane_lists", "mike", "mkdocs", "mkdocs-awesome-pages-plugin", "mkdocs-gen-files", "mkdocs-literate-nav", "mkdocs-material (>=8.5)", "mkdocstrings[python]", "msgspec ; implementation_name != \"pypy\"", "mypy", "orjson ; implementation_name != \"pypy\"", "pylint", "pytest", "tzdata", "validate-pyproject[all]"]
@@ -12676,6 +12756,7 @@ files = [
     {file = "python_multipart-0.0.28-py3-none-any.whl", hash = "sha256:10faac07eb966c3f48dc415f9dee46c04cb10d58d30a35677db8027c825ed9b6"},
     {file = "python_multipart-0.0.28.tar.gz", hash = "sha256:8550da197eac0f7ab748961fc9509b999fa2662ea25cef857f05249f6893c0f8"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [[package]]
 name = "pytz"
@@ -12718,7 +12799,7 @@ files = [
     {file = "pywin32-311-cp39-cp39-win_amd64.whl", hash = "sha256:e0c4cfb0621281fe40387df582097fd796e80430597cb9944f0ae70447bacd91"},
     {file = "pywin32-311-cp39-cp39-win_arm64.whl", hash = "sha256:62ea666235135fee79bb154e695f3ff67370afefd71bd7fea7512fc70ef31e3d"},
 ]
-markers = {dagster = "sys_platform == \"win32\" or platform_system == \"Windows\"", geo = "platform_system == \"Windows\"", ml = "sys_platform == \"win32\"", ml-gpu-linux = "sys_platform == \"win32\"", test = "sys_platform == \"win32\""}
+markers = {dagster = "sys_platform == \"win32\" or platform_system == \"Windows\"", geo = "platform_system == \"Windows\"", ml = "sys_platform == \"win32\"", ml-gpu-linux = "<empty>", test = "sys_platform == \"win32\""}
 
 [[package]]
 name = "pywinpty"
@@ -12931,6 +13012,7 @@ files = [
     {file = "pyzmq-27.1.0-pp39-pypy39_pp73-win_amd64.whl", hash = "sha256:ff8d114d14ac671d88c89b9224c63d6c4e5a613fe8acd5594ce53d752a3aafe9"},
     {file = "pyzmq-27.1.0.tar.gz", hash = "sha256:ac0765e3d44455adb6ddbf4417dcce460fc40a05978c08efdf2948072f6db540"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [package.dependencies]
 cffi = {version = "*", markers = "implementation_name == \"pypy\""}
@@ -12942,6 +13024,7 @@ description = ""
 optional = false
 python-versions = ">=3.10"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "quack_kernels-0.4.1-py3-none-any.whl", hash = "sha256:c1c8df2935bf5156ec47d2c5384ac08b411fd0ee702d80ae916dbf6d6f5ae813"},
     {file = "quack_kernels-0.4.1.tar.gz", hash = "sha256:9d7d6ba412bc0c8a9b1331c52a73db76280adb9dc2f2750df4851ddabef1466b"},
@@ -13066,6 +13149,7 @@ files = [
     {file = "referencing-0.37.0-py3-none-any.whl", hash = "sha256:381329a9f99628c9069361716891d34ad94af76e461dcb0335825aecc7692231"},
     {file = "referencing-0.37.0.tar.gz", hash = "sha256:44aefc3142c5b842538163acb373e24cce6632bd54bdb01b21ad5863489f50d8"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [package.dependencies]
 attrs = ">=22.2.0"
@@ -13207,6 +13291,7 @@ files = [
     {file = "requests-2.34.0-py3-none-any.whl", hash = "sha256:917520a21b767485ce7c588f4ebb917c436b24a31231b44228715eaeb5a52c60"},
     {file = "requests-2.34.0.tar.gz", hash = "sha256:7d62fe92f50eb82c529b0916bb445afa1531a566fc8f35ffdc64446e771b856a"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [package.dependencies]
 certifi = ">=2023.5.7"
@@ -13344,6 +13429,7 @@ description = "Rich toolkit for building command-line applications"
 optional = false
 python-versions = ">=3.8"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "rich_toolkit-0.19.8-py3-none-any.whl", hash = "sha256:97126e170b95ca357e034bf729da408f9eb37c5627183807962bc18f18771033"},
     {file = "rich_toolkit-0.19.8.tar.gz", hash = "sha256:4cfd2bcb34299442168c983af22e74c881e055e8b67417f577307bf0eaa4d0af"},
@@ -13361,6 +13447,7 @@ description = "Python Bindings for the ignore crate"
 optional = false
 python-versions = ">=3.8"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "rignore-0.7.6-cp310-cp310-macosx_10_12_x86_64.whl", hash = "sha256:f3c74a7e5ee77aea669c95fdb3933f2a6c7549893700082e759128a29cf67e45"},
     {file = "rignore-0.7.6-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:b7202404958f5fe3474bac91f65350f0b1dde1a5e05089f2946549b7e91e79ec"},
@@ -13696,6 +13783,7 @@ files = [
     {file = "rpds_py-0.30.0-pp311-pypy311_pp73-musllinux_1_2_x86_64.whl", hash = "sha256:ac37f9f516c51e5753f27dfdef11a88330f04de2d564be3991384b2f3535d02e"},
     {file = "rpds_py-0.30.0.tar.gz", hash = "sha256:dd8ff7cf90014af0c0f787eea34794ebf6415242ee1d6fa91eaba725cc441e84"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [[package]]
 name = "rsa"
@@ -14103,6 +14191,7 @@ description = "Unsupervised text tokenizer and detokenizer."
 optional = false
 python-versions = ">=3.9"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "sentencepiece-0.2.1-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:e10fa50bdbaa5e2445dbd387979980d391760faf0ec99a09bd7780ff37eaec44"},
     {file = "sentencepiece-0.2.1-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:2f27ae6deea72efdb6f361750c92f6c21fd0ad087445082770cc34015213c526"},
@@ -14222,6 +14311,7 @@ files = [
     {file = "sentry_sdk-2.59.0-py2.py3-none-any.whl", hash = "sha256:abcf65ee9a9d9cdebf9ad369782408ecca9c1c792686ef06ba34f5ab233527fe"},
     {file = "sentry_sdk-2.59.0.tar.gz", hash = "sha256:cd265808ef8bf3f3edf69b527c0a0b2b6b1322762679e55b8987db2e9584aec1"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [package.dependencies]
 certifi = "*"
@@ -14282,6 +14372,7 @@ description = "A Python module to customize the process title"
 optional = false
 python-versions = ">=3.8"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "setproctitle-1.3.7-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:cf555b6299f10a6eb44e4f96d2f5a3884c70ce25dc5c8796aaa2f7b40e72cb1b"},
     {file = "setproctitle-1.3.7-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:690b4776f9c15aaf1023bb07d7c5b797681a17af98a4a69e76a1d504e41108b7"},
@@ -14405,6 +14496,70 @@ doc = ["furo", "jaraco.packaging (>=9.3)", "jaraco.tidelift (>=1.4)", "pygments-
 enabler = ["pytest-enabler (>=2.2)"]
 test = ["build[virtualenv] (>=1.0.3)", "filelock (>=3.4.0)", "ini2toml[lite] (>=0.14)", "jaraco.develop (>=7.21) ; python_version >= \"3.9\" and sys_platform != \"cygwin\"", "jaraco.envs (>=2.2)", "jaraco.path (>=3.7.2)", "jaraco.test (>=5.5)", "packaging (>=24.2)", "pip (>=19.1)", "pyproject-hooks (!=1.1)", "pytest (>=6,!=8.1.*)", "pytest-home (>=0.5)", "pytest-perf ; sys_platform != \"cygwin\"", "pytest-subprocess", "pytest-timeout", "pytest-xdist (>=3)", "tomli-w (>=1.0.0)", "virtualenv (>=13.0.0)", "wheel (>=0.44.0)"]
 type = ["importlib_metadata (>=7.0.2) ; python_version < \"3.10\"", "jaraco.develop (>=7.21) ; sys_platform != \"cygwin\"", "mypy (==1.14.*)", "pytest-mypy"]
+
+[[package]]
+name = "shap"
+version = "0.50.0"
+description = "A unified approach to explain the output of any machine learning model."
+optional = false
+python-versions = ">=3.11"
+groups = ["ml"]
+files = [
+    {file = "shap-0.50.0-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:70a0e9c3b13a2b900ab4777a56d1e6cacddfd95f67cf382cdde24d376fbe13f4"},
+    {file = "shap-0.50.0-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:30f1fe9e75a948386d7a444e910bc472f2febf04d0f2175b5c03db9d5e0c2724"},
+    {file = "shap-0.50.0-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:6a5ccc465c0f9e005dde341823b1cdad9dfcff6786f7d04e29606af6f2d51290"},
+    {file = "shap-0.50.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:e68f6129ddb59313da00d72843511352dc7e79512faec961644079504bbeb707"},
+    {file = "shap-0.50.0-cp311-cp311-musllinux_1_2_aarch64.whl", hash = "sha256:8135bd24594f5fdf16f8fe5cbc2a81544c5c5c76f6b8a152eded16c361857da6"},
+    {file = "shap-0.50.0-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:807fc35ec82daba11da92d99607fbfc6471c211ec36b6329ae4611f355549bc8"},
+    {file = "shap-0.50.0-cp311-cp311-win_amd64.whl", hash = "sha256:f5d0e2df7142393791c10a201947ca06972eb3c599c48a33697ef6c405413267"},
+    {file = "shap-0.50.0-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:166eb4f14e6fb82e6b9b9a178ac18d5a2798f42f13e9b8b0565450977ae58e0a"},
+    {file = "shap-0.50.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:146bafd501d9061fce78e8d927504b0c2a7254a102a17a016c2141adcfeb6170"},
+    {file = "shap-0.50.0-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:5aa229dd3bccd779ae12cee35d68db3366ae2af693b174b446f877898d4cc9ce"},
+    {file = "shap-0.50.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:d8419ff6515a1294bbf370d7f40853abe806046e0d102e405974bcf0821239d0"},
+    {file = "shap-0.50.0-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:62cc66704db8c3439256089d2f3b29a42597d3c24bab1e245ed3800f7c4c4b2a"},
+    {file = "shap-0.50.0-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:404445e957d45ab9d35cbfaeea7184c95845e8a3caf92116ee702a218a34a124"},
+    {file = "shap-0.50.0-cp312-cp312-win_amd64.whl", hash = "sha256:1c9b534eb06d6b6d5f68257be2cc83be4e324aed89884876600ce86dcb6b1818"},
+    {file = "shap-0.50.0-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:0249b10142c1205e7de994c6135178faaaabb6b12528382db1f8e1f2b902d207"},
+    {file = "shap-0.50.0-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:e9908af8d22d2be05f303ca8fed70fd845bbbe33190abac24b6cb1a89e294e20"},
+    {file = "shap-0.50.0-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:96f8e01228d780ad2efbc67d3ae6d3ba2a4afe02e9e1519c891f67d641f0e17d"},
+    {file = "shap-0.50.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:a757c94cda0587edb727cbf08a4af819921ad42646b55833713c531ead75742d"},
+    {file = "shap-0.50.0-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:b35200f21f3f67c96cf19a819a60470d052281c8f3df7da13fed40fdf64ea469"},
+    {file = "shap-0.50.0-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:cf267e854b0ce4b39c861f39d257f9dfb86704167eeb4db006c01f115dc37489"},
+    {file = "shap-0.50.0-cp313-cp313-win_amd64.whl", hash = "sha256:84b3c2791c68d1d3186cedb15bde98b8efda643034dd0ecf5fa1b0f4e1265cb5"},
+    {file = "shap-0.50.0-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:1fb30930986bda79ac3f2a4e4db5942d7874b2d917c717a2fdb9aa505e11dd20"},
+    {file = "shap-0.50.0-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:d82522fd5b050a261323021b4c17a1027296ec2dc3bf8550863fde3ddd0f9d68"},
+    {file = "shap-0.50.0-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:96b1efc72393533a64dd3a3d524b4b13ab4a2752cd63e8c74167f59aa081e230"},
+    {file = "shap-0.50.0-cp314-cp314-musllinux_1_2_aarch64.whl", hash = "sha256:58d5aa9e802145ef21c596932ec28605d7ac4f879ac614c6106f4c7e31e60096"},
+    {file = "shap-0.50.0-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:2deb44e3fb8bce2c3c98be04617b1209c81f87d6e769f57c9b0cb1cea0761118"},
+    {file = "shap-0.50.0-cp314-cp314-win_amd64.whl", hash = "sha256:8d05f0c0c8d4f7752ae29098e72589437b3576df3434b16c418e6e0cfa2571cd"},
+    {file = "shap-0.50.0-cp314-cp314t-macosx_11_0_arm64.whl", hash = "sha256:49966fa3f41113c76045b2c5a3415020a1dc643559526cb993fdaaf3b6b37352"},
+    {file = "shap-0.50.0-cp314-cp314t-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:181a6cb1937ceab3da16e5bb43bc37c2556fffe58f783b12e0a9571172899cf7"},
+    {file = "shap-0.50.0-cp314-cp314t-musllinux_1_2_aarch64.whl", hash = "sha256:6b23684d3cd86cecbfc52a47cad780b83d45f8c028368d1d4c9373a8aca822f8"},
+    {file = "shap-0.50.0-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:27d46d1001f74f6a28567992259150ec9d4ea895ff20b02db38c31d7f268a3c7"},
+    {file = "shap-0.50.0.tar.gz", hash = "sha256:bdc559acf7f647bc3bb22c6a1fea9f50716ed357ad595bc357b43082ae4dc6b9"},
+]
+
+[package.dependencies]
+cloudpickle = "*"
+numba = {version = ">=0.54", markers = "python_version < \"3.14\""}
+numpy = ">=2"
+packaging = ">20.9"
+pandas = "*"
+scikit-learn = "*"
+scipy = "*"
+slicer = "0.0.8"
+tqdm = ">=4.27.0"
+typing-extensions = "*"
+
+[package.extras]
+docs = ["ipython", "ipywidgets", "matplotlib", "myst-parser", "nbsphinx", "numpydoc", "requests", "sphinx", "sphinx_github_changelog", "sphinx_rtd_theme"]
+download-datasets = ["scikit-learn"]
+nbtest = ["nbtest-gen", "nbtest-lab-extension", "nbtest-plugin"]
+others = ["lime"]
+plots = ["ipython", "matplotlib"]
+test = ["catboost ; python_version < \"3.14\"", "causalml", "gpboost (==1.6.3.1) ; python_version < \"3.14\"", "lightgbm", "ngboost", "numpy (>=2.0)", "opencv-python", "protobuf", "pyod", "pyspark", "pytest", "pytest-cov", "pytest-mpl", "scikit-learn (<=1.6.1)", "selenium", "sentencepiece", "tensorflow ; python_version < \"3.14\"", "tf-keras", "torch ; python_version < \"3.14\"", "torchvision ; python_version < \"3.14\"", "transformers (<4.54.0)", "xgboost"]
+test-core = ["mypy", "pytest", "pytest-cov", "pytest-mpl"]
+test-notebooks = ["datasets", "jupyter", "keras", "nbconvert", "nbformat", "nlp", "transformers"]
 
 [[package]]
 name = "shapely"
@@ -14636,6 +14791,7 @@ files = [
     {file = "six-1.17.0-py2.py3-none-any.whl", hash = "sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274"},
     {file = "six-1.17.0.tar.gz", hash = "sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [[package]]
 name = "skops"
@@ -14658,6 +14814,18 @@ scipy = ">=1.10.0"
 
 [package.extras]
 rich = ["rich (>=12)"]
+
+[[package]]
+name = "slicer"
+version = "0.0.8"
+description = "A small package for big slicing."
+optional = false
+python-versions = ">=3.6"
+groups = ["ml"]
+files = [
+    {file = "slicer-0.0.8-py3-none-any.whl", hash = "sha256:6c206258543aecd010d497dc2eca9d2805860a0b3758673903456b7df7934dc3"},
+    {file = "slicer-0.0.8.tar.gz", hash = "sha256:2e7553af73f0c0c2d355f4afcc3ecf97c6f2156fcf4593955c3f56cf6c4d6eb7"},
+]
 
 [[package]]
 name = "slowapi"
@@ -14726,6 +14894,7 @@ files = [
     {file = "sniffio-1.3.1-py3-none-any.whl", hash = "sha256:2f6da418d1f1e0fddd844478f41680e794e6051915791a034ff65e5f100525a2"},
     {file = "sniffio-1.3.1.tar.gz", hash = "sha256:f4324edc670a0f49750a81b895f35c3adb843cca46f0530f79fc1babb23789dc"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [[package]]
 name = "sortedcontainers"
@@ -14963,6 +15132,7 @@ files = [
     {file = "sse_starlette-3.4.4-py3-none-any.whl", hash = "sha256:3f4dd50d8aed2771a091f3a83000323fc3844541c16b4fe585ae2420cc6df973"},
     {file = "sse_starlette-3.4.4.tar.gz", hash = "sha256:07e0fa0460138baf25cdd5fb28683472c3995dc1642225191b3832d62526bcb0"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [package.dependencies]
 anyio = ">=4.7.0"
@@ -15156,6 +15326,7 @@ description = "A system for controlling process state under UNIX"
 optional = false
 python-versions = "*"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "supervisor-4.3.0-py2.py3-none-any.whl", hash = "sha256:0bcb763fddafba410f35cbde226aa7f8514b9fb82eb05a0c85f6588d1c13f8db"},
     {file = "supervisor-4.3.0.tar.gz", hash = "sha256:4a2bf149adf42997e1bb44b70c43b613275ec9852c3edacca86a9166b27e945e"},
@@ -15193,6 +15364,7 @@ files = [
     {file = "tabulate-0.9.0-py3-none-any.whl", hash = "sha256:024ca478df22e9340661486f85298cff5f6dcdba14f3813e8830015b9ed1948f"},
     {file = "tabulate-0.9.0.tar.gz", hash = "sha256:0095b12bf5966de529c0feb1fa08671671b3368eec77d7ef7ab114be2c068b3c"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [package.extras]
 widechars = ["wcwidth"]
@@ -15407,6 +15579,7 @@ files = [
     {file = "tiktoken-0.12.0-cp39-cp39-win_amd64.whl", hash = "sha256:2cff3688ba3c639ebe816f8d58ffbbb0aa7433e23e08ab1cade5d175fc973fb3"},
     {file = "tiktoken-0.12.0.tar.gz", hash = "sha256:b18ba7ee2b093863978fcb14f74b3707cdc8d4d4d3836853ce7ec60772139931"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [package.dependencies]
 regex = ">=2022.1.18"
@@ -15422,6 +15595,7 @@ description = "A tile level programming language to generate high performance co
 optional = false
 python-versions = ">=3.9"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "tilelang-0.1.9-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:00ed594fdeb229c5505b9ffa895c3c5daeb28641c78f783fa1f724cf1e08cecd"},
     {file = "tilelang-0.1.9-cp38-abi3-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:4bbccfe9035aed775ffafb6dc25a5994504b24e2c5d95d0f39643edfafa7bf12"},
@@ -15756,6 +15930,7 @@ description = "torch c dlpack ext"
 optional = false
 python-versions = ">=3.9"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "torch_c_dlpack_ext-0.1.5-cp310-cp310-macosx_14_0_arm64.whl", hash = "sha256:e0f6c197d5293884898b9ebf13d07501de39cb94799b374ed43f91731087d557"},
     {file = "torch_c_dlpack_ext-0.1.5-cp310-cp310-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:ba3d88f0f7d5e1d9c3d4a3179037fc8e261c3b77ac1fad23edc0d3a9214ef193"},
@@ -15794,6 +15969,7 @@ description = "An audio package for PyTorch"
 optional = false
 python-versions = "*"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "torchaudio-2.11.0-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:6ebb59c694909eccb5d61b7cc199d297692012c43286e36d92983aa7bad7586d"},
     {file = "torchaudio-2.11.0-cp310-cp310-manylinux_2_28_aarch64.whl", hash = "sha256:be7ad472acb16d16e98c005f0219b0db06a47dfe8f7b4d177062e1638f871e3b"},
@@ -15862,6 +16038,7 @@ files = [
     {file = "torchvision-0.26.0-cp314-cp314t-manylinux_2_28_x86_64.whl", hash = "sha256:8008474855623c6ba52876589dc52df0aa66e518c25eca841445348e5f79844c"},
     {file = "torchvision-0.26.0-cp314-cp314t-win_amd64.whl", hash = "sha256:e9d0e022c19a78552fb055d0414d47fecb4a649309b9968573daea160ba6869c"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [package.dependencies]
 numpy = "*"
@@ -16320,6 +16497,7 @@ files = [
     {file = "urllib3-2.7.0-py3-none-any.whl", hash = "sha256:9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897"},
     {file = "urllib3-2.7.0.tar.gz", hash = "sha256:231e0ec3b63ceb14667c67be60f2f2c40a518cb38b03af60abc813da26505f4c"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [package.extras]
 brotli = ["brotli (>=1.2.0) ; platform_python_implementation == \"CPython\"", "brotlicffi (>=1.2.0.0) ; platform_python_implementation != \"CPython\""]
@@ -16472,6 +16650,7 @@ description = "A high-throughput and memory-efficient inference and serving engi
 optional = false
 python-versions = "<3.15,>=3.10"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "vllm-0.20.2-cp38-abi3-manylinux_2_35_aarch64.whl", hash = "sha256:76ccf4c0554556c06f6b0fb1643742d4cf97dcc69f6ef3f04556d0764126035a"},
     {file = "vllm-0.20.2-cp38-abi3-manylinux_2_35_x86_64.whl", hash = "sha256:22a7dd06eb03371298e13d6100f3dedbf307352342aaf08e87c929c60aae9b4d"},
@@ -16959,22 +17138,6 @@ files = [
 ]
 
 [[package]]
-name = "win32-setctime"
-version = "1.2.0"
-description = "A small Python utility to set file creation time on Windows"
-optional = false
-python-versions = ">=3.5"
-groups = ["ml-gpu-linux"]
-markers = "sys_platform == \"win32\""
-files = [
-    {file = "win32_setctime-1.2.0-py3-none-any.whl", hash = "sha256:95d644c4e708aba81dc3704a116d8cbc974d70b3bdb8be1d150e36be6e9d1390"},
-    {file = "win32_setctime-1.2.0.tar.gz", hash = "sha256:ae1fdf948f5640aae05c511ade119313fb6a30d7eabe25fef9764dca5873c4c0"},
-]
-
-[package.extras]
-dev = ["black (>=19.3b0) ; python_version >= \"3.6\"", "pytest (>=4.6.2)"]
-
-[[package]]
 name = "wrapt"
 version = "2.1.2"
 description = "Module for decorators, wrappers and monkey patching."
@@ -17138,7 +17301,7 @@ description = "Efficient, Flexible and Portable Structured Generation"
 optional = false
 python-versions = "<4,>=3.8"
 groups = ["ml-gpu-linux"]
-markers = "platform_machine == \"x86_64\" or platform_machine == \"aarch64\" or platform_machine == \"arm64\" or platform_machine == \"s390x\" or platform_machine == \"ppc64le\""
+markers = "sys_platform == \"linux\" and (platform_machine == \"x86_64\" or platform_machine == \"aarch64\" or platform_machine == \"arm64\" or platform_machine == \"s390x\" or platform_machine == \"ppc64le\")"
 files = [
     {file = "xgrammar-0.2.0-cp310-cp310-macosx_10_14_x86_64.whl", hash = "sha256:fc4fb16e99f807d5c8ca1926a43024a09d82331ae56e0fe14a85f365fc12f2f1"},
     {file = "xgrammar-0.2.0-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:aa89d9eb2d989b90b19ff0d0fa9cf9be05e970e56ad2e979315772496f7fe8bb"},
@@ -17339,6 +17502,7 @@ files = [
     {file = "yarl-1.23.0-py3-none-any.whl", hash = "sha256:a2df6afe50dea8ae15fa34c9f824a3ee958d785fd5d089063d960bae1daa0a3f"},
     {file = "yarl-1.23.0.tar.gz", hash = "sha256:53b1ea6ca88ebd4420379c330aea57e258408dd0df9af0992e5de2078dc9f5d5"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [package.dependencies]
 idna = ">=2.0"
@@ -17352,6 +17516,7 @@ description = "an efficient SMT solver library"
 optional = false
 python-versions = "*"
 groups = ["ml-gpu-linux"]
+markers = "sys_platform == \"linux\""
 files = [
     {file = "z3_solver-4.15.4.0-py3-none-macosx_13_0_arm64.whl", hash = "sha256:407e825cc9211f95ef46bdc8d151bf630e7ab2d62a21d24cd74c09cc5b73f3aa"},
     {file = "z3_solver-4.15.4.0-py3-none-macosx_13_0_x86_64.whl", hash = "sha256:00bd10c5a6a5f6112d3a9a810d0799227e52f76caa860dafa5e00966bb47eb13"},
@@ -17391,6 +17556,7 @@ files = [
     {file = "zipp-3.23.1-py3-none-any.whl", hash = "sha256:0b3596c50a5c700c9cb40ba8d86d9f2cc4807e9bedb06bcdf7fac85633e444dc"},
     {file = "zipp-3.23.1.tar.gz", hash = "sha256:32120e378d32cd9714ad503c1d024619063ec28aad2248dc6672ad13edfa5110"},
 ]
+markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [package.extras]
 check = ["pytest-checkdocs (>=2.4)", "pytest-ruff (>=0.2.1) ; sys_platform != \"cygwin\""]
@@ -17428,4 +17594,4 @@ test = ["pytest"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12,<3.13"
-content-hash = "0c186bf122105c55b5c73f158cc05ff85068c4bbc66ded78ed81945f7125f586"
+content-hash = "fecf348de6ced1d50e424a15050c58ba9c6f186b240884fd7a131b16a96eb9d5"
