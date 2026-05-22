@@ -161,6 +161,24 @@ Documenta TODOS los datasets y modelos usados durante el proyecto. Sin esto, el 
   vecinos para evitar leakage espacial. Implementado en
   `ml/features/spatial_split.py::build_spatial_kfold`.
 
+### xgboost — DMLC / XGBoost contributors
+- Repo: [dmlc/xgboost](https://github.com/dmlc/xgboost) `^3.2.0`
+- License: Apache 2.0
+- Citation: Chen, T. & Guestrin, C. (2016). *XGBoost: A Scalable Tree
+  Boosting System*. Proceedings of the 22nd ACM SIGKDD. DOI
+  [10.1145/2939672.2939785](https://doi.org/10.1145/2939672.2939785).
+- Use scope US-019: uno de los dos clasificadores del baseline tabular
+  (`ml/train/baseline.py`). `tree_method="hist"` con `device="cuda"` si hay
+  GPU NVIDIA local disponible, degrada a CPU en CI.
+
+### mlflow — Databricks / MLflow contributors
+- Repo: [mlflow/mlflow](https://github.com/mlflow/mlflow) `^3.1`
+- License: Apache 2.0
+- Use scope US-019: tracking de experimentos del baseline (params, metrics,
+  artefactos, tags `data_version` + `code_version`) y Model Registry. El
+  servidor local corre en Docker (`infrastructure/docker/mlflow.Dockerfile`)
+  con backend store en PostgreSQL.
+
 ## Bibliografía agronómica de los índices custom (US-014)
 
 Las 3 fórmulas custom del catálogo (`LAI`, `FAPAR`, `CCCI`) implementan

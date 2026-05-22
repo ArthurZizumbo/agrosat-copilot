@@ -1,4 +1,4 @@
-.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip notebooks-check i18n-check db-migrate db-rollback db-new db-status db-seed db-test-us015 features-extract-demo features-persist features-fuse-demo features-fuse-italy dagster-materialize-features feature-selection-subset feature-selection-build feature-selection-notebook feature-selection-test feature-fusion-build feature-fusion-notebook avance2-figures avance2-build train-l4 train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eda-sentinel2 eda-alphaearth eda-bivariado eda-figures-avance1 eda-figures-paper-methods eda-pastis-subset eda-notebook-avance1 paper-methods-notebook eda-pdf eda-dashboard eda-dashboard-test eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate farslip-dataset-build farslip-dataset-check farslip-train farslip-eval-pastis farslip-smoke-eval
+.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip notebooks-check i18n-check db-migrate db-rollback db-new db-status db-seed db-test-us015 features-extract-demo features-persist features-fuse-demo features-fuse-italy dagster-materialize-features feature-selection-subset feature-selection-build feature-selection-notebook feature-selection-test feature-fusion-build feature-fusion-notebook avance2-figures avance2-build mlflow-up mlflow-down train-baseline baseline-test baseline-notebook train-l4 train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eda-sentinel2 eda-alphaearth eda-bivariado eda-figures-avance1 eda-figures-paper-methods eda-pastis-subset eda-notebook-avance1 paper-methods-notebook eda-pdf eda-dashboard eda-dashboard-test eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate farslip-dataset-build farslip-dataset-check farslip-train farslip-eval-pastis farslip-smoke-eval
 
 help:
 	@echo "AgroSatCopilot — comandos disponibles:"
@@ -173,6 +173,24 @@ avance2-figures:  ## Extrae figuras inline de los 3 notebooks FE a paper/figures
 avance2-build: avance2-figures  ## Regenera el notebook integrador Avance2.Equipo17.ipynb (figuras embebidas, sin papermill)
 	poetry run python scripts/build_avance2_notebook.py \
 	  --out notebooks/feature_engineering/Avance2.Equipo17.ipynb
+
+# === US-019 — Baseline RF/XGB (EPIC 4) ===
+mlflow-up:  ## US-019 — Levanta el servidor MLflow local en Docker (UI en localhost:5010)
+	docker compose up -d mlflow
+
+mlflow-down:  ## US-019 — Detiene el servidor MLflow local
+	docker compose stop mlflow
+
+train-baseline:  ## US-019 — Entrena RF + XGB con tuning y registra runs MLflow
+	poetry run python ml/train/train_baseline.py --model both --tune
+
+baseline-test:  ## US-019 — pytest baseline.py + metrics.py + mlflow_utils.py
+	poetry run python -m pytest tests/ml/train tests/ml/eval tests/ml/utils -q
+
+baseline-notebook:  ## US-019 — Reconstruye y ejecuta notebooks/04_baseline.ipynb (secciones 1-2-6)
+	poetry run python scripts/build_baseline_notebook.py --out notebooks/04_baseline.ipynb
+	MPLBACKEND=Agg poetry run papermill notebooks/04_baseline.ipynb \
+	  notebooks/04_baseline.ipynb --no-progress-bar
 
 # === ML / Training ===
 train-l4:  ## Spot L4 24GB (baselines, dev)

@@ -1,0 +1,5 @@
+outs:
+- md5: 4f49f4f2d22013d7ccad787727119bac
+  size: 79279376
+  hash: md5
+  path: feature_selection_parcels_subset.parquet

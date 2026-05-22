@@ -1,13 +1,13 @@
 variable "project_id" {
   description = "GCP project id."
   type        = string
-  default     = "agrosat-prod"
+  default     = "agrosat-copilot"
 }
 
 variable "gcp_region" {
   description = "Primary GCP region."
   type        = string
-  default     = "europe-west1"
+  default     = "us-central1"
 }
 
 variable "azure_subscription_id" {

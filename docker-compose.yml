@@ -54,16 +54,24 @@ services:
       VSI_CACHE: "TRUE"
 
   mlflow:
-    image: ghcr.io/mlflow/mlflow:v2.16.2
+    build:
+      context: .
+      dockerfile: infrastructure/docker/mlflow.Dockerfile
+    image: agrosat-mlflow:3.1.0-pg
     ports: ["${MLFLOW_HOST_PORT:-5010}:5000"]
     depends_on:
       postgres: { condition: service_healthy }
     command: >
       mlflow server
-      --backend-store-uri postgresql://agrosat:agrosat@postgres:5432/agrosat
-      --default-artifact-root /mlruns
+      --backend-store-uri postgresql://agrosat:agrosat@postgres:5432/mlflow
+      --default-artifact-root /mlflow-artifacts
       --host 0.0.0.0 --port 5000
-    volumes: ["mlflow_data:/mlruns"]
+    volumes: ["./mlflow-artifacts:/mlflow-artifacts"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   dagster:
     build:
@@ -83,5 +91,4 @@ services:
 
 volumes:
   postgres_data:
-  mlflow_data:
   ollama_data:

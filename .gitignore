@@ -130,6 +130,13 @@ notebooks/eda/html/
 mlruns/
 mlflow.db
 mlartifacts/
+# US-019: artifact root del servidor MLflow Docker (bind-mount), salvo el marker
+mlflow-artifacts/*
+!mlflow-artifacts/.gitkeep
+# US-019: modelos baseline serializados con joblib (gestionados por MLflow/DVC)
+artifacts/*.joblib
+# US-019: cache regenerable de los folds del CV espacial del baseline
+data/test_fixtures/baseline_spatial_folds_*.parquet
 
 # ── Dagster ───────────────────────────────────────────────────────────────────
 dagster_project/.dagster/
