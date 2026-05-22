@@ -1,4 +1,4 @@
-.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip notebooks-check i18n-check db-migrate db-rollback db-new db-status db-seed db-test-us015 features-extract-demo features-persist features-fuse-demo features-fuse-italy dagster-materialize-features feature-selection-subset feature-selection-build feature-selection-notebook feature-selection-test feature-fusion-build feature-fusion-notebook avance2-build avance2-notebook train-l4 train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eda-sentinel2 eda-alphaearth eda-bivariado eda-figures-avance1 eda-pastis-subset eda-notebook-avance1 eda-pdf eda-dashboard eda-dashboard-test eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate farslip-dataset-build farslip-dataset-check farslip-train farslip-eval-pastis farslip-smoke-eval
+.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip notebooks-check i18n-check db-migrate db-rollback db-new db-status db-seed db-test-us015 features-extract-demo features-persist features-fuse-demo features-fuse-italy dagster-materialize-features feature-selection-subset feature-selection-build feature-selection-notebook feature-selection-test feature-fusion-build feature-fusion-notebook avance2-build avance2-notebook avance3-build avance3-notebook baseline-alphaearth-build baseline-alphaearth-notebook baseline-spectral-build baseline-spectral-notebook baseline-breizhcrops-build baseline-breizhcrops-notebook train-l4 train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eda-sentinel2 eda-alphaearth eda-bivariado eda-figures-avance1 eda-pastis-subset eda-notebook-avance1 eda-pdf eda-dashboard eda-dashboard-test eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate farslip-dataset-build farslip-dataset-check farslip-train farslip-eval-pastis farslip-smoke-eval
 
 help:
 	@echo "AgroSatCopilot — comandos disponibles:"
@@ -166,6 +166,39 @@ avance2-build:  ## US-018 ext — Reconstruye notebooks/feature_engineering/Avan
 avance2-notebook:  ## US-018 ext — Papermill end-to-end sobre Avance2.Equipo17.ipynb
 	MPLBACKEND=Agg poetry run papermill notebooks/feature_engineering/Avance2.Equipo17.ipynb \
 	  notebooks/feature_engineering/Avance2.Equipo17.ipynb --no-progress-bar
+
+# === Avance 3 — Modelo de Referencia / Baseline (entregable del curso, EPIC 4) ===
+avance3-build:  ## EPIC 4 — Reconstruye notebooks/baseline/Avance3.Equipo17.ipynb desde scripts/build_avance3_notebook.py
+	poetry run python scripts/build_avance3_notebook.py \
+	  --out notebooks/baseline/Avance3.Equipo17.ipynb
+
+avance3-notebook:  ## EPIC 4 — Papermill end-to-end sobre Avance3.Equipo17.ipynb
+	MPLBACKEND=Agg poetry run papermill notebooks/baseline/Avance3.Equipo17.ipynb \
+	  notebooks/baseline/Avance3.Equipo17.ipynb --no-progress-bar
+
+baseline-alphaearth-build:  ## EPIC 4 — Reconstruye notebooks/baseline/04a_baseline_alphaearth_pastis.ipynb
+	poetry run python scripts/build_baseline_alphaearth_notebook.py \
+	  --out notebooks/baseline/04a_baseline_alphaearth_pastis.ipynb
+
+baseline-alphaearth-notebook:  ## EPIC 4 — Papermill end-to-end sobre 04a_baseline_alphaearth_pastis.ipynb
+	MPLBACKEND=Agg poetry run papermill notebooks/baseline/04a_baseline_alphaearth_pastis.ipynb \
+	  notebooks/baseline/04a_baseline_alphaearth_pastis.ipynb --no-progress-bar
+
+baseline-spectral-build:  ## EPIC 4 — Reconstruye notebooks/baseline/04b_baseline_spectral_temporal_pastis.ipynb
+	poetry run python scripts/build_baseline_spectral_notebook.py \
+	  --out notebooks/baseline/04b_baseline_spectral_temporal_pastis.ipynb
+
+baseline-spectral-notebook:  ## EPIC 4 — Papermill end-to-end sobre 04b_baseline_spectral_temporal_pastis.ipynb
+	MPLBACKEND=Agg poetry run papermill notebooks/baseline/04b_baseline_spectral_temporal_pastis.ipynb \
+	  notebooks/baseline/04b_baseline_spectral_temporal_pastis.ipynb --no-progress-bar
+
+baseline-breizhcrops-build:  ## EPIC 4 — Reconstruye notebooks/baseline/04c_baseline_breizhcrops.ipynb
+	poetry run python scripts/build_baseline_breizhcrops_notebook.py \
+	  --out notebooks/baseline/04c_baseline_breizhcrops.ipynb
+
+baseline-breizhcrops-notebook:  ## EPIC 4 — Papermill end-to-end sobre 04c_baseline_breizhcrops.ipynb
+	MPLBACKEND=Agg poetry run papermill notebooks/baseline/04c_baseline_breizhcrops.ipynb \
+	  notebooks/baseline/04c_baseline_breizhcrops.ipynb --no-progress-bar
 
 # === ML / Training ===
 train-l4:  ## Spot L4 24GB (baselines, dev)

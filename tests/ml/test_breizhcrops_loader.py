@@ -11,13 +11,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import polars as pl
 import pytest
 
 from ml.ingest.breizhcrops_loader import (
     BREIZHCROPS_CLASSES,
     BREIZHCROPS_L2A_BANDS,
+    _balanced_parcel_order,  # type: ignore[reportPrivateUsage]
     _dataset_available,  # type: ignore[reportPrivateUsage]
+    _stratified_parcel_order,  # type: ignore[reportPrivateUsage]
     breizhcrops_parcel_index,
     breizhcrops_pixel_series,
 )
@@ -102,6 +105,67 @@ def test_pixel_series_no_network_when_missing(tmp_path: Path) -> None:
     assert _dataset_available(tmp_path, "frh04", 2017, "L2A") is False
     out = breizhcrops_pixel_series("frh04", 2017, "L2A", sample_parcels=5, root=tmp_path)
     assert out.is_empty()
+
+
+def test_stratified_parcel_order_keeps_all_classes() -> None:
+    """El muestreo proporcional conserva al menos 1 parcela de cada clase.
+
+    Con un presupuesto pequeno frente a un dataset muy desbalanceado, la
+    cuota minima de 1 por clase garantiza que ninguna clase desaparezca.
+    """
+    # 3 clases: 90 / 9 / 1 parcelas (desbalance 90x).
+    class_ids = np.array([0] * 90 + [1] * 9 + [2] * 1, dtype=np.int64)
+    order = _stratified_parcel_order(class_ids, sample_parcels=20, seed=42)
+    assert order.size == 20
+    selected_classes = set(class_ids[order].tolist())
+    assert selected_classes == {0, 1, 2}
+    # Reproducibilidad: misma semilla, mismo resultado.
+    order_again = _stratified_parcel_order(class_ids, sample_parcels=20, seed=42)
+    assert np.array_equal(order, order_again)
+
+
+def test_balanced_parcel_order_equalizes_classes() -> None:
+    """El muestreo balanceado da cupo igual por clase, capado al soporte.
+
+    Las clases minoritarias aportan todas sus parcelas; las mayoritarias se
+    submuestrean al cupo ``sample_parcels // n_clases``.
+    """
+    # 3 clases: 90 / 9 / 1; cupo = 30 // 3 = 10.
+    class_ids = np.array([0] * 90 + [1] * 9 + [2] * 1, dtype=np.int64)
+    order = _balanced_parcel_order(class_ids, sample_parcels=30, seed=42)
+    counts = np.bincount(class_ids[order], minlength=3)
+    assert counts[0] == 10  # mayoritaria submuestreada al cupo
+    assert counts[1] == 9  # minoritaria: todo su soporte (< cupo)
+    assert counts[2] == 1  # minoritaria: todo su soporte (< cupo)
+    order_again = _balanced_parcel_order(class_ids, sample_parcels=30, seed=42)
+    assert np.array_equal(order, order_again)
+
+
+@integration
+@skip_no_data
+def test_pixel_series_balanced_sampling_real() -> None:
+    """Smoke test: el muestreo balanceado equilibra el soporte por clase.
+
+    Con muestreo balanceado, la clase mas frecuente del subset no debe
+    superar de forma extrema a las demas (a diferencia del proporcional,
+    que reproduce el desbalance ~74x natural de BreizhCrops).
+    """
+    df = breizhcrops_pixel_series(
+        "frh04", 2017, "L2A", sample_parcels=900, sampling="balanced", seed=42, root=BC_ROOT
+    )
+    assert not df.is_empty()
+    per_class = (
+        df.group_by("class_id")
+        .agg(pl.col("parcel_id").n_unique().alias("n"))
+        .get_column("n")
+    )
+    # Entre las clases con soporte usable (>=12, las que el baseline conserva)
+    # el cupo por clase acota el maximo; el ratio max/min queda muy por debajo
+    # del ~74x del muestreo proporcional. Las clases inherentemente raras de
+    # frh04 (nuts ~11, sunflower ~2) se descartan, igual que hace el notebook.
+    usable = per_class.filter(per_class >= 12)
+    assert usable.len() >= 6
+    assert usable.max() / max(usable.min(), 1) < 20
 
 
 @integration

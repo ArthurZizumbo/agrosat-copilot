@@ -115,6 +115,7 @@ typer = "^0.25.0"
 # safetensors para persistir pesos student FarSLIP (formato HF estandar).
 safetensors = "^0.7.0"
 breizhcrops = "^0.0.4.1"
+shap = "^0.48.0"
 
 [tool.poetry.group.ml-gpu]
 optional = true
@@ -229,6 +230,16 @@ ignore = ["S101", "S301"]  # asserts ok en tests; pickle ok para ML
 # build_fusion_notebook usa el mismo patron de f-strings concatenadas
 # para construir celdas (E501 inevitable).
 "scripts/build_fusion_notebook.py" = ["E501"]
+# Avance 3: la CLI Typer de train_baseline usa defaults via typer.Option
+# (B008 es el patron idiomatico de Typer, no un bug).
+"ml/train/train_baseline.py" = ["B008"]
+# Avance 3: los build_*_notebook usan f-strings concatenadas extensas para
+# construir las celdas del notebook (E501 inevitable). Typer permite
+# defaults via Option (B008).
+"scripts/build_avance3_notebook.py" = ["E501", "B008"]
+"scripts/build_baseline_alphaearth_notebook.py" = ["E501", "B008"]
+"scripts/build_baseline_spectral_notebook.py" = ["E501", "B008"]
+"scripts/build_baseline_breizhcrops_notebook.py" = ["E501", "B008"]
 
 [tool.mypy]
 python_version = "3.12"

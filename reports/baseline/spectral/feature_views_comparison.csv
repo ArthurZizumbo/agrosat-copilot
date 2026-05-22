@@ -1,0 +1,3 @@
+vista,n_features,f1_macro,accuracy,cohen_kappa,segundos
+espectro-temporal completa,185,0.1884,0.2105,0.1559,2.9
+Sentinel-2 crudo (*_mean),17,0.1445,0.1579,0.1006,3.3

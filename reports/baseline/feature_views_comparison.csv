@@ -1,0 +1,4 @@
+vista,n_features,f1_macro,accuracy,cohen_kappa,segundos
+AlphaEarth 64-dim,64,0.4195,0.6573,0.5087,7.5
+Sentinel-2 crudo (subset PASTIS),17,0.091,0.1039,0.0444,2.9
+Espectro-temporal completo (subset PASTIS),185,0.171,0.2078,0.1543,3.0

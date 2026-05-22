@@ -1,0 +1,4 @@
+modelo,f1_macro,f1_weighted,accuracy,cohen_kappa,mIoU
+dummy,0.0335,0.0287,0.0395,-0.0255,0.0193
+random_forest,0.1884,0.1983,0.2105,0.1559,0.1175
+xgboost,0.1812,0.1908,0.1974,0.1421,0.1069

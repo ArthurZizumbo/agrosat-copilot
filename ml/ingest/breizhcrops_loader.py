@@ -271,12 +271,115 @@ def _doa_to_date_doy(doa_int: float) -> tuple[int, int]:
     return year * 10000 + month * 100 + day_of_month, doy
 
 
+def _stratified_parcel_order(
+    class_ids: np.ndarray,
+    sample_parcels: int,
+    seed: int,
+) -> np.ndarray:
+    """Selecciona ``sample_parcels`` indices con muestreo estratificado por clase.
+
+    Reparte el presupuesto de parcelas proporcionalmente al soporte de cada
+    clase (cuota minima de 1 por clase presente, para que ninguna clase
+    desaparezca del subset). Dentro de cada clase la eleccion es aleatoria
+    reproducible con ``seed``. Esto evita que las clases minoritarias de
+    BreizhCrops (``nuts``, ``orchards``, ``sunflower``) queden con soporte
+    casi nulo bajo un muestreo uniforme.
+
+    Args:
+        class_ids: Array ``(n_parcels,)`` con el ``class_id`` de cada parcela.
+        sample_parcels: Numero objetivo de parcelas a seleccionar.
+        seed: Semilla para la eleccion dentro de cada clase.
+
+    Returns:
+        Array de indices posicionales (ordenados) en ``[0, n_parcels)``.
+    """
+    rng = np.random.default_rng(seed)
+    n_parcels = class_ids.shape[0]
+    if sample_parcels >= n_parcels:
+        return np.arange(n_parcels)
+
+    classes, counts = np.unique(class_ids, return_counts=True)
+    # Cuota proporcional al soporte, con minimo 1 por clase presente.
+    quota = np.maximum(1, np.floor(counts / n_parcels * sample_parcels).astype(int))
+    quota = np.minimum(quota, counts)
+    # Ajuste para que la suma de cuotas cuadre con sample_parcels.
+    deficit = sample_parcels - int(quota.sum())
+    if deficit > 0:
+        # Reparte el remanente sobre las clases con margen, mas grandes primero.
+        headroom = counts - quota
+        for ci in np.argsort(-counts):
+            if deficit <= 0:
+                break
+            take = min(deficit, int(headroom[ci]))
+            quota[ci] += take
+            deficit -= take
+    elif deficit < 0:
+        # Recorta de las clases mayores conservando >= 1 por clase.
+        for ci in np.argsort(-counts):
+            if deficit >= 0:
+                break
+            take = min(-deficit, int(quota[ci]) - 1)
+            quota[ci] -= take
+            deficit += take
+
+    selected: list[np.ndarray] = []
+    for cls, q in zip(classes, quota, strict=True):
+        cls_idx = np.flatnonzero(class_ids == cls)
+        if q >= cls_idx.size:
+            selected.append(cls_idx)
+        else:
+            selected.append(rng.choice(cls_idx, size=int(q), replace=False))
+    return np.sort(np.concatenate(selected))
+
+
+def _balanced_parcel_order(
+    class_ids: np.ndarray,
+    sample_parcels: int,
+    seed: int,
+) -> np.ndarray:
+    """Selecciona indices con muestreo balanceado: cuota igual por clase.
+
+    A diferencia de :func:`_stratified_parcel_order` (cuota proporcional al
+    soporte, que conserva el desbalance natural ~74x de BreizhCrops), aqui
+    cada clase recibe el mismo cupo ``sample_parcels // n_clases``, capado al
+    soporte real de la clase. Las clases minoritarias aportan todas sus
+    parcelas; las mayoritarias se submuestrean. Es el muestreo correcto para
+    un baseline cuya metrica principal es F1-macro (promedia clases por
+    igual): equilibra el recall de cultivos raros como ``orchards`` y
+    ``rapeseed`` sin sesgar hacia ``temporary meadows`` / ``corn``.
+
+    Args:
+        class_ids: Array ``(n_parcels,)`` con el ``class_id`` de cada parcela.
+        sample_parcels: Numero objetivo de parcelas (puede no alcanzarse si
+            las clases minoritarias no tienen soporte para llenar su cupo).
+        seed: Semilla para la eleccion dentro de cada clase.
+
+    Returns:
+        Array de indices posicionales (ordenados) en ``[0, n_parcels)``.
+    """
+    rng = np.random.default_rng(seed)
+    n_parcels = class_ids.shape[0]
+    if sample_parcels >= n_parcels:
+        return np.arange(n_parcels)
+
+    classes = np.unique(class_ids)
+    per_class_cap = max(1, sample_parcels // int(classes.size))
+    selected: list[np.ndarray] = []
+    for cls in classes:
+        cls_idx = np.flatnonzero(class_ids == cls)
+        if cls_idx.size > per_class_cap:
+            cls_idx = rng.choice(cls_idx, size=per_class_cap, replace=False)
+        selected.append(cls_idx)
+    return np.sort(np.concatenate(selected))
+
+
 def breizhcrops_pixel_series(
     region: str = "frh04",
     year: int = 2017,
     level: str = "L2A",
     sample_parcels: int | None = None,
     seed: int = 42,
+    sampling: str = "balanced",
     root: Path | None = None,
 ) -> pl.DataFrame:
     """Convierte series BreizhCrops a un ``pl.DataFrame`` long-format.
@@ -287,17 +390,30 @@ def breizhcrops_pixel_series(
     ``class_id``), habilitando el analisis cross-dataset BreizhCrops vs
     PASTIS-R.
 
-    El muestreo estratificado se hace por parcela (no por pixel, porque
-    BreizhCrops no tiene rejilla espacial): de ``sample_parcels`` parcelas
-    elegidas con semilla fija se expanden todas sus observaciones.
+    El muestreo se hace por parcela (no por pixel, porque BreizhCrops no
+    tiene rejilla espacial). Dos estrategias segun ``sampling``:
+
+    - ``"balanced"`` (default): cupo igual por clase, capado al soporte
+        real. Las clases minoritarias aportan todas sus parcelas; las
+        mayoritarias se submuestrean. Es el muestreo correcto para un
+        baseline cuya metrica principal es F1-macro.
+    - ``"proportional"``: cuota proporcional al soporte con minimo 1 por
+        clase. Conserva el desbalance natural (~74x) del dataset.
+
+    De cada parcela elegida se expanden todas sus observaciones temporales.
+    El archivo HDF5 se abre una sola vez para toda la carga (no por
+    parcela), reduciendo el overhead de I/O en muestras grandes.
 
     Args:
         region: Region BreizhCrops.
         year: Anio del ciclo agricola.
         level: Nivel de procesamiento (``L2A``).
-        sample_parcels: Si no ``None``, numero maximo de parcelas a
-            samplear (reproducible con ``seed``). ``None`` carga todas.
+        sample_parcels: Si no ``None``, numero objetivo de parcelas a
+            samplear (reproducible con ``seed``). ``None`` carga todas
+            (~120k+ parcelas: usar con cuidado, satura memoria).
         seed: Semilla para el muestreo de parcelas.
+        sampling: Estrategia de muestreo: ``"balanced"`` o
+            ``"proportional"``. Cualquier otro valor cae a ``"balanced"``.
         root: Raiz del dataset. ``None`` usa ``data/breizhcrops/``.
 
     Returns:
@@ -314,58 +430,64 @@ def breizhcrops_pixel_series(
     if n_parcels == 0:
         return pl.DataFrame(schema=_PIXEL_SERIES_SCHEMA)
 
-    order = np.arange(n_parcels)
+    index = ds.index.reset_index(drop=True)
     if sample_parcels is not None and sample_parcels < n_parcels:
-        rng = np.random.default_rng(seed)
-        order = rng.choice(n_parcels, size=sample_parcels, replace=False)
+        class_ids_all = index["classid"].to_numpy().astype(np.int64)
+        if sampling == "proportional":
+            order = _stratified_parcel_order(class_ids_all, sample_parcels, seed)
+        else:
+            order = _balanced_parcel_order(class_ids_all, sample_parcels, seed)
+    else:
+        order = np.arange(n_parcels)
 
     band_names = BREIZHCROPS_L2A_BANDS
     n_bands = len(band_names)
     frames: list[pl.DataFrame] = []
 
-    for i in order:
-        try:
-            row = ds.index.iloc[int(i)]
-            with _h5_open(ds) as h5:
+    # Apertura unica del HDF5 para toda la carga (no una por parcela).
+    with _h5_open(ds) as h5:
+        for i in order:
+            try:
+                row = index.iloc[int(i)]
                 raw = np.asarray(h5[row.path], dtype=np.float64)
-        except Exception:  # noqa: BLE001, S112
-            # Serie ilegible: la saltamos sin abortar la carga completa.
-            # Sin log porque breizhcrops es opcional y el notebook documenta
-            # el modo degradado (espejo de pastis_loader.py).
-            continue
-        if raw.ndim != 2 or raw.shape[0] == 0:
-            continue
+            except Exception:  # noqa: BLE001, S112
+                # Serie ilegible: la saltamos sin abortar la carga completa.
+                # Sin log porque breizhcrops es opcional y el notebook
+                # documenta el modo degradado (espejo de pastis_loader.py).
+                continue
+            if raw.ndim != 2 or raw.shape[0] == 0:
+                continue
 
-        class_id = int(row["classid"])
-        class_name = BREIZHCROPS_CLASSES.get(class_id, "unknown")
-        parcel_id = str(row["id"])
+            class_id = int(row["classid"])
+            class_name = BREIZHCROPS_CLASSES.get(class_id, "unknown")
+            parcel_id = str(row["id"])
 
-        t_steps = raw.shape[0]
-        doa_col = raw[:, 0]
-        dates = np.empty(t_steps, dtype=np.int64)
-        doys = np.empty(t_steps, dtype=np.int64)
-        for ti in range(t_steps):
-            d, doy = _doa_to_date_doy(doa_col[ti])
-            dates[ti] = d
-            doys[ti] = doy
+            t_steps = raw.shape[0]
+            doa_col = raw[:, 0]
+            dates = np.empty(t_steps, dtype=np.int64)
+            doys = np.empty(t_steps, dtype=np.int64)
+            for ti in range(t_steps):
+                d, doy = _doa_to_date_doy(doa_col[ti])
+                dates[ti] = d
+                doys[ti] = doy
 
-        for bi in range(n_bands):
-            col = raw[:, _L2A_BAND_OFFSET + bi]
-            frames.append(
-                pl.DataFrame(
-                    {
-                        "parcel_id": [parcel_id] * t_steps,
-                        "t": np.arange(t_steps, dtype=np.int64),
-                        "date": dates,
-                        "doy": doys,
-                        "band": [band_names[bi]] * t_steps,
-                        "value": col.astype(np.float64),
-                        "class_id": np.full(t_steps, class_id, dtype=np.int16),
-                        "class_name": [class_name] * t_steps,
-                    },
-                    schema=_PIXEL_SERIES_SCHEMA,
+            for bi in range(n_bands):
+                col = raw[:, _L2A_BAND_OFFSET + bi]
+                frames.append(
+                    pl.DataFrame(
+                        {
+                            "parcel_id": [parcel_id] * t_steps,
+                            "t": np.arange(t_steps, dtype=np.int64),
+                            "date": dates,
+                            "doy": doys,
+                            "band": [band_names[bi]] * t_steps,
+                            "value": col.astype(np.float64),
+                            "class_id": np.full(t_steps, class_id, dtype=np.int16),
+                            "class_name": [class_name] * t_steps,
+                        },
+                        schema=_PIXEL_SERIES_SCHEMA,
+                    )
                 )
-            )
 
     if not frames:
         return pl.DataFrame(schema=_PIXEL_SERIES_SCHEMA)
