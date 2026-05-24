@@ -136,6 +136,7 @@ def resolve_xgb_device() -> str:
         return "cuda"
     return "cpu"
 
+
 # Grids de tuning ligero (criterio AC-4): 8 combinaciones por modelo.
 # `max_depth` y `min_samples_leaf` acotados: evita el RF de ~700 MB y el
 # sobreajuste de arboles sin poda (ver _RF_BASE_PARAMS).
@@ -471,9 +472,7 @@ def evaluate_with_spatial_cv(
         )
         # `fit_scaler_on_train` puede descartar columnas all-NaN: alineamos la
         # matriz a las columnas que el scaler conoce antes de `transform`.
-        col_idx = np.array(
-            [feature_cols.index(c) for c in scaler_cols], dtype=np.int64
-        )
+        col_idx = np.array([feature_cols.index(c) for c in scaler_cols], dtype=np.int64)
         raw_train = matrix[np.ix_(train_idx, col_idx)]
         raw_test = matrix[np.ix_(test_idx, col_idx)]
         # Imputacion anti-leakage: las medianas se calculan solo sobre train.
@@ -485,14 +484,31 @@ def evaluate_with_spatial_cv(
 
         estimator = model_factory()
         if _is_xgb(estimator):
-            estimator.fit(x_train, y_train, sample_weight=_sample_weights(y_train))
+            # Spatial CV con folds chicos puede dejar clases sin representacion
+            # en train. XGBoost >=2.0 rechaza fit con
+            # "Invalid classes inferred from unique values of `y`" cuando
+            # unique(y_train) no cubre [0..num_class-1]. Re-encodificamos local
+            # al fold solo si hace falta y revertimos la prediccion al espacio
+            # global. Las clases no vistas en train no se predicen — quedan
+            # como errores legitimos en la metrica (comportamiento honesto).
+            if np.unique(y_train).size < n_classes:
+                fold_encoder = LabelEncoder().fit(y_train)
+                y_train_local = fold_encoder.transform(y_train)
+                estimator.set_params(num_class=len(fold_encoder.classes_))
+                estimator.fit(x_train, y_train_local, sample_weight=_sample_weights(y_train_local))
+                y_pred_local = estimator.predict(x_test)
+                _max_local = len(fold_encoder.classes_) - 1
+                y_pred = fold_encoder.inverse_transform(
+                    np.clip(np.asarray(y_pred_local, dtype=np.int64), 0, _max_local)
+                )
+            else:
+                estimator.fit(x_train, y_train, sample_weight=_sample_weights(y_train))
+                y_pred = estimator.predict(x_test)
         else:
             estimator.fit(x_train, y_train)
-        y_pred = estimator.predict(x_test)
+            y_pred = estimator.predict(x_test)
 
-        fold_metrics = compute_baseline_metrics(
-            y_test, y_pred, labels=list(range(n_classes))
-        )
+        fold_metrics = compute_baseline_metrics(y_test, y_pred, labels=list(range(n_classes)))
         per_fold.append(fold_metrics)
         y_true_chunks.append(y_test)
         y_pred_chunks.append(np.asarray(y_pred))
@@ -503,12 +519,8 @@ def evaluate_with_spatial_cv(
         )
 
     cv_metrics = _aggregate_fold_metrics(per_fold)
-    y_true_oof = (
-        np.concatenate(y_true_chunks) if y_true_chunks else np.array([], dtype=np.int64)
-    )
-    y_pred_oof = (
-        np.concatenate(y_pred_chunks) if y_pred_chunks else np.array([], dtype=np.int64)
-    )
+    y_true_oof = np.concatenate(y_true_chunks) if y_true_chunks else np.array([], dtype=np.int64)
+    y_pred_oof = np.concatenate(y_pred_chunks) if y_pred_chunks else np.array([], dtype=np.int64)
     return cv_metrics, y_true_oof, y_pred_oof
 
 
@@ -561,13 +573,10 @@ def _prepare_dataframe(df: pl.DataFrame) -> pl.DataFrame:
             raise ValueError(f"`df` debe contener la columna obligatoria `{col}`.")
 
     clean = df.filter(
-        pl.col("class_id").is_not_null()
-        & ~pl.col("class_id").is_in(list(_DROP_CLASS_IDS))
+        pl.col("class_id").is_not_null() & ~pl.col("class_id").is_in(list(_DROP_CLASS_IDS))
     )
     if clean.height == 0:
-        raise ValueError(
-            "Tras descartar las clases no agronomicas el DataFrame quedo vacio."
-        )
+        raise ValueError("Tras descartar las clases no agronomicas el DataFrame quedo vacio.")
 
     # El dataset real trae +/-inf en algunas pendientes/ratios espectrales;
     # los normalizamos a null para que el scaler (que solo trata NaN) y la
@@ -575,10 +584,7 @@ def _prepare_dataframe(df: pl.DataFrame) -> pl.DataFrame:
     float_cols = [c for c in clean.columns if clean.schema[c] in (pl.Float32, pl.Float64)]
     if float_cols:
         clean = clean.with_columns(
-            pl.when(pl.col(c).is_infinite())
-            .then(None)
-            .otherwise(pl.col(c))
-            .alias(c)
+            pl.when(pl.col(c).is_infinite()).then(None).otherwise(pl.col(c)).alias(c)
             for c in float_cols
         )
     return clean
@@ -598,11 +604,7 @@ def _feature_columns(df: pl.DataFrame) -> tuple[str, ...]:
     Raises:
         ValueError: si no queda ninguna columna de feature.
     """
-    cols = [
-        c
-        for c in df.columns
-        if c not in _META_COLS and df.schema[c].is_numeric()
-    ]
+    cols = [c for c in df.columns if c not in _META_COLS and df.schema[c].is_numeric()]
     if not cols:
         raise ValueError("No se encontraron columnas numericas de feature en `df`.")
     return tuple(cols)
@@ -748,10 +750,7 @@ def _spatial_folds_cache_path(
     cualquier cambio invalida el caché y fuerza recomputar.
     """
     buffer_tag = f"{buffer_km:g}".replace(".", "p")
-    name = (
-        f"baseline_spatial_folds_n{n_rows}_k{k_folds}"
-        f"_b{buffer_tag}_s{random_state}.parquet"
-    )
+    name = f"baseline_spatial_folds_n{n_rows}_k{k_folds}_b{buffer_tag}_s{random_state}.parquet"
     return _SPATIAL_FOLDS_CACHE_DIR / name
 
 
@@ -769,16 +768,12 @@ def _load_cached_cv_splits(path: Path) -> list[tuple[np.ndarray, np.ndarray]] | 
         fold_df = cached.filter(pl.col("fold") == fold_idx)
         train_idx = fold_df.filter(pl.col("split") == "train")["idx"].to_numpy()
         test_idx = fold_df.filter(pl.col("split") == "test")["idx"].to_numpy()
-        splits.append(
-            (train_idx.astype(np.int64), test_idx.astype(np.int64))
-        )
+        splits.append((train_idx.astype(np.int64), test_idx.astype(np.int64)))
     logger.info("spatial_folds_cache_hit", path=str(path), n_folds=len(splits))
     return splits
 
 
-def _save_cached_cv_splits(
-    path: Path, splits: list[tuple[np.ndarray, np.ndarray]]
-) -> None:
+def _save_cached_cv_splits(path: Path, splits: list[tuple[np.ndarray, np.ndarray]]) -> None:
     """Persiste los splits espaciales a parquet para futuras corridas."""
     rows: list[dict[str, object]] = []
     for fold_idx, (train_idx, test_idx) in enumerate(splits):
@@ -820,9 +815,7 @@ def _build_cv_splits(
         Lista de tuplas ``(train_idx, test_idx)`` de arrays de indices
         posicionales, una por fold con muestras en ambos lados.
     """
-    cache_path = _spatial_folds_cache_path(
-        df.height, k_folds, buffer_km, random_state
-    )
+    cache_path = _spatial_folds_cache_path(df.height, k_folds, buffer_km, random_state)
     if use_cache:
         cached = _load_cached_cv_splits(cache_path)
         if cached is not None:
@@ -849,9 +842,7 @@ def _build_cv_splits(
     for fold in folds:
         # train_ids del FoldAssignment ya equivalen a indices posicionales
         # porque el GeoDataFrame usa la posicion como `parcel_id` sintetico.
-        train_pool = np.array(
-            sorted(fold.train_ids) + sorted(fold.val_ids), dtype=np.int64
-        )
+        train_pool = np.array(sorted(fold.train_ids) + sorted(fold.val_ids), dtype=np.int64)
         test_idx = np.array(sorted(fold.test_ids), dtype=np.int64)
         if train_pool.size == 0 or test_idx.size == 0:
             continue
@@ -913,19 +904,13 @@ def _build_parcels_geodataframe(df: pl.DataFrame):  # type: ignore[no-untyped-de
             n_missing=int(missing.sum()),
             note="metadata.geojson ausente o incompleto; rejilla determinista por patch.",
         )
-        key = (
-            df.get_column("patch_id").to_numpy()
-            if "patch_id" in df.columns
-            else positions
-        )
+        key = df.get_column("patch_id").to_numpy() if "patch_id" in df.columns else positions
         rng = np.random.default_rng(20240519)
         # Centroides en una caja sobre Francia continental (PASTIS-R).
         grid = rng.uniform(low=[-1.0, 43.0], high=[7.0, 49.0], size=(n_rows, 2))
         # Asegura que parcelas del mismo patch compartan centroide.
         unique_keys, inverse = np.unique(key, return_inverse=True)
-        per_key = rng.uniform(
-            low=[-1.0, 43.0], high=[7.0, 49.0], size=(unique_keys.size, 2)
-        )
+        per_key = rng.uniform(low=[-1.0, 43.0], high=[7.0, 49.0], size=(unique_keys.size, 2))
         grid = per_key[inverse]
         coords[missing] = grid[missing]
 

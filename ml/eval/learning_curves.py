@@ -185,9 +185,7 @@ def _materialize_cv_splits(
             )
         materialized.append((train_arr, test_arr))
     if not materialized:
-        raise ValueError(
-            "`cv_splits` esta vacio; las curvas requieren al menos un split."
-        )
+        raise ValueError("`cv_splits` esta vacio; las curvas requieren al menos un split.")
     return materialized
 
 
@@ -293,8 +291,7 @@ def _remap_cv_splits(
         remapped.append((new_train, new_test))
     if not remapped:
         raise ValueError(
-            "El subsample dejo sin muestras a todos los folds espaciales; "
-            "aumenta `max_samples`."
+            "El subsample dejo sin muestras a todos los folds espaciales; aumenta `max_samples`."
         )
     return remapped
 

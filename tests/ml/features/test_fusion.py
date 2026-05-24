@@ -238,9 +238,7 @@ def test_fused_vector_shape_and_columns(
     assert len(ae_cols) == 64
     assert ae_cols[0] == "ae_00" and ae_cols[-1] == "ae_63"
 
-    idx_stats = [
-        c for c in cols if any(c.startswith(f"{idx.lower()}_") for idx in INDEX_NAMES)
-    ]
+    idx_stats = [c for c in cols if any(c.startswith(f"{idx.lower()}_") for idx in INDEX_NAMES)]
     assert len(idx_stats) == len(INDEX_NAMES) * len(FUSION_STATS) == 85
 
     s1_cols = [c for c in cols if c.startswith("s1_")]
@@ -335,9 +333,7 @@ def test_s1_block_10cols_finite(
 ) -> None:
     parcels = parcels_fixture_3regions
     s1_frame = _make_s1_frame(parcels, year=2024)
-    df = build_fused_features(
-        parcels, year=2024, blocks=("sentinel1",), s1_frame=s1_frame
-    )
+    df = build_fused_features(parcels, year=2024, blocks=("sentinel1",), s1_frame=s1_frame)
     s1_cols = [c for c in df.columns if c.startswith("s1_")]
     assert len(s1_cols) == 10
     assert {c for c in s1_cols} == {
@@ -357,9 +353,7 @@ def test_srtm_block_3cols_with_synthetic_terrain(
 ) -> None:
     parcels = parcels_fixture_3regions
     srtm_frame = _make_srtm_frame(parcels)
-    df = build_fused_features(
-        parcels, year=2024, blocks=("srtm",), srtm_frame=srtm_frame
-    )
+    df = build_fused_features(parcels, year=2024, blocks=("srtm",), srtm_frame=srtm_frame)
     srtm_cols = [c for c in df.columns if c.startswith("srtm_")]
     assert set(srtm_cols) == {"srtm_elev_mean", "srtm_slope_mean", "srtm_aspect_dominant"}
     # Aspect dominante: string cardinal de los 8 cuadrantes.
@@ -378,9 +372,7 @@ def test_era5_monthly_block_24cols(
 ) -> None:
     parcels = parcels_fixture_3regions
     era5_frame = _make_era5_frame(parcels, year=2024)
-    df = build_fused_features(
-        parcels, year=2024, blocks=("era5_monthly",), era5_frame=era5_frame
-    )
+    df = build_fused_features(parcels, year=2024, blocks=("era5_monthly",), era5_frame=era5_frame)
     era5_cols = [c for c in df.columns if c.startswith("era5_")]
     assert len(era5_cols) == 24
     # jan < jul en hemisferio norte (sintetico, pero respeta la fisica).
@@ -725,8 +717,7 @@ def test_pheno_text_block_optional_inyectado(
     parcels = parcels_fixture_3regions
     n = len(parcels)
     pheno_cols = {
-        f"pheno_text_{i:03d}": [0.01 * (i + 1)] * n
-        for i in range(PHENOLOGY_TEXT_EMBED_DIM)
+        f"pheno_text_{i:03d}": [0.01 * (i + 1)] * n for i in range(PHENOLOGY_TEXT_EMBED_DIM)
     }
     schema = {"parcel_id": pl.Int64, "year": pl.Int16}
     schema.update({c: pl.Float32 for c in pheno_cols})

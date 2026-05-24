@@ -14,10 +14,10 @@ permissions:
   contents: read
 
 env:
-  POETRY_VERSION: "1.8.4"
+  POETRY_VERSION: "2.2.1"     # pyproject.toml usa formato Poetry 2.x (requires-poetry >=2.0)
   PYTHON_VERSION: "3.12"
   NODE_VERSION: "20"
-  PNPM_VERSION: "9"
+  PNPM_VERSION: "10"          # frontend/package.json#engines exige pnpm >=10
   TERRAFORM_VERSION: "1.9.8"
 
 jobs:
@@ -30,9 +30,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        # macos-latest excluido: los runners macOS NO traen Docker preinstalado
+        # y fallan en `Set up job` al levantar el service container postgres.
+        # macOS no es target server-side del proyecto (Cloud Run = Linux).
+        os: [ubuntu-latest]
     services:
       postgres:
+        # PostGIS 3.4 oficial. pgvector se instala via apt en el primer step
+        # del job (mismo patron que `infrastructure/docker/postgres.Dockerfile`
+        # del local). TODO US-022c P4: construir la Dockerfile del proyecto a
+        # GHCR para evitar el step extra.
         image: postgis/postgis:15-3.4
         env:
           POSTGRES_USER: agrosat
@@ -46,6 +53,16 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install pgvector in postgres service container
+        # postgis/postgis:15-3.4 trae PostGIS pero NO pgvector. Las migraciones
+        # que hacen `CREATE EXTENSION vector` revientan. Instalamos el paquete
+        # en runtime (mismo patron del Dockerfile local).
+        run: |
+          docker exec ${{ job.services.postgres.id }} bash -c '
+            apt-get update -qq
+            apt-get install -y --no-install-recommends postgresql-15-pgvector
+          '
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -64,7 +81,7 @@ jobs:
             .venv
           key: poetry-${{ runner.os }}-${{ hashFiles('poetry.lock', 'pyproject.toml') }}
 
-      - name: Install deps (dev,test only — ml/geo excluded on macOS for speed)
+      - name: Install deps (dev,test only — ml/geo excluded for speed)
         run: |
           poetry config virtualenvs.in-project true
           poetry install --with dev,test --no-root --no-interaction
@@ -77,7 +94,11 @@ jobs:
 
       - name: Type check (mypy)
         if: matrix.os == 'ubuntu-latest'
-        run: poetry run mypy backend/app/ || echo "mypy not blocking until US-009"
+        # `working-directory: backend` evita el error "Source file found twice
+        # under different module names" — sin esto, mypy desde repo root ve
+        # `backend/app/api/health.py` como `app.api.health` Y `backend.app...`.
+        working-directory: backend
+        run: poetry run mypy app/ || echo "mypy not blocking until US-009"
 
       - name: Unit tests (pytest)
         env:
@@ -121,6 +142,10 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
+        # PostGIS 3.4 oficial. pgvector se instala via apt en el primer step
+        # del job (mismo patron que `infrastructure/docker/postgres.Dockerfile`
+        # del local). TODO US-022c P4: construir la Dockerfile del proyecto a
+        # GHCR para evitar el step extra.
         image: postgis/postgis:15-3.4
         env:
           POSTGRES_USER: agrosat
@@ -134,6 +159,14 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install pgvector in postgres service container
+        # Mismo motivo que el job python-*: postgis/postgis:15-3.4 sin pgvector.
+        run: |
+          docker exec ${{ job.services.postgres.id }} bash -c '
+            apt-get update -qq
+            apt-get install -y --no-install-recommends postgresql-15-pgvector
+          '
 
       - name: Install dbmate
         run: |
