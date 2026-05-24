@@ -336,7 +336,7 @@ class FarSLIPDataset(Dataset):
 
     def __getitem__(self, idx: int) -> dict[str, torch.Tensor | str]:
         row = self.df.row(idx, named=True)
-        crop_path = Path(row["crop_path"])
+        crop_path = self._resolve_crop_path(row["crop_path"])
         img = self._load_crop(crop_path)
         img = self._resize_chw(img, self.crop_resize_to)
         if self.transform is not None:
@@ -381,6 +381,30 @@ class FarSLIPDataset(Dataset):
             return self._langs[idx % 3]
         # uniform
         return self._langs[idx % 3]
+
+    def _resolve_crop_path(self, raw: str) -> Path:
+        """Resuelve la ruta del crop tolerante a manifests cross-platform.
+
+        Los manifests fueron generados en Windows con paths absolutos
+        (`C:\\Users\\...\\data\\farslip_pairs\\{roi}\\crops\\{file}.tif`). En la
+        VM Linux el path absoluto Windows no existe. Estrategia (fallback):
+
+        1. Si la ruta absoluta original existe → usarla.
+        2. Extraer basename y resolverlo contra `manifest_path.parent / "crops"`.
+        3. Si todavia falla, dejar que `_load_crop` reporte FileNotFoundError.
+        """
+        p = Path(raw)
+        if p.exists():
+            return p
+        # Tomar las dos ultimas partes (`crops/{filename}`) y juntarlas a la raiz
+        # del manifest. Si el path no tiene "crops/" usar solo el basename.
+        parts = raw.replace("\\", "/").split("/")
+        if "crops" in parts:
+            idx = parts.index("crops")
+            tail = Path(*parts[idx:])
+        else:
+            tail = Path(parts[-1])
+        return self.manifest_path.parent / tail
 
     def _load_crop(self, path: Path) -> torch.Tensor:
         """Carga TIFF o NPY y devuelve tensor ``(C, H, W)`` float32 en [0,1]."""

@@ -11,18 +11,23 @@ provider "google-beta" {
   region  = var.gcp_region
 }
 
-provider "azurerm" {
-  subscription_id = var.azure_subscription_id
-  features {
-    key_vault {
-      purge_soft_delete_on_destroy    = true
-      recover_soft_deleted_key_vaults = true
-    }
-    resource_group {
-      prevent_deletion_if_contains_resources = false
-    }
-  }
-}
+# US-022-c P1 (2026-05-23): provider azurerm + module "azure" comentados para
+# permitir `terraform apply` solo de la capa GCP. El bloque B Azure H100 vive
+# fuera de scope en `docs/product-backlog/us-019-2-azure-pendiente.md`. Re-activar
+# cuando se decida abrir ventana H100 (rellenar azure_subscription_id real,
+# allowed_ssh_cidrs y admin_ssh_public_key en terraform.tfvars).
+# provider "azurerm" {
+#   subscription_id = var.azure_subscription_id
+#   features {
+#     key_vault {
+#       purge_soft_delete_on_destroy    = true
+#       recover_soft_deleted_key_vaults = true
+#     }
+#     resource_group {
+#       prevent_deletion_if_contains_resources = false
+#     }
+#   }
+# }
 
 module "gcp" {
   source = "../../modules/gcp"
@@ -43,25 +48,26 @@ module "gcp" {
   }
 }
 
-module "azure" {
-  source = "../../modules/azure"
-
-  location                    = var.azure_location
-  resource_group_name         = "agrosat-rg"
-  vm_name                     = "agrosat-h100-prod"
-  vm_size                     = "Standard_NC40ads_H100_v5"
-  use_spot                    = var.use_spot
-  max_bid_price               = var.max_bid_price
-  allowed_ssh_cidrs           = var.allowed_ssh_cidrs
-  admin_username              = "agrosat"
-  admin_ssh_public_key        = var.admin_ssh_public_key
-  shutdown_time_utc           = "2300"
-  shutdown_notification_email = var.shutdown_notification_email
-  blob_container_name         = "agrosat-checkpoints"
-
-  tags = {
-    project     = "agrosat"
-    environment = "dev"
-    owner       = "mlops"
-  }
-}
+# US-022-c P1 (2026-05-23): module "azure" comentado — bloque H100 fuera de scope.
+# module "azure" {
+#   source = "../../modules/azure"
+#
+#   location                    = var.azure_location
+#   resource_group_name         = "agrosat-rg"
+#   vm_name                     = "agrosat-h100-prod"
+#   vm_size                     = "Standard_NC40ads_H100_v5"
+#   use_spot                    = var.use_spot
+#   max_bid_price               = var.max_bid_price
+#   allowed_ssh_cidrs           = var.allowed_ssh_cidrs
+#   admin_username              = "agrosat"
+#   admin_ssh_public_key        = var.admin_ssh_public_key
+#   shutdown_time_utc           = "2300"
+#   shutdown_notification_email = var.shutdown_notification_email
+#   blob_container_name         = "agrosat-checkpoints"
+#
+#   tags = {
+#     project     = "agrosat"
+#     environment = "dev"
+#     owner       = "mlops"
+#   }
+# }

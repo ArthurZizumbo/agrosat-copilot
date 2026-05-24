@@ -1,0 +1,98 @@
+# Vertex AI Custom Job — CPU SMOKE (fallback US-022-c P1 etapa 3b)
+#
+# Fallback CPU para validar la cadena
+#   Cloud Build (ml-train:latest) -> Artifact Registry -> Vertex AI job CPU
+#   -> MLflow Cloud Run (scale-to-zero, IAM run.invoker via ID token)
+#   -> GCS artifacts
+# cuando no hay quota L4/T4 disponible en Vertex AI.
+#
+# Costo objetivo: < $0.05 USD (< 5 min CPU n1-standard-4).
+# Limitacion: NO valida torch.cuda; ese check queda para la version GPU una vez
+# Google Cloud apruebe la quota L4.
+
+workerPoolSpecs:
+  - machineSpec:
+      machineType: n1-standard-4
+    replicaCount: 1
+    diskSpec:
+      bootDiskType: pd-ssd
+      bootDiskSizeGb: 100
+    containerSpec:
+      imageUri: us-central1-docker.pkg.dev/agrosat-copilot/agrosat/ml-train:latest
+      command: ["bash", "-c"]
+      args:
+        - |
+          set -euo pipefail
+          python -u -c "
+          import os
+          import time
+          import urllib.request
+          import mlflow
+          import torch
+          from breizhcrops.models import TempCNN
+
+          mlflow_uri = os.environ.get('MLFLOW_TRACKING_URI', '')
+          assert mlflow_uri, 'MLFLOW_TRACKING_URI must be set'
+          print(f'[cpu-smoke] mlflow_uri={mlflow_uri}')
+
+          audience = mlflow_uri.rstrip('/')
+          token_url = (
+              'http://metadata.google.internal/computeMetadata/v1/instance/'
+              'service-accounts/default/identity?audience=' + audience
+          )
+          req = urllib.request.Request(token_url, headers={'Metadata-Flavor': 'Google'})
+          with urllib.request.urlopen(req, timeout=10) as r:
+              id_token = r.read().decode('utf-8').strip()
+          assert id_token and id_token.count('.') == 2, 'metadata id_token invalido'
+          os.environ['MLFLOW_TRACKING_TOKEN'] = id_token
+          print(f'[cpu-smoke] ID token len={len(id_token)} (oculto)')
+
+          # CPU fallback: no asercion sobre torch.cuda.is_available().
+          device = torch.device('cpu')
+          print(f'[cpu-smoke] device={device}; cuda_available={torch.cuda.is_available()}')
+
+          model = TempCNN(input_dim=10, num_classes=5, sequencelength=24).to(device)
+          optim = torch.optim.Adam(model.parameters(), lr=1e-3)
+          loss_fn = torch.nn.CrossEntropyLoss()
+
+          # TempCNN version instalada espera (B, C=input_dim=10, T=sequencelength=24).
+          # En la version pypi 0.0.x hay transpose interno, pero la instalada en
+          # ml-train:latest no lo aplica (verificado en run v3 con shape error).
+          X = torch.randn(64, 10, 24, device=device)
+          y = torch.randint(0, 5, (64,), device=device)
+
+          mlflow.set_tracking_uri(mlflow_uri)
+          mlflow.set_experiment('us-022b-a-smoke')
+          with mlflow.start_run(run_name='smoke-cpu-tempcnn'):
+              mlflow.set_tag('epic', 'E5')
+              mlflow.set_tag('us', 'US-022b-A')
+              mlflow.set_tag('purpose', 'smoke-cpu-fallback')
+              mlflow.set_tag('reason', 'no-vertex-l4-quota-2026-05-24')
+              mlflow.log_param('model', 'TempCNN')
+              mlflow.log_param('n_epochs', 1)
+              mlflow.log_param('batch_size', 64)
+              start = time.time()
+              model.train()
+              optim.zero_grad()
+              logits = model(X)
+              loss = loss_fn(logits, y)
+              loss.backward()
+              optim.step()
+              mlflow.log_metric('train_loss', float(loss.item()))
+              mlflow.log_metric('elapsed_s', time.time() - start)
+              print(f'[cpu-smoke] train_loss={loss.item():.4f} elapsed={time.time()-start:.1f}s')
+          print('[cpu-smoke] OK')
+          "
+      env:
+        - name: MLFLOW_TRACKING_URI
+          value: "${MLFLOW_TRACKING_URI}"
+        - name: PYTHONUNBUFFERED
+          value: "1"
+
+scheduling:
+  timeout: 600s
+
+baseOutputDirectory:
+  outputUriPrefix: gs://agrosat-artifacts-dev/vertex-jobs/smoke/
+
+serviceAccount: ml-train-runner-sa@agrosat-copilot.iam.gserviceaccount.com

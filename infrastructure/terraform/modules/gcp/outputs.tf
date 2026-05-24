@@ -93,3 +93,34 @@ output "ml_train_runner_sa_email" {
   description = "Service account email del runner Vertex AI L4 (US-022b-A). Referenciado por ml/configs/l4_spot.yaml."
   value       = google_service_account.sa["ml_train_run"].email
 }
+
+# US-022-c P1 etapa 5 fix (2026-05-24): outputs de la VM FarSLIP Pub/Sub.
+output "farslip_vm_name" {
+  description = "Compute Engine instance name de la VM FarSLIP L4 (event-driven via Pub/Sub)."
+  value       = google_compute_instance.farslip_trainer.name
+}
+
+output "farslip_vm_zone" {
+  description = "Zona GCP donde corre la VM FarSLIP."
+  value       = google_compute_instance.farslip_trainer.zone
+}
+
+output "farslip_jobs_topic" {
+  description = "Nombre del topic Pub/Sub para encolar trabajos FarSLIP. Publish: gcloud pubsub topics publish."
+  value       = google_pubsub_topic.farslip_jobs.name
+}
+
+output "farslip_vm_sa_email" {
+  description = "Email de la SA dedicada a la VM FarSLIP (least privilege)."
+  value       = google_service_account.farslip_vm_sa.email
+}
+
+output "farslip_vm_start_command" {
+  description = "Comando exacto para arrancar la VM (Compute Engine la deja TERMINATED por default)."
+  value       = "gcloud compute instances start ${google_compute_instance.farslip_trainer.name} --zone=${google_compute_instance.farslip_trainer.zone} --project=${var.project_id}"
+}
+
+output "farslip_publish_example" {
+  description = "Comando exemplar para encolar un trabajo via Pub/Sub."
+  value       = "gcloud pubsub topics publish ${google_pubsub_topic.farslip_jobs.name} --message='{\"command\":\"make farslip-train-smoke\",\"label\":\"smoke-2026-05-24\",\"timeout_seconds\":3600}' --project=${var.project_id}"
+}

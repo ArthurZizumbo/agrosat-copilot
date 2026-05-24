@@ -53,25 +53,27 @@ output "service_account_emails" {
   value       = module.gcp.service_account_emails
 }
 
-output "azure_h100_vm_name" {
-  description = "Azure H100 VM name."
-  value       = module.azure.vm_name
-}
-
-output "azure_h100_public_ip" {
-  description = "Azure H100 public IP (SSH from whitelisted CIDRs only)."
-  value       = module.azure.vm_public_ip
-}
-
-output "azure_blob_endpoint" {
-  description = "Azure Blob endpoint for LoRA checkpoints."
-  value       = module.azure.blob_endpoint
-}
-
-output "azure_key_vault_uri" {
-  description = "Azure Key Vault URI."
-  value       = module.azure.key_vault_uri
-}
+# US-022-c P1 (2026-05-23): outputs Azure comentados junto al modulo en main.tf.
+# Re-activar cuando se decida abrir ventana H100 (bloque B fuera de scope).
+# output "azure_h100_vm_name" {
+#   description = "Azure H100 VM name."
+#   value       = module.azure.vm_name
+# }
+#
+# output "azure_h100_public_ip" {
+#   description = "Azure H100 public IP (SSH from whitelisted CIDRs only)."
+#   value       = module.azure.vm_public_ip
+# }
+#
+# output "azure_blob_endpoint" {
+#   description = "Azure Blob endpoint for LoRA checkpoints."
+#   value       = module.azure.blob_endpoint
+# }
+#
+# output "azure_key_vault_uri" {
+#   description = "Azure Key Vault URI."
+#   value       = module.azure.key_vault_uri
+# }
 
 # US-022b-A
 output "mlflow_tracking_uri" {

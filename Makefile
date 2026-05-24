@@ -1,4 +1,4 @@
-.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip notebooks-check i18n-check db-migrate db-rollback db-new db-status db-seed db-test-us015 features-extract-demo features-persist features-fuse-demo features-fuse-italy dagster-materialize-features feature-selection-subset feature-selection-build feature-selection-notebook feature-selection-test feature-fusion-build feature-fusion-notebook avance2-figures avance2-build mlflow-up mlflow-down train-baseline baseline-test baseline-notebook baseline-notebook-check s2-raw-parcels interpretability-test learning-curves-test ml-train-image train-l4 train-l4-smoke train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eda-sentinel2 eda-alphaearth eda-bivariado eda-figures-avance1 eda-figures-paper-methods eda-pastis-subset eda-notebook-avance1 paper-methods-notebook eda-pdf eda-dashboard eda-dashboard-test eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate farslip-dataset-build farslip-dataset-check farslip-train farslip-eval-pastis farslip-smoke-eval feature-ablation phenology-train phenology-description-test reencuadre-notebook reencuadre-notebook-check
+.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip notebooks-check i18n-check db-migrate db-rollback db-new db-status db-seed db-test-us015 features-extract-demo features-persist features-fuse-demo features-fuse-italy dagster-materialize-features feature-selection-subset feature-selection-build feature-selection-notebook feature-selection-test feature-fusion-build feature-fusion-notebook avance2-figures avance2-build mlflow-up mlflow-down train-baseline baseline-test baseline-notebook baseline-notebook-check s2-raw-parcels interpretability-test learning-curves-test ml-train-image train-l4 train-l4-smoke train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eda-sentinel2 eda-alphaearth eda-bivariado eda-figures-avance1 eda-figures-paper-methods eda-pastis-subset eda-notebook-avance1 paper-methods-notebook eda-pdf eda-dashboard eda-dashboard-test eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate farslip-dataset-build farslip-dataset-check farslip-train farslip-eval-pastis farslip-smoke-eval farslip-extract-embeddings feature-ablation phenology-train phenology-description-test reencuadre-notebook reencuadre-notebook-check
 
 help:
 	@echo "AgroSatCopilot — comandos disponibles:"
@@ -262,29 +262,33 @@ ml-train-image:  ## US-022b-A — build local de la imagen ml-train (AC-1 smoke 
 	docker run --rm ml-train:dev \
 	  python -c "import torch, mlflow, breizhcrops; print('OK torch', torch.__version__, 'mlflow', mlflow.__version__, 'breizhcrops', breizhcrops.__version__)"
 
-train-l4:  ## US-022b-A — Spot L4 24GB (baselines, dev). Requires: epic=Ex us=US-xxx + MLFLOW_TRACKING_URI export
+train-l4:  ## US-022b-A — Spot L4 24GB (baselines, dev). Requires: epic=Ex us=US-xxx script=path/to/script.py + MLFLOW_TRACKING_URI export
 	@if [ -z "$$MLFLOW_TRACKING_URI" ]; then \
 	  echo "ERROR: export MLFLOW_TRACKING_URI=\$$(terraform -chdir=infrastructure/terraform/environments/dev output -raw mlflow_tracking_uri)"; exit 1; \
 	fi
 	@if [ -z "$(epic)" ] || [ -z "$(us)" ]; then \
-	  echo "ERROR: usage 'make train-l4 epic=E5 us=US-022b'"; exit 1; \
+	  echo "ERROR: usage 'make train-l4 epic=E5 us=US-022b script=ml/farslip/train_student.py'"; exit 1; \
 	fi
-	@echo "Lanzando job en GCP L4 spot para epic=$(epic) us=$(us)"
-	gcloud ai custom-jobs create \
-	  --region=$${GCP_REGION:-us-central1} \
-	  --display-name=train-$(epic)-$(us) \
-	  --config=ml/configs/l4_spot.yaml \
-	  --args="--epic=$(epic),--us=$(us)"
+	@echo "Lanzando job en GCP L4 spot para epic=$(epic) us=$(us) script=$(script)"
+	@tmpfile=$$(mktemp); trap "rm -f $$tmpfile" EXIT; \
+	  TRAIN_SCRIPT="$(script)" envsubst '$$MLFLOW_TRACKING_URI $$TRAIN_SCRIPT' < ml/configs/l4_spot.yaml > $$tmpfile; \
+	  gcloud ai custom-jobs create \
+	    --region=$${GCP_REGION:-us-central1} \
+	    --display-name=train-$(epic)-$(us) \
+	    --config=$$tmpfile \
+	    --args="--epic=$(epic),--us=$(us)"
 
 train-l4-smoke:  ## US-022b-A AC-5 — smoke job 1 epoca TempCNN sintetica (~10 min, <$0.20). Requires MLFLOW_TRACKING_URI
 	@if [ -z "$$MLFLOW_TRACKING_URI" ]; then \
 	  echo "ERROR: export MLFLOW_TRACKING_URI=\$$(terraform -chdir=infrastructure/terraform/environments/dev output -raw mlflow_tracking_uri)"; exit 1; \
 	fi
-	@echo "Lanzando smoke job US-022b-A en L4 spot (timeout 20 min)"
-	gcloud ai custom-jobs create \
-	  --region=$${GCP_REGION:-us-central1} \
-	  --display-name=train-E5-US-022b-smoke \
-	  --config=ml/configs/l4_smoke.yaml
+	@echo "Lanzando smoke job US-022b-A en L4 spot (timeout 20 min) con MLFLOW_TRACKING_URI=$$MLFLOW_TRACKING_URI"
+	@tmpfile=$$(mktemp); trap "rm -f $$tmpfile" EXIT; \
+	  envsubst '$$MLFLOW_TRACKING_URI' < ml/configs/l4_smoke.yaml > $$tmpfile; \
+	  gcloud ai custom-jobs create \
+	    --region=$${GCP_REGION:-us-central1} \
+	    --display-name=train-E5-US-022b-smoke \
+	    --config=$$tmpfile
 	@echo "Sigue el estado en: https://console.cloud.google.com/vertex-ai/training/custom-jobs"
 
 train-h100:  ## Azure H100 96GB ventana=Vn script=xxx.py
@@ -407,8 +411,20 @@ farslip-dataset-check:  ## US-017 AC-3 gate — n_pairs>=30k + balance min/max R
 farslip-train:  ## US-017 AC-4 — entrena FarSLIP (CPU smoke local o GCP L4 spot)
 	poetry run python -m ml.farslip.train --rois italy --epochs 4 --batch-size 64 --lr 1e-5 --seed 42 --output-dir artifacts/farslip
 
-farslip-eval-pastis:  ## US-017 AC-6 — eval mIoU FarSLIP vs RemoteCLIP en PASTIS-R (notebook TODO)
-	@echo "TODO: notebook notebooks/features/04_farslip_eval_pastis.ipynb pendiente Fase 4"
+farslip-extract-embeddings:  ## US-022-c P1 B-4 — extrae embeddings FarSLIP (85951 x 514) desde student MLflow @Production
+	poetry run python -m ml.farslip.extract_embeddings \
+	  --student-checkpoint mlflow://Models/farslip-clip-italy-v1@Production \
+	  --parcels-parquet data/features/features_fused_v1.parquet \
+	  --rois italy \
+	  --output data/farslip/embeddings_italy.parquet \
+	  --batch-size 256 \
+	  --device auto \
+	  --seed 42
+
+farslip-eval-pastis:  ## US-022-c P1 B-3 — eval mIoU FarSLIP vs RemoteCLIP en PASTIS-R (gate +0.05)
+	poetry run python scripts/build_farslip_eval_notebook.py
+	MPLBACKEND=Agg poetry run papermill notebooks/features/04_farslip_eval_pastis.ipynb \
+	  notebooks/features/04_farslip_eval_pastis.ipynb --no-progress-bar
 
 farslip-smoke-eval:  ## US-017 — smoke eval extractor desde GCS o cache local
 	poetry run python scripts/farslip_smoke_eval.py --n-patches 10

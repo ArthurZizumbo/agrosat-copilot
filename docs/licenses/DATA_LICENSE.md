@@ -97,11 +97,33 @@ Documenta TODOS los datasets y modelos usados durante el proyecto. Sin esto, el 
 
 ### EuroCrops / HCAT3 — TUM (Schneider et al.)
 - Source: [EuroCrops project](https://www.eurocrops.tum.de/) · HuggingFace `Lobster/EuroCrops`
-- License: CC-BY-4.0
+- License (taxonomia HCAT3 + harmonizacion EuroCrops): CC-BY-4.0
+- License (capa subyacente `FR_2018/`, Registre Parcellaire Graphique francias):
+  **ODbL 1.0** (Open Database License) — datos publicados por el Institut
+  Geographique National (IGN) via la plataforma etalab.gouv.fr. EuroCrops
+  redistribuye los shapefiles RPG sin modificar la licencia.
 - Citation: Schneider, M., Schelte, T., Schmitz, F., Korner, M. (2023). _EuroCrops: The largest harmonized open crop dataset across the European Union_. Scientific Data.
 - Contents: Hierarchical Crop and Agriculture Taxonomy v3 (HCAT3) con ~270 clases canónicas armonizadas + parcelas vectoriales por país EU. Italia y Francia disponibles.
-- Attribution required: "EuroCrops / HCAT3 (Schneider et al. 2023, CC-BY-4.0, TUM)" en figuras y reportes derivados.
+- Attribution required: "EuroCrops / HCAT3 (Schneider et al. 2023, CC-BY-4.0, TUM)" + "Registre Parcellaire Graphique 2018 (IGN, ODbL 1.0)" en figuras y reportes derivados de Francia.
 - Use scope US-013/EPIC 8: taxonomía HCAT3 como referencia para alinear PASTIS-R (Francia) ↔ futuros labels GSAA (Italia, US-006/007 diferidos) bajo un sistema canónico común.
+- Use scope US-022-c P4.2: `data/reference/eurocrops/FR_2018/` (~11 GB)
+  versionado en DVC (tag `eurocrops-fr-2018-v1`, MD5
+  `52802ffe4cee88ac99a9ed42c658d8d7.dir`) como dataset de control
+  cross-region complementario a PASTIS-R.
+
+### GSAA Italia — AGEA Open Data
+- Source: portales regionales Open Data AGEA (Agenzia per le Erogazioni in
+  Agricoltura), descarga manual por region (Pianura Padana, Toscana, Puglia).
+- License: **ODbL 1.0** (Open Database License) — publicado bajo Codice
+  dell'Amministrazione Digitale + IODL 2.0 (compatible ODbL upstream).
+- Attribution required: "Geospatial Aid Application Italia, AGEA (ODbL 1.0)"
+  en figuras y reportes derivados.
+- Use scope US-007/US-016 futuro: parcelas administrativas oficiales por
+  region italiana (Pianura Padana, Toscana centrale, Puglia) para
+  alimentar el bloque `parcels` de Postgres + features tabulares por
+  parcela. **Estado al cierre US-022-c**: dataset no descargado al
+  momento (US-006/US-007 diferidos en el plan v6). Atribucion registrada
+  proactivamente como deuda heredada de US-022-b B-6.
 
 ### AgroMind Benchmark
 - Source: HuggingFace `AgroMind/AgroMind`
@@ -282,3 +304,16 @@ Tabla académica completa con DOIs por índice en [`docs/spectral_indices.md`](.
 - License de la metodologia: open access (Elsevier hybrid). El metodo
   (prompt 3-bloques, text-encoder contrastivo) se implementa de cero
   en `ml/features/phenology_description.py` siguiendo Fig. 2 y Fig. 3a.
+
+## US-022-c — Paper-faro FarSLIP (referencia academica, no codigo)
+
+### Li et al. (2025) — "FarSLIP: Few-shot Adaptation of CLIP for Remote Sensing"
+- Source: arXiv:2511.14901 (nov-2025, preprint).
+- License de la metodologia: open access (arXiv). El metodo (PatchDistillationLoss
+  parche-a-parche §3.2 + RegionCategoryAlignmentLoss InfoNCE CLS §3.3 + student init
+  desde teacher con NIR=mean(RGB) anti-dead-neuron §3.1) se reimplementa en
+  `ml/farslip/distill.py` con fidelidad 1:1 documentada en `docs/decisions/ADR-007-farslip-fidelity-paper.md`.
+- Attribution required: "FarSLIP method adapted from Li et al. (2025), arXiv:2511.14901"
+  en figuras y reportes derivados.
+- Use scope US-022-c P1: ejecucion del training student en L4 GCP spot sobre 3 ROIs
+  italianas (Pianura Padana, Toscana, Puglia) + eval cross-region en PASTIS-R Francia.
