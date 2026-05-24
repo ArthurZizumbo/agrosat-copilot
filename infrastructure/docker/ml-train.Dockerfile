@@ -49,16 +49,21 @@ COPY pyproject.toml poetry.lock* ./
 # Grupos:
 # - `ml`           transformers, peft, mlflow, dvc[gs], breizhcrops, sklearn, xgboost, sentence-transformers
 # - `ml-gpu`       torch 2.11.0+cu130 + bitsandbytes (cross-platform)
-# - `ml-gpu-linux` flash-attn + vllm (solo Linux - este runtime)
 # - `geo`          rasterio, shapely, geopandas (FE temporal + spatial CV requiere)
+#
+# US-022-c P1 fix #5 (2026-05-23): `ml-gpu-linux` (flash-attn + vllm) EXCLUIDO
+# del builder. Esos paquetes son SOLO para V3-V5 H100 LoRA Gemma 4/Qwen3.5;
+# FarSLIP (train.py) usa CLIP standard y NO los necesita. flash-attn requiere
+# `nvcc` (no incluido en cuda:13.0.0-runtime). Cuando llegue V3 se construira
+# imagen separada `ml-train-llm.Dockerfile` con base devel + flash-attn/vllm.
 RUN poetry self add poetry-plugin-export \
-    && poetry export --with ml,ml-gpu,ml-gpu-linux,geo --without-hashes \
+    && poetry export --with ml,ml-gpu,geo --without-hashes \
        --format requirements.txt -o requirements.txt
 
 # ----------------------------------------------------------------------------
 # Stage 2: runtime - CUDA 13.0 base + wheels
 # ----------------------------------------------------------------------------
-FROM nvidia/cuda:13.0.0-runtime-ubuntu22.04 AS runtime
+FROM nvidia/cuda:13.0.0-runtime-ubuntu24.04 AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -70,13 +75,19 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     POETRY_NO_INTERACTION=1 \
     POETRY_VIRTUALENVS_CREATE=false
 
+# US-022-c P1 etapa 2 fix (2026-05-23): Ubuntu 24.04 (noble) trae python3.12 nativo
+# en los repos default. Elimina software-properties-common + add-apt-repository
+# (bug Cloud Build con resolv.conf busy) y el PPA deadsnakes. Libs C++ con sufijos
+# Noble: libgeos-c1t64, libproj25, libgdal34. `python3.12-distutils` removido
+# (no existe en Noble; setuptools lo provee). PEP 668 obliga `--break-system-packages`.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        python3.12 python3.12-venv python3-pip curl \
-        libpq5 libgeos-c1v5 libproj22 libgdal30 \
+        ca-certificates curl \
+        python3.12 python3.12-venv python3-pip \
+        libpq5 libgeos-c1t64 libproj25 libgdal34 \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 1001 agrosat \
     && useradd --system --uid 1001 --gid agrosat --home-dir /app --shell /bin/bash agrosat \
-    && ln -s /usr/bin/python3.12 /usr/local/bin/python
+    && ln -sf /usr/bin/python3.12 /usr/local/bin/python
 
 # Poetry necesario en runtime: la imagen se invoca como
 #   `bash -c "poetry run python ..."` desde l4_spot.yaml (paridad con dev local).
@@ -86,9 +97,19 @@ RUN curl -sSL https://install.python-poetry.org | python3 - \
 WORKDIR /app
 
 # Instala dependencias desde el requirements exportado en builder.
+# US-022-c P1 fix #4+5 (2026-05-23):
+#  (a) pip de debian no se desinstala -> --ignore-installed.
+#  (b) torch 2.11.0+cu130 viene del index custom `pytorch-cu130` que poetry source
+#      con priority=explicit NO exporta como --extra-index-url -> agregamos el flag.
+#  (c) flash-attn/vllm/xformers EXCLUIDOS del builder (no necesarios para FarSLIP,
+#      requieren nvcc que esta solo en cuda:devel). Sin esos paquetes el install
+#      es un solo comando, sin --no-build-isolation.
+ARG PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cu130
 COPY --from=builder /build/requirements.txt /app/requirements.txt
-RUN python3.12 -m pip install --upgrade pip \
-    && python3.12 -m pip install -r /app/requirements.txt \
+RUN python3.12 -m pip install --ignore-installed --break-system-packages --upgrade \
+        pip setuptools wheel \
+    && python3.12 -m pip install --break-system-packages \
+        --extra-index-url ${PYTORCH_INDEX_URL} -r /app/requirements.txt \
     && rm -f /app/requirements.txt
 
 # Copia el pyproject.toml y poetry.lock para que `poetry run` resuelva el

@@ -17,6 +17,9 @@ options:
   logging: CLOUD_LOGGING_ONLY
   machineType: E2_HIGHCPU_8
   dynamic_substitutions: true
+  # US-022-c (2026-05-23): permite definir substitutions que no aparecen
+  # como `${VAR}` en steps (`_DB_NAME` es leida por scripts dbmate runtime).
+  substitution_option: ALLOW_LOOSE
 
 # Timeout subido a 3600s (60 min) porque la imagen ml-train (US-022b-A) incluye
 # torch+cu130 + flash-attn + vllm + breizhcrops y su build inicial sin cache

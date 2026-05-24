@@ -583,7 +583,16 @@ resource "google_cloud_run_v2_service" "mlflow" {
   project  = var.project_id
   name     = "agrosat-mlflow-${local.name_suffix}"
   location = var.region
-  ingress  = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
+  # US-022-c P1 etapa 3b fix (2026-05-24): cambio de INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER
+  # a INGRESS_TRAFFIC_ALL. Motivo: Vertex AI custom-jobs corren en proyecto tenant
+  # Google, fuera de la VPC del usuario. INTERNAL_LOAD_BALANCER solo acepta trafico
+  # via Internal HTTPS LB (no configurado, costo +~$20/mes). INTERNAL_ONLY tampoco
+  # alcanza a Vertex sin VPC connector. INGRESS_TRAFFIC_ALL + IAM `roles/run.invoker`
+  # restrictivo (solo ml-train-runner-sa, worker-sa, dagster-sa) protege igual que
+  # un ingress interno: requiere ID token valido firmado por SA autorizado.
+  # Cliente MLflow obtiene ID token desde metadata server y lo pasa en
+  # MLFLOW_TRACKING_TOKEN (Bearer auth).
+  ingress  = "INGRESS_TRAFFIC_ALL"
 
   labels = local.common_labels
 
@@ -625,22 +634,10 @@ resource "google_cloud_run_v2_service" "mlflow" {
         mount_path = "/cloudsql"
       }
 
-      # mlflow server args via command/args.
-      command = ["mlflow"]
-      args = [
-        "server",
-        "--backend-store-uri",
-        "postgresql://agrosat:${random_password.db_password.result}@/mlflow?host=/cloudsql/${google_sql_database_instance.postgres.connection_name}",
-        "--default-artifact-root",
-        "gs://${google_storage_bucket.artifacts.name}/mlflow",
-        "--host",
-        "0.0.0.0",
-        "--port",
-        "5000",
-        "--workers",
-        "2",
-        "--serve-artifacts",
-      ]
+      # US-022-c P1 etapa 3a fix (2026-05-24): el ENTRYPOINT de la imagen es
+      # /usr/local/bin/mlflow-start (wrapper sh) que construye --backend-store-uri
+      # en runtime con DB_PASSWORD inyectado por --set-secrets. Sin command/args:
+      # el password NUNCA aparece en `gcloud run services describe`.
 
       env {
         name  = "ENV"
@@ -649,6 +646,23 @@ resource "google_cloud_run_v2_service" "mlflow" {
       env {
         name  = "GCP_PROJECT_ID"
         value = var.project_id
+      }
+      env {
+        name  = "CLOUDSQL_CONNECTION"
+        value = google_sql_database_instance.postgres.connection_name
+      }
+      env {
+        name  = "ARTIFACT_ROOT"
+        value = "gs://${google_storage_bucket.artifacts.name}/mlflow"
+      }
+      env {
+        name = "DB_PASSWORD"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.db_password.secret_id
+            version = "latest"
+          }
+        }
       }
     }
 
