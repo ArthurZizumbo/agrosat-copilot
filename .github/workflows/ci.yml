@@ -36,12 +36,11 @@ jobs:
         os: [ubuntu-latest]
     services:
       postgres:
-        # Imagen con PostGIS 3.4 + pgvector 0.8. `postgis/postgis:15-3.4` solo
-        # trae PostGIS y las migraciones (embeddings/spatial-RAG) fallan al
-        # hacer `CREATE EXTENSION vector`. Mismo stack que el local Dockerfile
-        # `infrastructure/docker/postgres.Dockerfile`. TODO US-022c P4:
-        # publicar la imagen propia a GHCR y referenciar aqui.
-        image: imresamu/postgis-pgvector:15-3.4-0.8.0
+        # PostGIS 3.4 oficial. pgvector se instala via apt en el primer step
+        # del job (mismo patron que `infrastructure/docker/postgres.Dockerfile`
+        # del local). TODO US-022c P4: construir la Dockerfile del proyecto a
+        # GHCR para evitar el step extra.
+        image: postgis/postgis:15-3.4
         env:
           POSTGRES_USER: agrosat
           POSTGRES_PASSWORD: agrosat
@@ -54,6 +53,16 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install pgvector in postgres service container
+        # postgis/postgis:15-3.4 trae PostGIS pero NO pgvector. Las migraciones
+        # que hacen `CREATE EXTENSION vector` revientan. Instalamos el paquete
+        # en runtime (mismo patron del Dockerfile local).
+        run: |
+          docker exec ${{ job.services.postgres.id }} bash -c '
+            apt-get update -qq
+            apt-get install -y --no-install-recommends postgresql-15-pgvector
+          '
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -129,12 +138,11 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        # Imagen con PostGIS 3.4 + pgvector 0.8. `postgis/postgis:15-3.4` solo
-        # trae PostGIS y las migraciones (embeddings/spatial-RAG) fallan al
-        # hacer `CREATE EXTENSION vector`. Mismo stack que el local Dockerfile
-        # `infrastructure/docker/postgres.Dockerfile`. TODO US-022c P4:
-        # publicar la imagen propia a GHCR y referenciar aqui.
-        image: imresamu/postgis-pgvector:15-3.4-0.8.0
+        # PostGIS 3.4 oficial. pgvector se instala via apt en el primer step
+        # del job (mismo patron que `infrastructure/docker/postgres.Dockerfile`
+        # del local). TODO US-022c P4: construir la Dockerfile del proyecto a
+        # GHCR para evitar el step extra.
+        image: postgis/postgis:15-3.4
         env:
           POSTGRES_USER: agrosat
           POSTGRES_PASSWORD: agrosat
@@ -147,6 +155,14 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install pgvector in postgres service container
+        # Mismo motivo que el job python-*: postgis/postgis:15-3.4 sin pgvector.
+        run: |
+          docker exec ${{ job.services.postgres.id }} bash -c '
+            apt-get update -qq
+            apt-get install -y --no-install-recommends postgresql-15-pgvector
+          '
 
       - name: Install dbmate
         run: |
