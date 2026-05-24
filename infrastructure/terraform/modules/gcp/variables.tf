@@ -73,3 +73,9 @@ variable "labels" {
     owner   = "mlops"
   }
 }
+
+variable "farslip_vm_zone" {
+  description = "GCP zone donde provisionar la VM FarSLIP L4 y su disco persistente. us-west4-a (Las Vegas) confirmado con capacidad 2026-05-24 — us-central1 entero STOCKOUT G2+L4. Quota Compute Engine NVIDIA_L4_GPUS ya aprobada (=1.0) en us-west4."
+  type        = string
+  default     = "us-west4-a"
+}

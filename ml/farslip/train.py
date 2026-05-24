@@ -25,10 +25,81 @@ try:
 except ImportError as exc:  # pragma: no cover
     raise ImportError("typer requerido para CLI train. poetry add typer") from exc
 
+from torch.utils.data import ConcatDataset, DataLoader
+
+from ml.farslip.dataset import FarSLIPDataset
 from ml.farslip.distill import FarSLIPDistillationTrainer, FarSLIPTrainerConfig
 from ml.utils.seed import propagate_seed
 
 _log = structlog.get_logger(__name__)
+
+# ROIs italianas hardcoded para --rois italy (las 3 zonas del paper US-017).
+# Cuando se agregue Francia (us-022-e), expandir este mapeo a {"italy": [...], "france": [...]}.
+_ROIS_BY_KEY: dict[str, tuple[str, ...]] = {
+    "italy": ("pianura_padana", "toscana", "puglia"),
+}
+
+
+def _build_dataset(dataset_root: Path, rois_key: str) -> tuple[ConcatDataset, int, int]:
+    """Concatena los manifests de las ROIs italianas en un Dataset PyTorch.
+
+    Importante: pasamos `cap_classes` y `regions` canonicos globales (unificados
+    a partir de los 3 manifests) para que `region_id` y `category_id` esten en
+    un namespace consistente entre los 3 FarSLIPDataset hijos. Sin esto cada
+    dataset hijo deriva sus propios indices y region_id seria ambiguo al
+    concatenar.
+
+    Args:
+        dataset_root: ruta a `data/farslip_pairs/`.
+        rois_key: clave en `_ROIS_BY_KEY` (default "italy").
+
+    Returns:
+        Tupla (ConcatDataset, n_regions, n_categories) donde n_regions y
+        n_categories son los tamanios reales del vocabulario global (necesarios
+        para dimensionar text_prototypes correctamente).
+
+    Raises:
+        FileNotFoundError: si alguno de los manifests no existe.
+        KeyError: si rois_key no esta en `_ROIS_BY_KEY`.
+    """
+    import polars as pl
+
+    if rois_key not in _ROIS_BY_KEY:
+        raise KeyError(
+            f"rois={rois_key!r} no reconocido. Validos: {list(_ROIS_BY_KEY)}"
+        )
+    roi_slugs = _ROIS_BY_KEY[rois_key]
+
+    # Pre-escaneo: unificar cap_classes y regions de los 3 manifests.
+    all_cap_classes: list[str] = []
+    all_regions: list[str] = []
+    seen_caps: set[str] = set()
+    seen_regs: set[str] = set()
+    for roi in roi_slugs:
+        manifest = dataset_root / roi / "manifest.parquet"
+        if not manifest.exists():
+            raise FileNotFoundError(f"manifest no existe: {manifest}")
+        df = pl.read_parquet(manifest, columns=["cap_class", "region"])
+        for c in df["cap_class"].to_list():
+            if c not in seen_caps:
+                all_cap_classes.append(c)
+                seen_caps.add(c)
+        for r in df["region"].to_list():
+            if r not in seen_regs:
+                all_regions.append(r)
+                seen_regs.add(r)
+
+    parts = []
+    for roi in roi_slugs:
+        manifest = dataset_root / roi / "manifest.parquet"
+        parts.append(
+            FarSLIPDataset(
+                manifest_path=manifest,
+                cap_classes=all_cap_classes,
+                regions=all_regions,
+            )
+        )
+    return ConcatDataset(parts), len(all_regions), len(all_cap_classes)
 
 app = typer.Typer(add_completion=False, no_args_is_help=False)
 
@@ -70,6 +141,18 @@ def train(
         seed=seed,
         device="cuda" if torch.cuda.is_available() else "cpu",
     )
+    # US-022-c P1 fix (2026-05-24): instanciar FarSLIPDataset + ConcatDataset por las
+    # 3 ROIs italianas. El CLI previo solo instanciaba el trainer sin dataset, lo cual
+    # gatillaba RuntimeError("dataset y dataloader nulos: nada que entrenar") en distill.py:534.
+    dataset, n_regions, n_categories = _build_dataset(dataset_root, rois)
+    _log.info(
+        "dataset built",
+        n_samples=len(dataset),
+        rois=rois,
+        n_regions=n_regions,
+        n_categories=n_categories,
+    )
+
     cfg = FarSLIPTrainerConfig(
         teacher_model_id=teacher_model_id,
         dataset_root=dataset_root,
@@ -80,15 +163,28 @@ def train(
         lr=lr,
         seed=seed,
         time_cap_hours=time_cap_hours,
+        n_regions=n_regions,
+        n_categories=n_categories,
     )
-    trainer = FarSLIPDistillationTrainer(cfg)
+    trainer = FarSLIPDistillationTrainer(cfg, dataset=dataset)
     if resume:
         _log.info("resume from checkpoint", uri=resume)
-        # Para resume real desde GCS: download + load_state_dict. Stub para CLI.
         path = Path(resume)
         if path.exists():
             sd = torch.load(path, map_location=trainer.device, weights_only=True)
             trainer.student.load_state_dict(sd, strict=False)
+
+    # Text prototypes: el paper §3.3 los calcula con el text encoder frozen 1x por epoch.
+    # Para esta primera implementacion CLI usamos prototypes random determinsticos
+    # (seed propagado) — la senal contrastiva se mantiene aunque los prototipos no esten
+    # alineados al vocabulario CAP. Refinamiento a prototypes-from-text-encoder queda como
+    # follow-up post-US-022-c (paper-faithful enhancement, ADR-007 §"Diferencias menores").
+    n_protos = cfg.n_regions * cfg.n_categories
+    hidden_dim = trainer.teacher.config.hidden_size
+    text_prototypes = torch.randn(n_protos, hidden_dim, generator=torch.Generator().manual_seed(seed))
+    trainer.set_text_prototypes(text_prototypes)
+    _log.info("text_prototypes initialized", n_protos=n_protos, hidden_dim=hidden_dim, mode="random_seeded")
+
     metrics = trainer.train()
     _log.info("training done", **metrics)
 

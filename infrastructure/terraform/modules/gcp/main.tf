@@ -699,3 +699,178 @@ resource "google_cloud_run_v2_service_iam_member" "mlflow_invokers" {
   role     = "roles/run.invoker"
   member   = each.value
 }
+
+# ----------------------------------------------------------------------------
+# US-022-c P1 etapa 5 fix (2026-05-24): VM Compute Engine L4 para FarSLIP training
+# event-driven via Pub/Sub. Reemplaza el patron Vertex AI Custom Job que sufre
+# de scheduling caprichoso en us-central1 saturado de L4.
+#
+# Componentes:
+#  - Topic Pub/Sub `agrosat-farslip-jobs` (publisher = Arthur via gcloud)
+#  - Subscription `farslip-vm-sub` (subscriber = daemon dentro de la VM)
+#  - VM L4 on-demand + persistent SSD 100 GB + startup-script idempotente
+#  - Auto-shutdown via daemon (5 min idle -> shutdown -h now)
+# ----------------------------------------------------------------------------
+
+resource "google_pubsub_topic" "farslip_jobs" {
+  project = var.project_id
+  name    = "agrosat-farslip-jobs-${local.name_suffix}"
+  labels  = local.common_labels
+
+  # 86400s = 24h. Mensajes mas viejos se pierden si la VM esta apagada >24h.
+  message_retention_duration = "86400s"
+}
+
+resource "google_pubsub_subscription" "farslip_vm_sub" {
+  project = var.project_id
+  name    = "farslip-vm-sub-${local.name_suffix}"
+  topic   = google_pubsub_topic.farslip_jobs.name
+
+  # ack_deadline alto: los jobs FarSLIP pueden tardar 6h. El daemon extiende
+  # automaticamente el ack mientras procesa, pero el deadline base alto
+  # reduce risk de re-delivery espurio.
+  ack_deadline_seconds       = 600
+  message_retention_duration = "604800s"
+  retain_acked_messages      = false
+
+  expiration_policy {
+    ttl = ""
+  }
+
+  retry_policy {
+    minimum_backoff = "60s"
+    maximum_backoff = "600s"
+  }
+
+  labels = local.common_labels
+}
+
+# SA dedicada para la VM FarSLIP (least privilege).
+# Permisos: pull AR (read-only), read GCS data, write GCS artifacts,
+# write Cloud Logging, subscribe Pub/Sub.
+resource "google_service_account" "farslip_vm_sa" {
+  project      = var.project_id
+  account_id   = "farslip-vm-sa"
+  display_name = "AgroSatCopilot FarSLIP VM (US-022-c P1)"
+  description  = "SA de la VM Compute Engine L4 que entrena FarSLIP via Pub/Sub events"
+}
+
+resource "google_project_iam_member" "farslip_vm_roles" {
+  for_each = toset([
+    "roles/artifactregistry.reader",
+    "roles/storage.objectAdmin",
+    "roles/pubsub.subscriber",
+    "roles/logging.logWriter",
+    "roles/monitoring.metricWriter",
+    "roles/secretmanager.secretAccessor",
+  ])
+  project = var.project_id
+  role    = each.value
+  member  = "serviceAccount:${google_service_account.farslip_vm_sa.email}"
+}
+
+# Disco persistente para dataset + checkpoints + parquets (sobrevive a stop/start).
+# 100 GB pd-ssd. Format ext4 en primer boot (idempotente en startup-script).
+# Zone elegida via var.farslip_vm_zone (default us-central1-b por capacidad L4).
+resource "google_compute_disk" "farslip_data" {
+  project = var.project_id
+  name    = "farslip-data-${local.name_suffix}"
+  type    = "pd-ssd"
+  size    = 100
+  zone    = var.farslip_vm_zone
+  labels  = local.common_labels
+}
+
+# La VM con L4. NO se crea en estado RUNNING por default — Terraform crea el
+# recurso, pero el usuario decide cuando arrancarla con `gcloud compute
+# instances start NAME` (que dispara el startup-script). El daemon Pub/Sub
+# luego se auto-apaga tras IDLE_SHUTDOWN_SECONDS sin mensajes.
+resource "google_compute_instance" "farslip_trainer" {
+  project      = var.project_id
+  name         = "agrosat-farslip-trainer-${local.name_suffix}"
+  machine_type = "g2-standard-8" # 8 vCPU, 32GB RAM, 1x L4 24GB
+  zone         = var.farslip_vm_zone
+
+  # Allow stopping para apagar via shutdown -h del daemon idle y reanudar despues.
+  allow_stopping_for_update = true
+  # NOTA: NO seteamos desired_status="TERMINATED" — queremos que la VM arranque al
+  # crearse (asi ejecuta startup-script + descarga dataset + queda lista para Pub/Sub).
+  # El daemon se auto-apagara tras 5 min idle.
+
+  scheduling {
+    on_host_maintenance = "TERMINATE"
+    automatic_restart   = false
+    preemptible         = false # On-demand (vs spot) para predictibilidad
+    provisioning_model  = "STANDARD"
+    # NOTE: instance_termination_action removido — solo valido para SPOT/RESERVATION_BOUND/FLEX_START.
+    # En STANDARD provisioning la VM se apaga manualmente o via shutdown -h del daemon idle.
+  }
+
+  guest_accelerator {
+    type  = "nvidia-l4"
+    count = 1
+  }
+
+  boot_disk {
+    initialize_params {
+      # US-022-c P1 etapa 5 fix v3 (2026-05-24): Deep Learning VM M132 con CUDA 12.9 +
+      # Pytorch 2.9 + Python 3.12 preinstalados (Ubuntu 22.04). Imagen oficial Google
+      # deeplearning-platform-release verificada disponible (gcloud compute images list).
+      # Funciona con FarSLIP: torch 2.9+cu129 cubre CLIP ViT-B/16 + transformers + breizhcrops.
+      # El startup-script solo instala deps adicionales (pubsub, structlog, mlflow, dvc[gs])
+      # y descarga el dataset desde GCS al boot disk SSD 100 GB. No usa Docker (mas simple).
+      image = "projects/deeplearning-platform-release/global/images/family/pytorch-2-9-cu129-ubuntu-2204-nvidia-580"
+      size  = 100
+      type  = "pd-ssd"
+    }
+  }
+
+  # Disco persistente farslip-data (dataset + checkpoints + parquets) mapeado
+  # a /dev/disk/by-id/google-farslip-ssd dentro del OS.
+  attached_disk {
+    source      = google_compute_disk.farslip_data.id
+    device_name = "farslip-ssd"
+    mode        = "READ_WRITE"
+  }
+
+  network_interface {
+    network    = "default"
+    subnetwork = null
+    access_config {
+      # Ephemeral public IP (necesario para apt + docker pull desde repos publicos).
+    }
+  }
+
+  service_account {
+    email  = google_service_account.farslip_vm_sa.email
+    scopes = ["cloud-platform"]
+  }
+
+  metadata = {
+    "project-id"            = var.project_id
+    "subscription-id"       = google_pubsub_subscription.farslip_vm_sub.name
+    "data-bucket"           = google_storage_bucket.artifacts.name
+    "data-prefix"           = "datasets/farslip_pairs_v1"
+    "mlflow-tracking-uri"   = google_cloud_run_v2_service.mlflow.uri
+    "daemon-uri"            = "gs://${google_storage_bucket.artifacts.name}/vm-bootstrap/farslip_vm_daemon.py"
+    "idle-shutdown-seconds" = "300"
+    "startup-script-url"    = "gs://${google_storage_bucket.artifacts.name}/vm-bootstrap/farslip_vm_startup.sh"
+    "enable-oslogin"        = "TRUE"
+    "shutdown-script"       = "echo 'shutdown-script: VM stopping' | systemd-cat -t farslip-vm"
+  }
+
+  labels = merge(local.common_labels, { component = "farslip-trainer" })
+
+  depends_on = [
+    google_project_iam_member.farslip_vm_roles,
+    google_pubsub_subscription.farslip_vm_sub,
+    google_compute_disk.farslip_data,
+  ]
+
+  # Cambios al startup-script-url o metadata NO recrean la VM (solo requieren stop+start).
+  lifecycle {
+    ignore_changes = [
+      metadata["ssh-keys"], # gcloud agrega ssh-keys dinamicamente
+    ]
+  }
+}

@@ -1,0 +1,212 @@
+"""Daemon Pub/Sub para la VM Compute Engine `agrosat-farslip-trainer` (US-022-c P1 fix).
+
+Reemplaza el patron Vertex AI Custom Job (caprichoso de scheduling en us-central1
+saturado de L4) por una VM persistente con L4 on-demand + Pub/Sub event-driven +
+auto-shutdown idle 5 min.
+
+Flujo:
+  1) Suscribe a `agrosat-farslip-jobs` (subscription `farslip-vm-sub`).
+  2) Por cada mensaje: ejecuta el comando shell del payload (usa `subprocess.run`),
+     loggea stdout/stderr a Cloud Logging via structlog.
+  3) Reconoce el mensaje (ack) solo despues de exit code (success o fail).
+  4) Cuando la cola lleva >= IDLE_SHUTDOWN_SECONDS sin mensajes nuevos Y no hay
+     proceso corriendo, ejecuta `shutdown -h now` para auto-apagar la VM.
+
+Payload Pub/Sub esperado (JSON UTF-8):
+  {
+    "command": "make farslip-train ...",   # comando shell a ejecutar (workdir /app)
+    "label": "smoke-farslip-2026-05-24",   # log identifier opcional
+    "timeout_seconds": 21600               # cap individual; default 28800 (8h)
+  }
+
+Variables de entorno (inyectadas por systemd / cloud-init):
+  PROJECT_ID                    GCP project id (default: agrosat-copilot)
+  SUBSCRIPTION_ID               Pub/Sub subscription id (default: farslip-vm-sub)
+  IDLE_SHUTDOWN_SECONDS         segundos de cola vacia antes de shutdown (default: 300)
+  WORKDIR                       directorio donde ejecutar comandos (default: /app)
+  LOG_LEVEL                     INFO|DEBUG|WARNING (default: INFO)
+
+Salida:
+  - Cloud Logging via structlog (JSON).
+  - stdout/stderr de cada comando incluido en el log estructurado.
+  - Exit code 0 al recibir SIGTERM (cloud-init shutdown). Nunca exit 1 voluntario.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import signal
+import subprocess
+import sys
+import time
+from dataclasses import dataclass
+from threading import Event, Lock
+from typing import Any
+
+try:
+    import structlog
+    from google.cloud import pubsub_v1
+except ImportError as exc:  # pragma: no cover
+    sys.stderr.write(f"FATAL: dependencias missing ({exc}). Run pip install google-cloud-pubsub structlog\n")
+    sys.exit(1)
+
+
+_PROJECT_ID = os.environ.get("PROJECT_ID", "agrosat-copilot")
+_SUBSCRIPTION_ID = os.environ.get("SUBSCRIPTION_ID", "farslip-vm-sub")
+_IDLE_SHUTDOWN_SECONDS = int(os.environ.get("IDLE_SHUTDOWN_SECONDS", "300"))
+_WORKDIR = os.environ.get("WORKDIR", "/app")
+_DEFAULT_TIMEOUT = int(os.environ.get("DEFAULT_JOB_TIMEOUT_SECONDS", "28800"))
+
+structlog.configure(
+    processors=[
+        structlog.processors.add_log_level,
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.JSONRenderer(),
+    ],
+    wrapper_class=structlog.make_filtering_bound_logger(
+        getattr(__import__("logging"), os.environ.get("LOG_LEVEL", "INFO"))
+    ),
+)
+log = structlog.get_logger(__name__)
+
+
+@dataclass
+class DaemonState:
+    """Estado compartido entre el thread Pub/Sub y el watchdog idle."""
+
+    last_message_at: float
+    job_running: bool
+    shutdown_requested: Event
+    lock: Lock
+
+
+def _trigger_shutdown(reason: str) -> None:
+    """Ejecuta shutdown -h now con razon registrada (idempotente)."""
+    log.info("auto_shutdown_triggered", reason=reason)
+    try:
+        subprocess.run(["sudo", "shutdown", "-h", "+1", reason], check=False, timeout=10)
+    except Exception as exc:  # pragma: no cover
+        log.error("shutdown_failed", exc_info=str(exc))
+
+
+def _run_command(payload: dict[str, Any]) -> int:
+    """Ejecuta el comando del payload en WORKDIR; retorna exit code."""
+    command = payload.get("command")
+    if not command:
+        log.warning("payload_missing_command", payload_keys=list(payload.keys()))
+        return 2
+    label = payload.get("label", "unlabeled")
+    timeout = int(payload.get("timeout_seconds", _DEFAULT_TIMEOUT))
+    log.info("job_start", label=label, command=command, timeout=timeout, workdir=_WORKDIR)
+    start = time.monotonic()
+    try:
+        result = subprocess.run(
+            command,
+            shell=True,
+            cwd=_WORKDIR,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+        elapsed = time.monotonic() - start
+        log.info(
+            "job_end",
+            label=label,
+            exit_code=result.returncode,
+            elapsed_seconds=round(elapsed, 1),
+            stdout_tail=result.stdout[-2000:] if result.stdout else "",
+            stderr_tail=result.stderr[-2000:] if result.stderr else "",
+        )
+        return result.returncode
+    except subprocess.TimeoutExpired:
+        elapsed = time.monotonic() - start
+        log.error("job_timeout", label=label, elapsed_seconds=round(elapsed, 1), timeout=timeout)
+        return 124
+
+
+def _make_callback(state: DaemonState):
+    def callback(message: "pubsub_v1.subscriber.message.Message") -> None:
+        try:
+            payload = json.loads(message.data.decode("utf-8"))
+        except Exception as exc:
+            log.error("payload_decode_failed", error=str(exc), raw=message.data[:200])
+            message.ack()
+            return
+        with state.lock:
+            state.job_running = True
+            state.last_message_at = time.monotonic()
+        try:
+            exit_code = _run_command(payload)
+            log.info("ack_message", message_id=message.message_id, exit_code=exit_code)
+        finally:
+            with state.lock:
+                state.job_running = False
+                state.last_message_at = time.monotonic()
+            message.ack()
+    return callback
+
+
+def _watchdog_loop(state: DaemonState) -> None:
+    """Vigila idle time y dispara shutdown cuando se excede IDLE_SHUTDOWN_SECONDS."""
+    while not state.shutdown_requested.is_set():
+        time.sleep(30)
+        with state.lock:
+            idle = time.monotonic() - state.last_message_at
+            running = state.job_running
+        if not running and idle >= _IDLE_SHUTDOWN_SECONDS:
+            _trigger_shutdown(f"idle {int(idle)}s >= threshold {_IDLE_SHUTDOWN_SECONDS}s")
+            state.shutdown_requested.set()
+            return
+        log.debug("watchdog_tick", idle_seconds=round(idle, 1), job_running=running)
+
+
+def main() -> int:
+    """Entrypoint: inicia subscriber + watchdog. Bloquea hasta SIGTERM."""
+    state = DaemonState(
+        last_message_at=time.monotonic(),
+        job_running=False,
+        shutdown_requested=Event(),
+        lock=Lock(),
+    )
+
+    def _handle_sigterm(_signum, _frame):
+        log.info("sigterm_received")
+        state.shutdown_requested.set()
+
+    signal.signal(signal.SIGTERM, _handle_sigterm)
+    signal.signal(signal.SIGINT, _handle_sigterm)
+
+    subscriber = pubsub_v1.SubscriberClient()
+    subscription_path = subscriber.subscription_path(_PROJECT_ID, _SUBSCRIPTION_ID)
+    log.info(
+        "daemon_start",
+        project=_PROJECT_ID,
+        subscription=_SUBSCRIPTION_ID,
+        idle_shutdown_seconds=_IDLE_SHUTDOWN_SECONDS,
+        workdir=_WORKDIR,
+    )
+
+    from threading import Thread
+
+    watchdog = Thread(target=_watchdog_loop, args=(state,), daemon=True)
+    watchdog.start()
+
+    future = subscriber.subscribe(subscription_path, callback=_make_callback(state))
+    try:
+        future.result(timeout=None)
+    except KeyboardInterrupt:
+        pass
+    except Exception as exc:
+        log.error("subscriber_crashed", error=str(exc))
+        return 1
+    finally:
+        future.cancel()
+        subscriber.close()
+        log.info("daemon_exit")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
