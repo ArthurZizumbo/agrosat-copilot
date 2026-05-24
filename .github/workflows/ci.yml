@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 env:
-  POETRY_VERSION: "1.8.4"
+  POETRY_VERSION: "2.2.1"     # pyproject.toml usa formato Poetry 2.x (requires-poetry >=2.0)
   PYTHON_VERSION: "3.12"
   NODE_VERSION: "20"
   PNPM_VERSION: "10"          # frontend/package.json#engines exige pnpm >=10
