@@ -1,0 +1,6 @@
+outs:
+- md5: 5135752854071e0b87f92eeda29b6974.dir
+  size: 7307
+  nfiles: 15
+  hash: md5
+  path: spatial_kfold_v1_demo
