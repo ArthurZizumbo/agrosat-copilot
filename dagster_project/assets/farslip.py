@@ -42,6 +42,7 @@ from pathlib import Path
 
 from dagster import (
     AssetExecutionContext,
+    AssetKey,
     MaterializeResult,
     MetadataValue,
     asset,
@@ -54,6 +55,10 @@ from dagster_project.assets.sentinel2_crops import (
 )
 from ml.utils.gcs_errors import is_gcs_auth_error
 from ml.utils.git_meta import git_sha
+
+#: Dep externa al modelo destilado (US-022b-B B-5). Se importa por AssetKey en
+#: vez de symbol para evitar import circular con farslip_pipeline.py.
+_FARSLIP_MODEL_KEY = AssetKey("farslip_clip_italy_v1")
 
 #: Rutas relativas al cwd. Persistencia particionada por ROI y año (anio
 #: derivado del manifest, no hardcoded — Q4 fix).
@@ -108,14 +113,16 @@ def _skipped_result(context: AssetExecutionContext, reason: str, roi: str) -> Ma
 
 
 @asset(
-    deps=[sentinel2_crops_256],
+    deps=[sentinel2_crops_256, _FARSLIP_MODEL_KEY],
     partitions_def=ITALY_REGIONS,
     group_name="farslip",
     compute_kind="python",
     description=(
         "Bulk extraction de embeddings FarSLIP 512-dim sobre los crops "
         "Sentinel-2 256x256 de la ROI activa. Persiste a "
-        "data/farslip_embeddings/{roi}/{year}/embeddings.parquet."
+        "data/farslip_embeddings/{roi}/{year}/embeddings.parquet. "
+        "Lineage US-022b-B: depende del modelo farslip_clip_italy_v1 "
+        "(MLflow Registry @Production)."
     ),
 )
 def farslip_embeddings_italy(context: AssetExecutionContext) -> MaterializeResult:
@@ -299,6 +306,8 @@ def farslip_embeddings_italy(context: AssetExecutionContext) -> MaterializeResul
         "embedding_dim": MetadataValue.int(EMBEDDING_DIM),
         "batch_size": MetadataValue.int(EXTRACTION_BATCH_SIZE),
         "data_version": MetadataValue.text(DATA_VERSION_TAG),
+        # B-5 US-022b: tag del modelo destilado (MLflow Registry @Production).
+        "model_version": MetadataValue.text("farslip-student-italy-v1"),
         "code_version": MetadataValue.text(code_version),
     }
     if output_paths_by_year:

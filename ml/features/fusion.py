@@ -61,7 +61,10 @@ logger = structlog.get_logger(__name__)
 #: bloque Sentinel-1. Difiere del set de 9 stats de US-015 por economía.
 FUSION_STATS: Final[tuple[str, ...]] = ("mean", "std", "p25", "p50", "p95")
 
-#: Nombres canónicos de los 7 bloques del vector fusionado.
+#: Nombres canónicos de los 8 bloques del vector fusionado.
+#: El bloque ``phenology_text`` (US-022b-D) es opcional y se incorpora vía
+#: ``LEFT JOIN`` cuando ``include_phenology_text=True`` y los embeddings
+#: textuales se materializaron previamente.
 BLOCK_NAMES: Final[tuple[str, ...]] = (
     "alphaearth",
     "indices_stats",
@@ -70,6 +73,7 @@ BLOCK_NAMES: Final[tuple[str, ...]] = (
     "era5_monthly",
     "geometry",
     "farslip",
+    "phenology_text",
 )
 
 #: Conteo esperado de columnas SIN el bloque FarSLIP (excluye `parcel_id`, `year`).
@@ -80,6 +84,22 @@ EXPECTED_COL_COUNT_NO_FARSLIP: Final[int] = 189
 #: 189 + 512 (FarSLIP) = 701.
 EXPECTED_COL_COUNT_WITH_FARSLIP: Final[int] = EXPECTED_COL_COUNT_NO_FARSLIP + 512
 
+#: Dimensiones del bloque opcional ``pheno_text_*`` (US-022b-D). Coincide
+#: con el text-encoder default ``sentence-transformers/all-MiniLM-L6-v2``
+#: (ver :data:`ml.features.phenology_description.DEFAULT_TEXT_EMBED_DIM`).
+PHENOLOGY_TEXT_EMBED_DIM: Final[int] = 384
+
+#: Conteo esperado de columnas CON el bloque pheno_text (sin FarSLIP).
+#: 189 + 384 (pheno_text) = 573.
+EXPECTED_COL_COUNT_WITH_PHENO_TEXT: Final[int] = (
+    EXPECTED_COL_COUNT_NO_FARSLIP + PHENOLOGY_TEXT_EMBED_DIM
+)
+
+#: Conteo esperado de columnas con AMBOS bloques opcionales.
+EXPECTED_COL_COUNT_WITH_FARSLIP_AND_PHENO_TEXT: Final[int] = (
+    EXPECTED_COL_COUNT_WITH_FARSLIP + PHENOLOGY_TEXT_EMBED_DIM
+)
+
 #: Polarizaciones Sentinel-1 canónicas del bloque (orden fijo).
 _S1_POLARIZATIONS: Final[tuple[str, ...]] = ("vv", "vh")
 
@@ -89,13 +109,21 @@ AE_COLS: Final[tuple[str, ...]] = tuple(f"ae_{i:02d}" for i in range(64))
 #: Default path para los embeddings FarSLIP (US-016b).
 _DEFAULT_FARSLIP_PATH: Final[Path] = Path("data/farslip/embeddings_italy.parquet")
 
+#: Default path para el bloque pheno_text materializado (US-022b-D).
+_DEFAULT_PHENO_TEXT_PATH: Final[Path] = Path(
+    "data/features/phenology_text_italy.parquet"
+)
+
 
 __all__ = [
     "AE_COLS",
     "BLOCK_NAMES",
     "EXPECTED_COL_COUNT_NO_FARSLIP",
     "EXPECTED_COL_COUNT_WITH_FARSLIP",
+    "EXPECTED_COL_COUNT_WITH_FARSLIP_AND_PHENO_TEXT",
+    "EXPECTED_COL_COUNT_WITH_PHENO_TEXT",
     "FUSION_STATS",
+    "PHENOLOGY_TEXT_EMBED_DIM",
     "build_fused_features",
 ]
 
@@ -112,6 +140,8 @@ def build_fused_features(
     blocks: tuple[str, ...] = BLOCK_NAMES,
     include_farslip: bool = False,
     farslip_path: str | Path | None = None,
+    include_phenology_text: bool = False,
+    phenology_text_path: str | Path | None = None,
     stats: tuple[str, ...] = FUSION_STATS,
     lazy: bool = True,
     ae_frame: pl.DataFrame | None = None,
@@ -119,6 +149,7 @@ def build_fused_features(
     s1_frame: pl.DataFrame | None = None,
     srtm_frame: pl.DataFrame | None = None,
     era5_frame: pl.DataFrame | None = None,
+    phenology_text_frame: pl.DataFrame | None = None,
 ) -> pl.DataFrame:
     """Construye el vector de features fusionados por ``(parcel_id, year)``.
 
@@ -135,6 +166,15 @@ def build_fused_features(
             fallar la build.
         farslip_path: Ruta al parquet con embeddings FarSLIP. Default
             ``data/farslip/embeddings_italy.parquet``.
+        include_phenology_text: Si ``True`` intenta unir el bloque
+            ``pheno_text_*`` (US-022b-D, Wen et al. 2025). Mismo patron
+            que FarSLIP: si el path no existe se omite sin fallar. Si
+            ``phenology_text_frame`` se pasa explicitamente se ignora el
+            path.
+        phenology_text_path: Ruta al parquet con los embeddings textuales
+            de la rama semantica (output de
+            :func:`ml.features.phenology_description.build_phenology_text_block`).
+            Default ``data/features/phenology_text_italy.parquet``.
         stats: Stats temporales aplicados a índices y S1. Default
             :data:`FUSION_STATS`. Cambiar este parámetro rompe el contrato
             de 85 columnas del bloque índices — utilizar solo en ablation.
@@ -147,6 +187,9 @@ def build_fused_features(
         s1_frame: Inyección opcional del bloque Sentinel-1.
         srtm_frame: Inyección opcional del bloque SRTM.
         era5_frame: Inyección opcional del bloque ERA5 mensual.
+        phenology_text_frame: Inyección opcional del bloque
+            ``pheno_text_*`` (testing); cuando se pasa, ``phenology_text_path``
+            se ignora.
 
     Returns:
         ``pl.DataFrame`` con shape ``(N, 2 + 189)`` o ``(N, 2 + 701)`` si
@@ -194,6 +237,14 @@ def build_fused_features(
         farslip_block = _build_farslip_block(parcels, farslip_path=farslip_path)
         if farslip_block is not None:
             block_frames.append(farslip_block)
+    if "phenology_text" in selected_blocks and include_phenology_text:
+        pheno_block = _build_phenology_text_block_lf(
+            parcels,
+            phenology_text_path=phenology_text_path,
+            injected=phenology_text_frame,
+        )
+        if pheno_block is not None:
+            block_frames.append(pheno_block)
 
     joined = base
     for block in block_frames:
@@ -550,6 +601,68 @@ def _build_farslip_block(
             pl.col("parcel_id").cast(pl.Int64),
             pl.col("year").cast(pl.Int16),
             *[pl.col(c).cast(pl.Float32) for c in farslip_cols],
+        ]
+    ).lazy()
+
+
+def _build_phenology_text_block_lf(
+    parcels: gpd.GeoDataFrame,
+    *,
+    phenology_text_path: str | Path | None,
+    injected: pl.DataFrame | None,
+) -> pl.LazyFrame | None:
+    """Prepara el bloque ``pheno_text_*`` (US-022b-D) para LEFT JOIN.
+
+    Patron simetrico al bloque FarSLIP:
+
+    - Si ``injected`` es no-``None``, se usa directamente (testing).
+    - Si el path no existe y se uso el default: warning + ``None`` (la
+      build sigue sin fallar — el bloque se omite).
+    - Si el path no existe y se paso explicitamente: ``FileNotFoundError``.
+    - Si las columnas ``pheno_text_NNN`` no llegan al esperado
+      :data:`PHENOLOGY_TEXT_EMBED_DIM`, se acepta el subset (no hay
+      contrato dimensional fijo — el text-encoder puede variar).
+    """
+    if injected is not None:
+        df = injected
+    else:
+        explicit_path = phenology_text_path is not None
+        resolved = (
+            Path(phenology_text_path)
+            if phenology_text_path is not None
+            else _DEFAULT_PHENO_TEXT_PATH
+        )
+        if not resolved.exists():
+            if explicit_path:
+                raise FileNotFoundError(
+                    f"Bloque pheno_text no encontrado en {resolved}. "
+                    "Pasa `include_phenology_text=False` o genera el parquet con "
+                    "ml.features.phenology_description.build_phenology_text_block."
+                )
+            logger.warning(
+                "phenology_text_block_skipped",
+                reason="default_path_not_found",
+                path=str(resolved),
+                note="US-022b-D aun no ha materializado los embeddings textuales",
+            )
+            return None
+        df = pl.read_parquet(resolved)
+
+    if "parcel_id" not in df.columns:
+        raise ValueError("Bloque pheno_text no contiene `parcel_id` para el join.")
+    pheno_cols = tuple(c for c in df.columns if c.startswith("pheno_text_"))
+    if not pheno_cols:
+        raise ValueError(
+            "Bloque pheno_text no contiene columnas con prefijo `pheno_text_`."
+        )
+    if "year" not in df.columns:
+        year_val = int(parcels["year"].iloc[0]) if len(parcels) else 0
+        df = df.with_columns(pl.lit(year_val, dtype=pl.Int16).alias("year"))
+    return df.select(
+        [
+            pl.col("parcel_id").cast(pl.Int64),
+            pl.col("year").cast(pl.Int16),
+            *[pl.col(c).cast(pl.Float32) for c in pheno_cols],
         ]
     ).lazy()
 

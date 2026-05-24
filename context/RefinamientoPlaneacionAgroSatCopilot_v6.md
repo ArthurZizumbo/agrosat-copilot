@@ -1387,6 +1387,30 @@ S10-S11 (22-jun a 3-jul): Buffer + Paper Track opcional
 
 ---
 
+### US-022-b — Deuda tecnica FarSLIP + infra GCP L4 + reencuadre fenologico (post-A3, transversal E4/E5) {#us-022b}
+
+**Status:** cerrada 2026-05-23 · [docs/us-resolved/us-022b.md](../docs/us-resolved/us-022b.md) · cierre completo del ciclo en [us-022-c](../docs/product-backlog/us-022-c-cierre-fenologico-farslip-dvc.md).
+
+**Motivacion:** [ADR-006 Aceptada](../docs/decisions/ADR-006-reencuadre-baseline-fenologico.md) — el baseline tabular RF/XGB (US-022 F1-macro 0.32) cumple la rubrica del A3 pero NO es el baseline conceptualmente correcto para la clasificacion de cultivos (problema fenologico-temporal). Wen et al. (2025) confirma la via via descripcion fenologica + LLM. Restriccion hardware: cuota GCP `NVIDIA_L4_GPUS=1`, sin A100/H100 (A100=0, A2_CPUS=0 en 7 regiones).
+
+**Entregables (17 SP, 5 sub-US):**
+- 022b-A infra GCP L4 (`ml-train` Dockerfile + Terraform SAs + Cloud Run MLflow scale-to-zero + bucket versioned).
+- 022b-B FarSLIP Fase 4 (US-017 AC-3/4/6/8) → transferida a `us-022-c` P1 (GCP dedicada).
+- 022b-C reencuadre FE: ablation 5+ conjuntos, TempCNN + InceptionTime portados nativos a `ml/models/temporal.py`, clustering sin coordenadas.
+- 022b-D rama semantica: Gemini 3.5 Flash + sentence-transformers + bloque `pheno_text_*` via LEFT JOIN en `fusion.py`.
+- 022b-E ADR-006 Aceptada + esta referencia.
+
+**Hipotesis confirmadas empiricamente:**
+- C-2 (Dr. Camacho): descartar `geom_*` no degrada F1 (delta = 0.0); el modelo aprende fenologia, no geografia.
+- C-2 extendida: quitar ERA5 + SRTM tampoco degrada (delta = 0.0); AlphaEarth ya los codifica.
+- C-4: XGBoost full = 0.4094 (+0.089 vs baseline 0.32). Gate minimo pasado.
+
+**Cobertura del diff:** 87 % (1148 stmts, 147 miss) · 117/117 tests passing.
+
+**Computo:** 0 h H100, 0 h Vertex AI directo en esta US; smoke local 22-may + 23-may en GPU local. Gemini smoke real ~$0.001 USD.
+
+---
+
 ## EPIC 5: Modelos Alternativos — Seis Arquitecturas {#epic-5}
 
 **Objetivo.** Construir seis modelos individuales diversos (mínimo requerido por la rúbrica del Avance 4), compararlos y ajustar los dos mejores.

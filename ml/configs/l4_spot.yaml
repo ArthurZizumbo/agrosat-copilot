@@ -1,6 +1,6 @@
 # Vertex AI Custom Job — L4 Spot 24GB
 #
-# Uso:
+# Uso (US-022b-A):
 #   gcloud ai custom-jobs create \
 #     --region=$GCP_REGION \
 #     --display-name=train-$EPIC-$US \
@@ -11,18 +11,25 @@
 # el spot es preempted. Para entrenamientos largos (>4h) preferir Azure H100
 # (ver scripts/azure_h100_start.sh).
 #
-# NOTA (TODO US-003/US-005):
-# - La imagen `ml-train:latest` aun NO se construye en infrastructure/cloudbuild.yaml.
-#   Mientras tanto este job referencia la imagen `inference-worker:latest`
-#   (mismo base CUDA + grupo `ml` de poetry). Cuando exista una imagen dedicada
-#   `ml-train` con extras de training (mlflow client, wandb, etc.) actualizar.
-# - Bucket de salida usa sufijo `-dev` consistente con el modulo Terraform GCP
-#   que crea `agrosat-artifacts-dev`. Para staging/prod ajustar via override.
-# - MLFLOW_TRACKING_URI se pasa via --args, no hardcoded.
+# US-022b-A (ADR-006, 2026-05-22):
+# - imageUri apunta a `ml-train:latest` (no `inference-worker`); la imagen se
+#   construye en infrastructure/cloudbuild.yaml step `build-ml-train` con grupos
+#   `ml` + `ml-gpu` + `ml-gpu-linux` + `geo` + breizhcrops (TempCNN/InceptionTime).
+# - MLFLOW_TRACKING_URI: en lugar del hardcode `http://mlflow.internal:5000` se
+#   resuelve a un endpoint Cloud Run scale-to-zero. La URI se inyecta desde el
+#   caller (Makefile `make train-l4` o el modulo Terraform GCP via outputs).
+#   En dev, exportar antes:
+#     export MLFLOW_TRACKING_URI=$(terraform -chdir=infrastructure/terraform/environments/dev \
+#       output -raw mlflow_tracking_uri)
+# - Bucket de salida `gs://agrosat-artifacts-dev/vertex-jobs/` debe existir y
+#   tener versioning ON (modulo Terraform GCP — agrosat-artifacts bucket).
+# - SA `ml-train-runner-sa@${_PROJECT_ID}.iam.gserviceaccount.com` con least
+#   privilege (storage.objectAdmin sobre `agrosat-artifacts`, secretAccessor
+#   para HF token, aiplatform.user); NO `roles/owner`.
 
 workerPoolSpecs:
   - machineSpec:
-      machineType: g2-standard-8         # 8 vCPU, 32GB RAM, 1x L4 24GB
+      machineType: g2-standard-8 # 8 vCPU, 32GB RAM, 1x L4 24GB
       acceleratorType: NVIDIA_L4
       acceleratorCount: 1
     replicaCount: 1
@@ -30,7 +37,7 @@ workerPoolSpecs:
       bootDiskType: pd-balanced
       bootDiskSizeGb: 200
     containerSpec:
-      imageUri: europe-west1-docker.pkg.dev/agrosat-prod/agrosat/inference-worker:latest
+      imageUri: us-central1-docker.pkg.dev/agrosat-copilot/agrosat/ml-train:latest
       command: ["bash", "-c"]
       args:
         - |
@@ -41,19 +48,32 @@ workerPoolSpecs:
             --data-version=${DATA_VERSION:-latest} \
             --mlflow-uri=${MLFLOW_TRACKING_URI}
       env:
+        # Sin default hardcoded: el caller DEBE exportar MLFLOW_TRACKING_URI
+        # apuntando al Cloud Run `agrosat-mlflow-dev` (scale-to-zero). Si la var
+        # no esta seteada el step bash anterior fallara con `unbound variable`.
         - name: MLFLOW_TRACKING_URI
-          value: "http://mlflow.internal:5000"   # override via --args, ver TODO arriba
+          value: "${MLFLOW_TRACKING_URI}"
         - name: HUGGINGFACE_TOKEN
           value: "$(gcloud secrets versions access latest --secret=agrosat-hf-token)"
         - name: PYTHONUNBUFFERED
           value: "1"
 
 scheduling:
-  timeoutSeconds: 14400                  # 4h cap (override si necesario)
+  timeoutSeconds: 14400 # 4h cap (override si necesario)
+  # restartJobOnWorkerRestart=false + strategy=SPOT garantiza que si Vertex
+  # pierde el spot, el job termina (no se cuelga reintentando). El job
+  # *job-level* puede reintentarse desde el caller (gcloud ai custom-jobs).
   restartJobOnWorkerRestart: false
-  strategy: SPOT                         # spot instance
+  strategy: SPOT
 
 baseOutputDirectory:
   outputUriPrefix: gs://agrosat-artifacts-dev/vertex-jobs/
 
-serviceAccount: agrosat-ci-sa@agrosat-prod.iam.gserviceaccount.com
+# SA dedicada de training (US-022b-A), NO la SA del CI. Permisos:
+# - roles/storage.objectAdmin sobre gs://agrosat-artifacts (escribe runs)
+# - roles/storage.objectViewer sobre gs://agrosat-data + gs://agrosat-dvc-remote
+# - roles/secretmanager.secretAccessor (HF token)
+# - roles/aiplatform.user (acceso a Vertex AI training endpoints)
+# - roles/logging.logWriter (stdout del job)
+# NO recibe: roles/owner, roles/editor, roles/iam.* — least privilege duro.
+serviceAccount: ml-train-runner-sa@agrosat-copilot.iam.gserviceaccount.com

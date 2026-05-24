@@ -72,3 +72,14 @@ output "azure_key_vault_uri" {
   description = "Azure Key Vault URI."
   value       = module.azure.key_vault_uri
 }
+
+# US-022b-A
+output "mlflow_tracking_uri" {
+  description = "MLflow tracking server URI (Cloud Run scale-to-zero). Exportar como MLFLOW_TRACKING_URI antes de `make train-l4`."
+  value       = module.gcp.mlflow_tracking_uri
+}
+
+output "ml_train_runner_sa_email" {
+  description = "Service account del runner Vertex AI L4 (referenciado en ml/configs/l4_spot.yaml)."
+  value       = module.gcp.ml_train_runner_sa_email
+}

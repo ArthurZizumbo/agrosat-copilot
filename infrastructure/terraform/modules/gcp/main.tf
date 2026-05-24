@@ -48,12 +48,14 @@ locals {
   }
 
   service_accounts = {
-    api      = "agrosat-api-sa"
-    frontend = "agrosat-frontend-sa"
-    tiling   = "agrosat-tiling-sa"
-    worker   = "agrosat-worker-sa"
-    dagster  = "agrosat-dagster-sa"
-    ci       = "agrosat-ci-sa"
+    api          = "agrosat-api-sa"
+    frontend     = "agrosat-frontend-sa"
+    tiling       = "agrosat-tiling-sa"
+    worker       = "agrosat-worker-sa"
+    dagster      = "agrosat-dagster-sa"
+    ci           = "agrosat-ci-sa"
+    mlflow       = "agrosat-mlflow-sa"
+    ml_train_run = "ml-train-runner-sa"
   }
 
   secret_ids = [
@@ -153,6 +155,47 @@ resource "google_project_iam_member" "ci_roles" {
   project = var.project_id
   role    = each.value
   member  = "serviceAccount:${google_service_account.sa["ci"].email}"
+}
+
+# US-022b-A: SA del servidor MLflow (Cloud Run scale-to-zero).
+# Solo necesita escribir/leer artifacts (GCS) + abrir conexion al backend
+# store (Cloud SQL via Unix socket dentro del contenedor).
+resource "google_project_iam_member" "mlflow_roles" {
+  for_each = toset([
+    "roles/cloudsql.client",
+    "roles/storage.objectAdmin",
+    "roles/secretmanager.secretAccessor",
+    "roles/logging.logWriter",
+  ])
+  project = var.project_id
+  role    = each.value
+  member  = "serviceAccount:${google_service_account.sa["mlflow"].email}"
+}
+
+# US-022b-A: SA del runner de Vertex AI custom-jobs (L4 spot).
+# Least privilege: NO roles/owner, NO roles/editor, NO iam.* — solo lo
+# necesario para escribir runs/artifacts y leer secrets (HF token).
+resource "google_project_iam_member" "ml_train_run_roles" {
+  for_each = toset([
+    "roles/aiplatform.user",
+    "roles/storage.objectAdmin",
+    "roles/secretmanager.secretAccessor",
+    "roles/logging.logWriter",
+    "roles/monitoring.metricWriter",
+    "roles/artifactregistry.reader",
+  ])
+  project = var.project_id
+  role    = each.value
+  member  = "serviceAccount:${google_service_account.sa["ml_train_run"].email}"
+}
+
+# El SA del CI necesita iam.serviceAccountUser sobre el runner para poder
+# lanzar jobs `gcloud ai custom-jobs create --service-account=...` con la SA
+# del runner (impersonation pattern, no `iam.serviceAccountTokenCreator`).
+resource "google_service_account_iam_member" "ci_actas_ml_train_run" {
+  service_account_id = google_service_account.sa["ml_train_run"].name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.sa["ci"].email}"
 }
 
 # ----------------------------------------------------------------------------
@@ -294,6 +337,41 @@ resource "google_storage_bucket" "artifacts" {
   }
 
   labels = local.common_labels
+}
+
+# US-022b-A: bucket dedicado para outputs de jobs Vertex AI L4 (training runs,
+# checkpoints temporales, metricas crudas). SI usa sufijo `-${environment}` —
+# a diferencia de `agrosat-artifacts` (que es la fuente de verdad DVC/MLflow,
+# US-019 D14) este bucket es ephemeral y solo lo escribe el runner L4.
+#
+# - Versioning ON para auditoria (poder ver checkpoints sobreescritos).
+# - Lifecycle: borrar versiones >= 60 dias para acotar costo.
+# - force_destroy = (environment != "prod") para CI/cleanup ergonomico.
+resource "google_storage_bucket" "vertex_artifacts" {
+  project                     = var.project_id
+  name                        = "agrosat-artifacts-${var.environment}"
+  location                    = var.region
+  storage_class               = "STANDARD"
+  uniform_bucket_level_access = true
+  force_destroy               = var.environment != "prod"
+
+  versioning {
+    enabled = true
+  }
+
+  lifecycle_rule {
+    condition {
+      age        = 60
+      with_state = "ARCHIVED"
+    }
+    action {
+      type = "Delete"
+    }
+  }
+
+  labels = merge(local.common_labels, {
+    purpose = "vertex-ai-jobs"
+  })
 }
 
 resource "google_storage_bucket" "dvc_remote" {
@@ -483,4 +561,127 @@ resource "google_cloud_run_v2_service_iam_member" "public_invoker" {
   name     = google_cloud_run_v2_service.service[each.key].name
   role     = "roles/run.invoker"
   member   = "allUsers"
+}
+
+# ----------------------------------------------------------------------------
+# US-022b-A: Cloud Run v2 MLflow tracking server (scale-to-zero).
+# Reemplaza el hardcode `http://mlflow.internal:5000` de ml/configs/l4_spot.yaml
+# (AC-3). Backend store: Cloud SQL postgres `mlflow` (DB dedicada). Artifact
+# root: gs://agrosat-artifacts (bucket ya creado arriba).
+#
+# Coste: scale-to-zero (min_instance_count=0). Cold start ~10s aceptable porque
+# los jobs L4 escriben ocasionalmente al iniciar/terminar runs. Memoria 1Gi
+# (mlflow server + psycopg2 + boto-equivalente para GCS).
+# ----------------------------------------------------------------------------
+resource "google_sql_database" "mlflow" {
+  project  = var.project_id
+  name     = "mlflow"
+  instance = google_sql_database_instance.postgres.name
+}
+
+resource "google_cloud_run_v2_service" "mlflow" {
+  project  = var.project_id
+  name     = "agrosat-mlflow-${local.name_suffix}"
+  location = var.region
+  ingress  = "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
+
+  labels = local.common_labels
+
+  template {
+    service_account = google_service_account.sa["mlflow"].email
+
+    # FinOps: scale-to-zero estricto. Los jobs L4 son intermitentes.
+    scaling {
+      min_instance_count = 0
+      max_instance_count = 2
+    }
+
+    # Cloud SQL connector via UNIX socket
+    volumes {
+      name = "cloudsql"
+      cloud_sql_instance {
+        instances = [google_sql_database_instance.postgres.connection_name]
+      }
+    }
+
+    containers {
+      image = "${var.region}-docker.pkg.dev/${var.project_id}/${var.artifact_registry_repo_id}/mlflow:latest"
+
+      resources {
+        limits = {
+          cpu    = "2"
+          memory = "2Gi"
+        }
+        cpu_idle          = true
+        startup_cpu_boost = true
+      }
+
+      ports {
+        container_port = 5000
+      }
+
+      volume_mounts {
+        name       = "cloudsql"
+        mount_path = "/cloudsql"
+      }
+
+      # mlflow server args via command/args.
+      command = ["mlflow"]
+      args = [
+        "server",
+        "--backend-store-uri",
+        "postgresql://agrosat:${random_password.db_password.result}@/mlflow?host=/cloudsql/${google_sql_database_instance.postgres.connection_name}",
+        "--default-artifact-root",
+        "gs://${google_storage_bucket.artifacts.name}/mlflow",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "5000",
+        "--workers",
+        "2",
+        "--serve-artifacts",
+      ]
+
+      env {
+        name  = "ENV"
+        value = var.environment
+      }
+      env {
+        name  = "GCP_PROJECT_ID"
+        value = var.project_id
+      }
+    }
+
+    timeout = "900s"
+
+    labels = local.common_labels
+  }
+
+  traffic {
+    type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
+    percent = 100
+  }
+
+  depends_on = [
+    google_artifact_registry_repository.docker,
+    google_sql_database.mlflow,
+    google_project_iam_member.mlflow_roles,
+  ]
+}
+
+# El SA del runner L4 (ml-train-runner-sa) DEBE poder invocar el MLflow service.
+# El service NO es publico (INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER) — solo
+# trafico de Cloud Run/VPC/Vertex AI dentro del proyecto puede llegar.
+resource "google_cloud_run_v2_service_iam_member" "mlflow_invokers" {
+  for_each = toset([
+    "serviceAccount:${google_service_account.sa["ml_train_run"].email}",
+    "serviceAccount:${google_service_account.sa["worker"].email}",
+    "serviceAccount:${google_service_account.sa["dagster"].email}",
+  ])
+
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.mlflow.name
+  role     = "roles/run.invoker"
+  member   = each.value
 }

@@ -706,3 +706,82 @@ def test_fusion_first_two_cols_are_parcel_id_year_correct_dtypes(
     assert df.columns[1] == "year"
     assert df.schema["parcel_id"] == pl.Int64
     assert df.schema["year"] == pl.Int16
+
+
+# ---------------------------------------------------------------------------
+# US-022b-D: bloque opcional `pheno_text_*` (rama semantica fenologica).
+# ---------------------------------------------------------------------------
+
+
+def test_pheno_text_block_optional_inyectado(
+    parcels_fixture_3regions: gpd.GeoDataFrame, synthetic_alphaearth_64d: pl.DataFrame
+) -> None:
+    """Con `phenology_text_frame` inyectado, las cols `pheno_text_*` se unen via LEFT JOIN."""
+    from ml.features.fusion import (
+        EXPECTED_COL_COUNT_WITH_PHENO_TEXT,
+        PHENOLOGY_TEXT_EMBED_DIM,
+    )
+
+    parcels = parcels_fixture_3regions
+    n = len(parcels)
+    pheno_cols = {
+        f"pheno_text_{i:03d}": [0.01 * (i + 1)] * n
+        for i in range(PHENOLOGY_TEXT_EMBED_DIM)
+    }
+    schema = {"parcel_id": pl.Int64, "year": pl.Int16}
+    schema.update({c: pl.Float32 for c in pheno_cols})
+    pheno_df = pl.DataFrame(
+        {
+            "parcel_id": parcels["parcel_id"].astype("int64").tolist(),
+            "year": [2024] * n,
+            **pheno_cols,
+        },
+        schema=schema,
+    )
+    injected = _build_default_injection(parcels, synthetic_ae=synthetic_alphaearth_64d)
+    df = build_fused_features(
+        parcels,
+        year=2024,
+        include_phenology_text=True,
+        phenology_text_frame=pheno_df,
+        **injected,
+    )
+    assert df.width == 2 + EXPECTED_COL_COUNT_WITH_PHENO_TEXT
+    assert "pheno_text_000" in df.columns
+    assert "pheno_text_383" in df.columns
+
+
+def test_pheno_text_default_path_missing_emits_warning_and_omits(
+    parcels_fixture_3regions: gpd.GeoDataFrame, synthetic_alphaearth_64d: pl.DataFrame
+) -> None:
+    """Sin parquet en el default path: warning + no se incluye (no falla)."""
+    parcels = parcels_fixture_3regions
+    injected = _build_default_injection(parcels, synthetic_ae=synthetic_alphaearth_64d)
+    df = build_fused_features(
+        parcels,
+        year=2024,
+        include_phenology_text=True,
+        phenology_text_path=None,
+        **injected,
+    )
+    # No hay cols pheno_text_*; el width queda igual al base sin pheno_text.
+    assert "pheno_text_000" not in df.columns
+    assert df.width == 2 + EXPECTED_COL_COUNT_NO_FARSLIP
+
+
+def test_pheno_text_explicit_path_missing_raises(
+    parcels_fixture_3regions: gpd.GeoDataFrame,
+    synthetic_alphaearth_64d: pl.DataFrame,
+    tmp_path: Path,
+) -> None:
+    """Path explicito inexistente => FileNotFoundError (no enmascarar config)."""
+    parcels = parcels_fixture_3regions
+    injected = _build_default_injection(parcels, synthetic_ae=synthetic_alphaearth_64d)
+    with pytest.raises(FileNotFoundError, match="pheno_text"):
+        build_fused_features(
+            parcels,
+            year=2024,
+            include_phenology_text=True,
+            phenology_text_path=str(tmp_path / "does_not_exist.parquet"),
+            **injected,
+        )

@@ -201,3 +201,84 @@ versiones canónicas del proyecto con DOI propio:
 - **CCCI**: Barnes et al. (2000). Proc. 5th International Conference on Precision Agriculture, Bloomington MN.
 
 Tabla académica completa con DOIs por índice en [`docs/spectral_indices.md`](../spectral_indices.md).
+
+## US-022-b — Reencuadre fenologico (descripciones LLM + text-encoder)
+
+### Gemini 3.5 Flash — Google / Vertex AI
+- Source: Vertex AI Generative AI en GCP (region `europe-west4` y `us-central1`).
+- License: [Vertex AI Service Specific Terms](https://cloud.google.com/terms/service-terms).
+  Modelo cerrado, uso pay-per-token. Para Paper Track con datos no
+  confidenciales del proyecto (curvas NDVI publicas PASTIS-R), los terminos
+  estandar cubren el caso de uso (sin datos sensibles ingresan al prompt).
+- Citation: Google DeepMind (2025). Gemini 3.5 Flash technical report.
+  Vertex AI Generative AI catalog.
+- Use scope US-022b-D: generador de descripciones fenologicas estructuradas
+  (`ml/features/phenology_description.py`) a partir de la curva NDVI por
+  parcela. Invocacion via LiteLLM (no SDK directo `google-genai`).
+  `temperature=0` obligatorio + cache por hash de curva + subset
+  estratificado (presupuesto < $10 USD, R7).
+
+### sentence-transformers (all-MiniLM-L6-v2) — UKPLab
+- Repo: [UKPLab/sentence-transformers](https://github.com/UKPLab/sentence-transformers) `^5.0.0`
+- Model: `sentence-transformers/all-MiniLM-L6-v2` (HF hub).
+- License: Apache 2.0 (libreria) + Apache 2.0 (pesos del modelo MiniLM
+  pre-entrenado por Microsoft).
+- Citation: Reimers, N. & Gurevych, I. (2019). *Sentence-BERT: Sentence
+  Embeddings using Siamese BERT-Networks*. EMNLP 2019.
+  arXiv [1908.10084](https://arxiv.org/abs/1908.10084).
+- Use scope US-022b-D: text-encoder default de la rama semantica
+  (`encode_descriptions` en `ml/features/phenology_description.py`).
+  Vector denso 384-dim normalizado (cosine similarity) que se concatena
+  al vector tabular como bloque `pheno_text_*` via LEFT JOIN en
+  `ml/features/fusion.py`.
+
+### breizhcrops — Russwurm, Pelletier et al.
+- Repo: [dl4sits/BreizhCrops](https://github.com/dl4sits/BreizhCrops) `^0.0.4.1`
+- License: MIT
+- Citation: Russwurm, M., Pelletier, C., Zollner, M., Lefevre, S., Korner, M.
+  (2020). *BreizhCrops: A Time Series Dataset for Crop Type Mapping*.
+  ISPRS Archives Volume XLIII-B2-2020.
+  DOI [10.5194/isprs-archives-XLIII-B2-2020-1545-2020](https://doi.org/10.5194/isprs-archives-XLIII-B2-2020-1545-2020).
+- Use scope US-022b-C (actualizado 2026-05-22): arquitecturas TempCNN
+  (Pelletier et al. 2019) e InceptionTime (Fawaz et al. 2020) portadas
+  nativas al repo en `ml/models/temporal.py`. La implementacion se basa
+  en los papers originales y en el codigo de referencia `breizhcrops`
+  (MIT) y se reimplementa con tres bloques Conv1D + dense head para
+  TempCNN y 6 modulos Inception con shortcut residual para
+  InceptionTime. Los pesos He uniform, BatchNorm intermedio y dropout
+  configurable provienen de los papers. **El paquete `breizhcrops` ya no
+  es dependencia de runtime de `phenology_models.py`** (D-ARQ-2
+  actualizado), solo sigue presente para descargar el dataset
+  BreizhCrops cross-region.
+
+### TempCNN — Pelletier, Webb & Petitjean (2019)
+- Citation: Pelletier, C., Webb, G. I., & Petitjean, F. (2019).
+  *Temporal Convolutional Neural Network for the Classification of
+  Satellite Image Time Series*. Remote Sensing 11(5):523.
+  DOI [10.3390/rs11050523](https://doi.org/10.3390/rs11050523).
+- License de la arquitectura: codigo de referencia del paper bajo MIT
+  (publicado en GitHub por los autores).
+- Use scope US-022b-C: `ml/models/temporal.py::TempCNN` reimplementa
+  la arquitectura desde el paper + el codigo de referencia.
+
+### InceptionTime — Fawaz et al. (2020)
+- Citation: Fawaz, H. I., Lucas, B., Forestier, G., Pelletier, C.,
+  Schmidt, D. F., Weber, J., Webb, G. I., Idoumghar, L., Muller, P. A.,
+  & Petitjean, F. (2020). *InceptionTime: Finding AlexNet for Time
+  Series Classification*. Data Mining and Knowledge Discovery 34,
+  1936-1962.
+  DOI [10.1007/s10618-020-00710-y](https://doi.org/10.1007/s10618-020-00710-y).
+- License de la arquitectura: codigo de referencia del paper bajo MIT
+  (`hfawaz/InceptionTime` en GitHub).
+- Use scope US-022b-C: `ml/models/temporal.py::InceptionTime`
+  reimplementa la arquitectura (6 modulos Inception con shortcut
+  residual cada 3, global average pooling + dense head).
+
+## US-022-b — Paper-faro (referencia academica, no codigo)
+
+### Wen et al. (2025) — "Phenology description is all you need"
+- Source: ISPRS Journal of Photogrammetry and Remote Sensing 228, 141-165.
+- DOI: [10.1016/j.isprsjprs.2025.07.002](https://doi.org/10.1016/j.isprsjprs.2025.07.002).
+- License de la metodologia: open access (Elsevier hybrid). El metodo
+  (prompt 3-bloques, text-encoder contrastivo) se implementa de cero
+  en `ml/features/phenology_description.py` siguiendo Fig. 2 y Fig. 3a.

@@ -1,7 +1,7 @@
 # ADR-006 — Reencuadre del baseline hacia un enfoque fenologico-temporal
 
-**Status**: Propuesta · pendiente visto bueno equipo + sponsor (Dr. Camacho)
-**Fecha**: 2026-05-22
+**Status**: Aceptada · visto bueno equipo + sponsor (Dr. Camacho) registrado 2026-05-22
+**Fecha**: 2026-05-22 (aceptada el mismo dia tras revision del plan canonico US-022-b)
 **Decisores**: Arthur Zizumbo (MLOps Lead), Aaron Bocanegra, Isaac Avila
 **US relacionada**: US-019/020/021/022 (Baseline EPIC 4), US-017 (FarSLIP), nueva US-022-b
 **Avance**: A3 (Baseline · calificacion dom 24-may-2026)

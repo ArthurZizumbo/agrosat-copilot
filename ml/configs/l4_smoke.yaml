@@ -1,0 +1,91 @@
+# Vertex AI Custom Job — L4 Spot 24GB — SMOKE TEST (US-022b-A AC-5)
+#
+# Proposito: validar end-to-end la cadena
+#   Cloud Build (ml-train:latest) -> Artifact Registry -> Vertex AI job L4 spot
+#   -> MLflow Cloud Run (scale-to-zero) -> GCS artifacts
+# sin ejecutar entrenamiento real. Una sola epoca sintetica de TempCNN
+# (breizhcrops.models) sobre tensor random, registra 1 run MLflow y termina con
+# JOB_STATE_SUCCEEDED. Costo objetivo: < $0.20 USD (< 10 min L4 spot).
+#
+# Uso:
+#   gcloud ai custom-jobs create \
+#     --region=us-central1 \
+#     --display-name=train-E5-US-022b-smoke \
+#     --config=ml/configs/l4_smoke.yaml
+#
+# El script smoke vive INLINE en el campo `args` para evitar crear archivos en
+# ml/train/ (scope estricto de US-022b-A). Si se vuelve recurrente, mover a
+# ml/train/train_smoke.py en US-022b-B/C.
+
+workerPoolSpecs:
+  - machineSpec:
+      machineType: g2-standard-8
+      acceleratorType: NVIDIA_L4
+      acceleratorCount: 1
+    replicaCount: 1
+    diskSpec:
+      bootDiskType: pd-balanced
+      bootDiskSizeGb: 100
+    containerSpec:
+      imageUri: us-central1-docker.pkg.dev/agrosat-copilot/agrosat/ml-train:latest
+      command: ["bash", "-c"]
+      args:
+        - |
+          set -euo pipefail
+          python -u -c "
+          import os
+          import time
+          import mlflow
+          import torch
+          from breizhcrops.models import TempCNN
+
+          mlflow_uri = os.environ.get('MLFLOW_TRACKING_URI', '')
+          assert mlflow_uri, 'MLFLOW_TRACKING_URI must be set'
+          print(f'[smoke] mlflow_uri={mlflow_uri}')
+          print(f'[smoke] torch.cuda.is_available()={torch.cuda.is_available()}')
+          assert torch.cuda.is_available(), 'GPU L4 not visible'
+
+          device = torch.device('cuda')
+          model = TempCNN(input_dim=10, num_classes=5, sequencelength=24).to(device)
+          optim = torch.optim.Adam(model.parameters(), lr=1e-3)
+          loss_fn = torch.nn.CrossEntropyLoss()
+
+          X = torch.randn(64, 24, 10, device=device)
+          y = torch.randint(0, 5, (64,), device=device)
+
+          mlflow.set_tracking_uri(mlflow_uri)
+          mlflow.set_experiment('us-022b-a-smoke')
+          with mlflow.start_run(run_name='smoke-l4-tempcnn'):
+              mlflow.set_tag('epic', 'E5')
+              mlflow.set_tag('us', 'US-022b-A')
+              mlflow.set_tag('purpose', 'smoke')
+              mlflow.log_param('model', 'TempCNN')
+              mlflow.log_param('n_epochs', 1)
+              mlflow.log_param('batch_size', 64)
+              start = time.time()
+              model.train()
+              optim.zero_grad()
+              logits = model(X.transpose(1, 2))
+              loss = loss_fn(logits, y)
+              loss.backward()
+              optim.step()
+              mlflow.log_metric('train_loss', float(loss.item()))
+              mlflow.log_metric('elapsed_s', time.time() - start)
+              print(f'[smoke] train_loss={loss.item():.4f} elapsed={time.time()-start:.1f}s')
+          print('[smoke] OK')
+          "
+      env:
+        - name: MLFLOW_TRACKING_URI
+          value: "${MLFLOW_TRACKING_URI}"
+        - name: PYTHONUNBUFFERED
+          value: "1"
+
+scheduling:
+  timeoutSeconds: 1200 # 20 min hard cap
+  restartJobOnWorkerRestart: false
+  strategy: SPOT
+
+baseOutputDirectory:
+  outputUriPrefix: gs://agrosat-artifacts-dev/vertex-jobs/smoke/
+
+serviceAccount: ml-train-runner-sa@agrosat-copilot.iam.gserviceaccount.com
