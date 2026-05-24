@@ -495,9 +495,7 @@ def evaluate_with_spatial_cv(
                 fold_encoder = LabelEncoder().fit(y_train)
                 y_train_local = fold_encoder.transform(y_train)
                 estimator.set_params(num_class=len(fold_encoder.classes_))
-                estimator.fit(
-                    x_train, y_train_local, sample_weight=_sample_weights(y_train_local)
-                )
+                estimator.fit(x_train, y_train_local, sample_weight=_sample_weights(y_train_local))
                 y_pred_local = estimator.predict(x_test)
                 _max_local = len(fold_encoder.classes_) - 1
                 y_pred = fold_encoder.inverse_transform(
