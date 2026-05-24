@@ -1,30 +1,31 @@
-# Vertex AI Custom Job — L4 Spot 24GB — SMOKE TEST (US-022b-A AC-5)
+# Vertex AI Custom Job — SMOKE TEST (US-022b-A AC-5 / US-022-c P1 etapa 3b)
 #
 # Proposito: validar end-to-end la cadena
-#   Cloud Build (ml-train:latest) -> Artifact Registry -> Vertex AI job L4 spot
+#   Cloud Build (ml-train:latest) -> Artifact Registry -> Vertex AI job GPU spot
 #   -> MLflow Cloud Run (scale-to-zero) -> GCS artifacts
 # sin ejecutar entrenamiento real. Una sola epoca sintetica de TempCNN
 # (breizhcrops.models) sobre tensor random, registra 1 run MLflow y termina con
-# JOB_STATE_SUCCEEDED. Costo objetivo: < $0.20 USD (< 10 min L4 spot).
+# JOB_STATE_SUCCEEDED. Costo objetivo: < $0.20 USD (< 10 min spot).
+#
+# US-022-c P1 (2026-05-24): RESTORED a L4 spot tras aprobacion de quota
+# `custom_model_training_preemptible_nvidia_l4_gpus` = 1 en us-central1
+# (2026-05-24 09:36 UTC). Bug shape TempCNN del run anterior corregido abajo
+# (X=(B,T,C) directo, sin `.transpose(1,2)` manual — TempCNN.forward hace el
+# transpose interno).
 #
 # Uso:
-#   gcloud ai custom-jobs create \
-#     --region=us-central1 \
-#     --display-name=train-E5-US-022b-smoke \
-#     --config=ml/configs/l4_smoke.yaml
-#
-# El script smoke vive INLINE en el campo `args` para evitar crear archivos en
-# ml/train/ (scope estricto de US-022b-A). Si se vuelve recurrente, mover a
-# ml/train/train_smoke.py en US-022b-B/C.
+#   make train-l4-smoke   # con MLFLOW_TRACKING_URI exportado
 
 workerPoolSpecs:
   - machineSpec:
+      # g2-standard-8 es la unica combinacion soportada por Vertex AI con L4.
       machineType: g2-standard-8
       acceleratorType: NVIDIA_L4
       acceleratorCount: 1
     replicaCount: 1
     diskSpec:
-      bootDiskType: pd-balanced
+      # Vertex AI custom-jobs solo acepta pd-ssd, pd-standard, hyperdisk-balanced.
+      bootDiskType: pd-ssd
       bootDiskSizeGb: 100
     containerSpec:
       imageUri: us-central1-docker.pkg.dev/agrosat-copilot/agrosat/ml-train:latest
@@ -35,6 +36,7 @@ workerPoolSpecs:
           python -u -c "
           import os
           import time
+          import urllib.request
           import mlflow
           import torch
           from breizhcrops.models import TempCNN
@@ -42,30 +44,50 @@ workerPoolSpecs:
           mlflow_uri = os.environ.get('MLFLOW_TRACKING_URI', '')
           assert mlflow_uri, 'MLFLOW_TRACKING_URI must be set'
           print(f'[smoke] mlflow_uri={mlflow_uri}')
+
+          # US-022-c P1 etapa 3b: Cloud Run ingress=ALL requiere ID token (Bearer)
+          # firmado por SA con roles/run.invoker. ml-train-runner-sa lo tiene.
+          # Obtenemos el ID token desde el metadata server con audience=Cloud Run URL.
+          audience = mlflow_uri.rstrip('/')
+          token_url = (
+              'http://metadata.google.internal/computeMetadata/v1/instance/'
+              'service-accounts/default/identity?audience=' + audience
+          )
+          req = urllib.request.Request(token_url, headers={'Metadata-Flavor': 'Google'})
+          with urllib.request.urlopen(req, timeout=10) as r:
+              id_token = r.read().decode('utf-8').strip()
+          assert id_token and id_token.count('.') == 2, 'metadata id_token invalido'
+          os.environ['MLFLOW_TRACKING_TOKEN'] = id_token
+          print(f'[smoke] ID token len={len(id_token)} (oculto)')
+
           print(f'[smoke] torch.cuda.is_available()={torch.cuda.is_available()}')
-          assert torch.cuda.is_available(), 'GPU L4 not visible'
+          assert torch.cuda.is_available(), 'GPU not visible'
+          print(f'[smoke] GPU={torch.cuda.get_device_name(0)}')
 
           device = torch.device('cuda')
           model = TempCNN(input_dim=10, num_classes=5, sequencelength=24).to(device)
           optim = torch.optim.Adam(model.parameters(), lr=1e-3)
           loss_fn = torch.nn.CrossEntropyLoss()
 
+          # TempCNN.forward hace `x.transpose(1, 2)` internamente, por lo que
+          # el input debe llegar como (B, T=sequencelength, C=input_dim).
           X = torch.randn(64, 24, 10, device=device)
           y = torch.randint(0, 5, (64,), device=device)
 
           mlflow.set_tracking_uri(mlflow_uri)
           mlflow.set_experiment('us-022b-a-smoke')
-          with mlflow.start_run(run_name='smoke-l4-tempcnn'):
+          with mlflow.start_run(run_name='smoke-gpu-tempcnn'):
               mlflow.set_tag('epic', 'E5')
               mlflow.set_tag('us', 'US-022b-A')
               mlflow.set_tag('purpose', 'smoke')
+              mlflow.set_tag('gpu', torch.cuda.get_device_name(0))
               mlflow.log_param('model', 'TempCNN')
               mlflow.log_param('n_epochs', 1)
               mlflow.log_param('batch_size', 64)
               start = time.time()
               model.train()
               optim.zero_grad()
-              logits = model(X.transpose(1, 2))
+              logits = model(X)
               loss = loss_fn(logits, y)
               loss.backward()
               optim.step()
@@ -75,15 +97,24 @@ workerPoolSpecs:
           print('[smoke] OK')
           "
       env:
+        # MLFLOW_TRACKING_URI se substituye via envsubst antes de `gcloud ai
+        # custom-jobs create` (ver Makefile target `train-l4-smoke`). Si se invoca
+        # gcloud con este YAML sin envsubst, fallara con `assert mlflow_uri`.
         - name: MLFLOW_TRACKING_URI
           value: "${MLFLOW_TRACKING_URI}"
         - name: PYTHONUNBUFFERED
           value: "1"
 
 scheduling:
-  timeoutSeconds: 1200 # 20 min hard cap
+  # Vertex AI custom-jobs Duration string en lugar de timeoutSeconds (rechazado por API).
+  timeout: 1200s # 20 min hard cap
   restartJobOnWorkerRestart: false
-  strategy: SPOT
+  # US-022-c P1 etapa 3b: en spot us-central1 el job quedo 22 min en PENDING por
+  # falta de capacidad L4 spot momentanea. Para validar la cadena CB->Vertex->MLflow
+  # rapido bajamos a STANDARD (on-demand) solo el smoke. Costo on-demand L4
+  # g2-standard-8 ~$0.71/h x 0.2h = ~$0.14 (vs ~$0.05 spot). FarSLIP student
+  # 6h conserva SPOT en l4_spot.yaml.
+  strategy: STANDARD
 
 baseOutputDirectory:
   outputUriPrefix: gs://agrosat-artifacts-dev/vertex-jobs/smoke/

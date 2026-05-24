@@ -34,7 +34,8 @@ workerPoolSpecs:
       acceleratorCount: 1
     replicaCount: 1
     diskSpec:
-      bootDiskType: pd-balanced
+      # Vertex AI custom-jobs solo acepta pd-ssd, pd-standard, hyperdisk-balanced.
+      bootDiskType: pd-ssd
       bootDiskSizeGb: 200
     containerSpec:
       imageUri: us-central1-docker.pkg.dev/agrosat-copilot/agrosat/ml-train:latest
@@ -42,15 +43,65 @@ workerPoolSpecs:
       args:
         - |
           set -euo pipefail
-          poetry run python -u ml/train/${TRAIN_SCRIPT:-train_baseline.py} \
-            --epic=${EPIC:-E4} \
-            --us=${US:-US-000} \
-            --data-version=${DATA_VERSION:-latest} \
-            --mlflow-uri=${MLFLOW_TRACKING_URI}
+          # US-022-c P1 etapa 3b/5: obtener ID token desde metadata server para
+          # autenticar contra Cloud Run MLflow (ingress=ALL + IAM run.invoker).
+          AUDIENCE="${MLFLOW_TRACKING_URI%/}"
+          export MLFLOW_TRACKING_TOKEN=$(curl -fsSL -H "Metadata-Flavor: Google" \
+            "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity?audience=${AUDIENCE}")
+          test -n "${MLFLOW_TRACKING_TOKEN}" || { echo "ERROR: no ID token desde metadata"; exit 1; }
+          # P1 Etapa 5: dataset farslip_pairs (~15 GB, 30176 files) vive en GCS,
+          # se hidrata al disco SSD local (200 GB pd-ssd) antes del entrenamiento.
+          # Usamos google-cloud-storage (SDK Python) porque la imagen ml-train no
+          # incluye gcloud CLI; auth via metadata server (ml-train-runner-sa).
+          mkdir -p /app/data/farslip_pairs
+          echo "[l4_spot] descargando farslip_pairs desde GCS ..."
+          poetry run python -u -c "
+          import os
+          from concurrent.futures import ThreadPoolExecutor, as_completed
+          from google.cloud import storage
+          client = storage.Client()
+          bucket = client.bucket('agrosat-artifacts-dev')
+          prefix = 'datasets/farslip_pairs_v1/'
+          dest_root = '/app/data/farslip_pairs'
+          blobs = list(client.list_blobs(bucket, prefix=prefix))
+          print(f'[l4_spot] {len(blobs)} blobs descubiertos', flush=True)
+          def _download(b):
+              rel = b.name[len(prefix):]
+              if not rel:
+                  return None
+              out = os.path.join(dest_root, rel)
+              os.makedirs(os.path.dirname(out), exist_ok=True)
+              b.download_to_filename(out)
+              return rel
+          done = 0
+          with ThreadPoolExecutor(max_workers=32) as ex:
+              futs = [ex.submit(_download, b) for b in blobs]
+              for f in as_completed(futs):
+                  if f.result():
+                      done += 1
+                      if done % 2000 == 0:
+                          print(f'[l4_spot] descargados {done}/{len(blobs)}', flush=True)
+          print(f'[l4_spot] dataset OK: {done}/{len(blobs)} archivos', flush=True)
+          "
+          cd /app
+          # FarSLIP student CLI (ml.farslip.train) acepta --rois --epochs --batch-size
+          # --lr --seed --output-dir --gcs-output-uri. Los tags MLflow (epic, us,
+          # data_version, code_version) se registran adentro del trainer.
+          poetry run python -u -m ml.farslip.train \
+            --rois italy \
+            --epochs 4 \
+            --batch-size 64 \
+            --lr 1e-5 \
+            --seed 42 \
+            --output-dir /app/artifacts/farslip \
+            --gcs-output-uri gs://agrosat-artifacts-dev/vertex-jobs/farslip/farslip-clip-italy-v1/ \
+            --dataset-root /app/data/farslip_pairs \
+            --teacher-model-id openai/clip-vit-base-patch16 \
+            --time-cap-hours 6.5
       env:
-        # Sin default hardcoded: el caller DEBE exportar MLFLOW_TRACKING_URI
-        # apuntando al Cloud Run `agrosat-mlflow-dev` (scale-to-zero). Si la var
-        # no esta seteada el step bash anterior fallara con `unbound variable`.
+        # MLFLOW_TRACKING_URI se substituye via envsubst antes de `gcloud ai
+        # custom-jobs create` (ver Makefile target `train-l4`). Si se invoca
+        # gcloud con este YAML sin envsubst, fallara en runtime al hacer curl.
         - name: MLFLOW_TRACKING_URI
           value: "${MLFLOW_TRACKING_URI}"
         - name: HUGGINGFACE_TOKEN
@@ -59,7 +110,10 @@ workerPoolSpecs:
           value: "1"
 
 scheduling:
-  timeoutSeconds: 14400 # 4h cap (override si necesario)
+  # Vertex AI custom-jobs API rechaza timeoutSeconds; usar Duration string `timeout`.
+  # 25200s = 7h. FarSLIP student italia v1 wall clock objetivo: 5-6h L4 spot +
+  # ~30min descarga dataset 15GB + margen para preemption recovery.
+  timeout: 25200s
   # restartJobOnWorkerRestart=false + strategy=SPOT garantiza que si Vertex
   # pierde el spot, el job termina (no se cuelga reintentando). El job
   # *job-level* puede reintentarse desde el caller (gcloud ai custom-jobs).
