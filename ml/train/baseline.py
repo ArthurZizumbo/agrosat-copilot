@@ -484,10 +484,31 @@ def evaluate_with_spatial_cv(
 
         estimator = model_factory()
         if _is_xgb(estimator):
-            estimator.fit(x_train, y_train, sample_weight=_sample_weights(y_train))
+            # Spatial CV con folds chicos puede dejar clases sin representacion
+            # en train. XGBoost >=2.0 rechaza fit con
+            # "Invalid classes inferred from unique values of `y`" cuando
+            # unique(y_train) no cubre [0..num_class-1]. Re-encodificamos local
+            # al fold solo si hace falta y revertimos la prediccion al espacio
+            # global. Las clases no vistas en train no se predicen — quedan
+            # como errores legitimos en la metrica (comportamiento honesto).
+            if np.unique(y_train).size < n_classes:
+                fold_encoder = LabelEncoder().fit(y_train)
+                y_train_local = fold_encoder.transform(y_train)
+                estimator.set_params(num_class=len(fold_encoder.classes_))
+                estimator.fit(
+                    x_train, y_train_local, sample_weight=_sample_weights(y_train_local)
+                )
+                y_pred_local = estimator.predict(x_test)
+                _max_local = len(fold_encoder.classes_) - 1
+                y_pred = fold_encoder.inverse_transform(
+                    np.clip(np.asarray(y_pred_local, dtype=np.int64), 0, _max_local)
+                )
+            else:
+                estimator.fit(x_train, y_train, sample_weight=_sample_weights(y_train))
+                y_pred = estimator.predict(x_test)
         else:
             estimator.fit(x_train, y_train)
-        y_pred = estimator.predict(x_test)
+            y_pred = estimator.predict(x_test)
 
         fold_metrics = compute_baseline_metrics(y_test, y_pred, labels=list(range(n_classes)))
         per_fold.append(fold_metrics)
