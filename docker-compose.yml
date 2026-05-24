@@ -83,14 +83,25 @@ services:
     # valor de `.env.local` (`./dagster_home`) es relativo al host y Dagster
     # lo rechaza. `DAGSTER_PG_URL` usa el driver psycopg2 sincrono y el
     # hostname `postgres` de la red Docker (dagster-postgres no soporta el
-    # driver asyncpg del `DATABASE_URL` de la app).
+    # driver asyncpg del `DATABASE_URL` de la app — usarlo produce
+    # `sqlalchemy.exc.MissingGreenlet` al abrir el storage).
     environment:
       DAGSTER_HOME: /app/dagster_home
-      DAGSTER_PG_URL: postgresql://agrosat:agrosat@postgres:5432/agrosat
+      DAGSTER_PG_URL: postgresql+psycopg2://agrosat:agrosat@postgres:5432/agrosat
+      # `dagster_project` importa de `ml` (git_meta, features, farslip); el
+      # paquete se monta en /app y debe estar en el PYTHONPATH para resolverlo.
+      PYTHONPATH: /app
     depends_on:
       postgres: { condition: service_healthy }
     volumes:
       - "./dagster_project:/app/dagster_project"
+      # `ml/` se monta read-only: los assets de `dagster_project` importan
+      # `ml.utils.git_meta`, `ml.features.*`, `ml.extractors.*` a nivel modulo.
+      - "./ml:/app/ml:ro"
+      # `dagster.yaml` se monta desde el repo (read-only) para que el volumen
+      # nombrado `dagster_home` no secuestre una version stale del archivo —
+      # el config siempre refleja el del repo, no lo cacheado en el volumen.
+      - "./dagster.yaml:/app/dagster_home/dagster.yaml:ro"
       - dagster_home:/app/dagster_home
     command: dagster dev -m dagster_project.definitions -h 0.0.0.0
 

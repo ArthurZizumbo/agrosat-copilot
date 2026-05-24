@@ -66,7 +66,7 @@ def _params_code(source: str) -> nbf.NotebookNode:
 
 CELLS: list[nbf.NotebookNode] = [
     _md(
-        "# Baseline de clasificacion de cultivos — Random Forest y XGBoost\n"
+        "# Baseline de clasificación de cultivos — Random Forest y XGBoost\n"
         "\n"
         "Este notebook responde una pregunta concreta: **¿que tan lejos "
         "llega un modelo tabular sencillo para clasificar cultivos a partir "
@@ -79,7 +79,7 @@ CELLS: list[nbf.NotebookNode] = [
         "mas complejo en fases posteriores tendra que superar estas cifras "
         "para justificar su coste.\n"
         "\n"
-        "## Requisitos para ejecucion end-to-end\n"
+        "## Requisitos para ejecución end-to-end\n"
         "\n"
         "- El subset PASTIS-R a nivel parcela descomprimido en "
         "`data/test_fixtures/`.\n"
@@ -91,15 +91,15 @@ CELLS: list[nbf.NotebookNode] = [
         "\n"
         "## Contenido\n"
         "\n"
-        "| Seccion | Contenido |\n"
+        "| Sección | Contenido |\n"
         "|---------|-----------|\n"
         "| 1 | Carga del conjunto de datos |\n"
-        "| 2 | Por que Random Forest y XGBoost |\n"
-        "| 3 | Importancia de caracteristicas |\n"
-        "| 4 | Analisis SHAP |\n"
-        "| 5 | Conclusiones de ingenieria de caracteristicas |\n"
-        "| 5b | Curvas de aprendizaje y validacion |\n"
-        "| 6 | Desempeno del baseline |\n"
+        "| 2 | Por qué Random Forest y XGBoost |\n"
+        "| 3 | Importancia de características |\n"
+        "| 4 | Análisis SHAP |\n"
+        "| 5 | Conclusiones de ingeniería de características |\n"
+        "| 5b | Curvas de aprendizaje y validación |\n"
+        "| 6 | Desempeño del baseline |\n"
         "| 7 | Comparativa AlphaEarth vs Sentinel-2 crudo |\n"
         "| 8 | Conclusiones |\n"
     ),
@@ -160,7 +160,7 @@ CELLS: list[nbf.NotebookNode] = [
     ),
     # --- Seccion 2 -------------------------------------------------------
     _md(
-        "## 2. Por que Random Forest y XGBoost\n"
+        "## 2. Por qué Random Forest y XGBoost\n"
         "\n"
         "Se eligen **Random Forest** y **XGBoost** como modelos de "
         "referencia. Cuatro razones sustentan la decision:\n"
@@ -193,7 +193,7 @@ CELLS: list[nbf.NotebookNode] = [
     ),
     # --- Seccion 3 — Importancia de caracteristicas ---------------------
     _md(
-        "## 3. Importancia de caracteristicas\n"
+        "## 3. Importancia de características\n"
         "\n"
         "Random Forest y XGBoost exponen una medida de importancia de "
         "caracteristicas sin coste adicional: **Gini** para Random Forest "
@@ -265,7 +265,7 @@ CELLS: list[nbf.NotebookNode] = [
     ),
     # --- Seccion 4 — Analisis SHAP (US-020) ------------------------------
     _md(
-        "## 4. Analisis SHAP\n"
+        "## 4. Análisis SHAP\n"
         "\n"
         "La importancia de la seccion 3 ordena las caracteristicas pero no "
         "explica *como* cada una desplaza la prediccion. **SHAP** "
@@ -274,7 +274,7 @@ CELLS: list[nbf.NotebookNode] = [
         "teoricas de consistencia. Para modelos de arboles se usa el "
         "algoritmo TreeSHAP, que es exacto.\n"
         "\n"
-        "Detalles de la implementacion:\n"
+        "Detalles de la implementación:\n"
         "\n"
         "- **Submuestreo**: SHAP se calcula sobre una muestra "
         "estratificada de ~3.000 parcelas, no sobre las ~85.000 del "
@@ -373,7 +373,7 @@ CELLS: list[nbf.NotebookNode] = [
     ),
     # --- Seccion 5 — Conclusiones de feature engineering (US-020) --------
     _md(
-        "## 5. Conclusiones de ingenieria de caracteristicas\n"
+        "## 5. Conclusiones de ingeniería de características\n"
         "\n"
         "Esta seccion **valida o cuestiona** las decisiones de ingenieria "
         "de caracteristicas de la fase anterior, cruzando los rankings de "
@@ -500,7 +500,10 @@ CELLS: list[nbf.NotebookNode] = [
         "        max_samples=MAX_SAMPLES,\n"
         "    )\n"
         "    learning_results[kind] = lc_result\n"
-        "    lc_fig.suptitle(f'Curva de aprendizaje — {kind.upper()}')\n"
+        "    # El titulo lo establece plot_learning_curve via ax.set_title;\n"
+        "    # se actualiza in-place para incluir el modelo sin duplicar texto.\n"
+        "    for ax in lc_fig.axes:\n"
+        "        ax.set_title(f'Curva de aprendizaje — {kind.upper()} (accuracy)')\n"
         "    lc_fig.savefig(\n"
         "        reports_dir / f'learning_curve_{kind}.png',\n"
         "        dpi=200, bbox_inches='tight',\n"
@@ -524,7 +527,10 @@ CELLS: list[nbf.NotebookNode] = [
         "    [5, 10, 15, 20, 30, None], cv_splits_5b,\n"
         "    max_samples=MAX_SAMPLES,\n"
         ")\n"
-        "vc_rf_fig.suptitle('Curva de validacion — RF max_depth')\n"
+        "# Actualizamos el titulo del eje (set_title interno) en vez de\n"
+        "# anadir un suptitle que se encimaria.\n"
+        "for ax in vc_rf_fig.axes:\n"
+        "    ax.set_title('Curva de validación — RF max_depth (accuracy)')\n"
         "vc_rf_fig.savefig(\n"
         "    reports_dir / 'validation_curve_rf_max_depth.png',\n"
         "    dpi=200, bbox_inches='tight',\n"
@@ -538,7 +544,8 @@ CELLS: list[nbf.NotebookNode] = [
         "    [100, 200, 300, 400, 500], cv_splits_5b,\n"
         "    max_samples=MAX_SAMPLES,\n"
         ")\n"
-        "vc_xgb_ne_fig.suptitle('Curva de validacion — XGB n_estimators')\n"
+        "for ax in vc_xgb_ne_fig.axes:\n"
+        "    ax.set_title('Curva de validación — XGB n_estimators (accuracy)')\n"
         "vc_xgb_ne_fig.savefig(\n"
         "    reports_dir / 'validation_curve_xgb_n_estimators.png',\n"
         "    dpi=200, bbox_inches='tight',\n"
@@ -557,7 +564,7 @@ CELLS: list[nbf.NotebookNode] = [
     ),
     # --- Seccion 6 -------------------------------------------------------
     _md(
-        "## 6. Desempeno del baseline\n"
+        "## 6. Desempeño del baseline\n"
         "\n"
         "Se define un umbral de referencia de **F1-macro >= 0.60** sobre "
         "PASTIS-R. Se entrenan Random Forest y XGBoost con validacion "
@@ -642,7 +649,7 @@ CELLS: list[nbf.NotebookNode] = [
         "central: ¿el embedding AlphaEarth aporta valor frente a las "
         "bandas Sentinel-2 sin procesar?\n"
         "\n"
-        "| Escenario | Caracteristicas | Origen |\n"
+        "| Escenario | Características | Origen |\n"
         "|-----------|-----------------|--------|\n"
         "| **(a) AlphaEarth** | 64 dimensiones | embedding AlphaEarth "
         "Foundations |\n"
@@ -651,7 +658,7 @@ CELLS: list[nbf.NotebookNode] = [
         "| **(c) Vector combinado** | 187 caracteristicas | ingenieria "
         "de caracteristicas espectro-temporales |\n"
         "\n"
-        "Metodologia de la comparativa:\n"
+        "Metodología de la comparativa:\n"
         "\n"
         "- Los 3 escenarios se cruzan por parcela para evaluarse sobre "
         "**exactamente el mismo conjunto de parcelas**, no sobre tres "
@@ -759,7 +766,7 @@ CELLS: list[nbf.NotebookNode] = [
         "    ax.set_xticklabels(scenarios, rotation=15, ha='right', fontsize=9)\n"
         "    ax.set_ylabel('F1-macro (CV espacial out-of-fold)')\n"
         "    ax.set_ylim(0.0, 1.0)\n"
-        "    ax.set_title('Comparativa del baseline — 3 escenarios de features')\n"
+        "    ax.set_title('Comparativa del baseline — 3 escenarios de características')\n"
         "    ax.legend(title='Modelo')\n"
         "    ax.grid(axis='y', alpha=0.3)\n"
         "    fig.tight_layout()\n"

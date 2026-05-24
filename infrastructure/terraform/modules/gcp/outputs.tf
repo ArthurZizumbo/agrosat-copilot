@@ -38,6 +38,11 @@ output "gcs_artifacts_bucket" {
   value       = google_storage_bucket.artifacts.name
 }
 
+output "gcs_vertex_artifacts_bucket" {
+  description = "GCS bucket dedicado a outputs de jobs Vertex AI L4 (US-022b-A, sufijado por environment)."
+  value       = google_storage_bucket.vertex_artifacts.name
+}
+
 output "gcs_dvc_bucket" {
   description = "GCS bucket configured as DVC remote."
   value       = google_storage_bucket.dvc_remote.name
@@ -71,4 +76,20 @@ output "service_account_emails" {
 output "db_password_secret_id" {
   description = "Secret Manager secret id holding the Cloud SQL password."
   value       = google_secret_manager_secret.db_password.secret_id
+}
+
+# US-022b-A — MLflow + ml-train runner outputs
+output "mlflow_tracking_uri" {
+  description = "MLflow tracking server URI (Cloud Run v2 scale-to-zero). Pasar como MLFLOW_TRACKING_URI a los jobs Vertex AI L4."
+  value       = google_cloud_run_v2_service.mlflow.uri
+}
+
+output "mlflow_service_name" {
+  description = "MLflow Cloud Run service name."
+  value       = google_cloud_run_v2_service.mlflow.name
+}
+
+output "ml_train_runner_sa_email" {
+  description = "Service account email del runner Vertex AI L4 (US-022b-A). Referenciado por ml/configs/l4_spot.yaml."
+  value       = google_service_account.sa["ml_train_run"].email
 }

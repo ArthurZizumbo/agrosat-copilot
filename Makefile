@@ -1,4 +1,4 @@
-.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip notebooks-check i18n-check db-migrate db-rollback db-new db-status db-seed db-test-us015 features-extract-demo features-persist features-fuse-demo features-fuse-italy dagster-materialize-features feature-selection-subset feature-selection-build feature-selection-notebook feature-selection-test feature-fusion-build feature-fusion-notebook avance2-figures avance2-build mlflow-up mlflow-down train-baseline baseline-test baseline-notebook baseline-notebook-check s2-raw-parcels interpretability-test learning-curves-test train-l4 train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eda-sentinel2 eda-alphaearth eda-bivariado eda-figures-avance1 eda-figures-paper-methods eda-pastis-subset eda-notebook-avance1 paper-methods-notebook eda-pdf eda-dashboard eda-dashboard-test eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate farslip-dataset-build farslip-dataset-check farslip-train farslip-eval-pastis farslip-smoke-eval
+.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip notebooks-check i18n-check db-migrate db-rollback db-new db-status db-seed db-test-us015 features-extract-demo features-persist features-fuse-demo features-fuse-italy dagster-materialize-features feature-selection-subset feature-selection-build feature-selection-notebook feature-selection-test feature-fusion-build feature-fusion-notebook avance2-figures avance2-build mlflow-up mlflow-down train-baseline baseline-test baseline-notebook baseline-notebook-check s2-raw-parcels interpretability-test learning-curves-test ml-train-image train-l4 train-l4-smoke train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eda-sentinel2 eda-alphaearth eda-bivariado eda-figures-avance1 eda-figures-paper-methods eda-pastis-subset eda-notebook-avance1 paper-methods-notebook eda-pdf eda-dashboard eda-dashboard-test eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate farslip-dataset-build farslip-dataset-check farslip-train farslip-eval-pastis farslip-smoke-eval feature-ablation phenology-train phenology-description-test reencuadre-notebook reencuadre-notebook-check
 
 help:
 	@echo "AgroSatCopilot — comandos disponibles:"
@@ -211,12 +211,81 @@ interpretability-test:  ## US-020 — pytest del modulo ml/eval/interpretability
 learning-curves-test:  ## US-021 — pytest del modulo ml/eval/learning_curves.py
 	poetry run python -m pytest tests/ml/eval/test_learning_curves.py -q
 
+# === US-022-b — Reencuadre fenologico (C + D) ===
+feature-ablation:  ## US-022b-C — ablation de features (5 sets x N modelos) sobre el subset US-018
+	poetry run python -c "from pathlib import Path; from ml.eval.feature_ablation import run_feature_ablation, export_ablation_table; \
+results = run_feature_ablation(features_path='data/test_fixtures/feature_selection_parcels_subset.parquet', models=('xgb',), max_samples=8000, k_folds=5, buffer_km=1.0, seed=42); \
+export_ablation_table(results, Path('reports/baseline/feature_ablation'))"
+
+phenology-train:  ## US-022b-C — entrena TempCNN + InceptionTime con spatial CV (CPU smoke; en L4 cambiar device)
+	poetry run python -c "from ml.train.phenology_models import train_temporal_model; import polars as pl, json; results = {}; \
+df = pl.read_parquet('data/test_fixtures/feature_selection_parcels_subset.parquet').sample(n=4000, seed=42); \
+for k in ('tempcnn','inceptiontime'): r = train_temporal_model(df=df, model_kind=k, n_epochs=5, batch_size=128, seed=42, device='cpu', k_folds=5, buffer_km=1.0); results[k] = {'f1_macro': r.f1_macro, 'miou': r.miou, 'n_parcels': r.n_parcels, 'n_classes': r.n_classes, 'train_time_s': r.train_time_s}; \
+print(json.dumps(results, indent=2))"
+
+phenology-description-test:  ## US-022b-D — pytest del modulo phenology_description (Gemini mockeado)
+	poetry run python -m pytest tests/ml/features/test_phenology_description.py -q
+
+reencuadre-notebook:  ## US-022b-C/D — Reconstruye y ejecuta 05_reencuadre_fenologico.ipynb
+	poetry run python scripts/build_reencuadre_notebook.py \
+	  --out notebooks/feature_engineering/05_reencuadre_fenologico.ipynb
+	MPLBACKEND=Agg poetry run papermill notebooks/feature_engineering/05_reencuadre_fenologico.ipynb \
+	  notebooks/feature_engineering/05_reencuadre_fenologico.ipynb --no-progress-bar
+
+reencuadre-notebook-check:  ## US-022b — papermill smoke con parametros reducidos (~3 min CI)
+	poetry run python scripts/build_reencuadre_notebook.py \
+	  --out notebooks/feature_engineering/05_reencuadre_fenologico.ipynb
+	MPLBACKEND=Agg poetry run papermill notebooks/feature_engineering/05_reencuadre_fenologico.ipynb \
+	  /tmp/05_reencuadre_check.ipynb \
+	  -p MAX_SAMPLES 800 -p K_FOLDS 3 -p BUFFER_KM 0.5 -p TEMPORAL_EPOCHS 2 -p TEMPORAL_BATCH_SIZE 32 \
+	  -p DEVICE cpu -p RUN_SEMANTIC_BRANCH False --no-progress-bar
+
+reencuadre-notebook-full:  ## US-022b — corrida real GPU local (full dataset, 200 ep + early stopping, CUDA)
+	poetry run python scripts/build_reencuadre_notebook.py \
+	  --out notebooks/feature_engineering/05_reencuadre_fenologico.ipynb
+	poetry run papermill notebooks/feature_engineering/05_reencuadre_fenologico.ipynb \
+	  notebooks/feature_engineering/05_reencuadre_fenologico.ipynb \
+	  -p MAX_SAMPLES 0 -p K_FOLDS 5 -p BUFFER_KM 1.0 -p TEMPORAL_EPOCHS 200 -p TEMPORAL_BATCH_SIZE 256 \
+	  -p DEVICE auto -p RUN_SEMANTIC_BRANCH False --no-progress-bar
+
 # === ML / Training ===
-train-l4:  ## Spot L4 24GB (baselines, dev)
+# US-022b-A — Imagen `ml-train` (CUDA 13.0 + grupos ml/ml-gpu/ml-gpu-linux/geo).
+# Build local sin GPU (smoke A-1) — el push a Artifact Registry lo hace
+# Cloud Build (infrastructure/cloudbuild.yaml step `build-ml-train`).
+ml-train-image:  ## US-022b-A — build local de la imagen ml-train (AC-1 smoke sin push)
+	docker build \
+	  -f infrastructure/docker/ml-train.Dockerfile \
+	  --target=runtime \
+	  -t ml-train:dev \
+	  .
+	@echo "Smoke check (sin GPU): import torch + mlflow + breizhcrops"
+	docker run --rm ml-train:dev \
+	  python -c "import torch, mlflow, breizhcrops; print('OK torch', torch.__version__, 'mlflow', mlflow.__version__, 'breizhcrops', breizhcrops.__version__)"
+
+train-l4:  ## US-022b-A — Spot L4 24GB (baselines, dev). Requires: epic=Ex us=US-xxx + MLFLOW_TRACKING_URI export
+	@if [ -z "$$MLFLOW_TRACKING_URI" ]; then \
+	  echo "ERROR: export MLFLOW_TRACKING_URI=\$$(terraform -chdir=infrastructure/terraform/environments/dev output -raw mlflow_tracking_uri)"; exit 1; \
+	fi
+	@if [ -z "$(epic)" ] || [ -z "$(us)" ]; then \
+	  echo "ERROR: usage 'make train-l4 epic=E5 us=US-022b'"; exit 1; \
+	fi
 	@echo "Lanzando job en GCP L4 spot para epic=$(epic) us=$(us)"
-	gcloud ai custom-jobs create --region=$(GCP_REGION) \
+	gcloud ai custom-jobs create \
+	  --region=$${GCP_REGION:-us-central1} \
 	  --display-name=train-$(epic)-$(us) \
-	  --config=ml/configs/l4_spot.yaml
+	  --config=ml/configs/l4_spot.yaml \
+	  --args="--epic=$(epic),--us=$(us)"
+
+train-l4-smoke:  ## US-022b-A AC-5 — smoke job 1 epoca TempCNN sintetica (~10 min, <$0.20). Requires MLFLOW_TRACKING_URI
+	@if [ -z "$$MLFLOW_TRACKING_URI" ]; then \
+	  echo "ERROR: export MLFLOW_TRACKING_URI=\$$(terraform -chdir=infrastructure/terraform/environments/dev output -raw mlflow_tracking_uri)"; exit 1; \
+	fi
+	@echo "Lanzando smoke job US-022b-A en L4 spot (timeout 20 min)"
+	gcloud ai custom-jobs create \
+	  --region=$${GCP_REGION:-us-central1} \
+	  --display-name=train-E5-US-022b-smoke \
+	  --config=ml/configs/l4_smoke.yaml
+	@echo "Sigue el estado en: https://console.cloud.google.com/vertex-ai/training/custom-jobs"
 
 train-h100:  ## Azure H100 96GB ventana=Vn script=xxx.py
 	@echo "Lanzando $(script) en H100 ventana $(window)"
