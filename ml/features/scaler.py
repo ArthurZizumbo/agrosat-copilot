@@ -89,9 +89,7 @@ def fit_scaler_on_train(
     train_set = set(int(x) for x in train_ids)
     train_df = df.filter(pl.col("parcel_id").is_in(list(train_set))).select(numeric_cols)
     if train_df.height == 0:
-        raise ValueError(
-            "Tras filtrar por `train_ids` el frame está vacío. ¿IDs en otro fold?"
-        )
+        raise ValueError("Tras filtrar por `train_ids` el frame está vacío. ¿IDs en otro fold?")
 
     matrix = train_df.to_numpy()
     # Filtramos columnas all-NaN antes del fit para evitar `RuntimeWarning: Mean
@@ -109,9 +107,7 @@ def fit_scaler_on_train(
         )
         numeric_cols = [c for c, drop in zip(numeric_cols, all_nan_mask, strict=True) if not drop]
         if not numeric_cols:
-            raise ValueError(
-                "Todas las columnas numéricas eran all-NaN. ¿Frame sin GEE poblado?"
-            )
+            raise ValueError("Todas las columnas numéricas eran all-NaN. ¿Frame sin GEE poblado?")
         matrix = matrix[:, ~all_nan_mask]
     # Reemplazamos NaN remanentes por la media de la columna (StandardScaler
     # no acepta NaN). Ya garantizamos que ninguna columna es all-NaN, así
@@ -163,9 +159,7 @@ def load_scaler(path: Path | str) -> StandardScaler:
         raise FileNotFoundError(f"Scaler no encontrado en {p}.")
     obj = joblib.load(p)
     if not isinstance(obj, StandardScaler):
-        raise ValueError(
-            f"El archivo en {p} no es un StandardScaler (tipo={type(obj).__name__})."
-        )
+        raise ValueError(f"El archivo en {p} no es un StandardScaler (tipo={type(obj).__name__}).")
     return cast(StandardScaler, obj)
 
 

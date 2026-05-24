@@ -873,15 +873,12 @@ def _render_sidebar(active_section: str) -> None:
         st.markdown("**Navegación**")
         eda_active = active_section == _SECTION_EDA
         fe_active = active_section == _SECTION_FE
-        st.markdown(
-            f"**Exploración de datos**{'  ·  sección activa' if eda_active else ''}"
-        )
+        st.markdown(f"**Exploración de datos**{'  ·  sección activa' if eda_active else ''}")
         for label in _EDA_TAB_LABELS:
             prefix = "▸ " if eda_active else "- "
             st.markdown(f"{prefix}{label}")
         st.markdown(
-            f"**Ingeniería de características**"
-            f"{'  ·  sección activa' if fe_active else ''}"
+            f"**Ingeniería de características**{'  ·  sección activa' if fe_active else ''}"
         )
         for label in _FE_TAB_LABELS:
             prefix = "▸ " if fe_active else "- "

@@ -29,16 +29,14 @@ stop:  ## Detiene docker-compose
 	docker compose --env-file .env.local down
 
 # === Lint & format ===
-lint:  ## ruff + ruff format check + mypy
-	cd backend && poetry run ruff check .
-	cd backend && poetry run ruff format --check .
+lint:  ## ruff + ruff format check + mypy (mismo scope que CI: repo root)
+	poetry run ruff check .
+	poetry run ruff format --check .
 	cd backend && poetry run mypy app/
-	cd ml && poetry run ruff check .
 	cd frontend && pnpm lint
 
-format:  ## ruff format
-	cd backend && poetry run ruff format .
-	cd ml && poetry run ruff format .
+format:  ## ruff format (repo root, mismo scope que CI; notebooks excluidos en pyproject)
+	poetry run ruff format .
 
 secrets-scan:  ## gitleaks secret scanning (reemplazo del hook pre-commit)
 	gitleaks detect --no-banner --redact

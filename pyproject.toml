@@ -209,7 +209,11 @@ build-backend = "poetry.core.masonry.api"
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-extend-exclude = ["frontend/node_modules", ".venv", "data", "models"]
+# Notebooks excluidos de ruff (check + format): son entregables visuales del
+# curso con outputs poblados (regla R12 del CLAUDE.md). Su contenido es
+# generado por los `scripts/build_*_notebook.py` correspondientes — la calidad
+# del codigo se vigila en el builder, no en el .ipynb artefacto.
+extend-exclude = ["frontend/node_modules", ".venv", "data", "models", "notebooks"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "BLE", "S", "UP", "RUF"]
@@ -217,7 +221,9 @@ ignore = ["S101", "S301"]  # asserts ok en tests; pickle ok para ML
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/**" = ["S"]
-"notebooks/**" = ["E402", "F401"]
+# notebooks/** se excluye en [tool.ruff] extend-exclude (ver comentario alli):
+# son artefactos generados por los builders, la lint coverage real vive en los
+# scripts/build_*_notebook.py.
 "scripts/**" = ["S603", "S607"]
 # US-013: contenido editorial en español con tipografía rica (em/en dash, comillas tipográficas,
 # signo de multiplicación). RUF001/002/003 marcan estos caracteres como "ambiguos" en código,
@@ -253,6 +259,20 @@ ignore = ["S101", "S301"]  # asserts ok en tests; pickle ok para ML
 "scripts/generate_fusion_blocks_pastis.py" = ["B008"]
 "scripts/generate_s1_pastis_batched.py" = ["B008"]
 "scripts/generate_srtm_era5_pastis_parcels.py" = ["B008"]
+# US-022b: build_reencuadre_notebook usa f-strings concatenadas extensas
+# (E501) y CLI Typer (B008); contiene RUF001 por `×` en strings agronomicas.
+"scripts/build_reencuadre_notebook.py" = ["E501", "B008", "RUF001"]
+# Generadores de features parcel-level: CLI Typer (B008), graceful degradation
+# (BLE001) y MD5 para cache key no-cripto (S324).
+"scripts/build_parcel_features.py" = ["B008", "BLE001", "S324"]
+"scripts/generate_alphaearth_pastis_full.py" = ["B008", "BLE001"]
+# Smoke manual QA: strings largas de log + variable expuesta a inspeccion (F841).
+"tests/manual/**" = ["E501", "F841"]
+# Tests de migraciones que prueban explicitamente que ciertas excepciones
+# se elevan (BLE001 esperada en el assert pattern).
+"tests/db/**" = ["BLE001"]
+# Dagster asset docstring con `×` (multiplication sign) intencional.
+"dagster_project/assets/features.py" = ["RUF001", "RUF002"]
 
 [tool.mypy]
 python_version = "3.12"

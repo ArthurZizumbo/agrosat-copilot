@@ -223,11 +223,7 @@ def _run_cv_baseline_rf(
             float(f1_score(y_true, y_pred, labels=labels, average="macro", zero_division=0))
         )
         miou_scores.append(
-            float(
-                jaccard_score(
-                    y_true, y_pred, labels=labels, average="macro", zero_division=0
-                )
-            )
+            float(jaccard_score(y_true, y_pred, labels=labels, average="macro", zero_division=0))
         )
 
     if not f1_scores:
@@ -646,9 +642,7 @@ def discretize_features(
                     allow_duplicates=True,
                 )
                 str_to_int = {lab: i for i, lab in enumerate(labels)}
-                bins = np.array(
-                    [str_to_int.get(v, 0) for v in binned.to_list()], dtype=np.int64
-                )
+                bins = np.array([str_to_int.get(v, 0) for v in binned.to_list()], dtype=np.int64)
                 edges_used = np.quantile(values[finite_mask], quantiles_pts).tolist()
             except Exception as exc:  # noqa: BLE001
                 logger.warning("discretize_qcut_fallback_uniform", col=col, error=str(exc))
@@ -686,9 +680,7 @@ def discretize_features(
             cut_labels = [str(i) for i in range(len(edges_user) + 1)]
             binned = series.cut(breaks=edges_user, labels=cut_labels)
             str_to_int = {lab: i for i, lab in enumerate(cut_labels)}
-            bins = np.array(
-                [str_to_int.get(v, 0) for v in binned.to_list()], dtype=np.int64
-            )
+            bins = np.array([str_to_int.get(v, 0) for v in binned.to_list()], dtype=np.int64)
             edges_used = edges_user
 
         edges_report[col] = list(edges_used)
@@ -823,9 +815,7 @@ def fit_pca(
             ``X_scaled`` esta vacio.
     """
     if not 0.0 < target_variance <= 1.0:
-        raise ValueError(
-            f"target_variance debe estar en (0, 1]; recibido {target_variance}"
-        )
+        raise ValueError(f"target_variance debe estar en (0, 1]; recibido {target_variance}")
     if X_scaled.size == 0 or X_scaled.shape[1] == 0:
         raise ValueError("X_scaled vacio; no se puede ajustar PCA.")
 
@@ -891,7 +881,7 @@ def fit_factor_analysis(
     # Aproximacion de varianza explicada por factor: suma de cuadrados de los
     # loadings (no normalizada, sirve solo para test "positive").
     loadings = fa.components_.T  # shape (n_features, n_factors)
-    explained_approx = (loadings ** 2).sum(axis=0)
+    explained_approx = (loadings**2).sum(axis=0)
 
     logger.info(
         "factor_analysis_fitted",
@@ -1195,9 +1185,10 @@ def select_normalizer(
     if any(feature_name.startswith(prefix) for prefix in _LOG1P_FEATURE_PREFIXES):
         return ("log1p", f"feature {feature_name!r} es positiva y sesgada (LAI/biomasa)")
 
-    if any(
-        feature_name.startswith(prefix) for prefix in _YEO_JOHNSON_FEATURE_PREFIXES
-    ) and abs(skew) > _SKEW_YEO_THRESHOLD:
+    if (
+        any(feature_name.startswith(prefix) for prefix in _YEO_JOHNSON_FEATURE_PREFIXES)
+        and abs(skew) > _SKEW_YEO_THRESHOLD
+    ):
         return (
             "yeo-johnson",
             f"feature {feature_name!r} es indice espectral con skew={skew:.2f}; "

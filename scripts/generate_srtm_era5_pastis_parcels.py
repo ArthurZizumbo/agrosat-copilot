@@ -103,9 +103,7 @@ def main(
         "--batch-size",
         help="Parcelas por batch (límite GEE payload 10MB, ~3000 max para polígonos pequeños)",
     ),
-    limit: int = typer.Option(
-        0, "--limit", help="Si > 0, procesa solo las primeras N parcelas"
-    ),
+    limit: int = typer.Option(0, "--limit", help="Si > 0, procesa solo las primeras N parcelas"),
 ) -> None:
     """Re-muestrea SRTM y ERA5 sobre polígonos reales de parcelas PASTIS."""
     if not parcels.exists():

@@ -124,10 +124,7 @@ def _parameters_cell() -> dict[str, Any]:
     ``figures_dir`` para que pueda apuntarse a un directorio alternativo si se
     ejecuta en otra maquina.
     """
-    src = (
-        "# Parametros configurables del notebook integrador:\n"
-        'figures_dir = "paper/figures"\n'
-    )
+    src = '# Parametros configurables del notebook integrador:\nfigures_dir = "paper/figures"\n'
     return _code_cell(src, tags=["parameters"])
 
 
@@ -315,9 +312,7 @@ def _conclusions_cells(card: NotebookCard) -> list[dict[str, Any]]:
         return []
 
     cells: list[dict[str, Any]] = [
-        _md_cell(
-            f"### Conclusiones e interpretacion ({len(card.conclusions)} hallazgos)\n"
-        )
+        _md_cell(f"### Conclusiones e interpretacion ({len(card.conclusions)} hallazgos)\n")
     ]
     for heading, body in card.conclusions:
         cells.append(_md_cell(f"**{heading}**\n\n{body}\n"))
@@ -413,9 +408,7 @@ def build(
     n_md = sum(1 for c in nb["cells"] if c["cell_type"] == "markdown")
     n_code = sum(1 for c in nb["cells"] if c["cell_type"] == "code")
     typer.echo(f"OK notebook generado: {out_path}")
-    typer.echo(
-        f"   {n_cells} celdas ({n_md} markdown + {n_code} code) - {size_kb:.1f} KB"
-    )
+    typer.echo(f"   {n_cells} celdas ({n_md} markdown + {n_code} code) - {size_kb:.1f} KB")
 
 
 if __name__ == "__main__":  # pragma: no cover

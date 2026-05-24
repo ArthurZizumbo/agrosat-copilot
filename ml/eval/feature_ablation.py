@@ -129,9 +129,7 @@ def build_default_feature_sets(
     full = tuple(cols)
     no_geom = tuple(c for c in cols if not c.startswith("geom_"))
     no_geom_no_era5_srtm = tuple(
-        c
-        for c in no_geom
-        if not c.startswith("era5_") and not c.startswith("srtm_")
+        c for c in no_geom if not c.startswith("era5_") and not c.startswith("srtm_")
     )
     ae_cols = tuple(
         c

@@ -60,9 +60,7 @@ __all__ = [
 ]
 
 ModelKind = Literal["rf", "xgb"]
-FeatureFamily = Literal[
-    "alphaearth", "spectral_index", "s1", "srtm", "era5", "geom", "other"
-]
+FeatureFamily = Literal["alphaearth", "spectral_index", "s1", "srtm", "era5", "geom", "other"]
 
 # Resolucion de figuras de los entregables visuales del Avance 3 (criterio AC-7).
 _PLOT_DPI: int = 200
@@ -75,8 +73,23 @@ _ALPHAEARTH_DIM_RE = re.compile(r"^dim_\d{2}$")
 # armonicos FFT (NDVI_fft_amp_0, ...). Sirven para clasificar la familia
 # `spectral_index` por convencion de nombres en `_classify_family`.
 _SPECTRAL_PREFIXES: tuple[str, ...] = (
-    "NDVI", "NDWI", "EVI", "NDMI", "NBR", "MSAVI2", "NDRE", "MCARI",
-    "CCCI", "GCVI", "PSRI", "NDCI", "FAPAR", "LAI", "RENDVI", "SAVI", "TSAVI",
+    "NDVI",
+    "NDWI",
+    "EVI",
+    "NDMI",
+    "NBR",
+    "MSAVI2",
+    "NDRE",
+    "MCARI",
+    "CCCI",
+    "GCVI",
+    "PSRI",
+    "NDCI",
+    "FAPAR",
+    "LAI",
+    "RENDVI",
+    "SAVI",
+    "TSAVI",
 )
 
 
@@ -145,24 +158,16 @@ def _to_numpy_sample(
     """
     missing = [c for c in feature_cols if c not in X.columns]
     if missing:
-        raise ValueError(
-            f"`X` no contiene las columnas de feature requeridas: {missing}."
-        )
+        raise ValueError(f"`X` no contiene las columnas de feature requeridas: {missing}.")
 
     n_rows = X.height
     if sample_size is None or sample_size >= n_rows:
         row_index = np.arange(n_rows, dtype=np.int64)
     else:
         rng = np.random.default_rng(random_state)
-        row_index = np.sort(
-            rng.choice(n_rows, size=sample_size, replace=False)
-        ).astype(np.int64)
+        row_index = np.sort(rng.choice(n_rows, size=sample_size, replace=False)).astype(np.int64)
 
-    matrix = (
-        X.select(feature_cols)
-        .to_numpy()
-        .astype(np.float64)
-    )
+    matrix = X.select(feature_cols).to_numpy().astype(np.float64)
     # Imputa NaN/inf con la media de columna: TreeExplainer no acepta NaN para
     # algunos modelos y los +/-inf de ratios espectrales rompen el algoritmo.
     matrix = _impute_columns(matrix)
@@ -182,9 +187,7 @@ def _impute_columns(matrix: np.ndarray) -> np.ndarray:
     """
     clean = np.array(matrix, dtype=np.float64, copy=True)
     clean[~np.isfinite(clean)] = np.nan
-    col_means = np.nanmean(
-        np.where(np.isnan(clean), np.nan, clean), axis=0
-    )
+    col_means = np.nanmean(np.where(np.isnan(clean), np.nan, clean), axis=0)
     col_means = np.where(np.isfinite(col_means), col_means, 0.0)
     nan_mask = np.isnan(clean)
     if nan_mask.any():
@@ -248,14 +251,10 @@ def _normalize_shap_multiclass(
             array = np.transpose(array, (1, 2, 0))
         return _validate_shape(array, n_samples, n_features)
 
-    raise ValueError(
-        f"Forma de SHAP no reconocida: ndim={array.ndim}, shape={array.shape}."
-    )
+    raise ValueError(f"Forma de SHAP no reconocida: ndim={array.ndim}, shape={array.shape}.")
 
 
-def _validate_shape(
-    array: np.ndarray, n_samples: int, n_features: int
-) -> np.ndarray:
+def _validate_shape(array: np.ndarray, n_samples: int, n_features: int) -> np.ndarray:
     """Valida que un tensor SHAP 3D tenga los ejes ``(n_samples, n_features, *)``.
 
     Args:
@@ -277,9 +276,7 @@ def _validate_shape(
     return array
 
 
-def _global_importance_table(
-    values: np.ndarray, feature_cols: tuple[str, ...]
-) -> pl.DataFrame:
+def _global_importance_table(values: np.ndarray, feature_cols: tuple[str, ...]) -> pl.DataFrame:
     """Construye la tabla de importancia global SHAP.
 
     La importancia global de cada feature es la media de ``|SHAP|`` sobre todas
@@ -340,9 +337,7 @@ def _classify_family(feature_name: str) -> FeatureFamily:
         return "spectral_index"
     # Fenologia derivada de NDVI (sog_doy, peak_doy, ndvi_auc, ...): se trata
     # como indice espectral porque deriva de las series de indices.
-    if feature_name.lower().startswith(
-        ("sog_", "peak_", "senescence_", "ndvi_", "maturity_")
-    ):
+    if feature_name.lower().startswith(("sog_", "peak_", "senescence_", "ndvi_", "maturity_")):
         return "spectral_index"
     return "other"
 
@@ -383,15 +378,11 @@ def feature_importance_table(
             numero de features del modelo no coincide con ``len(feature_cols)``.
     """
     if model_kind not in ("rf", "xgb"):
-        raise ValueError(
-            f"`model_kind` debe ser 'rf' o 'xgb'; recibido {model_kind!r}."
-        )
+        raise ValueError(f"`model_kind` debe ser 'rf' o 'xgb'; recibido {model_kind!r}.")
 
     n_features = len(feature_cols)
     if model_kind == "rf":
-        importances = np.asarray(
-            model.feature_importances_, dtype=np.float64
-        )
+        importances = np.asarray(model.feature_importances_, dtype=np.float64)
         if importances.shape[0] != n_features:
             raise ValueError(
                 f"El modelo RF tiene {importances.shape[0]} features pero "
@@ -418,9 +409,7 @@ def feature_importance_table(
     return df
 
 
-def _xgb_gain_importances(
-    model: ClassifierMixin, feature_cols: tuple[str, ...]
-) -> np.ndarray:
+def _xgb_gain_importances(model: ClassifierMixin, feature_cols: tuple[str, ...]) -> np.ndarray:
     """Extrae la importancia *gain* de un ``XGBClassifier`` alineada al orden dado.
 
     El booster XGBoost indexa las features como ``f0``, ``f1``, ... cuando se
@@ -495,9 +484,7 @@ def compute_shap_values(
     import shap
 
     if model_kind not in ("rf", "xgb"):
-        raise ValueError(
-            f"`model_kind` debe ser 'rf' o 'xgb'; recibido {model_kind!r}."
-        )
+        raise ValueError(f"`model_kind` debe ser 'rf' o 'xgb'; recibido {model_kind!r}.")
 
     matrix, row_index = _to_numpy_sample(
         X, feature_cols, sample_size=sample_size, random_state=random_state
@@ -506,9 +493,7 @@ def compute_shap_values(
 
     explainer = shap.TreeExplainer(model)
     raw = explainer.shap_values(matrix, check_additivity=False)
-    values = _normalize_shap_multiclass(
-        raw, n_samples=n_samples, n_features=n_features
-    )
+    values = _normalize_shap_multiclass(raw, n_samples=n_samples, n_features=n_features)
 
     expected = np.atleast_1d(
         np.asarray(getattr(explainer, "expected_value", 0.0), dtype=np.float64)
@@ -561,9 +546,7 @@ def shap_summary_plot(
     import shap
 
     feature_cols = shap_result.feature_cols
-    matrix, _ = _to_numpy_sample(
-        X, feature_cols, sample_size=shap_result.values.shape[0]
-    )
+    matrix, _ = _to_numpy_sample(X, feature_cols, sample_size=shap_result.values.shape[0])
     # Importancia agregada sobre clases -> array 2D (n_samples, n_features).
     aggregated = np.abs(shap_result.values).mean(axis=2)
 
@@ -579,9 +562,7 @@ def shap_summary_plot(
     fig = plt.gcf()
     fig.set_dpi(_PLOT_DPI)
     ax = fig.gca()
-    ax.set_title(
-        f"SHAP — importancia global top-{top_n} ({shap_result.model_kind.upper()})"
-    )
+    ax.set_title(f"SHAP — importancia global top-{top_n} ({shap_result.model_kind.upper()})")
     fig.tight_layout()
     return fig
 
@@ -613,18 +594,10 @@ def shap_dependence_plots(
     import matplotlib.pyplot as plt
 
     feature_cols = shap_result.feature_cols
-    matrix, _ = _to_numpy_sample(
-        X, feature_cols, sample_size=shap_result.values.shape[0]
-    )
-    top = (
-        shap_result.global_importance.sort("rank")
-        .head(top_features)["feature"]
-        .to_list()
-    )
+    matrix, _ = _to_numpy_sample(X, feature_cols, sample_size=shap_result.values.shape[0])
+    top = shap_result.global_importance.sort("rank").head(top_features)["feature"].to_list()
     # Clase de referencia: la que concentra mas senal SHAP global.
-    class_idx = int(
-        np.abs(shap_result.values).mean(axis=(0, 1)).argmax()
-    )
+    class_idx = int(np.abs(shap_result.values).mean(axis=(0, 1)).argmax())
     class_values = shap_result.values[:, :, class_idx]
 
     plots: list[tuple[str, Figure]] = []
@@ -692,26 +665,19 @@ def shap_waterfall_plot(
     n_samples, _n_features, n_classes = shap_result.values.shape
     if not 0 <= row < n_samples:
         raise IndexError(
-            f"`row`={row} fuera de rango; el subsample SHAP tiene "
-            f"{n_samples} muestras."
+            f"`row`={row} fuera de rango; el subsample SHAP tiene {n_samples} muestras."
         )
 
     if class_idx is None:
-        resolved_class = int(
-            np.abs(shap_result.values[row]).sum(axis=0).argmax()
-        )
+        resolved_class = int(np.abs(shap_result.values[row]).sum(axis=0).argmax())
     else:
         if not 0 <= class_idx < n_classes:
-            raise ValueError(
-                f"`class_idx`={class_idx} fuera de rango; hay {n_classes} clases."
-            )
+            raise ValueError(f"`class_idx`={class_idx} fuera de rango; hay {n_classes} clases.")
         resolved_class = class_idx
 
     row_values = shap_result.values[row, :, resolved_class]
     base = shap_result.base_values
-    base_value = float(
-        base[resolved_class] if base.size > resolved_class else base.flat[0]
-    )
+    base_value = float(base[resolved_class] if base.size > resolved_class else base.flat[0])
 
     explanation = shap.Explanation(
         values=row_values,
@@ -723,8 +689,7 @@ def shap_waterfall_plot(
     fig = plt.gcf()
     fig.set_dpi(_PLOT_DPI)
     fig.suptitle(
-        f"SHAP waterfall — fila {row}, clase {resolved_class} "
-        f"({shap_result.model_kind.upper()})"
+        f"SHAP waterfall — fila {row}, clase {resolved_class} ({shap_result.model_kind.upper()})"
     )
     fig.tight_layout()
     return fig
