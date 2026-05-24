@@ -1,8 +1,16 @@
+# CI — solo validacion (lint, format, type check, tests, migrations, terraform validate).
+# NO hay deploy aqui. Si en el futuro se agrega deployment real (docker build + push,
+# Cloud Run deploy, etc.), debe ir en `deploy.yml` separado con trigger
+# `on: push: branches: [main]` para que solo corra POST-merge a main.
+
 name: CI
 
 on:
   push:
-    branches: [main, develop, "feature/**"]
+    # Solo main/develop: las ramas personales (user/<n>/*, us-XXX) NO disparan
+    # push CI — la cobertura entra al abrir el PR. Esto evita correr CI por
+    # cada commit intermedio mientras se itera local.
+    branches: [main, develop]
   pull_request:
     branches: [main, develop]
 
@@ -22,18 +30,52 @@ env:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Python lint + unit tests (multi-OS)
+  # Detecta que areas se tocaron en el push/PR para skipear jobs irrelevantes.
+  # En `push` (post-merge a main/develop) IGNORAMOS el filtro y corremos todo
+  # como red de seguridad. En `pull_request` solo corremos lo relevante.
+  # ---------------------------------------------------------------------------
+  changes:
+    name: detect-changes
+    runs-on: ubuntu-latest
+    outputs:
+      python: ${{ steps.filter.outputs.python }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      db: ${{ steps.filter.outputs.db }}
+      terraform: ${{ steps.filter.outputs.terraform }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            python:
+              - '**/*.py'
+              - 'pyproject.toml'
+              - 'poetry.lock'
+              - 'ml/**'
+              - 'backend/**'
+              - 'tests/**'
+              - 'scripts/**'
+              - 'dagster_project/**'
+              - '.github/workflows/**'
+            frontend:
+              - 'frontend/**'
+              - '.github/workflows/**'
+            db:
+              - 'db/**'
+              - '.github/workflows/**'
+            terraform:
+              - 'infrastructure/terraform/**'
+              - '.github/workflows/**'
+
+  # ---------------------------------------------------------------------------
+  # Python lint + unit tests
   # ---------------------------------------------------------------------------
   python:
-    name: python-${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        # macos-latest excluido: los runners macOS NO traen Docker preinstalado
-        # y fallan en `Set up job` al levantar el service container postgres.
-        # macOS no es target server-side del proyecto (Cloud Run = Linux).
-        os: [ubuntu-latest]
+    name: python
+    needs: changes
+    if: needs.changes.outputs.python == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
     services:
       postgres:
         # PostGIS 3.4 oficial. pgvector se instala via apt en el primer step
@@ -93,7 +135,6 @@ jobs:
         run: poetry run ruff format --check .
 
       - name: Type check (mypy)
-        if: matrix.os == 'ubuntu-latest'
         # `working-directory: backend` evita el error "Source file found twice
         # under different module names" — sin esto, mypy desde repo root ve
         # `backend/app/api/health.py` como `app.api.health` Y `backend.app...`.
@@ -110,6 +151,8 @@ jobs:
   # ---------------------------------------------------------------------------
   frontend:
     name: frontend
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true' || github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -139,6 +182,8 @@ jobs:
   # ---------------------------------------------------------------------------
   db:
     name: db-migrations
+    needs: changes
+    if: needs.changes.outputs.db == 'true' || github.event_name == 'push'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -186,6 +231,8 @@ jobs:
   # ---------------------------------------------------------------------------
   terraform:
     name: terraform-validate
+    needs: changes
+    if: needs.changes.outputs.terraform == 'true' || github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
