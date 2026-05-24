@@ -304,3 +304,16 @@ Tabla académica completa con DOIs por índice en [`docs/spectral_indices.md`](.
 - License de la metodologia: open access (Elsevier hybrid). El metodo
   (prompt 3-bloques, text-encoder contrastivo) se implementa de cero
   en `ml/features/phenology_description.py` siguiendo Fig. 2 y Fig. 3a.
+
+## US-022-c — Paper-faro FarSLIP (referencia academica, no codigo)
+
+### Li et al. (2025) — "FarSLIP: Few-shot Adaptation of CLIP for Remote Sensing"
+- Source: arXiv:2511.14901 (nov-2025, preprint).
+- License de la metodologia: open access (arXiv). El metodo (PatchDistillationLoss
+  parche-a-parche §3.2 + RegionCategoryAlignmentLoss InfoNCE CLS §3.3 + student init
+  desde teacher con NIR=mean(RGB) anti-dead-neuron §3.1) se reimplementa en
+  `ml/farslip/distill.py` con fidelidad 1:1 documentada en `docs/decisions/ADR-007-farslip-fidelity-paper.md`.
+- Attribution required: "FarSLIP method adapted from Li et al. (2025), arXiv:2511.14901"
+  en figuras y reportes derivados.
+- Use scope US-022-c P1: ejecucion del training student en L4 GCP spot sobre 3 ROIs
+  italianas (Pianura Padana, Toscana, Puglia) + eval cross-region en PASTIS-R Francia.
