@@ -17,7 +17,7 @@ env:
   POETRY_VERSION: "1.8.4"
   PYTHON_VERSION: "3.12"
   NODE_VERSION: "20"
-  PNPM_VERSION: "9"
+  PNPM_VERSION: "10"          # frontend/package.json#engines exige pnpm >=10
   TERRAFORM_VERSION: "1.9.8"
 
 jobs:
@@ -30,10 +30,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        # macos-latest excluido: los runners macOS NO traen Docker preinstalado
+        # y fallan en `Set up job` al levantar el service container postgres.
+        # macOS no es target server-side del proyecto (Cloud Run = Linux).
+        os: [ubuntu-latest]
     services:
       postgres:
-        image: postgis/postgis:15-3.4
+        # Imagen con PostGIS 3.4 + pgvector 0.8. `postgis/postgis:15-3.4` solo
+        # trae PostGIS y las migraciones (embeddings/spatial-RAG) fallan al
+        # hacer `CREATE EXTENSION vector`. Mismo stack que el local Dockerfile
+        # `infrastructure/docker/postgres.Dockerfile`. TODO US-022c P4:
+        # publicar la imagen propia a GHCR y referenciar aqui.
+        image: imresamu/postgis-pgvector:15-3.4-0.8.0
         env:
           POSTGRES_USER: agrosat
           POSTGRES_PASSWORD: agrosat
@@ -64,7 +72,7 @@ jobs:
             .venv
           key: poetry-${{ runner.os }}-${{ hashFiles('poetry.lock', 'pyproject.toml') }}
 
-      - name: Install deps (dev,test only — ml/geo excluded on macOS for speed)
+      - name: Install deps (dev,test only — ml/geo excluded for speed)
         run: |
           poetry config virtualenvs.in-project true
           poetry install --with dev,test --no-root --no-interaction
@@ -121,7 +129,12 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgis/postgis:15-3.4
+        # Imagen con PostGIS 3.4 + pgvector 0.8. `postgis/postgis:15-3.4` solo
+        # trae PostGIS y las migraciones (embeddings/spatial-RAG) fallan al
+        # hacer `CREATE EXTENSION vector`. Mismo stack que el local Dockerfile
+        # `infrastructure/docker/postgres.Dockerfile`. TODO US-022c P4:
+        # publicar la imagen propia a GHCR y referenciar aqui.
+        image: imresamu/postgis-pgvector:15-3.4-0.8.0
         env:
           POSTGRES_USER: agrosat
           POSTGRES_PASSWORD: agrosat
