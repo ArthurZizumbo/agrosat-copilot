@@ -94,7 +94,11 @@ jobs:
 
       - name: Type check (mypy)
         if: matrix.os == 'ubuntu-latest'
-        run: poetry run mypy backend/app/ || echo "mypy not blocking until US-009"
+        # `working-directory: backend` evita el error "Source file found twice
+        # under different module names" — sin esto, mypy desde repo root ve
+        # `backend/app/api/health.py` como `app.api.health` Y `backend.app...`.
+        working-directory: backend
+        run: poetry run mypy app/ || echo "mypy not blocking until US-009"
 
       - name: Unit tests (pytest)
         env:

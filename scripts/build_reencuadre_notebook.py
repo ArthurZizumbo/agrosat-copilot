@@ -144,7 +144,7 @@ CELLS: list[nbf.NotebookNode] = [
         "import datetime as _dt\n"
         "_T0_NB = _dt.datetime.now()\n"
         "def log(msg: str, *, level: str = 'info') -> None:\n"
-        "    \"\"\"Imprime un log con timestamp HH:MM:SS y delta desde el inicio.\"\"\"\n"
+        '    """Imprime un log con timestamp HH:MM:SS y delta desde el inicio."""\n'
         "    now = _dt.datetime.now()\n"
         "    delta_s = (now - _T0_NB).total_seconds()\n"
         "    badge = {'info': '[i]', 'ok': '[+]', 'warn': '[!]', 'step': '[#]'}.get(level, '[i]')\n"
@@ -935,7 +935,7 @@ def build_notebook(out_path: Path) -> None:
 
 @app.command()
 def main(
-    out: Path = typer.Option(  # noqa: B008
+    out: Path = typer.Option(
         Path("notebooks/feature_engineering/05_reencuadre_fenologico.ipynb"),
         help="Ruta destino del notebook .ipynb.",
     ),

@@ -150,7 +150,7 @@ CELLS: list[nbf.NotebookNode] = [
         "    )\n"
         "\n"
         "display(Markdown(\n"
-        "    f'**Modo de carga**: `{MODE}` ({SUBSET_GRANULARITY if MODE == \"real\" else \"sintetico\"})  \\n'\n"
+        '    f\'**Modo de carga**: `{MODE}` ({SUBSET_GRANULARITY if MODE == "real" else "sintetico"})  \\n\'\n'
         "    f'**Forma**: `{X.shape[0]}` muestras x `{X.shape[1]}` columnas | '\n"
         "    f'**Clases**: `{len(set(y.to_list()))}` | **Folds espaciales**: `{sorted(set(folds.tolist()))}`'\n"
         "))\n"
@@ -189,7 +189,7 @@ CELLS: list[nbf.NotebookNode] = [
         "META_COLS = {'parcel_id', 'year', 'fold', 'class_id'}\n"
         "\n"
         "def classify_feature(col_name: str) -> tuple[str, str]:\n"
-        "    \"\"\"Devuelve (familia_idx, kind) para una columna.\"\"\"\n"
+        '    """Devuelve (familia_idx, kind) para una columna."""\n'
         "    if col_name in META_COLS:\n"
         "        return ('_meta', 'meta')\n"
         "    if col_name in PHENOLOGY_COLS:\n"
@@ -315,12 +315,12 @@ CELLS: list[nbf.NotebookNode] = [
         "# NIR/Green pequeños, fenología sobre series cortas). El clipping a percentiles 1 y 99\n"
         "# mantiene el rango natural de cada feature sin distorsionarla.\n"
         "def _winsorize_clip(df_in: pl.DataFrame, q_lo: float = 0.01, q_hi: float = 0.99) -> pl.DataFrame:\n"
-        "    \"\"\"Winsorize: clipa cada feature al [percentil q_lo, percentil q_hi].\n"
+        '    """Winsorize: clipa cada feature al [percentil q_lo, percentil q_hi].\n'
         "\n"
         "    Pre-step: reemplaza inf/-inf por NaN. Post-step: cualquier NaN restante (parcelas\n"
         "    enteramente missing en esa feature) se imputa con la mediana de la columna en\n"
         "    lugar de 0.0 — la mediana es la mejor estimación univariada en ausencia de modelo.\n"
-        "    \"\"\"\n"
+        '    """\n'
         "    feat_cols_clean = [c for c in df_in.columns if c not in ('parcel_id', 'year', 'fold', 'class_id', 'patch_id', 'instance_id', 'n_pixels', 'area_m2')]\n"
         "    out = df_in.clone()\n"
         "    for c in feat_cols_clean:\n"
@@ -902,7 +902,7 @@ CELLS: list[nbf.NotebookNode] = [
         "lines.append('### Tres hallazgos no triviales\\n')\n"
         "if rf_lead:\n"
         "    lines.append(\n"
-        "        f'1. **`{rf_lead[\"family\"]}` lidera la importancia agregada en RF** con `{rf_lead[\"sum_importance\"]:.4f}` puntos. '\n"
+        '        f\'1. **`{rf_lead["family"]}` lidera la importancia agregada en RF** con `{rf_lead["sum_importance"]:.4f}` puntos. \'\n'
         "        f'La importancia agregada por familia da una lectura más rápida del peso agronómico real '\n"
         "        f'que mirar feature por feature.'\n"
         "    )\n"
@@ -910,7 +910,7 @@ CELLS: list[nbf.NotebookNode] = [
         "    lines.append(\n"
         "        f'2. **Colapso vegetativo masivo**: las familias `{fam_lost}` pierden el **100% de sus columnas** '\n"
         "        f'tras los filtros (redundancia interna o varianza casi nula). En contraste, '\n"
-        "        f'**{fam_best.get(\"family\", \"?\")} retiene {fam_best.get(\"kept_pct\", 0)}%** de sus columnas, lo que justifica '\n"
+        '        f\'**{fam_best.get("family", "?")} retiene {fam_best.get("kept_pct", 0)}%** de sus columnas, lo que justifica \'\n'
         "        f'su dominancia en la importancia supervisada.'\n"
         "    )\n"
         "if pc1_top:\n"
@@ -938,7 +938,7 @@ CELLS: list[nbf.NotebookNode] = [
         "    )\n"
         "lines.append(\n"
         "    f'- La comparativa antes/después (sección 9): raw `{raw_row[\"f1_macro_mean\"]:.4f}` → '\n"
-        "    f'filtrado `{filt_row[\"f1_macro_mean\"]:.4f}` → PCA `{pca_row[\"f1_macro_mean\"]:.4f}` en F1-macro. '\n"
+        '    f\'filtrado `{filt_row["f1_macro_mean"]:.4f}` → PCA `{pca_row["f1_macro_mean"]:.4f}` en F1-macro. \'\n'
         "    f'El filtrado **gana `{f1_gain_filter:+.4f}` puntos** sobre la matriz cruda, y PCA agrega '\n"
         "    f'`{f1_gain_pca:+.4f}` puntos adicionales sobre el filtrado. '\n"
         "    f'RF con 80 árboles sin tuning Optuna; el baseline final downstream con tuning espera F1-macro ≥ 0.60.'\n"

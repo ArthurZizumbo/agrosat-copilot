@@ -110,9 +110,7 @@ AE_COLS: Final[tuple[str, ...]] = tuple(f"ae_{i:02d}" for i in range(64))
 _DEFAULT_FARSLIP_PATH: Final[Path] = Path("data/farslip/embeddings_italy.parquet")
 
 #: Default path para el bloque pheno_text materializado (US-022b-D).
-_DEFAULT_PHENO_TEXT_PATH: Final[Path] = Path(
-    "data/features/phenology_text_italy.parquet"
-)
+_DEFAULT_PHENO_TEXT_PATH: Final[Path] = Path("data/features/phenology_text_italy.parquet")
 
 
 __all__ = [
@@ -210,12 +208,9 @@ def build_fused_features(
     selected_blocks = tuple(b for b in blocks if b in BLOCK_NAMES)
     block_frames: list[pl.LazyFrame] = []
 
-    base = (
-        pl.from_pandas(
-            parcels[["parcel_id", "year"]].astype({"parcel_id": "int64", "year": "int16"})
-        )
-        .lazy()
-    )
+    base = pl.from_pandas(
+        parcels[["parcel_id", "year"]].astype({"parcel_id": "int64", "year": "int16"})
+    ).lazy()
 
     if "alphaearth" in selected_blocks:
         block_frames.append(_build_ae_block(parcels, year=year, injected=ae_frame))
@@ -224,9 +219,7 @@ def build_fused_features(
             _build_indices_stats_block(parcels, year=year, stats=stats, injected=indices_frame)
         )
     if "sentinel1" in selected_blocks:
-        block_frames.append(
-            _build_s1_block(parcels, year=year, stats=stats, injected=s1_frame)
-        )
+        block_frames.append(_build_s1_block(parcels, year=year, stats=stats, injected=s1_frame))
     if "srtm" in selected_blocks:
         block_frames.append(_build_srtm_block(parcels, injected=srtm_frame))
     if "era5_monthly" in selected_blocks:
@@ -292,9 +285,7 @@ def _validate_stats(stats: tuple[str, ...]) -> None:
     supported = {"mean", "std", "p25", "p50", "p75", "p95", "min", "max"}
     invalid = [s for s in stats if s not in supported]
     if invalid:
-        raise ValueError(
-            f"Stats no soportadas: {invalid}. Disponibles: {sorted(supported)}."
-        )
+        raise ValueError(f"Stats no soportadas: {invalid}. Disponibles: {sorted(supported)}.")
 
 
 # ---------------------------------------------------------------------------
@@ -366,9 +357,7 @@ def _build_indices_stats_block(
     NDVI_std, ... NDVI_p95, NDWI_mean, ...). Cuando ``injected`` es ``None``
     el helper rellena con ``None`` preservando el contrato exacto.
     """
-    expected_cols = tuple(
-        f"{idx.lower()}_{stat}" for idx in INDEX_NAMES for stat in stats
-    )
+    expected_cols = tuple(f"{idx.lower()}_{stat}" for idx in INDEX_NAMES for stat in stats)
     if injected is not None:
         df = injected
     else:
@@ -415,9 +404,7 @@ def _build_s1_block(
     injected: pl.DataFrame | None,
 ) -> pl.LazyFrame:
     """Bloque Sentinel-1 VV+VH x stats = 10 cols."""
-    expected_cols = tuple(
-        f"s1_{pol}_{stat}" for pol in _S1_POLARIZATIONS for stat in stats
-    )
+    expected_cols = tuple(f"s1_{pol}_{stat}" for pol in _S1_POLARIZATIONS for stat in stats)
     if injected is not None:
         df = injected
     else:
@@ -587,9 +574,7 @@ def _build_farslip_block(
             f"Faltan {len(missing)} cols (ej. {missing[:3]}...)."
         )
     if "parcel_id" not in df.columns:
-        raise ValueError(
-            f"FarSLIP parquet en {resolved} no contiene `parcel_id` para el join."
-        )
+        raise ValueError(f"FarSLIP parquet en {resolved} no contiene `parcel_id` para el join.")
 
     # Si el frame FarSLIP no trae `year`, inferimos el año desde parcels.
     if "year" not in df.columns:
@@ -652,9 +637,7 @@ def _build_phenology_text_block_lf(
         raise ValueError("Bloque pheno_text no contiene `parcel_id` para el join.")
     pheno_cols = tuple(c for c in df.columns if c.startswith("pheno_text_"))
     if not pheno_cols:
-        raise ValueError(
-            "Bloque pheno_text no contiene columnas con prefijo `pheno_text_`."
-        )
+        raise ValueError("Bloque pheno_text no contiene columnas con prefijo `pheno_text_`.")
     if "year" not in df.columns:
         year_val = int(parcels["year"].iloc[0]) if len(parcels) else 0
         df = df.with_columns(pl.lit(year_val, dtype=pl.Int16).alias("year"))

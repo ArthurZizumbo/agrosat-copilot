@@ -69,9 +69,7 @@ def compute_baseline_metrics(
         raise ValueError("`y_true` e `y_pred` no pueden estar vacios.")
 
     if labels is None:
-        resolved_labels: list[int] = sorted(
-            int(c) for c in np.union1d(y_true, y_pred)
-        )
+        resolved_labels: list[int] = sorted(int(c) for c in np.union1d(y_true, y_pred))
     else:
         resolved_labels = [int(c) for c in labels]
 
@@ -157,9 +155,7 @@ def confusion_matrix_figure(
         row_sums[row_sums == 0.0] = 1.0
         display_matrix = display_matrix / row_sums
 
-    tick_labels = [
-        (class_names.get(c, str(c)) if class_names else str(c)) for c in labels
-    ]
+    tick_labels = [(class_names.get(c, str(c)) if class_names else str(c)) for c in labels]
 
     fig, ax = plt.subplots(figsize=(max(6.0, len(labels) * 0.6),) * 2)
     image = ax.imshow(display_matrix, cmap="Blues", vmin=0.0, vmax=display_matrix.max() or 1.0)
@@ -170,9 +166,7 @@ def confusion_matrix_figure(
     ax.set_yticklabels(tick_labels, fontsize=8)
     ax.set_xlabel("Prediccion")
     ax.set_ylabel("Verdadero")
-    ax.set_title(
-        "Matriz de confusion " + ("normalizada (recall)" if normalize else "(conteos)")
-    )
+    ax.set_title("Matriz de confusion " + ("normalizada (recall)" if normalize else "(conteos)"))
 
     text_fmt = "{:.2f}" if normalize else "{:.0f}"
     threshold = display_matrix.max() / 2.0 if display_matrix.size else 0.0
@@ -223,9 +217,7 @@ def classification_report_text(
         )
 
     labels = sorted(int(c) for c in np.union1d(y_true, y_pred))
-    target_names = [
-        (class_names.get(c, str(c)) if class_names else str(c)) for c in labels
-    ]
+    target_names = [(class_names.get(c, str(c)) if class_names else str(c)) for c in labels]
     return classification_report(
         y_true,
         y_pred,

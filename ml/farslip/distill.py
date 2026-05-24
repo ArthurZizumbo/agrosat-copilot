@@ -112,8 +112,7 @@ class PatchDistillationLoss(nn.Module):
         if patch_mask is not None:
             if patch_mask.shape != student.shape[:2]:
                 raise ValueError(
-                    f"mask shape mismatch mask={patch_mask.shape} "
-                    f"feats={student.shape[:2]}"
+                    f"mask shape mismatch mask={patch_mask.shape} feats={student.shape[:2]}"
                 )
             mask = patch_mask.unsqueeze(-1).to(student.dtype)
             n_valid = mask.sum().clamp(min=1.0)
@@ -211,9 +210,7 @@ class RegionCategoryAlignmentLoss(nn.Module):
         if student_cls.dim() != 2:
             raise ValueError(f"student_cls debe ser (B,D); got {student_cls.shape}")
         if text_prototypes.dim() != 2:
-            raise ValueError(
-                f"text_prototypes debe ser (R*C,D); got {text_prototypes.shape}"
-            )
+            raise ValueError(f"text_prototypes debe ser (R*C,D); got {text_prototypes.shape}")
         expected_protos = self.n_regions * self.n_categories
         if text_prototypes.shape[0] != expected_protos:
             raise ValueError(
@@ -301,9 +298,7 @@ def _resolve_device(device: str) -> torch.device:
     return torch.device(device)
 
 
-def adapt_patch_embed_to_n_channels(
-    vision_model: nn.Module, target_channels: int
-) -> None:
+def adapt_patch_embed_to_n_channels(vision_model: nn.Module, target_channels: int) -> None:
     """Adapta el ``patch_embedding`` de un CLIP vision model a ``target_channels``.
 
     Soporta tanto :class:`CLIPVisionModel` (transformers 5.x, plano: tiene
@@ -327,9 +322,7 @@ def adapt_patch_embed_to_n_channels(
     if old_proj.in_channels == target_channels:
         return
     if old_proj.in_channels != 3:
-        raise ValueError(
-            f"esperado patch_embed con 3 input channels, got {old_proj.in_channels}"
-        )
+        raise ValueError(f"esperado patch_embed con 3 input channels, got {old_proj.in_channels}")
     out_ch = old_proj.out_channels
     # Conv2d.kernel_size/stride/padding son tuple[int, int] en runtime aunque
     # el type-stub publique tuple[int, ...]. Cast explicito para mypy.
@@ -444,9 +437,7 @@ class FarSLIPDistillationTrainer:
         def _lr_lambda(step: int) -> float:
             if step < warmup_steps:
                 return float(step) / float(max(1, warmup_steps))
-            progress = float(step - warmup_steps) / float(
-                max(1, total_steps - warmup_steps)
-            )
+            progress = float(step - warmup_steps) / float(max(1, total_steps - warmup_steps))
             return 0.5 * (1.0 + math.cos(math.pi * progress))
 
         return torch.optim.lr_scheduler.LambdaLR(self._optim, _lr_lambda)
@@ -474,9 +465,7 @@ class FarSLIPDistillationTrainer:
         tests usan este metodo bajo el capot).
         """
         if self._text_prototypes is None:
-            raise RuntimeError(
-                "text_prototypes no inicializados. Llama set_text_prototypes()."
-            )
+            raise RuntimeError("text_prototypes no inicializados. Llama set_text_prototypes().")
         images = images.to(self.device)
         region_ids = region_ids.to(self.device)
         category_ids = category_ids.to(self.device)
@@ -487,9 +476,7 @@ class FarSLIPDistillationTrainer:
         # a mapear 4 bandas a la misma semantica que el teacher ve en 3.
         teacher_input = images[:, :3, :, :]
         with torch.no_grad():
-            teacher_out = self.teacher(
-                pixel_values=teacher_input, output_hidden_states=False
-            )
+            teacher_out = self.teacher(pixel_values=teacher_input, output_hidden_states=False)
 
         # CLIPVisionModel last_hidden_state shape: (B, 1+P, D) con CLS en pos 0.
         student_hidden = student_out.last_hidden_state
@@ -500,16 +487,17 @@ class FarSLIPDistillationTrainer:
         teacher_patches = teacher_hidden[:, 1:, :]
 
         loss_patch = self._patch_loss(student_patches, teacher_patches)
-        loss_cls = self._cls_loss(
-            student_cls, self._text_prototypes, region_ids, category_ids
-        )
+        loss_cls = self._cls_loss(student_cls, self._text_prototypes, region_ids, category_ids)
         # auxiliar contrastive imagen-texto-batch: alinea CLS student con CLS teacher
         # (placeholder ligero para gamma; estabiliza el training)
-        cos_aux = 1.0 - F.cosine_similarity(
-            F.normalize(student_cls, dim=-1),
-            F.normalize(teacher_cls.detach(), dim=-1),
-            dim=-1,
-        ).mean()
+        cos_aux = (
+            1.0
+            - F.cosine_similarity(
+                F.normalize(student_cls, dim=-1),
+                F.normalize(teacher_cls.detach(), dim=-1),
+                dim=-1,
+            ).mean()
+        )
 
         w = self.config.loss_weights
         total = w["alpha"] * loss_patch + w["beta"] * loss_cls + w["gamma"] * cos_aux
@@ -564,9 +552,7 @@ class FarSLIPDistillationTrainer:
                         # data_version = hash del .dvc file (no ruta local).
                         # Si el dataset aun no esta DVC-tracked, devuelve
                         # ``"<path>@untracked"`` y se documenta en el run.
-                        "data_version": dvc_data_version(
-                            str(self.config.dataset_root)
-                        ),
+                        "data_version": dvc_data_version(str(self.config.dataset_root)),
                         "us": "US-017",
                         "us_alias": "US-016b",
                     }
@@ -621,18 +607,13 @@ class FarSLIPDistillationTrainer:
                     if run_ctx is not None and _mlflow is not None:
                         try:
                             _mlflow.log_metrics(
-                                {
-                                    k: float(v.detach().cpu().item())
-                                    for k, v in losses.items()
-                                },
+                                {k: float(v.detach().cpu().item()) for k, v in losses.items()},
                                 step=global_step,
                             )
                         except RuntimeError as exc:  # pragma: no cover
                             _log.debug("mlflow log_metrics fallo", error=str(exc))
 
-                    last_metrics = {
-                        k: float(v.detach().cpu().item()) for k, v in losses.items()
-                    }
+                    last_metrics = {k: float(v.detach().cpu().item()) for k, v in losses.items()}
                     global_step += 1
 
                 _log.info("epoch done", epoch=epoch, **last_metrics)
@@ -674,9 +655,7 @@ class FarSLIPDistillationTrainer:
         # alguna iteracion futura introduce un wrapper compuesto.
         raw_state = self.student.state_dict()
         state_dict = {
-            k: v
-            for k, v in raw_state.items()
-            if not k.startswith(("text_", "logit_scale"))
+            k: v for k, v in raw_state.items() if not k.startswith(("text_", "logit_scale"))
         }
         if format == "safetensors":
             from safetensors.torch import save_file

@@ -233,9 +233,7 @@ def test_export_ablation_table_writes_csv_and_md(
             delta_vs_full=0.01,
         ),
     ]
-    csv_path, md_path = export_ablation_table(
-        fake_results, tmp_path / "ablation_table"
-    )
+    csv_path, md_path = export_ablation_table(fake_results, tmp_path / "ablation_table")
     assert csv_path.exists()
     assert md_path.exists()
     table = pl.read_csv(csv_path)

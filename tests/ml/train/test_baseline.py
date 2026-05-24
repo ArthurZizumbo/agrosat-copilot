@@ -27,9 +27,7 @@ _METRIC_KEYS = {"f1_macro", "f1_weighted", "miou", "accuracy", "cohen_kappa"}
 @pytest.fixture(scope="module")
 def synthetic_df() -> pl.DataFrame:
     """DataFrame sintetico determinista compartido por el modulo."""
-    return make_baseline_dataset(
-        n=300, n_classes=4, n_features=10, n_patches=14, seed=42
-    )
+    return make_baseline_dataset(n=300, n_classes=4, n_features=10, n_patches=14, seed=42)
 
 
 def test_train_rf_returns_baseline_result(synthetic_df: pl.DataFrame) -> None:

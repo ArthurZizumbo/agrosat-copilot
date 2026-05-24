@@ -167,9 +167,7 @@ def build_comparison_table(
             f"faltan {sorted(missing)}."
         )
 
-    raw_scenarios = {
-        key: _load_scenario(scenario_paths[key]) for key in _SCENARIO_LABELS
-    }
+    raw_scenarios = {key: _load_scenario(scenario_paths[key]) for key in _SCENARIO_LABELS}
     aligned = _align_scenarios_by_parcel(raw_scenarios)
     n_parcels = next(iter(aligned.values())).height
 
@@ -308,9 +306,7 @@ def _load_scenario(path: str | Path) -> pl.DataFrame:
     df = pl.read_parquet(resolved)
     for col in ("parcel_id", "class_id"):
         if col not in df.columns:
-            raise ValueError(
-                f"El parquet {resolved} debe contener la columna `{col}`."
-            )
+            raise ValueError(f"El parquet {resolved} debe contener la columna `{col}`.")
     return df
 
 

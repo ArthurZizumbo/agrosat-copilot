@@ -144,9 +144,7 @@ def set_llm_client(client: LlmClient | None) -> None:
     _LLM_CLIENT = client
 
 
-def _default_litellm_client(
-    prompt: str, *, model: str, temperature: float
-) -> str:
+def _default_litellm_client(prompt: str, *, model: str, temperature: float) -> str:
     """Cliente Gemini 3.5 Flash via LiteLLM (provider-agnostic fallback).
 
     Importacion lazy: solo se requiere en runtime y solo si no hay cliente
@@ -171,9 +169,7 @@ def _default_litellm_client(
     return str(content).strip()
 
 
-def _default_google_genai_client(
-    prompt: str, *, model: str, temperature: float
-) -> str:
+def _default_google_genai_client(prompt: str, *, model: str, temperature: float) -> str:
     """Cliente nativo Gemini 3.5 Flash via google-genai SDK.
 
     Mas eficiente que LiteLLM para este caso: soporta ``thinking_level``
@@ -305,15 +301,11 @@ def generate_phenology_description(
             si ``temperature`` no es 0.0 (R7: enforced para mitigar costo).
     """
     if ndvi_curve.ndim != 1:
-        raise ValueError(
-            f"`ndvi_curve` debe ser 1D; recibido shape {ndvi_curve.shape}."
-        )
+        raise ValueError(f"`ndvi_curve` debe ser 1D; recibido shape {ndvi_curve.shape}.")
     if ndvi_curve.size == 0:
         raise ValueError("`ndvi_curve` no puede estar vacio.")
     if temperature != 0.0:
-        raise ValueError(
-            "`temperature` debe ser 0.0 (R7 — determinismo + costo Gemini)."
-        )
+        raise ValueError("`temperature` debe ser 0.0 (R7 — determinismo + costo Gemini).")
 
     if doy is None:
         doy = np.linspace(1.0, 365.0, ndvi_curve.size, dtype=np.float64)
@@ -357,9 +349,7 @@ def generate_phenology_description(
         "crop_type_hint": crop_type_hint,
     }
     try:
-        cache_file.write_text(
-            json.dumps(payload, ensure_ascii=False), encoding="utf-8"
-        )
+        cache_file.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     except OSError as exc:  # pragma: no cover
         logger.warning(
             "phenology_description_cache_write_failed",
@@ -401,8 +391,7 @@ def encode_descriptions(
         )
     if encoder != "sentence-transformers":
         raise ValueError(
-            f"`encoder` debe ser 'sentence-transformers' o 'farslip-clip'; "
-            f"recibido {encoder!r}."
+            f"`encoder` debe ser 'sentence-transformers' o 'farslip-clip'; recibido {encoder!r}."
         )
     if not descriptions:
         return np.zeros((0, DEFAULT_TEXT_EMBED_DIM), dtype=np.float32)
@@ -478,11 +467,7 @@ def build_phenology_text_block(
         logger.info("pheno_text_block_subsampled", n=df.height)
 
     parcel_ids = df.get_column(parcel_id_col).to_list()
-    years = (
-        df.get_column(year_col).to_list()
-        if year_col in df.columns
-        else [None] * df.height
-    )
+    years = df.get_column(year_col).to_list() if year_col in df.columns else [None] * df.height
     crop_hints: list[str | None] = (
         df.get_column(crop_hint_col).to_list()
         if crop_hint_col is not None and crop_hint_col in df.columns
@@ -590,9 +575,7 @@ def _hash_curve(parcel_id: object, curve: np.ndarray, model: str) -> str:
     return h.hexdigest()[:16]
 
 
-def _extract_ndvi_curves(
-    df: pl.DataFrame, *, prefix: str
-) -> list[np.ndarray]:
+def _extract_ndvi_curves(df: pl.DataFrame, *, prefix: str) -> list[np.ndarray]:
     """Extrae una curva por fila desde columnas ``{prefix}{i:02d}``.
 
     Si no encuentra esas columnas, reconstruye desde FFT (mismo helper que
