@@ -225,16 +225,10 @@ def _project_parcels_to_embeddings(
     device: torch.device,
     seed: int,
 ) -> torch.Tensor:
-    """Proyecta parcelas al espacio CLIP-512.
+    """Placeholder determinista (mantenido para tests existentes y smoke).
 
-    NOTA: la generacion de los crops Sentinel-2 por parcela vive en
-    ``ml/farslip/dataset.py`` (training pipeline). Para evitar re-implementar
-    aqui el read+crop+resize, esta funcion usa un **placeholder determinista**
-    basado en el ``seed`` y el indice de parcela. La implementacion final del
-    pipeline crops live se difiere a US-025 (extractor de features parcela).
-
-    Reproducibilidad: misma ``seed`` -> mismo tensor. Tests verifican que
-    ``seed=42`` produce el mismo SHA.
+    Genera `torch.randn(seed)` normalizado L2. Para extract REAL ver
+    :func:`_project_parcels_to_embeddings_real`.
     """
     propagate_seed(seed)
     generator = torch.Generator(device=device.type if device.type != "cpu" else "cpu")
@@ -248,9 +242,83 @@ def _project_parcels_to_embeddings(
             device=device,
             dtype=torch.float32,
         )
-        # Normalizamos L2 por consistencia con embeddings CLIP reales.
         chunk = torch.nn.functional.normalize(chunk, dim=-1)
         out_chunks.append(chunk.detach().cpu())
+    return torch.cat(out_chunks, dim=0)
+
+
+def _project_parcels_to_embeddings_real(
+    model: CLIPVisionModel,
+    parcels: pl.DataFrame,
+    *,
+    dataset_root: Path,
+    batch_size: int,
+    device: torch.device,
+    seed: int,
+    crop_resize_to: int = 224,
+) -> torch.Tensor:
+    """Forward real student sobre crops Sentinel-2.
+
+    Lee cada crop ``.tif`` desde ``dataset_root/{region}/crops/{file}``,
+    resizea a 224x224, normaliza uint16/10000, pasa por
+    ``model.vision_model(pixel_values).pooler_output`` y devuelve un tensor
+    ``(n_parcels, 512)`` en CPU float32.
+
+    Args:
+        model: ``CLIPVisionModel`` con patch_embed adaptado a 4 canales.
+        parcels: DataFrame con columnas ``crop_path`` + ``region``.
+        dataset_root: raiz ``data/farslip_pairs/`` para resolver crops cross-platform.
+        batch_size: tamano batch forward (default 64 funciona en 24GB L4).
+        device: ``torch.device``.
+        seed: semilla determinista (para shuffling reproducible si aplicara).
+        crop_resize_to: lado del crop tras resize bilineal (default 224).
+
+    Returns:
+        Tensor ``(n_parcels, EMBED_DIM)`` en CPU float32.
+    """
+    from ml.farslip.dataset import FarSLIPDataset
+
+    propagate_seed(seed)
+    if "crop_path" not in parcels.columns:
+        raise ValueError(
+            "parquet sin columna 'crop_path' necesaria para extract real. "
+            "Anade crop_path desde manifest.parquet."
+        )
+
+    helper = FarSLIPDataset.__new__(FarSLIPDataset)
+    helper.manifest_path = dataset_root / "_dummy_manifest.parquet"
+    helper.crop_resize_to = crop_resize_to
+
+    n_parcels = parcels.height
+    rows = parcels.to_dicts()
+    out_chunks: list[torch.Tensor] = []
+
+    model.eval()
+    with torch.inference_mode():
+        for start in range(0, n_parcels, batch_size):
+            end = min(start + batch_size, n_parcels)
+            imgs: list[torch.Tensor] = []
+            for row in rows[start:end]:
+                crop_path_raw = row["crop_path"]
+                region = row.get("region")
+                if region:
+                    helper.manifest_path = dataset_root / region / "manifest.parquet"
+                resolved = helper._resolve_crop_path(crop_path_raw)
+                img = helper._load_crop(resolved)
+                img = helper._resize_chw(img, crop_resize_to)
+                imgs.append(img)
+            batch = torch.stack(imgs, dim=0).to(device)
+            out = model(pixel_values=batch)
+            emb = out.pooler_output
+            emb = torch.nn.functional.normalize(emb, dim=-1)
+            out_chunks.append(emb.detach().cpu().float())
+            if start % (batch_size * 10) == 0:
+                _log.info(
+                    "extract_real_progress",
+                    done=end,
+                    total=n_parcels,
+                    pct=round(100 * end / n_parcels, 1),
+                )
     return torch.cat(out_chunks, dim=0)
 
 
@@ -263,6 +331,8 @@ def extract_farslip_embeddings(
     batch_size: int = 256,
     device: DeviceLiteral = "auto",
     seed: int = 42,
+    mode: Literal["placeholder", "real"] = "placeholder",
+    dataset_root: Path | None = None,
 ) -> ExtractEmbeddingsResult:
     """Extrae embeddings FarSLIP de cada parcela italiana y los persiste.
 
@@ -291,13 +361,25 @@ def extract_farslip_embeddings(
         seed=seed,
     )
     model = _load_student(ckpt_resolved, device=torch_device)
-    embeddings = _project_parcels_to_embeddings(
-        model,
-        n_parcels=n_parcels,
-        batch_size=batch_size,
-        device=torch_device,
-        seed=seed,
-    )
+    if mode == "real":
+        if dataset_root is None:
+            raise ValueError("mode='real' requiere dataset_root para resolver crops")
+        embeddings = _project_parcels_to_embeddings_real(
+            model,
+            parcels,
+            dataset_root=dataset_root,
+            batch_size=batch_size,
+            device=torch_device,
+            seed=seed,
+        )
+    else:
+        embeddings = _project_parcels_to_embeddings(
+            model,
+            n_parcels=n_parcels,
+            batch_size=batch_size,
+            device=torch_device,
+            seed=seed,
+        )
     cols = _embed_columns()
     embed_dict = {
         cols[i]: embeddings[:, i].numpy() for i in range(EMBED_DIM)
@@ -386,6 +468,21 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         default=42,
         help="Semilla determinista (default 42).",
     )
+    parser.add_argument(
+        "--mode",
+        choices=("placeholder", "real"),
+        default="placeholder",
+        help=(
+            "'placeholder' (legacy seeded randn, default) o 'real' "
+            "(forward CLIPVisionModel sobre crops Sentinel-2)."
+        ),
+    )
+    parser.add_argument(
+        "--dataset-root",
+        type=Path,
+        default=None,
+        help="Raiz dataset farslip_pairs (requerido si --mode=real).",
+    )
     return parser
 
 
@@ -401,6 +498,8 @@ def main(argv: list[str] | None = None) -> int:
         batch_size=args.batch_size,
         device=args.device,
         seed=args.seed,
+        mode=args.mode,
+        dataset_root=args.dataset_root,
     )
     _log.info(
         "farslip_extract_embeddings_complete",
