@@ -1,0 +1,5 @@
+outs:
+- md5: dc5c3805f3810a63f4c1aabe85b55781
+  size: 51402779
+  hash: md5
+  path: embeddings_italy_v2.parquet
