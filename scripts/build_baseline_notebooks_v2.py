@@ -1,7 +1,7 @@
 """Builder unificado de los 6 notebooks de baseline (US-023-preview v2).
 
 Genera los 6 notebooks de `notebooks/baseline/` desde una sola fuente de
-verdad, alineados al estandar de `notebooks/CLAUDE.md` y reutilizando
+verdad, alineados al estándar de `notebooks/CLAUDE.md` y reutilizando
 todos los helpers de `ml/`:
 
 - `notebooks/baseline/04_baseline.ipynb` — XGB + LGBM + RF + temporales + plots.
@@ -10,8 +10,8 @@ todos los helpers de `ml/`:
 - `notebooks/baseline/04c_baseline.ipynb` — ablation de bloques con fix
   de detection alphaearth_only.
 - `notebooks/baseline/04_farslip_eval_pastis.ipynb` — FarSLIP vs RemoteCLIP
-  sobre PASTIS real (sin sintetico).
-- `notebooks/baseline/05_reencuadre_fenologico.ipynb` — fenologia + ablation
+  sobre PASTIS real (sin sintético).
+- `notebooks/baseline/05_reencuadre_fenologico.ipynb` — fenología + ablation
   completa con auto-materializacion sin skips silenciosos.
 - `notebooks/baseline/Avance3.Equipo17.ipynb` — concentrador con
   select_winning_features.
@@ -43,7 +43,7 @@ def _md(text: str) -> dict[str, Any]:
 
 
 def _code(text: str, *, tags: list[str] | None = None) -> dict[str, Any]:
-    """Crea celda de codigo."""
+    """Crea celda de código."""
     cell = {
         "cell_type": "code",
         "execution_count": None,
@@ -88,7 +88,7 @@ def _write(path: Path, nb: dict[str, Any]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Bootstrap cell estandar (igual en todos los notebooks).
+# Bootstrap cell estándar (igual en todos los notebooks).
 # ---------------------------------------------------------------------------
 
 
@@ -126,19 +126,20 @@ def build_04b_baseline() -> dict[str, Any]:
 
     cells.append(
         _md(
-            "# Baseline 04b — RandomForest sobre features US-018\n\n"
-            "Variante minima del baseline tabular sobre el subset US-018 "
-            "(85 951 parcelas, 17 indices espectrales x 9 stats + FFT NDVI "
-            "+ 8 features fenologicas). Sirve como piloto del patron "
-            "`setup_notebook` + `train_baseline_three_models` que el resto "
-            "de las libretas reusa.\n\n"
-            "**Pregunta**: ¿que F1-macro out-of-fold consigue RandomForest "
-            "puro sobre el subset US-018 con spatial CV 5-fold + buffer 1 km?\n\n"
+            "# Baseline 04b — RandomForest sobre el subset de features\n\n"
+            "Variante mínima del baseline tabular sobre el subset Italia "
+            "(85 951 parcelas, 17 índices espectrales × 9 estadísticos + FFT "
+            "NDVI + 8 atributos fenológicos). Sirve como piloto del patrón "
+            "`setup_notebook` + `train_baseline_three_models` que reúsan los "
+            "demás cuadernos.\n\n"
+            "**Pregunta**: ¿qué F1-macro out-of-fold consigue RandomForest "
+            "puro sobre este subset, con validación cruzada espacial de 5 "
+            "particiones y un buffer anti-fuga de 1 km entre ellas?\n\n"
             "## Requisitos\n\n"
             "- `data/test_fixtures/feature_selection_parcels_subset.parquet` "
-            "presente (descargable via `dvc pull`).\n"
+            "presente (descargable vía `dvc pull`).\n"
             "- `data/processed/pastis_parcels_full.geoparquet` presente "
-            "(generado por el pipeline EDA US-011).\n"
+            "(generado por el pipeline de muestreo de parcelas).\n"
         )
     )
 
@@ -160,8 +161,10 @@ def build_04b_baseline() -> dict[str, Any]:
     cells.append(
         _md(
             "## Carga del dataset\n\n"
-            "Combinamos el subset US-018 con la metadata real (clase + patch "
-            "+ fold + area) desde el geoparquet de parcelas Italia."
+            "Unimos el subset de características con la metadata real "
+            "(clase, `patch_id`, fold, área) desde el geoparquet de "
+            "parcelas. El resultado tiene `parcel_id` como `pl.Utf8`, "
+            "esquema canónico del proyecto."
         )
     )
 
@@ -193,10 +196,12 @@ def build_04b_baseline() -> dict[str, Any]:
 
     cells.append(
         _md(
-            "## Distribucion de clases\n\n"
-            "Antes de entrenar, reportamos la distribucion real de las 18 "
-            "clases PASTIS-R y proponemos un threshold sensato de soporte "
-            "(en lugar del 1000 hardcoded que dejaba solo 1 clase pasando)."
+            "## Distribución de clases\n\n"
+            "Reportamos las 18 clases con su conteo, proporción y banda de "
+            "soporte (`high` / `med` / `low` / `very_low`). El umbral se "
+            "deriva del percentil 25 de la distribución, no de un valor fijo, "
+            "para evitar marcar como minoritarias a clases que sí tienen "
+            "soporte suficiente."
         )
     )
 
@@ -208,16 +213,23 @@ def build_04b_baseline() -> dict[str, Any]:
             "threshold_p25 = recommend_threshold(report, method='p25')\n"
             "threshold_p50 = recommend_threshold(report, method='p50')\n"
             "display(Markdown(\n"
-            '    f"**Threshold sugerido**: p25 = `{threshold_p25}`, "\n'
-            '    f"p50 = `{threshold_p50}` parcelas. "\n'
-            '    "Las clases por debajo del threshold tienen soporte debil "\n'
-            '    "y se reportan en color en los plots."\n'
+            '    f"**Umbral sugerido**: percentil 25 = `{threshold_p25}`, "\n'
+            '    f"percentil 50 = `{threshold_p50}` parcelas. "\n'
+            '    "Las clases por debajo del umbral tienen soporte débil "\n'
+            '    "y se resaltan en color en los gráficos."\n'
             "))\n"
         )
     )
 
     cells.append(
-        _md("## Entrenamiento RandomForest + XGBoost + LightGBM con spatial CV")
+        _md(
+            "## Entrenamiento de RandomForest, XGBoost y LightGBM\n\n"
+            "Cada modelo se entrena con la misma validación cruzada "
+            "espacial: 5 particiones determinadas por bloques H3 + KMeans "
+            "y un buffer de 1 km que separa train y test para evitar fuga "
+            "espacial. `train_baseline_three_models` devuelve métricas "
+            "out-of-fold, tiempo de entrenamiento y la tabla comparativa."
+        )
     )
 
     cells.append(
@@ -231,12 +243,12 @@ def build_04b_baseline() -> dict[str, Any]:
             ")\n"
             "comparison_path = env.reports_dir / 'model_comparison_04b.parquet'\n"
             "comparison = build_model_comparison_table(rows, output_path=comparison_path)\n"
-            "display(Markdown(f'**Tabla comparativa persistida**: `{comparison_path}`'))\n"
+            "display(Markdown(f'**Tabla comparativa guardada**: `{comparison_path}`'))\n"
             "display(comparison)\n"
         )
     )
 
-    cells.append(_md("## Graficas: comparativa de modelos + soporte por clase"))
+    cells.append(_md("## Comparativa de modelos y soporte por clase"))
 
     cells.append(
         _code(
@@ -250,8 +262,8 @@ def build_04b_baseline() -> dict[str, Any]:
             "fig1 = plot_model_comparison_bars(\n"
             "    metric_by_model,\n"
             "    baseline_value=0.40,\n"
-            "    baseline_label='referencia US-022 (F1-macro 0.40)',\n"
-            "    title='F1-macro RF vs XGB vs LGBM (04b)',\n"
+            "    baseline_label='referencia previa (F1-macro 0.40)',\n"
+            "    title='F1-macro out-of-fold: RandomForest, XGBoost, LightGBM',\n"
             ")\n"
             "fig1.savefig(env.figures_dir / 'model_comparison_04b.png', bbox_inches='tight')\n"
             "display(fig1)\n"
@@ -260,7 +272,7 @@ def build_04b_baseline() -> dict[str, Any]:
             "fig2 = plot_class_support_bars(\n"
             "    report.rename({'n_parcels': 'len'}),\n"
             "    weak_threshold=threshold_p25,\n"
-            "    title=f'Soporte por clase (threshold p25 = {threshold_p25})',\n"
+            "    title=f'Soporte por clase (umbral P25 = {threshold_p25} parcelas)',\n"
             ")\n"
             "fig2.savefig(env.figures_dir / 'class_support_04b.png', bbox_inches='tight')\n"
             "display(fig2)\n"
@@ -268,7 +280,7 @@ def build_04b_baseline() -> dict[str, Any]:
         )
     )
 
-    cells.append(_md("## Per-class F1 del mejor modelo (out-of-fold)"))
+    cells.append(_md("## F1 por clase del mejor modelo"))
 
     cells.append(
         _code(
@@ -316,31 +328,29 @@ def build_04b_baseline() -> dict[str, Any]:
     cells.append(
         _md(
             "## Conclusiones\n\n"
-            "Esta libreta cumple el rol de **piloto** del patron de bootstrap "
-            "nuevo (`setup_notebook` + `baseline_notebook_helpers`) sobre el "
-            "subset US-018. Los hallazgos importantes:\n\n"
-            "1. **Tres modelos comparables**: RandomForest, XGBoost y "
-            "LightGBM ejecutados con identica spatial CV 5-fold + buffer 1 "
-            "km. La tabla persistida `model_comparison_04b.parquet` queda "
-            "como referencia local para detectar regresiones cuando "
-            "agregemos bloques opcionales en `04_baseline` y "
-            "`05_reencuadre_fenologico`.\n\n"
-            "2. **Soporte por clase reportado con threshold p25**: en lugar "
-            "del threshold hardcoded de 1000 que dejaba 17/18 clases marcadas "
-            "como debiles, ahora el threshold se calcula desde la propia "
-            "distribucion y solo destaca las clases verdaderamente raras.\n\n"
-            "3. **Per-class F1 del mejor modelo**: identifica que clases "
-            "concentran el error (las raras suelen estar bajo el 0.10), util "
-            "para discutir merge fenologico via "
-            "`merge_to_phenological_groups` en futuras iteraciones.\n\n"
+            "Esta libreta valida el patrón de arranque (`setup_notebook` + "
+            "`baseline_notebook_helpers`) y produce una primera referencia "
+            "comparativa de los tres modelos sobre el subset de "
+            "características.\n\n"
+            "- **Tabla `model_comparison_04b.parquet`**: F1-macro, "
+            "F1-weighted, mIoU, accuracy, kappa y tiempo de entrenamiento "
+            "por modelo. Sirve como referencia local para detectar "
+            "regresiones al incorporar bloques opcionales.\n"
+            "- **Umbral de soporte por percentil 25**: las clases "
+            "minoritarias quedan resaltadas sin marcar artificialmente a "
+            "todas como débiles.\n"
+            "- **F1 por clase del mejor modelo**: identifica qué clases "
+            "concentran el error y sugiere si conviene agrupar por ciclo "
+            "fenológico mediante `merge_to_phenological_groups`.\n\n"
             "## Lo que sigue\n\n"
-            "- `04_baseline.ipynb` reutiliza este patron sobre el conjunto "
-            "fused completo (con AlphaEarth + ERA5 + SRTM).\n"
-            "- `05_reencuadre_fenologico.ipynb` mide el aporte de los "
-            "bloques opcionales (FarSLIP, pheno_text Gemini, firma "
-            "espectral) y persiste la decision final.\n"
-            "- `Avance3.Equipo17.ipynb` consolida y nombra el conjunto "
-            "ganador (`select_winning_features`)."
+            "- `04_baseline.ipynb` aplica el mismo patrón sobre el "
+            "conjunto completo de características (AlphaEarth + ERA5 + "
+            "SRTM + índices).\n"
+            "- `05_reencuadre_fenologico.ipynb` cuantifica el aporte de "
+            "los bloques opcionales (FarSLIP, descripción fenológica "
+            "textual, firma espectral REP).\n"
+            "- `Avance3.Equipo17.ipynb` selecciona y nombra el conjunto "
+            "de características ganador con `select_winning_features`."
         )
     )
 
@@ -348,7 +358,7 @@ def build_04b_baseline() -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# 04_baseline.ipynb — 3 modelos sobre fused + graficas.
+# 04_baseline.ipynb — 3 modelos sobre fused + gráficas.
 # ---------------------------------------------------------------------------
 
 
@@ -357,21 +367,21 @@ def build_04_baseline() -> dict[str, Any]:
 
     cells.append(
         _md(
-            "# Baseline 04 — RF + XGBoost + LightGBM sobre features completas\n\n"
-            "Baseline tabular canonico del proyecto (Avance 3). Entrena los "
-            "**tres modelos** sobre el conjunto fused completo de Italia "
-            "(85 951 parcelas) con spatial CV 5-fold + buffer 1 km, y "
-            "produce todas las graficas necesarias para la rubrica del "
-            "Avance 3:\n\n"
-            "- Distribucion de clases real (18 clases PASTIS-R Italia).\n"
+            "# Baseline 04 — RandomForest, XGBoost y LightGBM\n\n"
+            "Baseline tabular canónico sobre el conjunto fused completo de "
+            "Italia (85 951 parcelas), evaluado con validación cruzada "
+            "espacial de 5 particiones y buffer de 1 km. Produce los "
+            "gráficos centrales para revisar la calidad del baseline:\n\n"
+            "- Distribución real de las 18 clases.\n"
             "- Comparativa F1-macro / F1-weighted / mIoU entre los 3 modelos.\n"
             "- F1 por clase del modelo ganador.\n"
-            "- Matriz de confusion out-of-fold.\n\n"
-            "El conjunto fused incluye los bloques base: AlphaEarth (64 "
-            "dim), indices espectrales x stats (17 x 9 = 85), FFT NDVI "
-            "(24), fenologia (8), ERA5 mensual (24), SRTM (3). Los bloques "
-            "opcionales (FarSLIP, pheno_text, spectral_signature) se evaluan "
-            "en `05_reencuadre_fenologico.ipynb`."
+            "- Matriz de confusión out-of-fold.\n\n"
+            "El conjunto fused agrupa los bloques base: AlphaEarth (64 "
+            "dimensiones), índices espectrales × estadísticos (17 × 9 = 85 "
+            "columnas), FFT del NDVI (24), atributos fenológicos (8), ERA5 "
+            "mensual (24) y SRTM (3). Los bloques opcionales (FarSLIP, "
+            "descripción fenológica textual, firma espectral) se evalúan en "
+            "`05_reencuadre_fenologico.ipynb`."
         )
     )
 
@@ -425,19 +435,19 @@ def build_04_baseline() -> dict[str, Any]:
         )
     )
 
-    cells.append(_md("## Distribucion de clases con merge fenologico opcional"))
+    cells.append(_md("## Distribución de clases (con agrupamiento fenológico opcional)"))
 
     cells.append(
         _code(
             "report = class_distribution_report(df)\n"
             "display(report)\n"
             "threshold = recommend_threshold(report, method='p25')\n"
-            "display(Markdown(f'Threshold p25 sugerido: `{threshold}` parcelas.'))\n"
+            "display(Markdown(f'Umbral sugerido (P25): `{threshold}` parcelas.'))\n"
             "\n"
             "fig_class = plot_class_support_bars(\n"
             "    report.rename({'n_parcels': 'len'}),\n"
             "    weak_threshold=threshold,\n"
-            "    title=f'Distribucion de clases (threshold p25 = {threshold})',\n"
+            "    title=f'Distribución de clases (umbral P25 = {threshold} parcelas)',\n"
             ")\n"
             "fig_class.savefig(env.figures_dir / 'class_distribution.png', bbox_inches='tight')\n"
             "display(fig_class)\n"
@@ -447,9 +457,10 @@ def build_04_baseline() -> dict[str, Any]:
 
     cells.append(
         _md(
-            "## Entrenamiento RF + XGB + LGBM con spatial CV\n\n"
-            "Wall clock esperado: 30-60 minutos en RTX 4070 / L4 (XGB GPU + "
-            "LGBM CPU). RandomForest CPU multinucleo."
+            "## Entrenamiento RF + XGB + LGBM con validación cruzada espacial\n\n"
+            "Tiempo de pared esperado: 30-60 minutos en RTX 4070 o L4 "
+            "(XGBoost en GPU + LightGBM en CPU). RandomForest usa todos los "
+            "núcleos de CPU."
         )
     )
 
@@ -464,7 +475,7 @@ def build_04_baseline() -> dict[str, Any]:
             ")\n"
             "comparison_path = env.reports_dir / 'model_comparison_04.parquet'\n"
             "comparison = build_model_comparison_table(rows, output_path=comparison_path)\n"
-            "display(Markdown(f'**Tabla persistida**: `{comparison_path.relative_to(env.repo)}`'))\n"
+            "display(Markdown(f'**Tabla guardada**: `{comparison_path.relative_to(env.repo)}`'))\n"
             "display(comparison)\n"
         )
     )
@@ -477,7 +488,7 @@ def build_04_baseline() -> dict[str, Any]:
             "fig_cmp = plot_model_comparison_bars(\n"
             "    metric_by_model,\n"
             "    baseline_value=0.40,\n"
-            "    baseline_label='ref US-022 (F1-macro 0.40)',\n"
+            "    baseline_label='referencia previa (F1-macro 0.40)',\n"
             "    title='F1-macro out-of-fold por modelo',\n"
             ")\n"
             "fig_cmp.savefig(env.figures_dir / 'model_comparison.png', bbox_inches='tight')\n"
@@ -486,7 +497,7 @@ def build_04_baseline() -> dict[str, Any]:
         )
     )
 
-    cells.append(_md("## Matriz de confusion y F1 por clase (modelo ganador)"))
+    cells.append(_md("## Matriz de confusión y F1 por clase (modelo ganador)"))
 
     cells.append(
         _code(
@@ -524,7 +535,7 @@ def build_04_baseline() -> dict[str, Any]:
             "    class_labels=list(range(len(best_result.label_classes))),\n"
             "    class_names=class_names_decoded,\n"
             "    normalize='true',\n"
-            "    title=f'Matriz de confusion ({best_model}) normalizada por fila',\n"
+            "    title=f'Matriz de confusión ({best_model}) normalizada por fila',\n"
             ")\n"
             "fig_cm.savefig(env.figures_dir / 'confusion_matrix.png', bbox_inches='tight')\n"
             "display(fig_cm)\n"
@@ -545,31 +556,32 @@ def build_04_baseline() -> dict[str, Any]:
             "import joblib\n"
             "joblib_path = env.reports_dir / f'best_model_{best_model}.joblib'\n"
             "joblib.dump(best_result, joblib_path)\n"
-            "display(Markdown(f'Modelo persistido en `{joblib_path.relative_to(env.repo)}`'))\n"
+            "display(Markdown(f'Modelo guardado en `{joblib_path.relative_to(env.repo)}`'))\n"
         )
     )
 
     cells.append(
         _md(
             "## Conclusiones\n\n"
-            "El baseline tabular canonico queda entrenado y evaluado con "
-            "los tres modelos pedidos por la rubrica del Avance 3 "
-            "(RandomForest, XGBoost, LightGBM). Las metricas, las graficas "
-            "y el modelo serializado quedan persistidos en `reports/` y "
-            "`paper/figures/` para reusar en `Avance3.Equipo17.ipynb`.\n\n"
-            "**Observaciones agronomicas**:\n\n"
-            "- Las clases mayoritarias (1, 3, 8, 2 — cereales de invierno, "
-            "praderas permanentes, viñedos) concentran el F1 alto.\n"
-            "- Las clases raras con soporte por debajo del threshold p25 "
-            "tienen F1 < 0.10 y son candidatas a merge fenologico via "
-            "`PASTIS_R_GROUPINGS['phenological_cycle']` en una segunda "
-            "iteracion de modelado.\n\n"
+            "El baseline tabular queda entrenado y evaluado con los tres "
+            "modelos (RandomForest, XGBoost, LightGBM). Las métricas, las "
+            "gráficas y el modelo serializado se guardan en `reports/` y "
+            "`paper/figures/` para reutilizarlos desde "
+            "`Avance3.Equipo17.ipynb`.\n\n"
+            "**Lectura agronómica de los resultados**:\n\n"
+            "- Las clases mayoritarias (1, 3, 8, 2: cereales de invierno, "
+            "praderas permanentes, viñedos) concentran el F1 más alto.\n"
+            "- Las clases con soporte por debajo del umbral P25 caen a "
+            "F1 < 0.10 y son candidatas a agruparse por ciclo fenológico "
+            "mediante `PASTIS_R_GROUPINGS['phenological_cycle']` en una "
+            "iteración posterior.\n\n"
             "## Lo que sigue\n\n"
-            "- `05_reencuadre_fenologico.ipynb` mide el aporte de los "
-            "bloques opcionales (FarSLIP, pheno_text Gemini real, firma "
-            "espectral REP) sobre este conjunto.\n"
-            "- `Avance3.Equipo17.ipynb` consolida y persiste el conjunto "
-            "ganador (`select_winning_features`) que consume EPIC 5."
+            "- `05_reencuadre_fenologico.ipynb` cuantifica el aporte de los "
+            "bloques opcionales (FarSLIP, descripción fenológica textual "
+            "con Gemini, firma espectral REP) sobre este conjunto.\n"
+            "- `Avance3.Equipo17.ipynb` selecciona y guarda el conjunto "
+            "ganador (`select_winning_features`) para los modelos densos "
+            "siguientes."
         )
     )
 
@@ -586,22 +598,22 @@ def build_04c_baseline() -> dict[str, Any]:
 
     cells.append(
         _md(
-            "# Baseline 04c — Ablation de bloques de features\n\n"
+            "# Baseline 04c — Ablación de bloques de características\n\n"
             "Mide el aporte incremental de cada bloque del vector fused. "
-            "Para cada conjunto de columnas entrenamos XGBoost (mas LightGBM "
-            "como sanity) con identica spatial CV 5-fold y reportamos "
-            "F1-macro + delta vs `full`.\n\n"
-            "Conjuntos canonicos evaluados:\n\n"
-            "- `full` — todas las features numericas disponibles.\n"
-            "- `no_geom` — `full` sin las 3 columnas `geom_*`.\n"
-            "- `no_geom_no_era5_srtm` — adicionalmente sin `era5_*` ni `srtm_*`.\n"
-            "- `alphaearth_only` — solo las 64 dimensiones `ae_*`.\n"
-            "- `phenology_only` — 8 fenologicas + 24 FFT NDVI.\n"
-            "- `geom_only` — solo `geom_*` (test cuantitativo de leakage espacial).\n\n"
-            "**Fix US-023-preview**: la deteccion de columnas AlphaEarth ahora "
-            "tolera variantes (`ae_*`, `emb_*`, `dim_*`, `alphaearth_*`) y "
-            "el conjunto `alphaearth_only` ya no aparece con `n_features=0` "
-            "ni NaN cuando hay AE en el dataset."
+            "Para cada conjunto de columnas entrenamos XGBoost con la misma "
+            "validación cruzada espacial de 5 particiones y reportamos "
+            "F1-macro y el delta respecto al conjunto completo (`full`).\n\n"
+            "Conjuntos canónicos evaluados:\n\n"
+            "- `full`: todas las características numéricas disponibles.\n"
+            "- `no_geom`: `full` sin las 3 columnas `geom_*`.\n"
+            "- `no_geom_no_era5_srtm`: además sin `era5_*` ni `srtm_*`.\n"
+            "- `alphaearth_only`: sólo las 64 dimensiones `ae_*`.\n"
+            "- `phenology_only`: 8 atributos fenológicos + 24 FFT NDVI.\n"
+            "- `geom_only`: sólo `geom_*` (prueba cuantitativa de fuga espacial).\n\n"
+            "**Detección de columnas AlphaEarth**: el detector tolera "
+            "variantes de prefijo (`ae_*`, `emb_*`, `dim_*`, `alphaearth_*`), "
+            "por lo que `alphaearth_only` ya no aparece con `n_features=0` "
+            "ni NaN cuando hay embeddings AlphaEarth en el dataset."
         )
     )
 
@@ -613,14 +625,14 @@ def build_04c_baseline() -> dict[str, Any]:
             'REPORTS_SUBDIR = "baseline/04c_baseline"\n'
             "K_FOLDS = 5\n"
             "BUFFER_KM = 1.0\n"
-            "MAX_SAMPLES = None  # None = dataset completo; reducir para CI rapido.\n",
+            "MAX_SAMPLES = None  # None = dataset completo; usar un valor menor para corridas rápidas.\n",
             tags=["parameters"],
         )
     )
 
     cells.append(_code(BOOTSTRAP_CELL))
 
-    cells.append(_md("## Carga del dataset + ablation"))
+    cells.append(_md("## Carga del dataset y ejecución de la ablación"))
 
     cells.append(
         _code(
@@ -649,12 +661,12 @@ def build_04c_baseline() -> dict[str, Any]:
             "    buffer_km=BUFFER_KM,\n"
             "    max_samples=MAX_SAMPLES,\n"
             ")\n"
-            "display(Markdown(f'**Tabla ablation**: `{parquet_path.relative_to(env.repo)}`'))\n"
+            "display(Markdown(f'**Tabla de ablación**: `{parquet_path.relative_to(env.repo)}`'))\n"
             "display(ablation_table)\n"
         )
     )
 
-    cells.append(_md("## Graficas: barras de F1 por conjunto + comparativa geom"))
+    cells.append(_md("## Gráficos: F1-macro por conjunto y comparativa del bloque `geom_*`"))
 
     cells.append(
         _code(
@@ -673,7 +685,7 @@ def build_04c_baseline() -> dict[str, Any]:
             "    for row in ablation_table.iter_rows(named=True)\n"
             "]\n"
             "\n"
-            "fig_abl = plot_ablation_bars(results, title='F1-macro por conjunto de features (04c)')\n"
+            "fig_abl = plot_ablation_bars(results, title='F1-macro por conjunto de características')\n"
             "fig_abl.savefig(env.figures_dir / 'ablation_bars.png', bbox_inches='tight')\n"
             "display(fig_abl)\n"
             "plt.close(fig_abl)\n"
@@ -688,25 +700,25 @@ def build_04c_baseline() -> dict[str, Any]:
     cells.append(
         _md(
             "## Conclusiones\n\n"
-            "**Lectura honesta de la ablation**:\n\n"
-            "- El conjunto `full` define la referencia. El delta de `no_geom` "
-            "vs `full` cuantifica el aporte (o leakage) de las columnas "
-            "geometricas: si delta ~0 significa que `geom_*` no aporta señal "
-            "agronomica; si delta es positivo, descartarlas mejora porque "
-            "introducian ruido.\n\n"
-            "- El conjunto `geom_only` es el **test cuantitativo de "
-            "leakage**: F1-macro < 0.10 confirma que area/perimetro/elongacion "
-            "por si solas no permiten clasificar cultivos — el modelo no "
-            "puede aprender clase a partir de geometria.\n\n"
-            "- `alphaearth_only` muestra cuanto del baseline viene de los 64 "
-            "embeddings del Foundation Model. Si la diferencia entre "
-            "`alphaearth_only` y `full` es pequeña, los demas bloques no "
-            "estan agregando mucho mas alla del FM.\n\n"
+            "**Lectura de la ablación**:\n\n"
+            "- El conjunto `full` define la referencia. El delta de "
+            "`no_geom` respecto a `full` cuantifica el aporte (o ruido) "
+            "de las columnas geométricas: si el delta es cercano a cero, "
+            "`geom_*` no aporta señal agronómica; si es positivo, "
+            "descartarlas mejora porque estaban introduciendo ruido.\n\n"
+            "- `geom_only` es la **prueba cuantitativa de fuga espacial**: "
+            "si F1-macro < 0.10, confirmamos que área, perímetro y "
+            "elongación por sí solas no permiten clasificar cultivos; el "
+            "modelo no puede aprender la clase a partir de la geometría.\n\n"
+            "- `alphaearth_only` indica qué fracción del baseline proviene "
+            "de los 64 embeddings del modelo fundacional. Si la diferencia "
+            "entre `alphaearth_only` y `full` es pequeña, los demás "
+            "bloques aportan poco más allá del FM.\n\n"
             "## Lo que sigue\n\n"
-            "- `05_reencuadre_fenologico.ipynb` amplia esta tabla con los "
-            "bloques opcionales (FarSLIP, pheno_text Gemini real, firma "
-            "espectral REP) materializados desde el propio notebook si no "
-            "existen.\n"
+            "- `05_reencuadre_fenologico.ipynb` amplía esta tabla con los "
+            "bloques opcionales (FarSLIP, descripción fenológica textual "
+            "con Gemini, firma espectral REP), materializados desde el "
+            "propio cuaderno si no existen en disco.\n"
             "- `Avance3.Equipo17.ipynb` consume `ablation_table.parquet` "
             "para decidir el conjunto ganador."
         )
@@ -725,27 +737,27 @@ def build_04_farslip_eval_pastis() -> dict[str, Any]:
 
     cells.append(
         _md(
-            "# Evaluacion FarSLIP vs RemoteCLIP sobre PASTIS-R real\n\n"
-            "Compara dos extractores de embeddings de teledeteccion sobre el "
-            "**mismo subset real** de PASTIS-R:\n\n"
-            "- **FarSLIP** (Tang et al. 2024): CLIP fine-tuned para vinos y "
-            "cultivos europeos via distillation desde Sentinel-2 + "
+            "# Evaluación FarSLIP vs RemoteCLIP sobre PASTIS-R real\n\n"
+            "Compara dos extractores de embeddings de teledetección sobre "
+            "el **mismo subset real** de PASTIS-R:\n\n"
+            "- **FarSLIP** (Tang et al. 2024): CLIP afinado para viñedos y "
+            "cultivos europeos mediante distilación desde Sentinel-2 y "
             "descripciones textuales.\n"
-            "- **RemoteCLIP** (Chen et al. 2024): CLIP fine-tuned sobre 12 "
-            "datasets de remote sensing.\n\n"
-            "Si los embeddings de RemoteCLIP no estan disponibles tras "
-            "descargar los pesos desde Hugging Face, el extractor cae a "
-            "`openai/clip-vit-base-patch32` como fallback (documentado en el "
-            "log).\n\n"
-            "**Sin datos sinteticos**: el subset PASTIS-R se genera desde "
-            "`data/PASTIS-R/metadata.geojson` + `DATA_S2/` reales con "
-            "muestreo estratificado por clase. Si PASTIS-R no esta en disco, "
-            "el notebook lanza `FileNotFoundError` con instrucciones de "
+            "- **RemoteCLIP** (Chen et al. 2024): CLIP afinado sobre 12 "
+            "datasets de teledetección.\n\n"
+            "Si los pesos de RemoteCLIP no se pueden descargar desde "
+            "Hugging Face, el extractor cae automáticamente a "
+            "`openai/clip-vit-base-patch32` como respaldo (documentado en "
+            "el log estructurado).\n\n"
+            "**Sin datos sintéticos**: el subset PASTIS-R se genera desde "
+            "`data/PASTIS-R/metadata.geojson` y `DATA_S2/` reales con "
+            "muestreo estratificado por clase. Si PASTIS-R no está en disco, "
+            "el cuaderno lanza `FileNotFoundError` con instrucciones de "
             "`dvc pull` o de descarga manual desde Zenodo.\n\n"
-            "**Comparativa**: similitud coseno de los pares (FarSLIP_emb, "
-            "RemoteCLIP_emb) por parcela, mas un clasificador lineal "
+            "**Comparativa**: similitud coseno de los pares (FarSLIP, "
+            "RemoteCLIP) por parcela y un clasificador lineal "
             "(LogisticRegression) sobre cada espacio de embeddings para "
-            "comparar separabilidad por clase."
+            "medir separabilidad por clase."
         )
     )
 
@@ -764,7 +776,7 @@ def build_04_farslip_eval_pastis() -> dict[str, Any]:
 
     cells.append(_code(BOOTSTRAP_CELL))
 
-    cells.append(_md("## Materializar subset PASTIS real (si no existe)"))
+    cells.append(_md("## Materialización del subset PASTIS real (si no existe)"))
 
     cells.append(
         _code(
@@ -782,7 +794,7 @@ def build_04_farslip_eval_pastis() -> dict[str, Any]:
             "subset = pl.read_parquet(subset_path)\n"
             "display(Markdown(f'**Subset PASTIS-R real**: `{subset.height}` parcelas en `{subset_path}`'))\n"
             "display(subset.head(8))\n"
-            "display(Markdown('**Distribucion de clases en el subset**:'))\n"
+            "display(Markdown('**Distribución de clases en el subset**:'))\n"
             "display(\n"
             "    subset.group_by('class_id', 'class_name').len()\n"
             "    .sort('len', descending=True)\n"
@@ -790,7 +802,7 @@ def build_04_farslip_eval_pastis() -> dict[str, Any]:
         )
     )
 
-    cells.append(_md("## Materializar embeddings RemoteCLIP (si no existen)"))
+    cells.append(_md("## Extracción de embeddings RemoteCLIP (si no existen)"))
 
     cells.append(
         _code(
@@ -805,7 +817,7 @@ def build_04_farslip_eval_pastis() -> dict[str, Any]:
         )
     )
 
-    cells.append(_md("## Cargar embeddings FarSLIP del path canonico"))
+    cells.append(_md("## Carga de los embeddings FarSLIP (ruta canónica)"))
 
     cells.append(
         _code(
@@ -822,7 +834,7 @@ def build_04_farslip_eval_pastis() -> dict[str, Any]:
         )
     )
 
-    cells.append(_md("## Comparativa: similitud coseno FarSLIP vs RemoteCLIP por parcela"))
+    cells.append(_md("## Similitud coseno entre embeddings FarSLIP y RemoteCLIP por parcela"))
 
     cells.append(
         _code(
@@ -841,9 +853,9 @@ def build_04_farslip_eval_pastis() -> dict[str, Any]:
             "if merged.height == 0:\n"
             "    display(Markdown(\n"
             "        '> No hay parcelas en comun entre FarSLIP y el subset PASTIS-R. '\n"
-            "        'FarSLIP fue generado para Italia (US-022-c) y el subset PASTIS-R '\n"
-            "        'es Francia. La comparativa requiere un FarSLIP-PASTIS dedicado '\n"
-            "        '(backlog US-022-e).'\n"
+            "        'FarSLIP fue entrenado sobre parcelas de Italia y el subset PASTIS-R '\n"
+            "        'cubre parcelas de Francia. La comparativa requiere un FarSLIP entrenado '\n"
+            "        'sobre PASTIS, que queda pendiente como trabajo futuro.'\n"
             "    ))\n"
             "else:\n"
             "    fs_cols = [c for c in merged.columns if c.startswith('farslip_') and not c.startswith('farslip_emb_')] or [c for c in merged.columns if c.startswith('farslip_emb_')]\n"
@@ -859,7 +871,7 @@ def build_04_farslip_eval_pastis() -> dict[str, Any]:
             "    ax.hist(cosines, bins=40, color='#4C72B0', edgecolor='white')\n"
             "    ax.set_xlabel('Coseno (FarSLIP, RemoteCLIP) por parcela')\n"
             "    ax.set_ylabel('Frecuencia')\n"
-            "    ax.set_title('Distribucion de similitud entre embeddings FarSLIP y RemoteCLIP')\n"
+            "    ax.set_title('Distribución de similitud entre embeddings FarSLIP y RemoteCLIP')\n"
             "    ax.axvline(0.0, color='#888', linestyle='--', linewidth=1)\n"
             "    fig.savefig(env.figures_dir / 'cosine_farslip_vs_remoteclip.png', bbox_inches='tight')\n"
             "    display(fig)\n"
@@ -868,7 +880,9 @@ def build_04_farslip_eval_pastis() -> dict[str, Any]:
     )
 
     cells.append(
-        _md("## Separabilidad lineal: LogReg sobre FarSLIP vs RemoteCLIP")
+        _md(
+            "## Separabilidad lineal con regresión logística sobre cada espacio"
+        )
     )
 
     cells.append(
@@ -914,7 +928,7 @@ def build_04_farslip_eval_pastis() -> dict[str, Any]:
             "        n_jobs=-1,\n"
             "    )\n"
             "    display(Markdown(\n"
-            "        f'**LogReg sobre FarSLIP (interseccion)**: F1-macro = '\n"
+            "        f'**LogReg sobre FarSLIP (intersección)**: F1-macro = '\n"
             "        f'`{scores_fs.mean():.4f} +/- {scores_fs.std():.4f}` (5-fold).'\n"
             "    ))\n"
         )
@@ -923,22 +937,24 @@ def build_04_farslip_eval_pastis() -> dict[str, Any]:
     cells.append(
         _md(
             "## Conclusiones\n\n"
-            "Esta libreta entrega una **comparativa honesta** entre dos "
-            "extractores de embeddings de teledeteccion sobre datos reales "
-            "PASTIS-R, sin datos sinteticos y con metadata enriquecida.\n\n"
-            "Limitaciones documentadas:\n\n"
-            "1. FarSLIP fue distillado sobre parcelas de Italia (US-022-c); "
-            "el subset PASTIS-R es de Francia. La interseccion por "
-            "`parcel_id` puede ser baja o nula. La comparativa "
-            "F1-macro(FarSLIP) requiere FarSLIP-PASTIS dedicado (backlog "
-            "US-022-e).\n\n"
-            "2. RemoteCLIP cae a `openai/clip-vit-base-patch32` si los pesos "
-            "RemoteCLIP no se pudieron descargar de Hugging Face; el log "
-            "estructurado documenta cual modelo se uso.\n\n"
+            "Esta libreta entrega una comparativa entre dos extractores de "
+            "embeddings de teledetección sobre datos reales de PASTIS-R, "
+            "sin datos sintéticos y con metadata enriquecida.\n\n"
+            "**Limitaciones documentadas**:\n\n"
+            "1. FarSLIP fue destilado sobre parcelas de Italia, mientras "
+            "que el subset PASTIS-R cubre parcelas de Francia. La "
+            "intersección por `parcel_id` puede ser baja o nula. Una "
+            "comparativa F1-macro directa sobre FarSLIP requeriría "
+            "reentrenar el modelo sobre PASTIS, lo cual queda pendiente "
+            "como trabajo futuro.\n\n"
+            "2. Si los pesos de RemoteCLIP no logran descargarse, se cae "
+            "a `openai/clip-vit-base-patch32`; el log estructurado deja "
+            "constancia de qué modelo terminó usándose.\n\n"
             "## Lo que sigue\n\n"
-            "- Si FarSLIP supera a RemoteCLIP en F1-macro sobre Italia, "
-            "promovemos FarSLIP como base learner del stacking EPIC 6.\n"
-            "- La decision final se documenta en `Avance3.Equipo17.ipynb` "
+            "- Si FarSLIP supera a RemoteCLIP en F1-macro sobre el "
+            "conjunto de Italia, lo promovemos como modelo base del "
+            "ensamble por apilamiento posterior.\n"
+            "- La decisión final se documenta en `Avance3.Equipo17.ipynb` "
             "junto con el conjunto ganador."
         )
     )
@@ -956,19 +972,22 @@ def build_05_reencuadre() -> dict[str, Any]:
 
     cells.append(
         _md(
-            "# Reencuadre fenologico — ablation completa de bloques opcionales\n\n"
-            "Cierra la US-023-preview: mide el aporte cuantitativo de los "
-            "**bloques opcionales** sobre el conjunto fused completo:\n\n"
-            "1. **FarSLIP** (embeddings 512-dim, US-022-c epoch_2 real).\n"
-            "2. **pheno_text** (Gemini 3.5 Flash sobre el dataset full + "
-            "sentence-transformers, US-022-b D-5).\n"
-            "3. **Firma espectral REP** (Frampton et al. 2013, US-023-preview "
-            "P5) computada desde anclas S2 muestreadas en GEE.\n\n"
-            "**Sin skips silenciosos**: si falta `GEMINI_API_KEY` o "
-            "`PASTIS-R/`, el notebook lanza error explicito con instrucciones. "
-            "Si los parquets de bloques no existen, los materializa "
-            "directamente desde aqui (auto-gen).\n\n"
-            "Reproduce las ablaciones de `04c_baseline.ipynb` y le suma:\n\n"
+            "# Reencuadre fenológico — ablación completa de bloques opcionales\n\n"
+            "Cuantifica el aporte de los **bloques opcionales** sobre el "
+            "conjunto fused completo:\n\n"
+            "1. **FarSLIP** (embeddings de 512 dimensiones, extracción real "
+            "del epoch 2).\n"
+            "2. **Descripción fenológica textual con Gemini 3.5 Flash** "
+            "codificada con sentence-transformers.\n"
+            "3. **Firma espectral REP** (Frampton et al. 2013) calculada "
+            "desde anclas Sentinel-2 muestreadas en Earth Engine.\n\n"
+            "**Comportamiento ante datos faltantes**: si `GEMINI_API_KEY` "
+            "no está definida o `PASTIS-R/` no está en disco, el cuaderno "
+            "lanza error explícito con instrucciones, sin saltarse pasos en "
+            "silencio. Si los parquets de los bloques no existen, los "
+            "materializa directamente desde aquí.\n\n"
+            "La ablación reproduce los conjuntos de `04c_baseline.ipynb` y "
+            "añade:\n\n"
             "- `with_farslip` / `farslip_only`\n"
             "- `with_pheno_text` / `pheno_text_only`\n"
             "- `with_spectral_signature` / `spectral_signature_only`"
@@ -1030,7 +1049,7 @@ def build_05_reencuadre() -> dict[str, Any]:
         )
     )
 
-    cells.append(_md("## Auto-materializar bloque pheno_text (Gemini sobre full)"))
+    cells.append(_md("## Materialización del bloque `pheno_text` (Gemini sobre el dataset completo)"))
 
     cells.append(
         _code(
@@ -1055,7 +1074,8 @@ def build_05_reencuadre() -> dict[str, Any]:
 
     cells.append(
         _md(
-            "## Auto-materializar S2 anchors + firma espectral REP (Frampton 2013)"
+            "## Materialización de anclas Sentinel-2 y firma espectral REP "
+            "(Frampton 2013)"
         )
     )
 
@@ -1086,7 +1106,7 @@ def build_05_reencuadre() -> dict[str, Any]:
         )
     )
 
-    cells.append(_md("## Auto-materializar FarSLIP (path canonico Utf8)"))
+    cells.append(_md("## Carga de FarSLIP desde la ruta canónica (`parcel_id` en Utf8)"))
 
     cells.append(
         _code(
@@ -1108,11 +1128,11 @@ def build_05_reencuadre() -> dict[str, Any]:
 
     cells.append(
         _md(
-            "## Fusion de bloques: base + (FarSLIP, pheno_text, spectral_signature)\n\n"
-            "Hacemos un LEFT JOIN secuencial sobre `parcel_id` (todos Utf8 "
-            "tras `canonical_parcel_id`). Las parcelas sin match en algun "
-            "bloque opcional quedan con NaN — XGBoost y LightGBM toleran NaN "
-            "nativamente, RandomForest lo imputa por mediana."
+            "## Fusión de bloques: base + FarSLIP + pheno_text + spectral_signature\n\n"
+            "Aplicamos un LEFT JOIN secuencial sobre `parcel_id` (todos en "
+            "Utf8 tras `canonical_parcel_id`). Las parcelas sin coincidencia "
+            "en algún bloque opcional quedan con NaN; XGBoost y LightGBM "
+            "los toleran nativamente y RandomForest los imputa por mediana."
         )
     )
 
@@ -1141,7 +1161,7 @@ def build_05_reencuadre() -> dict[str, Any]:
         )
     )
 
-    cells.append(_md("## Ablation con todos los bloques opcionales"))
+    cells.append(_md("## Ablación con todos los bloques opcionales"))
 
     cells.append(
         _code(
@@ -1153,12 +1173,12 @@ def build_05_reencuadre() -> dict[str, Any]:
             "    buffer_km=BUFFER_KM,\n"
             "    max_samples=MAX_SAMPLES,\n"
             ")\n"
-            "display(Markdown(f'**Tabla ablation**: `{parquet_path.relative_to(env.repo)}`'))\n"
+            "display(Markdown(f'**Tabla de ablación**: `{parquet_path.relative_to(env.repo)}`'))\n"
             "display(ablation_table)\n"
         )
     )
 
-    cells.append(_md("## Graficas: ablation completa + leakage geom + bloques opcionales"))
+    cells.append(_md("## Gráficos: ablación completa, fuga geométrica y aporte de bloques opcionales"))
 
     cells.append(
         _code(
@@ -1175,7 +1195,7 @@ def build_05_reencuadre() -> dict[str, Any]:
             "    for row in ablation_table.iter_rows(named=True)\n"
             "]\n"
             "\n"
-            "fig_abl = plot_ablation_bars(results, title='F1-macro por conjunto (full ablation)')\n"
+            "fig_abl = plot_ablation_bars(results, title='F1-macro por conjunto (ablación completa)')\n"
             "fig_abl.savefig(env.figures_dir / 'ablation_full.png', bbox_inches='tight')\n"
             "display(fig_abl)\n"
             "plt.close(fig_abl)\n"
@@ -1194,26 +1214,28 @@ def build_05_reencuadre() -> dict[str, Any]:
 
     cells.append(
         _md(
-            "## Conclusiones — decisiones honestas por bloque\n\n"
-            "Las decisiones promover / descartar / diferir se toman por "
-            "bloque siguiendo el threshold de mejora `delta >= +0.005`:\n\n"
-            "1. **FarSLIP**: si `with_farslip - full >= +0.005`, se promueve "
-            "al baseline y entra al conjunto ganador. Si esta entre [-0.005, "
-            "+0.005], se mantiene como base learner del stacking EPIC 6. "
-            "Si es < -0.005, se descarta del baseline.\n\n"
-            "2. **pheno_text (Gemini Flash sobre full)**: misma regla. La "
-            "ablation aqui cuantifica el aporte real de la rama semantica "
-            "Wen et al. 2025 sobre Italia.\n\n"
+            "## Conclusiones — decisión por bloque\n\n"
+            "Las decisiones (promover, descartar o diferir) se toman bloque "
+            "por bloque siguiendo el umbral de mejora `delta >= +0.005`:\n\n"
+            "1. **FarSLIP**: si `with_farslip - full >= +0.005`, FarSLIP "
+            "se promueve al baseline y entra al conjunto ganador. Si el "
+            "delta cae en [-0.005, +0.005], se mantiene como modelo base "
+            "del ensamble por apilamiento posterior. Si es menor que "
+            "-0.005, se descarta del baseline.\n\n"
+            "2. **pheno_text (Gemini Flash sobre el dataset completo)**: "
+            "misma regla. La ablación aquí cuantifica el aporte real de "
+            "la rama semántica propuesta por Wen et al. (2025) sobre el "
+            "conjunto de Italia.\n\n"
             "3. **Firma espectral REP**: misma regla. Es la primera "
-            "aplicacion del descriptor Frampton 2013 sobre el dataset Italia.\n\n"
+            "aplicación del descriptor Frampton 2013 sobre el dataset Italia.\n\n"
             "4. **`geom_only`**: si F1-macro < 0.10, se confirma que no hay "
-            "leakage espacial agronomicamente significativo y la "
-            "decision US-022-b de descartar `geom_*` queda validada con "
+            "leakage espacial agronómicamente significativo y la "
+            "decisión previa de descartar `geom_*` queda validada con "
             "evidencia cuantitativa.\n\n"
             "## Lo que sigue\n\n"
             "- `Avance3.Equipo17.ipynb` lee esta `ablation_table.parquet`, "
             "ejecuta `select_winning_features()` y persiste "
-            "`features_fused_winning_italy.parquet` que consume EPIC 5."
+            "`features_fused_winning_italy.parquet` que consumen los modelos densos siguientes."
         )
     )
 
@@ -1231,20 +1253,21 @@ def build_avance3() -> dict[str, Any]:
     cells.append(
         _md(
             "# Avance 3 — Baseline tabular y conjunto ganador\n\n"
-            "Notebook concentrador del Avance 3 (24-may-2026). Reune los "
-            "resultados de las libretas anteriores y produce el "
-            "**conjunto de features ganador** que consume EPIC 5 (modelos "
-            "densos U-Net / U-TAE / TSViT / Swin-UNETR) y EPIC 6 (ensambles).\n\n"
+            "Cuaderno concentrador que reúne los resultados de las libretas "
+            "anteriores y produce el **conjunto de características ganador** "
+            "que alimenta a los modelos densos siguientes (U-Net, U-TAE, "
+            "TSViT, Swin-UNETR) y a los ensambles (voting, bagging, stacking, "
+            "blending).\n\n"
             "Estructura:\n\n"
-            "1. Resumen comparativo de los 3 modelos (RF + XGBoost + LightGBM) "
-            "desde `model_comparison_04.parquet`.\n"
-            "2. Resumen de la ablation completa desde "
-            "`05_reencuadre/reports/ablation_table.parquet`.\n"
-            "3. Decision por bloque opcional (FarSLIP / pheno_text / "
-            "spectral_signature) via `select_winning_features`.\n"
-            "4. Persistencia del parquet ganador + manifest JSON con la "
-            "lista nominal de features (nombres canonicos para que los "
-            "modelos siguientes lean exactamente las mismas columnas)."
+            "1. Comparativa de los 3 modelos (RandomForest, XGBoost, "
+            "LightGBM) desde `model_comparison_04.parquet`.\n"
+            "2. Resumen de la ablación completa desde "
+            "`reports/baseline/05_reencuadre/ablation_table.parquet`.\n"
+            "3. Decisión por bloque opcional (FarSLIP, pheno_text, "
+            "spectral_signature) vía `select_winning_features`.\n"
+            "4. Persistencia del parquet ganador y de un manifiesto JSON "
+            "con la lista nominal de columnas, de modo que los modelos "
+            "siguientes consuman exactamente el mismo conjunto."
         )
     )
 
@@ -1282,7 +1305,7 @@ def build_avance3() -> dict[str, Any]:
             "    display(Markdown(f'**Comparativa de modelos** (`{comparison_path}`):'))\n"
             "    display(comparison)\n"
             "    v2_metrics = {row['model']: row['f1_macro'] for row in comparison.iter_rows(named=True)}\n"
-            "    v1_metrics = {'xgb': 0.41, 'rf': 0.39}  # referencias publicadas US-022\n"
+            "    v1_metrics = {'xgb': 0.41, 'rf': 0.39}  # referencias previas\n"
             "    fig = plot_model_comparison_v2_with_v1_overlay(v2_metrics, v1_metrics=v1_metrics)\n"
             "    fig.savefig(env.figures_dir / 'model_comparison_v2.png', bbox_inches='tight')\n"
             "    display(fig)\n"
@@ -1294,7 +1317,7 @@ def build_avance3() -> dict[str, Any]:
         )
     )
 
-    cells.append(_md("## Ablation completa (FarSLIP + pheno_text + spectral_signature)"))
+    cells.append(_md("## Ablación completa (FarSLIP, pheno_text y firma espectral)"))
 
     cells.append(
         _code(
@@ -1327,11 +1350,13 @@ def build_avance3() -> dict[str, Any]:
 
     cells.append(
         _md(
-            "## Seleccion del conjunto ganador (`select_winning_features`)\n\n"
-            "Aplicamos la regla de promover bloques opcionales si su "
+            "## Selección del conjunto ganador con `select_winning_features`\n\n"
+            "Promovemos cada bloque opcional cuando su "
             "`delta_vs_full >= +0.005`. El conjunto base obligatorio "
-            "incluye AlphaEarth, indices espectrales, fenologia, ERA5 y "
-            "SRTM (geom_* siempre descartado por US-022-b)."
+            "incluye AlphaEarth, índices espectrales, atributos "
+            "fenológicos, ERA5 y SRTM. Las columnas `geom_*` se descartan "
+            "siempre por mostrar fuga espacial (resultado validado en la "
+            "ablación)."
         )
     )
 
@@ -1371,19 +1396,20 @@ def build_avance3() -> dict[str, Any]:
             "    output_path=WINNING_OUTPUT,\n"
             "    overwrite=True,\n"
             ")\n"
-            "display(Markdown(f'**Conjunto ganador persistido**: `{winning_path.relative_to(env.repo)}`'))\n"
-            "display(Markdown(f'**Manifest JSON**: `{winning_path.with_suffix(\".manifest.json\").relative_to(env.repo)}`'))\n"
+            "display(Markdown(f'**Conjunto ganador guardado**: `{winning_path.relative_to(env.repo)}`'))\n"
+            "display(Markdown(f'**Manifiesto JSON**: `{winning_path.with_suffix(\".manifest.json\").relative_to(env.repo)}`'))\n"
         )
     )
 
     cells.append(
         _md(
-            "## Nombres de las features ganadoras\n\n"
-            "Para reproducibilidad de los modelos siguientes (EPIC 5 + EPIC "
-            "6), publicamos la **lista nominal exacta** de las columnas "
-            "ganadoras. Cualquier modelo posterior que cargue "
-            "`features_fused_winning_italy.parquet` reusa esta lista sin "
-            "tener que reinventar la seleccion."
+            "## Nombres de las características ganadoras\n\n"
+            "Para que los modelos siguientes (densos y ensambles) lean "
+            "exactamente las mismas columnas, publicamos la **lista "
+            "nominal exacta** de las características ganadoras. Cualquier "
+            "modelo posterior que cargue "
+            "`features_fused_winning_italy.parquet` reúsa esta lista sin "
+            "tener que reinventar la selección."
         )
     )
 
@@ -1393,33 +1419,34 @@ def build_avance3() -> dict[str, Any]:
             "manifest = json.loads(\n"
             "    Path(WINNING_OUTPUT).with_suffix('.manifest.json').read_text(encoding='utf-8')\n"
             ")\n"
-            "display(Markdown(f'**N features**: `{manifest[\"n_features\"]}`'))\n"
-            "display(Markdown('**Meta cols** (no son features):'))\n"
+            "display(Markdown(f'**Número de características**: `{manifest[\"n_features\"]}`'))\n"
+            "display(Markdown('**Columnas de metadata** (no son características):'))\n"
             "display(pl.Series('meta_cols', manifest['meta_cols']).to_frame())\n"
-            "display(Markdown('**Feature cols ganadoras** (primeras 40):'))\n"
+            "display(Markdown('**Características ganadoras** (primeras 40):'))\n"
             "display(pl.Series('feature', manifest['feature_cols'][:40]).to_frame())\n"
-            "display(Markdown(f'**Total feature cols**: `{len(manifest[\"feature_cols\"])}`'))\n"
+            "display(Markdown(f'**Total de características**: `{len(manifest[\"feature_cols\"])}`'))\n"
         )
     )
 
     cells.append(
         _md(
-            "## Conclusiones — cierre del baseline\n\n"
-            "Con esta libreta cerramos el Avance 3:\n\n"
-            "- Tres modelos baseline (RandomForest, XGBoost, LightGBM) "
-            "entrenados sobre spatial CV 5-fold + buffer 1 km, persistidos "
-            "en MLflow + joblib.\n\n"
-            "- Ablation de 8-10 conjuntos con decisiones documentadas por "
-            "bloque opcional.\n\n"
-            "- Conjunto de features ganador nombrado y persistido en "
-            "`features_fused_winning_italy.parquet` mas un manifest JSON.\n\n"
-            "## Lo que sigue (EPIC 5)\n\n"
-            "Los notebooks siguientes (Avance 4: `05_alt_models.ipynb` y "
-            "Avance 5: `06_final_gemma4_ensembles.ipynb`) cargan **el "
-            "mismo parquet ganador** y entrenan U-Net, U-TAE, TSViT, "
-            "Swin-UNETR, Gemma 4 26B-MoE LoRA y los 4 ensambles del EPIC 6, "
-            "garantizando que todos comparten el mismo conjunto de "
-            "features."
+            "## Conclusiones — cierre del baseline tabular\n\n"
+            "Con este cuaderno cerramos el baseline tabular:\n\n"
+            "- Tres modelos (RandomForest, XGBoost, LightGBM) entrenados "
+            "con validación cruzada espacial de 5 particiones y buffer de "
+            "1 km, registrados en MLflow y serializados con joblib.\n"
+            "- Ablación de 8 a 10 conjuntos de características con "
+            "decisiones documentadas por cada bloque opcional.\n"
+            "- Conjunto de características ganador nombrado y guardado en "
+            "`features_fused_winning_italy.parquet` junto con un manifiesto "
+            "JSON que lista cada columna.\n\n"
+            "## Lo que sigue\n\n"
+            "Las libretas siguientes (`05_alt_models.ipynb` y "
+            "`06_final_gemma4_ensembles.ipynb`) cargarán **el mismo parquet "
+            "ganador** y entrenarán U-Net, U-TAE, TSViT, Swin-UNETR, "
+            "Gemma 4 26B-MoE con LoRA y los cuatro ensambles (voting, "
+            "bagging, stacking, blending), garantizando que todos operan "
+            "sobre el mismo conjunto de características."
         )
     )
 
