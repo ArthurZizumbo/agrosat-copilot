@@ -1,4 +1,4 @@
-.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip notebooks-check i18n-check db-migrate db-rollback db-new db-status db-seed db-test-us015 features-extract-demo features-persist features-fuse-demo features-fuse-italy dagster-materialize-features feature-selection-subset feature-selection-build feature-selection-notebook feature-selection-test feature-fusion-build feature-fusion-notebook avance2-figures avance2-build mlflow-up mlflow-down train-baseline baseline-test baseline-notebook baseline-notebook-check s2-raw-parcels interpretability-test learning-curves-test ml-train-image train-l4 train-l4-smoke train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eda-sentinel2 eda-alphaearth eda-bivariado eda-figures-avance1 eda-figures-paper-methods eda-pastis-subset eda-notebook-avance1 paper-methods-notebook eda-pdf eda-dashboard eda-dashboard-test eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate farslip-dataset-build farslip-dataset-check farslip-train farslip-eval-pastis farslip-smoke-eval farslip-extract-embeddings feature-ablation phenology-train phenology-description-test reencuadre-notebook reencuadre-notebook-check
+.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip notebooks-check i18n-check db-migrate db-rollback db-new db-status db-seed db-test-us015 features-extract-demo features-persist features-fuse-demo features-fuse-italy dagster-materialize-features feature-selection-subset feature-selection-build feature-selection-notebook feature-selection-test feature-fusion-build feature-fusion-notebook avance2-figures avance2-build mlflow-up mlflow-down train-baseline baseline-test baseline-notebook baseline-notebook-check baseline-v2-full s2-raw-parcels interpretability-test learning-curves-test ml-train-image train-l4 train-l4-smoke train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eda-sentinel2 eda-alphaearth eda-bivariado eda-figures-avance1 eda-figures-paper-methods eda-pastis-subset eda-notebook-avance1 paper-methods-notebook eda-pdf eda-dashboard eda-dashboard-test eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate farslip-dataset-build farslip-dataset-check farslip-train farslip-eval-pastis farslip-smoke-eval farslip-extract-embeddings feature-ablation phenology-train phenology-description-test reencuadre-notebook reencuadre-notebook-check reencuadre-notebook-full
 
 help:
 	@echo "AgroSatCopilot — comandos disponibles:"
@@ -187,16 +187,23 @@ train-baseline:  ## US-019 — Entrena RF + XGB con tuning y registra runs MLflo
 baseline-test:  ## US-019 — pytest baseline.py + metrics.py + mlflow_utils.py
 	poetry run python -m pytest tests/ml/train tests/ml/eval tests/ml/utils -q
 
-baseline-notebook:  ## US-019/020/021/022 — Reconstruye y ejecuta notebooks/04_baseline.ipynb (secciones 1-8)
-	poetry run python scripts/build_baseline_notebook.py --out notebooks/04_baseline.ipynb
-	MPLBACKEND=Agg poetry run papermill notebooks/04_baseline.ipynb \
-	  notebooks/04_baseline.ipynb --no-progress-bar
+baseline-notebook:  ## US-019/020/021/022 + US-023-preview P1 — Reconstruye y ejecuta notebooks/baseline/04_baseline.ipynb
+	poetry run python scripts/build_baseline_notebook.py --out notebooks/baseline/04_baseline.ipynb
+	MPLBACKEND=Agg poetry run papermill notebooks/baseline/04_baseline.ipynb \
+	  notebooks/baseline/04_baseline.ipynb --no-progress-bar
 
 baseline-notebook-check:  ## US-022 — papermill end-to-end de 04_baseline.ipynb con parametros reducidos (CI, ~5 min)
-	poetry run python scripts/build_baseline_notebook.py --out notebooks/04_baseline.ipynb
-	MPLBACKEND=Agg poetry run papermill notebooks/04_baseline.ipynb /tmp/04_baseline_check.ipynb \
+	poetry run python scripts/build_baseline_notebook.py --out notebooks/baseline/04_baseline.ipynb
+	MPLBACKEND=Agg poetry run papermill notebooks/baseline/04_baseline.ipynb /tmp/04_baseline_check.ipynb \
 	  -p MAX_SAMPLES 4000 -p TUNE False -p COMPARISON_MAX_SAMPLES 4000 \
 	  -p COMPARISON_K_FOLDS 3 --no-progress-bar
+
+baseline-v2-full:  ## US-023-preview P8 — papermill notebook 04 v2 con CUDA (3 modelos sobre conjunto ganador post-ablation, ~90 min)
+	poetry run python scripts/build_baseline_notebook.py --out notebooks/baseline/04_baseline.ipynb
+	poetry run papermill notebooks/baseline/04_baseline.ipynb \
+	  notebooks/baseline/04_baseline.ipynb \
+	  -p RUN_BASELINE_V2 True -p V2_MAX_SAMPLES 0 -p V2_K_FOLDS 5 -p V2_BUFFER_KM 1.0 \
+	  -p V2_TEMPORAL_EPOCHS 200 -p V2_TEMPORAL_BATCH_SIZE 128 -p V2_DEVICE auto --no-progress-bar
 
 s2-raw-parcels:  ## US-022 — genera el escenario (b): Sentinel-2 crudo a nivel parcela
 	poetry run python scripts/build_s2_raw_parcels.py \
@@ -218,34 +225,31 @@ results = run_feature_ablation(features_path='data/test_fixtures/feature_selecti
 export_ablation_table(results, Path('reports/baseline/feature_ablation'))"
 
 phenology-train:  ## US-022b-C — entrena TempCNN + InceptionTime con spatial CV (CPU smoke; en L4 cambiar device)
-	poetry run python -c "from ml.train.phenology_models import train_temporal_model; import polars as pl, json; results = {}; \
-df = pl.read_parquet('data/test_fixtures/feature_selection_parcels_subset.parquet').sample(n=4000, seed=42); \
-for k in ('tempcnn','inceptiontime'): r = train_temporal_model(df=df, model_kind=k, n_epochs=5, batch_size=128, seed=42, device='cpu', k_folds=5, buffer_km=1.0); results[k] = {'f1_macro': r.f1_macro, 'miou': r.miou, 'n_parcels': r.n_parcels, 'n_classes': r.n_classes, 'train_time_s': r.train_time_s}; \
-print(json.dumps(results, indent=2))"
+	poetry run python scripts/train_phenology_models.py --device cpu --n-epochs 5 --batch-size 128 --n-parcels 4000
 
 phenology-description-test:  ## US-022b-D — pytest del modulo phenology_description (Gemini mockeado)
 	poetry run python -m pytest tests/ml/features/test_phenology_description.py -q
 
-reencuadre-notebook:  ## US-022b-C/D — Reconstruye y ejecuta 05_reencuadre_fenologico.ipynb
+reencuadre-notebook:  ## US-022b-C/D + US-023-preview P1 — Reconstruye y ejecuta notebooks/baseline/05_reencuadre_fenologico.ipynb
 	poetry run python scripts/build_reencuadre_notebook.py \
-	  --out notebooks/feature_engineering/05_reencuadre_fenologico.ipynb
-	MPLBACKEND=Agg poetry run papermill notebooks/feature_engineering/05_reencuadre_fenologico.ipynb \
-	  notebooks/feature_engineering/05_reencuadre_fenologico.ipynb --no-progress-bar
+	  --out notebooks/baseline/05_reencuadre_fenologico.ipynb
+	MPLBACKEND=Agg poetry run papermill notebooks/baseline/05_reencuadre_fenologico.ipynb \
+	  notebooks/baseline/05_reencuadre_fenologico.ipynb --no-progress-bar
 
 reencuadre-notebook-check:  ## US-022b — papermill smoke con parametros reducidos (~3 min CI)
 	poetry run python scripts/build_reencuadre_notebook.py \
-	  --out notebooks/feature_engineering/05_reencuadre_fenologico.ipynb
-	MPLBACKEND=Agg poetry run papermill notebooks/feature_engineering/05_reencuadre_fenologico.ipynb \
+	  --out notebooks/baseline/05_reencuadre_fenologico.ipynb
+	MPLBACKEND=Agg poetry run papermill notebooks/baseline/05_reencuadre_fenologico.ipynb \
 	  /tmp/05_reencuadre_check.ipynb \
 	  -p MAX_SAMPLES 800 -p K_FOLDS 3 -p BUFFER_KM 0.5 -p TEMPORAL_EPOCHS 2 -p TEMPORAL_BATCH_SIZE 32 \
 	  -p DEVICE cpu -p RUN_SEMANTIC_BRANCH False --no-progress-bar
 
 reencuadre-notebook-full:  ## US-022b — corrida real GPU local (full dataset, 200 ep + early stopping, CUDA)
 	poetry run python scripts/build_reencuadre_notebook.py \
-	  --out notebooks/feature_engineering/05_reencuadre_fenologico.ipynb
-	poetry run papermill notebooks/feature_engineering/05_reencuadre_fenologico.ipynb \
-	  notebooks/feature_engineering/05_reencuadre_fenologico.ipynb \
-	  -p MAX_SAMPLES 0 -p K_FOLDS 5 -p BUFFER_KM 1.0 -p TEMPORAL_EPOCHS 200 -p TEMPORAL_BATCH_SIZE 256 \
+	  --out notebooks/baseline/05_reencuadre_fenologico.ipynb
+	poetry run papermill notebooks/baseline/05_reencuadre_fenologico.ipynb \
+	  notebooks/baseline/05_reencuadre_fenologico.ipynb \
+	  -p MAX_SAMPLES 0 -p K_FOLDS 5 -p BUFFER_KM 1.0 -p TEMPORAL_EPOCHS 200 -p TEMPORAL_BATCH_SIZE 128 \
 	  -p DEVICE auto -p RUN_SEMANTIC_BRANCH False --no-progress-bar
 
 # === ML / Training ===

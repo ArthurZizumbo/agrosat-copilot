@@ -245,6 +245,9 @@ notebooks/_export/
 !docs/architecture/*.svg
 !paper/figures/*.pdf
 !paper/figures/*.png
+!paper/figures/us-023-preview/*.png
+!paper/figures/us-023-preview/*.pdf
+!paper/tables/us-023-preview/*.tex
 
 # Context & academic PDFs needed for reference
 !context/*.pdf
@@ -287,6 +290,15 @@ reports/baseline/*
 !reports/baseline/validation_curve_rf_max_depth.png
 !reports/baseline/comparison_barplot.png
 !reports/baseline/comparison_table.tex
+!reports/baseline/feature_ablation.csv
+!reports/baseline/feature_ablation.md
+!reports/baseline/phenology_models.csv
+!reports/baseline/model_comparison_v2/
+!reports/baseline/model_comparison_v2/**
+# US-023-preview P4: ablation Gemini Flash 3.5 + summary JSON (artefactos
+# pequenios del subset 1080 parcelas, van a git directo no DVC).
+!reports/baseline/feature_ablation/
+!reports/baseline/feature_ablation/**
 
 # ── Misc ──────────────────────────────────────────────────────────────────────
 *.bak

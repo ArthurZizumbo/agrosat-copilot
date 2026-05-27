@@ -113,7 +113,8 @@ def build_default_feature_sets(
             o del subset US-018).
 
     Returns:
-        Mapping ``{nombre_set: (cols,)}`` con los 5 sets:
+        Mapping ``{nombre_set: (cols,)}`` con los 5 sets canonicos + sets
+        opcionales segun cols disponibles:
 
         - ``full``: todas las features numericas (excluyendo metadata).
         - ``no_geom``: ``full`` sin ``geom_*``.
@@ -123,15 +124,21 @@ def build_default_feature_sets(
         - ``phenology_only``: 8 cols fenologicas + 24 FFT
           (``{idx}_fft_amp_k``, ``{idx}_fft_phase_k`` para
           ``idx in {NDVI, NDWI, EVI}``).
+        - ``with_farslip`` / ``farslip_only``: solo si hay cols
+          ``farslip_NNN`` (US-022-c / US-023-preview P2).
+        - ``with_pheno_text`` / ``pheno_text_only``: solo si hay cols
+          ``pheno_text_NNN`` (US-022b-D / US-023-preview P4).
+        - ``with_spectral_signature`` / ``spectral_signature_only``: solo
+          si hay cols ``spectral_signature_NNN`` (US-023-preview P5).
+        - ``geom_only``: solo si hay cols ``geom_*`` — test cuantitativo
+          de leakage espacial (US-023-preview P3).
     """
     cols = [c for c in available_cols if c not in _META_COLS]
 
     full = tuple(cols)
     no_geom = tuple(c for c in cols if not c.startswith("geom_"))
     no_geom_no_era5_srtm = tuple(
-        c
-        for c in no_geom
-        if not c.startswith("era5_") and not c.startswith("srtm_")
+        c for c in no_geom if not c.startswith("era5_") and not c.startswith("srtm_")
     )
     ae_cols = tuple(
         c
@@ -150,9 +157,19 @@ def build_default_feature_sets(
     }
     fft_cols = tuple(c for c in cols if "_fft_amp_" in c or "_fft_phase_" in c)
     pheno_cols = tuple(c for c in cols if c in pheno_cols_known) + fft_cols
-    # Bloques opcionales (US-017 FarSLIP, US-022b-D rama semantica fenologica).
-    farslip_cols = tuple(c for c in cols if c.startswith("farslip_"))
+    # Bloques opcionales (US-017 FarSLIP, US-022b-D rama semantica fenologica,
+    # US-023-preview P5 firma espectral). El filtro de FarSLIP usa el patron
+    # canonico `farslip_NNN` (3 digitos) y descarta `farslip_emb_NNN` para
+    # evitar colisiones cuando ambos prefijos coexisten transitoriamente.
+    farslip_cols = tuple(
+        c for c in cols
+        if c.startswith("farslip_") and not c.startswith("farslip_emb_")
+    )
     pheno_text_cols = tuple(c for c in cols if c.startswith("pheno_text_"))
+    geom_cols = tuple(c for c in cols if c.startswith("geom_"))
+    spectral_signature_cols = tuple(
+        c for c in cols if c.startswith("spectral_signature_")
+    )
 
     sets: dict[str, tuple[str, ...]] = {
         "full": full,
@@ -161,13 +178,22 @@ def build_default_feature_sets(
         "alphaearth_only": ae_cols,
         "phenology_only": pheno_cols,
     }
-    # Solo agrega los conjuntos with_* si las columnas correspondientes
+    # Solo agrega los conjuntos with_* / *_only si las columnas correspondientes
     # estan materializadas en el DataFrame (graceful degradation).
     if farslip_cols:
         sets["with_farslip"] = pheno_cols + farslip_cols
         sets["farslip_only"] = farslip_cols
     if pheno_text_cols:
         sets["with_pheno_text"] = pheno_cols + pheno_text_cols
+        sets["pheno_text_only"] = pheno_text_cols
+    if spectral_signature_cols:
+        sets["with_spectral_signature"] = pheno_cols + spectral_signature_cols
+        sets["spectral_signature_only"] = spectral_signature_cols
+    # `geom_only` se agrega cuando hay cols `geom_*`: test cuantitativo de
+    # leakage espacial. La hipotesis nula es F1-macro(`geom_only`) < 0.10
+    # (geometria pura no aporta senal de clase).
+    if geom_cols:
+        sets["geom_only"] = geom_cols
     return sets
 
 

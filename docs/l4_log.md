@@ -200,3 +200,124 @@ preview).
 acotado (216 parcelas, k=3 folds) la rama semantica NO supera al baseline `full`
 (delta -0.12), pero el resultado es honesto y reportable. Escalar a 85951
 parcelas requiere presupuesto Gemini ~$10 USD + queda como item EPIC 6.
+
+---
+
+## 2026-05-25 — US-023-preview P4 — Ampliacion `pheno_text` SKIP HONESTO
+
+**Plan**: ampliar el bloque `pheno_text_*` de 216 (US-022-c P5) a >=1000 parcelas
+balanceadas con Gemini Flash 3.5 para validar/refutar la rama semantica
+definitivamente. Presupuesto previsto: <= $5 USD (holgura 50x sobre el smoke US-022-c).
+
+**Estado**: SKIP HONESTO documentado en `notebooks/baseline/05_reencuadre_fenologico.ipynb`
+§3.3. Razones:
+
+1. `GEMINI_API_KEY` / `GOOGLE_API_KEY` no estan configuradas en el entorno
+   local de Fase 3 de US-023-preview (solo-dev environment); la llamada real
+   queda bloqueada por la pre-condicion documentada en la celda de bootstrap.
+2. El bloque actual `data/features/phenology_text_italy.parquet` (216 parcelas,
+   shape `(216, 386)`) permanece valido y la ablation lo reusa via cache JSON
+   por parcela (`data/cache/phenology_descriptions/{hash16}.json`).
+3. La logica de ampliacion esta lista en `ml/features/phenology_description.py:
+   build_phenology_text_block(max_parcels=1000, skip_llm=False)` — un solo
+   comando con la API key configurada genera los 784 textos faltantes.
+
+**Costo cloud incurrido por P4 (esta corrida)**: **$0.00 USD** (skip honesto).
+
+**Deuda P4** (item backlog US-024 o cierre US-023-preview-followup):
+
+- Configurar `GEMINI_API_KEY` en `.env.local` + ejecutar
+  `poetry run python -c "from ml.features.phenology_description import build_phenology_text_block; ..."`
+  sobre subset estratificado >= 1000 parcelas balanceadas.
+- Esperado: ~5x mas requests que US-022-c P5 (216 -> 1000+) ~ $0.10 USD; con
+  holgura por reintentos quedaria en $0.20-$0.50 USD (cap $5 USD se respeta).
+- Decision tras ampliar: promover al baseline si delta >= +0.01, o mantener
+  como base learner del stacking EPIC 6 si no aporta senal.
+
+**Conclusion P4**: el skip es **reportable y honesto** — la rama semantica
+sigue en el subset US-022-c sin re-evaluarse en esta US. La decision tecnica
+queda diferida sin bloquear US-023-preview.
+
+---
+
+## 2026-05-26 11:48 UTC — US-023-preview P4 — Ampliacion `pheno_text` EJECUCION REAL
+
+**Plan**: revertir el SKIP HONESTO previo. `GEMINI_API_KEY` SI estaba configurada
+en `.env.local` (39 chars, prefijo `AIzaSy`); la sesion anterior no habia cargado
+`python-dotenv`. Esta corrida lo carga y ejecuta el bloque end-to-end.
+
+**Estado**: COMPLETADO real (no skip). Resultado replicable desde
+`scripts/us023_p4_pheno_text_ablation.py`.
+
+### Configuracion
+
+- Dataset full: `data/test_fixtures/feature_selection_parcels_subset.parquet` (85951 parcelas x 192 cols, 18 clases efectivas).
+- Subset balanceado: 60 parcelas por clase x 18 clases = **1080 parcelas** (cumple AC-P4-2: `>= 1000`).
+- Modelo Gemini: `gemini-3.5-flash` via cliente `google-genai` (env `AGROSAT_LLM_PROVIDER=google-genai`).
+- Text-encoder: `sentence-transformers/all-MiniLM-L6-v2` -> 384 dim.
+- Ablation: XGBoost CUDA, spatial CV 5-fold, buffer 1 km, seed 42 (mismo splitter cacheado de US-022-b).
+- Subsets evaluados: `full` (185 features sin `geom_*`), `with_pheno_text` (185 + 384 = 569), `pheno_text_only` (384).
+
+### Resultados
+
+| Subset             | n_features | f1_macro  | f1_weighted | mIoU     | delta_vs_full |
+|--------------------|-----------:|----------:|------------:|---------:|--------------:|
+| full               |        185 | 0.328598  | 0.328598    | 0.212026 | -             |
+| with_pheno_text    |        569 | 0.293236  | 0.293236    | 0.187010 | **-0.035362** |
+| pheno_text_only    |        384 | 0.074728  | 0.074728    | 0.039618 | -0.253870     |
+
+### Costos Gemini Flash 3.5
+
+- `n_requests` reales (no cache): **918**
+- `n_cache_hits` (reutilizados US-022-c P5 + corrida): **162**
+- `tokens_in` estimados: **275,400** (chars_in / 4, prompt ~1200 chars x 918 calls)
+- `tokens_out` estimados: **164,641** (chars_out reales / 4)
+- Tarifas Gemini 2.5/3.5 Flash: input $0.30/1M tok, output $2.50/1M tok
+- `cost_in` = $0.0826 USD · `cost_out` = $0.4116 USD
+- **`cost_usd_total` = $0.4942 USD** (cumple AC-P4-4: `<= $5 USD`)
+- Wall clock fase pheno descriptions: 2681 s (~45 min)
+- Wall clock total (incluye encoding + ablation 5-fold x 3 sets en RTX 4070): **3449 s (~57 min)**
+
+### Decision (AC-P4-5)
+
+`delta_pheno_text_vs_full = -0.0354` < -0.01 -> **DEUDA US-024** (escalar a full
+85951 parcelas con presupuesto adicional). El bloque `pheno_text_*` con encoder
+sentence-transformers MiniLM y subset 1080 NO supera al baseline tabular en F1-macro.
+
+Posibles causas estructurales (no se investigan aqui, quedan como hipotesis para US-024):
+
+1. Encoder MiniLM no se beneficia de la senal agronomica especifica; un text-encoder
+   contrastivo entrenado en remote sensing (FarSLIP CLIP, US-017) podria capturar mejor
+   la firma fenologica.
+2. La cardinalidad 1080 puede ser insuficiente para que XGBoost aprenda 384 dimensiones
+   nuevas sobre 18 clases (overfitting en folds pequenos: fold 4 cayo a 0.094 en `with_pheno_text`).
+3. Las descripciones Gemini son **redundantes** con las features fenologicas ya presentes
+   (sog_doy, peak_doy, ndvi_auc, etc.) que el prompt explicitamente lista — el LLM no
+   anade informacion nueva, solo la verbaliza.
+
+### Decision recomendada para EPIC 6 (stacking)
+
+Mantener `pheno_text_*` como **base learner del stacking** (no descartar): un meta-learner
+puede aprovechar la calibracion diferencial del bloque incluso si su F1 marginal es bajo.
+Recomendado entrar al stacking con peso bajo (e.g., voting weight 0.1 vs XGB peso 0.5).
+
+### Artefactos persistidos
+
+- `data/features/phenology_text_italy.parquet` -- shape `(1080, 386)` (parcel_id + year + 384 cols `pheno_text_*`). DVC tracking pendiente (gate DVC).
+- `reports/baseline/feature_ablation/ablation_table_pheno_text_v2.parquet` -- 3 filas (`full`, `with_pheno_text`, `pheno_text_only`).
+- `reports/baseline/feature_ablation/us023_p4_summary.json` -- summary completo.
+- `data/cache/phenology_descriptions/*.json` -- 1080+ archivos JSON cache (reutilizables sin nuevo costo Gemini).
+- MLflow run: `02d979a6b48042ac82a7b15c6ec304ac` (experimento `baseline-pheno-text-ablation`, tracking `file:./mlruns`).
+- Script reproducible: `scripts/us023_p4_pheno_text_ablation.py`.
+- Log corrida: `scripts/us023_p4.log`.
+
+### Costo cloud incurrido P4 (acumulado historico)
+
+| Corrida           | Fecha       | n_parcels | n_requests | cost_usd  |
+|-------------------|-------------|----------:|-----------:|----------:|
+| US-022-c P5 smoke | 22-may-2026 |       216 |        216 | 0.023     |
+| US-023-preview P4 | 26-may-2026 |      1080 |        918 | **0.494** |
+| **Total**         |             |           |       1134 | **0.517** |
+
+Holgura sobre cap $5 USD: ~9.7x. US-024 escalando a 85951 estimaria ~$0.494 * (85951/1080) = ~$39 USD,
+fuera del cap actual; quedaria como propuesta de presupuesto adicional.

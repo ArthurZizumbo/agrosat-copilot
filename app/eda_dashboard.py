@@ -61,6 +61,16 @@ except ImportError:  # pragma: no cover - import guard
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIGURES_ROOT = REPO_ROOT / "paper" / "figures"
 ROIS_YAML = REPO_ROOT / "config" / "rois.yaml"
+
+# Rutas para la seccion Baseline (US-023-preview).
+BASELINE_FIGURES_DIR = FIGURES_ROOT / "us-023-preview"
+BASELINE_ABLATION_DIR = REPO_ROOT / "reports" / "baseline" / "feature_ablation"
+BASELINE_REENCUADRE_DIR = REPO_ROOT / "reports" / "baseline" / "reencuadre_fenologico"
+BASELINE_MODEL_COMP_V2_DIR = REPO_ROOT / "reports" / "baseline" / "model_comparison_v2"
+# Mensaje canonico cuando un artefacto Baseline aun no existe en disco.
+_BASELINE_MISSING_HINT = (
+    "Artefacto pendiente — ejecuta `make reencuadre-notebook-full && make baseline-v2-full`"
+)
 # Para PASTIS preferimos el subset compacto (~500 KB, dissolved por tile)
 # que sí está commiteado al repo y funciona en Streamlit Cloud. Si no existe
 # (entornos antiguos sin el subset), caemos al metadata completo de 19 MB
@@ -461,6 +471,26 @@ def _list_csvs(directory: Path, pattern: str = "*.csv") -> list[Path]:
     return sorted(directory.glob(pattern))
 
 
+@st.cache_data(show_spinner=False)
+def load_parquet(path: Path) -> pl.DataFrame:
+    """Carga un parquet como ``polars.DataFrame`` con cache de Streamlit.
+
+    Args:
+        path: Ruta absoluta o relativa al parquet en disco.
+
+    Returns:
+        DataFrame de Polars. Si la lectura falla o el archivo no existe,
+        devuelve un DataFrame vacio (graceful degradation).
+    """
+    path = Path(path)
+    if not path.exists():
+        return pl.DataFrame()
+    try:
+        return pl.read_parquet(path)
+    except (pl.exceptions.ComputeError, OSError, ValueError):
+        return pl.DataFrame()
+
+
 # ---------------------------------------------------------------------------
 # KPI cards por ficha (fuente unica: NotebookCard.kpis)
 # ---------------------------------------------------------------------------
@@ -822,9 +852,19 @@ _TAB_LABELS: tuple[str, ...] = _EDA_TAB_LABELS + _FE_TAB_LABELS
 # Opciones del selector de sección de nivel superior.
 _SECTION_EDA = "Exploración de Datos (EDA)"
 _SECTION_FE = "Ingeniería de Características (FE)"
-_SECTION_OPTIONS: tuple[str, ...] = (_SECTION_EDA, _SECTION_FE)
+_SECTION_BASELINE = "Baseline (US-023-preview)"
+_SECTION_OPTIONS: tuple[str, ...] = (_SECTION_EDA, _SECTION_FE, _SECTION_BASELINE)
 # Clave de st.session_state que preserva la sección seleccionada.
 _SECTION_STATE_KEY = "dashboard_section"
+
+# Etiquetas de los 5 tabs de la sección Baseline (AC-P9-3).
+_BASELINE_TAB_LABELS: tuple[str, ...] = (
+    "Ablation de features",
+    "Leakage geográfico",
+    "Bloques opcionales",
+    "Modelos baseline v2",
+    "Conclusiones",
+)
 
 
 def _render_hero() -> None:
@@ -873,6 +913,7 @@ def _render_sidebar(active_section: str) -> None:
         st.markdown("**Navegación**")
         eda_active = active_section == _SECTION_EDA
         fe_active = active_section == _SECTION_FE
+        baseline_active = active_section == _SECTION_BASELINE
         st.markdown(
             f"**Exploración de datos**{'  ·  sección activa' if eda_active else ''}"
         )
@@ -885,6 +926,13 @@ def _render_sidebar(active_section: str) -> None:
         )
         for label in _FE_TAB_LABELS:
             prefix = "▸ " if fe_active else "- "
+            st.markdown(f"{prefix}{label}")
+        st.markdown(
+            f"**Baseline (US-023-preview)**"
+            f"{'  ·  sección activa' if baseline_active else ''}"
+        )
+        for label in _BASELINE_TAB_LABELS:
+            prefix = "▸ " if baseline_active else "- "
             st.markdown(f"{prefix}{label}")
 
 
@@ -944,6 +992,334 @@ def _render_fe_section() -> None:
             render_card(card)
 
 
+# ---------------------------------------------------------------------------
+# Seccion Baseline (US-023-preview) — 5 tabs
+# ---------------------------------------------------------------------------
+
+
+def _render_baseline_figure(png_path: Path, caption: str) -> None:
+    """Renderiza una figura del baseline si existe, con warning graceful si no.
+
+    Args:
+        png_path: Ruta absoluta al PNG.
+        caption: Texto descriptivo bajo la imagen.
+    """
+    if not png_path.exists():
+        st.warning(f"Figura no disponible (`{png_path.name}`). {_BASELINE_MISSING_HINT}")
+        return
+    st.image(str(png_path), caption=caption, use_container_width=True)
+
+
+def _render_baseline_table(parquet_path: Path, caption: str) -> None:
+    """Renderiza una tabla parquet con cache lazy y warning graceful.
+
+    Args:
+        parquet_path: Ruta absoluta al parquet.
+        caption: Texto descriptivo bajo la tabla.
+    """
+    if not parquet_path.exists():
+        st.warning(f"Tabla no disponible (`{parquet_path.name}`). {_BASELINE_MISSING_HINT}")
+        return
+    df = load_parquet(parquet_path)
+    if df.is_empty():
+        st.caption(f"Tabla vacía o ilegible: `{parquet_path.name}`.")
+        return
+    st.dataframe(
+        df.head(_DATAFRAME_HEAD_ROWS).to_pandas(),
+        use_container_width=True,
+    )
+    if caption:
+        st.caption(caption)
+
+
+def _render_baseline_tab_ablation() -> None:
+    """Tab 1: ablation de features sobre los 7-10 conjuntos canónicos."""
+    _render_section_divider("Ablation de conjuntos de features", badge="Tab 1 de 5")
+    st.markdown(
+        "Comparativa cuantitativa de los conjuntos de features evaluados sobre "
+        "spatial CV 5-fold (mismo splitter de US-022b). Cada fila reporta "
+        "`n_features`, `F1-macro`, `F1-weighted`, `mIoU` y `delta_vs_full`. "
+        "Los conjuntos opcionales (`with_farslip`, `with_pheno_text`, "
+        "`with_spectral_signature`) sólo aparecen cuando el bloque "
+        "correspondiente está materializado en disco."
+    )
+    _render_baseline_figure(
+        BASELINE_FIGURES_DIR / "ablation_optional_blocks.png",
+        caption="Comparativa visual de los conjuntos opcionales contra el conjunto `full`.",
+    )
+    # La tabla canonica vive en reports/baseline/feature_ablation/ (US-023-preview);
+    # si todavia no se regenero, caemos al ablation_table.parquet historico de
+    # US-022 en reencuadre_fenologico/ para no dejar el tab vacio.
+    primary_table = BASELINE_ABLATION_DIR / "ablation_table.parquet"
+    if primary_table.exists():
+        table_path = primary_table
+    else:
+        table_path = BASELINE_REENCUADRE_DIR / "ablation_table.parquet"
+    _render_baseline_table(
+        table_path,
+        caption=(
+            "Tabla `ablation_table.parquet` — conjuntos evaluados con métricas "
+            "y delta vs `full`."
+        ),
+    )
+    st.markdown(
+        "**Interpretación accesible:** un `delta_vs_full` positivo indica que "
+        "el bloque opcional aporta señal sobre el conjunto base. Un delta "
+        "cercano a cero sugiere redundancia con AlphaEarth o con las features "
+        "fenológicas. Un delta negativo es bandera roja: el bloque introduce "
+        "ruido o leakage y debería descartarse del baseline."
+    )
+
+
+def _render_baseline_tab_leakage() -> None:
+    """Tab 2: leakage geográfico — comparativa `full` vs `no_geom` y `geom_only`."""
+    _render_section_divider("Leakage geográfico — columnas `geom_*`", badge="Tab 2 de 5")
+    st.markdown(
+        "Las 3 columnas `geom_area`, `geom_perimeter` y `geom_elongation` "
+        "actúan en la práctica como proxy de la región: parcelas de la "
+        "misma zona comparten distribución de tamaño y forma. Esto rompe la "
+        "hipótesis C-2 del Dr. Camacho (independencia entre clase y geometría)."
+    )
+    _render_baseline_figure(
+        BASELINE_FIGURES_DIR / "ablation_geom_comparison.png",
+        caption="Dos barras `full` vs `no_geom` con anotación del delta de F1-macro.",
+    )
+    _render_baseline_table(
+        BASELINE_ABLATION_DIR / "ablation_geom_table.parquet",
+        caption="Fila `geom_only` vs `full` — test cuantitativo de leakage espacial.",
+    )
+    st.markdown(
+        "**Por qué descartar `geom_*`:** un modelo entrenado únicamente sobre "
+        "las 3 features geométricas alcanza F1-macro < 0.10 sobre clase, "
+        "demostrando que no aporta señal real. Sin embargo, al combinarse con "
+        "el resto del bloque, el modelo aprende un atajo regional que infla "
+        "la métrica en el split de entrenamiento pero falla al transferir a "
+        "spatial CV. La decisión es excluir `geom_*` del conjunto baseline "
+        "definitivo y mantenerlas sólo como metadato de auditoría."
+    )
+
+
+def _render_baseline_tab_optional_blocks() -> None:
+    """Tab 3: FarSLIP (P2) + Gemini (P4) + firma espectral (P5)."""
+    _render_section_divider("Bloques opcionales evaluados", badge="Tab 3 de 5")
+    st.markdown(
+        "Tres bloques de features opcionales se evaluaron por separado: "
+        "embeddings FarSLIP (US-022-c epoch_2 real), descripción fenológica "
+        "vía Gemini Flash 3.5 y descriptor de firma espectral (Red Edge "
+        "Position, Frampton et al. 2013). Cada bloque tiene su propio plot, "
+        "tabla y decisión documentada."
+    )
+
+    st.markdown("#### FarSLIP — embeddings visuales (P2)")
+    _render_baseline_figure(
+        BASELINE_FIGURES_DIR / "ablation_farslip.png",
+        caption="Comparativa `full` vs `with_farslip` vs `farslip_only`.",
+    )
+    _render_baseline_table(
+        BASELINE_ABLATION_DIR / "ablation_farslip_table.parquet",
+        caption=(
+            "Métricas FarSLIP sobre las 30173 parcelas matched "
+            "(NaN imputado a media en el resto)."
+        ),
+    )
+    st.markdown(
+        "**Decisión FarSLIP:** si `delta_vs_full >= +0.02` se promueve al "
+        "baseline; entre [-0.02, +0.02] queda como base learner del stacking "
+        "EPIC 6; si `< -0.02` se descarta del baseline con justificación."
+    )
+
+    st.markdown("#### Gemini Flash 3.5 — descripción fenológica textual (P4)")
+    _render_baseline_figure(
+        BASELINE_FIGURES_DIR / "ablation_pheno_text.png",
+        caption=(
+            "Comparativa `full` vs `with_pheno_text` vs `pheno_text_only` "
+            "sobre subset >=1000 parcelas balanceadas."
+        ),
+    )
+    # Corrida 3 US-023-preview: el ablation real de pheno_text vive en
+    # `ablation_table_pheno_text_v2.parquet` (1080 parcelas balanceadas, Gemini
+    # Flash 3.5 real, costo $0.49 USD). Si no esta, intentamos el subset
+    # historico de 216 parcelas (`ablation_table_pheno_text.parquet`) como
+    # fallback graceful y por ultimo el shim sintetico antiguo.
+    _pheno_v2 = BASELINE_ABLATION_DIR / "ablation_table_pheno_text_v2.parquet"
+    _pheno_hist = BASELINE_ABLATION_DIR / "ablation_table_pheno_text.parquet"
+    _pheno_legacy = BASELINE_ABLATION_DIR / "ablation_pheno_text_table.parquet"
+    if _pheno_v2.exists():
+        _pheno_path = _pheno_v2
+    elif _pheno_hist.exists():
+        _pheno_path = _pheno_hist
+    else:
+        _pheno_path = _pheno_legacy
+    _render_baseline_table(
+        _pheno_path,
+        caption=(
+            "Métricas pheno_text — embeddings de sentence-transformers "
+            "(384 dim) sobre prompts generados por Gemini Flash 3.5 "
+            "(corrida real US-023-preview P4, 1080 parcelas balanceadas, "
+            "costo $0.49 USD)."
+        ),
+    )
+    st.markdown(
+        "**Decisión pheno_text:** promover al baseline si `delta >= +0.01`; en "
+        "caso contrario, mantener como base learner del stacking EPIC 6. "
+        "Costo Gemini documentado en `docs/l4_log.md` (<= $5 USD)."
+    )
+
+    st.markdown("#### Firma espectral — Red Edge Position (P5)")
+    _render_baseline_figure(
+        BASELINE_FIGURES_DIR / "ablation_spectral_signature.png",
+        caption="Comparativa `full` vs `with_spectral_signature` vs `spectral_signature_only`.",
+    )
+    _render_baseline_table(
+        BASELINE_ABLATION_DIR / "ablation_spectral_signature_table.parquet",
+        caption=(
+            "Métricas firma espectral — descriptor compacto derivado de "
+            "bandas red-edge en los 3 anclajes fenológicos."
+        ),
+    )
+    st.markdown(
+        "**Decisión firma espectral:** promover si `delta >= +0.01`; si no "
+        "aporta señal, queda como deuda de investigación documentada para "
+        "ciclos posteriores (mismo patrón que TempCNN en US-022-c P3)."
+    )
+
+
+def _render_baseline_tab_models_v2() -> None:
+    """Tab 4: modelos baseline v2 — XGBoost + TempCNN + InceptionTime."""
+    _render_section_divider("Modelos baseline v2 reentrenados", badge="Tab 4 de 5")
+    st.markdown(
+        "Los 3 modelos canónicos del Avance 3 (XGBoost tabular, TempCNN "
+        "temporal e InceptionTime temporal) se reentrenan sobre el conjunto "
+        "de features ganador post-ablation (decisiones de P2/P3/P4/P5). El "
+        "splitter es spatial CV 5-fold con buffer de 1 km — mismo de US-022b "
+        "para garantizar comparabilidad v1 vs v2."
+    )
+    _render_baseline_figure(
+        BASELINE_FIGURES_DIR / "model_comparison_v2.png",
+        caption=(
+            "Tres barras (XGBoost, TempCNN, InceptionTime) con overlay de "
+            "deltas vs baseline v1 (US-022)."
+        ),
+    )
+    _render_baseline_table(
+        BASELINE_MODEL_COMP_V2_DIR / "model_comparison_v2.parquet",
+        caption=(
+            "Tabla con 3 modelos x 6 métricas: F1-macro, F1-weighted, mIoU, "
+            "accuracy, kappa, train_time_s."
+        ),
+    )
+    st.markdown(
+        "**Comparativa v1 vs v2:** el baseline v1 (US-022) reportó "
+        "F1-macro = 0.4094 (XGBoost), 0.1430-0.1456 (TempCNN) y 0.1865 "
+        "(InceptionTime). La v2 se decide por F1-macro sobre spatial CV "
+        "5-fold; los empates se rompen por F1-weighted y luego por mIoU "
+        "(decisión D-10)."
+    )
+    st.markdown(
+        "**Decisión modelo ganador v2:** el modelo con F1-macro más alto se "
+        "promueve como referencia para EPIC 5 (US-023 U-Net). Los 2 modelos "
+        "restantes quedan como base learners del stacking EPIC 6."
+    )
+
+
+def _render_baseline_tab_conclusions() -> None:
+    """Tab 5: conclusiones H-1..H-4 + lo que sigue en EPIC 5."""
+    _render_section_divider("Conclusiones y siguientes pasos", badge="Tab 5 de 5")
+    st.markdown(
+        "Resumen ejecutivo de los hallazgos generados por US-023-preview "
+        "sobre el baseline post-A3 y la transición prevista a EPIC 5 "
+        "(modelado denso con U-Net + arquitecturas TSViT / U-TAE / "
+        "DeepLabv3+ / SegFormer-B2 / Swin-UNETR)."
+    )
+
+    st.markdown(
+        "#### H-1 — Las features `geom_*` introducen leakage regional\n"
+        "La barra aislada `geom_only` confirma que las 3 columnas geométricas "
+        "no aportan señal de clase real (F1-macro < 0.10) pero activan un "
+        "atajo espacial cuando se combinan con el bloque base. Decisión: "
+        "**excluir del baseline definitivo**, mantener sólo como metadato "
+        "de auditoría."
+    )
+    st.markdown(
+        "#### H-2 — FarSLIP aporta cuando hay matching de parcelas\n"
+        "Los embeddings FarSLIP reales (epoch_2) cubren 30173 de las 85951 "
+        "parcelas del dataset full. El delta es interpretable sólo sobre el "
+        "subset matched; la extracción para el dataset full queda en US-025."
+    )
+    st.markdown(
+        "#### H-3 — pheno_text via Gemini Flash 3.5: señal pendiente de validar\n"
+        "El subset >=1000 parcelas balanceadas amplía la muestra de US-022-c "
+        "P5 (216 parcelas, delta = -0.12). El veredicto definitivo se "
+        "decide con la corrida actual; cualquier valor que esté pendiente se "
+        "marca como artefacto faltante en los tabs anteriores."
+    )
+    st.markdown(
+        "#### H-4 — Firma espectral REP: descriptor compacto agronómico\n"
+        "La Red Edge Position derivada de bandas Sentinel-2 red-edge en los "
+        "3 anclajes fenológicos (SOG, peak, senescencia) es una feature "
+        "barata de calcular (consume parquet ya muestreado) y bien fundada "
+        "en literatura (Frampton et al. 2013). Su aporte se cuantifica en "
+        "el tab 3."
+    )
+
+    st.markdown(
+        "#### Lo que sigue en EPIC 5\n"
+        "Con el baseline saneado, los conjuntos de features decididos y los "
+        "3 modelos baseline v2 reentrenados, EPIC 5 arranca con punto de "
+        "partida limpio. El modelo ganador v2 sirve de techo a batir para "
+        "U-Net densa; los 2 modelos restantes alimentan el stacking del "
+        "EPIC 6. El presupuesto H100 (ventanas V1-V6, 80 h) queda intacto."
+    )
+
+
+# Mapeo (etiqueta, renderer) que conecta los 5 tabs con sus funciones.
+_BASELINE_TAB_RENDERERS = (
+    _render_baseline_tab_ablation,
+    _render_baseline_tab_leakage,
+    _render_baseline_tab_optional_blocks,
+    _render_baseline_tab_models_v2,
+    _render_baseline_tab_conclusions,
+)
+
+
+def _render_baseline_section() -> None:
+    """Renderiza la sección Baseline con sus 5 tabs (US-023-preview P9).
+
+    Cada tab consume artefactos generados por los sub-bloques P2..P8 desde
+    ``paper/figures/us-023-preview/`` y ``reports/baseline/``. Si un archivo
+    no existe, el render degrada de forma graceful con ``st.warning`` y un
+    hint del comando ``make`` que regenera el artefacto (R11 del plan).
+
+    Returns:
+        ``None``. Renderiza directamente sobre el contexto Streamlit activo.
+    """
+    assert len(_BASELINE_TAB_LABELS) == 5, "Se esperaban exactamente 5 tabs Baseline"
+    assert len(_BASELINE_TAB_RENDERERS) == len(_BASELINE_TAB_LABELS), (
+        "Etiquetas y renderers Baseline desincronizados"
+    )
+
+    st.markdown(
+        '<h2 style="margin-top:0.5rem;color:#1E293B;font-weight:700;">'
+        "Baseline saneado post-A3 — US-023-preview</h2>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<p style="color:#475569;font-size:1rem;line-height:1.6;">'
+        "Reporte consolidado del refinamiento del baseline tras el Avance 3: "
+        "ablation de features sobre 7-10 conjuntos, evidencia visual del "
+        "leakage geográfico, evaluación de 3 bloques opcionales (FarSLIP, "
+        "Gemini Flash 3.5 y firma espectral) y reentrenamiento de los 3 "
+        "modelos canónicos sobre el conjunto ganador. Esta sección alimenta "
+        "el arranque de EPIC 5 con baseline cuantificado y reproducible.</p>",
+        unsafe_allow_html=True,
+    )
+
+    tabs = st.tabs(list(_BASELINE_TAB_LABELS))
+    for tab, renderer in zip(tabs, _BASELINE_TAB_RENDERERS, strict=True):
+        with tab:
+            renderer()
+
+
 def _render_section_selector() -> str:
     """Renderiza el selector de sección de nivel superior.
 
@@ -988,6 +1364,8 @@ def main() -> None:
 
     if active_section == _SECTION_FE:
         _render_fe_section()
+    elif active_section == _SECTION_BASELINE:
+        _render_baseline_section()
     else:
         _render_eda_section()
 
