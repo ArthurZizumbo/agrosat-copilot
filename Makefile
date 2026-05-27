@@ -218,10 +218,7 @@ results = run_feature_ablation(features_path='data/test_fixtures/feature_selecti
 export_ablation_table(results, Path('reports/baseline/feature_ablation'))"
 
 phenology-train:  ## US-022b-C — entrena TempCNN + InceptionTime con spatial CV (CPU smoke; en L4 cambiar device)
-	poetry run python -c "from ml.train.phenology_models import train_temporal_model; import polars as pl, json; results = {}; \
-df = pl.read_parquet('data/test_fixtures/feature_selection_parcels_subset.parquet').sample(n=4000, seed=42); \
-for k in ('tempcnn','inceptiontime'): r = train_temporal_model(df=df, model_kind=k, n_epochs=5, batch_size=128, seed=42, device='cpu', k_folds=5, buffer_km=1.0); results[k] = {'f1_macro': r.f1_macro, 'miou': r.miou, 'n_parcels': r.n_parcels, 'n_classes': r.n_classes, 'train_time_s': r.train_time_s}; \
-print(json.dumps(results, indent=2))"
+	poetry run python scripts/train_phenology_models.py --device cpu --n-epochs 5 --batch-size 128 --n-parcels 4000
 
 phenology-description-test:  ## US-022b-D — pytest del modulo phenology_description (Gemini mockeado)
 	poetry run python -m pytest tests/ml/features/test_phenology_description.py -q
