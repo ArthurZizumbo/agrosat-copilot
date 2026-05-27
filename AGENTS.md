@@ -106,6 +106,7 @@ Training único $262 spot — $602 on-demand USD. Operativo **~$115 USD/mes** co
 12. **Reproducibilidad notebooks**: notebooks se commitean **ejecutados end-to-end con todas sus salidas** (tablas HTML, figuras PNG inline, plots interactivos) para entregable visual del curso. Papermill end-to-end en CI valida que sigan ejecutables. **Sin `.pre-commit-config.yaml`** ni `nbstripout` en quality gates — el `.ipynb` es un artefacto reproducible, no fuente "limpia".
 13. **i18n obligatorio**: todo texto visible en `frontend/i18n/locales/{it,es,en}.json` simultáneamente.
 14. **Atribuciones licencia**: documentadas en [`docs/licenses/DATA_LICENSE.md`](docs/licenses/DATA_LICENSE.md).
+15. **Commits sin `Co-Authored-By` automáticos**: los mensajes de commit no incluyen trailer `Co-Authored-By: Claude` ni similares de asistentes IA. La autoría queda en el `Author:` real. Los asistentes redactan, el equipo firma.
 
 ## Quality Gates (sin pre-commit)
 
