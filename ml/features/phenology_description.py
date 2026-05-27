@@ -34,6 +34,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import time
+import warnings
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -52,6 +55,20 @@ __all__ = [
     "generate_phenology_description",
     "set_llm_client",
 ]
+
+#: Variables de entorno que cuentan como "credenciales validas" para
+#: invocar Gemini 3.5 Flash (API publica o Vertex AI).
+_CREDENTIAL_ENV_VARS: tuple[str, ...] = (
+    "GEMINI_API_KEY",
+    "GOOGLE_API_KEY",
+    "GOOGLE_GENAI_USE_VERTEXAI",
+    "GOOGLE_CLOUD_PROJECT",
+)
+
+#: Costo estimado por descripcion fenologica generada con Gemini 3.5 Flash
+#: (~500 tokens entrada + ~100 tokens salida con pricing publico mayo 2026).
+#: Sirve solo para budget tracking informativo, no es exacto.
+COST_PER_DESCRIPTION_USD: float = 0.0001
 
 #: Numero de dimensiones del vector denso producido por
 #: ``sentence-transformers/all-MiniLM-L6-v2`` (modelo default).
@@ -171,6 +188,30 @@ def _default_litellm_client(
     return str(content).strip()
 
 
+def _has_credentials() -> bool:
+    """Verifica si hay credenciales Gemini configuradas en el entorno.
+
+    Detecta cualquiera de las siguientes opciones de auth (orden no
+    relevante):
+
+    - ``GEMINI_API_KEY``: API publica de Google AI Studio.
+    - ``GOOGLE_API_KEY``: alias historico de la API publica.
+    - ``GOOGLE_GENAI_USE_VERTEXAI=true``: modo Vertex AI con SA del
+      entorno (Cloud Run, Vertex Workbench, etc.).
+    - ``GOOGLE_CLOUD_PROJECT``: proyecto GCP definido (suficiente cuando
+      se combina con ADC / SA implicita).
+
+    Returns:
+        ``True`` si al menos una credencial esta presente con valor no
+        vacio. ``False`` si todas estan ausentes o vacias.
+    """
+    for var in _CREDENTIAL_ENV_VARS:
+        value = os.environ.get(var, "").strip()
+        if value and value.lower() not in {"false", "0"}:
+            return True
+    return False
+
+
 def _default_google_genai_client(
     prompt: str, *, model: str, temperature: float
 ) -> str:
@@ -220,12 +261,45 @@ def _default_google_genai_client(
         # oficial de Gemini 3.5.
         thinking_config=types.ThinkingConfig(thinking_level="minimal"),
     )
-    response = client.models.generate_content(
-        model=model,
-        contents=prompt,
-        config=config,
-    )
-    return str(response.text or "").strip()
+
+    # Retry con backoff exponencial (base 2s) para 429 / 503. Tres
+    # reintentos antes de propagar el error: protege batches largos sobre
+    # 85k parcelas de fallos transitorios sin saturar la API.
+    max_attempts = 3
+    base_delay = 2.0
+    last_exc: Exception | None = None
+    for attempt in range(max_attempts):
+        try:
+            response = client.models.generate_content(
+                model=model,
+                contents=prompt,
+                config=config,
+            )
+            return str(response.text or "").strip()
+        except Exception as exc:  # pragma: no cover - depende de la API.
+            message = str(exc)
+            is_transient = (
+                "429" in message
+                or "503" in message
+                or "rate limit" in message.lower()
+                or "unavailable" in message.lower()
+            )
+            last_exc = exc
+            if not is_transient or attempt == max_attempts - 1:
+                raise
+            delay = base_delay * (2**attempt)
+            logger.warning(
+                "phenology_description_gemini_retry",
+                attempt=attempt + 1,
+                max_attempts=max_attempts,
+                delay_s=delay,
+                error=message[:200],
+            )
+            time.sleep(delay)
+    # Solo alcanzable si el loop sale por agotamiento sin raise (no deberia).
+    raise RuntimeError(  # pragma: no cover
+        f"Gemini agoto los {max_attempts} reintentos."
+    ) from last_exc
 
 
 def _get_client() -> LlmClient:
@@ -436,6 +510,7 @@ def build_phenology_text_block(
     max_parcels: int | None = None,
     seed: int = 42,
     skip_llm: bool = False,
+    progress_every: int = 100,
 ) -> pl.DataFrame:
     """Construye el bloque ``pheno_text_*`` listo para LEFT JOIN en ``fusion.py``.
 
@@ -465,13 +540,43 @@ def build_phenology_text_block(
             = todas las filas (cuidado con costo Gemini).
         seed: Semilla del subsample.
         skip_llm: Si ``True`` salta la llamada al LLM y genera embeddings
-            zeros — util para CI y dev sin credenciales Vertex AI; el
-            bloque resultante tiene la forma correcta pero contenido nulo.
+            zeros — util **solo en tests**. Para uso en notebooks /
+            pipelines el modulo levanta ``DeprecationWarning`` y exige
+            credenciales reales. El bloque resultante con ``skip_llm=True``
+            tiene la forma correcta pero contenido nulo (ceros).
+        progress_every: Frecuencia (cada N parcelas procesadas) con la
+            que se emite un log estructurado con ``n_done``, ``n_total``,
+            ``elapsed_s``, ``eta_s`` y ``est_cost_usd``. Default 100.
 
     Returns:
         ``pl.DataFrame`` con ``parcel_id``, ``year`` y
         ``pheno_text_000..pheno_text_{D-1}``.
+
+    Raises:
+        RuntimeError: si ``skip_llm=False``, no hay cliente inyectado via
+            :func:`set_llm_client` y tampoco hay credenciales Gemini en
+            el entorno (``GEMINI_API_KEY`` / ``GOOGLE_API_KEY`` /
+            ``GOOGLE_GENAI_USE_VERTEXAI``).
     """
+    # Barrera dura: prohibe correr el LLM sin credenciales ni cliente
+    # mockeado. La regla `no mocks ni skips silenciosos` aplica desde
+    # US-023-preview v2 (notebooks entregables).
+    if not skip_llm and _LLM_CLIENT is None and not _has_credentials():
+        raise RuntimeError(
+            "Gemini no esta configurado. Define GEMINI_API_KEY (o "
+            "GOOGLE_API_KEY / GOOGLE_GENAI_USE_VERTEXAI=true + "
+            "GOOGLE_CLOUD_PROJECT) en .env.local, o usa skip_llm=True "
+            "solo para testing."
+        )
+    if skip_llm:
+        warnings.warn(
+            "build_phenology_text_block(skip_llm=True) genera embeddings "
+            "de ceros. Usalo solo en tests: notebooks entregables deben "
+            "ejecutar Gemini real.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
     df = parcel_ndvi_frame
     if max_parcels is not None and max_parcels > 0 and df.height > max_parcels:
         df = df.sample(n=max_parcels, seed=seed, with_replacement=False)
@@ -496,7 +601,18 @@ def build_phenology_text_block(
         # encoder produzca embeddings reproducibles en CI sin red.
         descriptions = [f"placeholder_pheno_{pid}" for pid in parcel_ids]
     else:
-        for pid, curve, hint in zip(parcel_ids, curves, crop_hints, strict=True):
+        n_total = len(parcel_ids)
+        est_total_cost = n_total * COST_PER_DESCRIPTION_USD
+        logger.info(
+            "phenology_text_block_start",
+            n_total=n_total,
+            model=model,
+            est_total_cost_usd=round(est_total_cost, 4),
+        )
+        t_start = time.monotonic()
+        for idx, (pid, curve, hint) in enumerate(
+            zip(parcel_ids, curves, crop_hints, strict=True), start=1
+        ):
             descriptions.append(
                 generate_phenology_description(
                     curve,
@@ -507,6 +623,18 @@ def build_phenology_text_block(
                     cache_dir=cache_dir,
                 )
             )
+            if idx % max(progress_every, 1) == 0 or idx == n_total:
+                elapsed_s = time.monotonic() - t_start
+                rate = idx / elapsed_s if elapsed_s > 0 else 0.0
+                eta_s = (n_total - idx) / rate if rate > 0 else 0.0
+                logger.info(
+                    "phenology_text_block_progress",
+                    n_done=idx,
+                    n_total=n_total,
+                    elapsed_s=round(elapsed_s, 2),
+                    eta_s=round(eta_s, 2),
+                    est_cost_usd=round(idx * COST_PER_DESCRIPTION_USD, 4),
+                )
 
     if skip_llm:
         # En skip_llm devolvemos ceros para evitar descargar el modelo

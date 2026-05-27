@@ -683,9 +683,11 @@ def test_extract_demo_3regions_end_to_end(
     df = build_fused_features(parcels, year=2024, **injected)
     assert df.height == 9
     assert df.width == 2 + EXPECTED_COL_COUNT_NO_FARSLIP
-    # Las 9 parcelas estan presentes y unicas.
+    # Las 9 parcelas estan presentes y unicas. Con el esquema canonico
+    # `parcel_id: Utf8` comparamos contra la representacion string.
     pids = df.get_column("parcel_id").to_list()
-    assert sorted(pids) == sorted(parcels["parcel_id"].astype("int64").tolist())
+    expected = sorted(parcels["parcel_id"].astype("string").tolist())
+    assert sorted(pids) == expected
     assert len(set(pids)) == 9
 
 
@@ -697,14 +699,84 @@ def test_extract_demo_3regions_end_to_end(
 def test_fusion_first_two_cols_are_parcel_id_year_correct_dtypes(
     parcels_fixture_3regions: gpd.GeoDataFrame, synthetic_alphaearth_64d: pl.DataFrame
 ) -> None:
-    """Las primeras 2 cols del frame final son `parcel_id` (Int64) y `year` (Int16)."""
+    """Las primeras 2 cols del frame final son `parcel_id` (Utf8) y `year` (Int16).
+
+    Cambio US-023-preview v2: el esquema canonico de ``parcel_id`` paso a
+    ``pl.Utf8`` (ver ``ml.utils.parcel_id``) para soportar ids compuestos
+    como ``"{patch_id}_{i}"`` que emergen de los baselines.
+    """
     parcels = parcels_fixture_3regions
     injected = _build_default_injection(parcels, synthetic_ae=synthetic_alphaearth_64d)
     df = build_fused_features(parcels, year=2024, **injected)
     assert df.columns[0] == "parcel_id"
     assert df.columns[1] == "year"
-    assert df.schema["parcel_id"] == pl.Int64
+    assert df.schema["parcel_id"] == pl.Utf8
     assert df.schema["year"] == pl.Int16
+
+
+# ---------------------------------------------------------------------------
+# US-023-preview v2: esquema canonico parcel_id=Utf8 y join cross-dtype.
+# ---------------------------------------------------------------------------
+
+
+def test_fusion_farslip_parquet_int64_joins_with_utf8_parcels(
+    parcels_fixture_3regions: gpd.GeoDataFrame,
+    synthetic_alphaearth_64d: pl.DataFrame,
+    tmp_path: Path,
+) -> None:
+    """FarSLIP parquet con `parcel_id: Int64` se joinea sin error con `parcels` Utf8.
+
+    Bug US-023-preview v2: el esquema canonico de los baselines genera
+    `parcel_id` como cadena (`"{patch_id}_{i}"`), pero los parquets FarSLIP
+    historicos persistieron `parcel_id: Int64`. Antes del fix, el LEFT JOIN
+    fallaba por dtype mismatch y la build emitia un warning saltandose el
+    bloque FarSLIP. El fix castea ambos lados a `pl.Utf8` antes del join.
+    """
+    parcels = parcels_fixture_3regions
+    n = len(parcels)
+    far_cols = {f"farslip_{i:03d}": [0.03 * (i + 1)] * n for i in range(512)}
+    schema: dict[str, pl.DataType] = {"parcel_id": pl.Int64}
+    schema.update({c: pl.Float32 for c in far_cols})
+    # Construimos `parcel_id` como Int64 (caso real FarSLIP v2 historico).
+    far_df = pl.DataFrame(
+        {
+            "parcel_id": parcels["parcel_id"].astype("int64").tolist(),
+            **far_cols,
+        },
+        schema=schema,
+    )
+    assert far_df.schema["parcel_id"] == pl.Int64
+    far_path = tmp_path / "embeddings_int64.parquet"
+    far_df.write_parquet(far_path)
+
+    injected = _build_default_injection(parcels, synthetic_ae=synthetic_alphaearth_64d)
+    df = build_fused_features(
+        parcels,
+        year=2024,
+        include_farslip=True,
+        farslip_path=str(far_path),
+        **injected,
+    )
+    # El join se ejecuta y materializa las 512 cols FarSLIP.
+    assert "farslip_000" in df.columns
+    assert "farslip_511" in df.columns
+    # Y `parcel_id` quedo en el esquema canonico Utf8.
+    assert df.schema["parcel_id"] == pl.Utf8
+
+
+def test_fusion_result_parcel_id_is_utf8_after_join(
+    parcels_fixture_3regions: gpd.GeoDataFrame,
+    synthetic_alphaearth_64d: pl.DataFrame,
+) -> None:
+    """Tras el join con todos los bloques, `parcel_id` queda Utf8 (no Int64)."""
+    parcels = parcels_fixture_3regions
+    injected = _build_default_injection(parcels, synthetic_ae=synthetic_alphaearth_64d)
+    df = build_fused_features(parcels, year=2024, **injected)
+    assert df.schema["parcel_id"] == pl.Utf8
+    # Los valores son strings (no enteros casteados con .0 ni notacion cientifica).
+    sample = df.get_column("parcel_id").to_list()
+    assert all(isinstance(v, str) for v in sample)
+    assert not any("e" in v.lower() for v in sample)
 
 
 # ---------------------------------------------------------------------------

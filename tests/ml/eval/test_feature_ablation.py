@@ -339,6 +339,22 @@ def test_default_sets_omits_spectral_signature_when_cols_absent(
     assert "spectral_signature_only" not in sets
 
 
+def test_feature_ablation_lgbm_supported(synthetic_features: pl.DataFrame) -> None:
+    """run_feature_ablation acepta `lgbm` y devuelve resultados validos."""
+    results = run_feature_ablation(
+        df=synthetic_features,
+        models=("lgbm",),
+        k_folds=3,
+        buffer_km=0.5,
+        seed=42,
+    )
+    assert len(results) >= 1
+    assert all(r.model_kind == "lgbm" for r in results)
+    full = next(r for r in results if r.feature_set == "full")
+    assert 0.0 <= full.f1_macro <= 1.0
+    assert full.n_features > 0
+
+
 def test_default_sets_pheno_text_only_added_when_pheno_text_cols_present() -> None:
     """Si hay cols `pheno_text_*`, se agrega tambien `pheno_text_only` (P4 prep)."""
     cols = (

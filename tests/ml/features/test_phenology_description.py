@@ -12,6 +12,7 @@ Gemini se mockea SIEMPRE en CI (R7, regla dura del plan). Los tests cubren:
 
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -20,8 +21,10 @@ import pytest
 
 import ml.features.phenology_description as pd_mod
 from ml.features.phenology_description import (
+    _CREDENTIAL_ENV_VARS,
     DEFAULT_TEXT_EMBED_DIM,
     PROMPT_TEMPLATE,
+    _has_credentials,
     build_phenology_text_block,
     encode_descriptions,
     generate_phenology_description,
@@ -161,16 +164,119 @@ def test_build_phenology_text_block_skip_llm(tmp_path: Path) -> None:
             **{f"NDVI_fft_phase_{k}": rng.normal(size=n).tolist() for k in range(4)},
         }
     )
-    block = build_phenology_text_block(
-        df,
-        skip_llm=True,
-        cache_dir=tmp_path,
-    )
+    with warnings.catch_warnings():
+        # skip_llm=True ahora emite DeprecationWarning fuera de tests;
+        # aqui es legitimo porque estamos testeando.
+        warnings.simplefilter("ignore", DeprecationWarning)
+        block = build_phenology_text_block(
+            df,
+            skip_llm=True,
+            cache_dir=tmp_path,
+        )
     assert block.height == n
     assert "parcel_id" in block.columns
     assert "year" in block.columns
     text_cols = [c for c in block.columns if c.startswith("pheno_text_")]
     assert len(text_cols) == DEFAULT_TEXT_EMBED_DIM
+
+
+def test_build_phenology_text_block_raises_without_credentials(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Si no hay cliente inyectado ni env vars, debe levantar RuntimeError."""
+    set_llm_client(None)
+    for var in _CREDENTIAL_ENV_VARS:
+        monkeypatch.delenv(var, raising=False)
+    df = pl.DataFrame(
+        {
+            "parcel_id": [0, 1],
+            "year": [2019, 2019],
+            "NDVI_t_00": [0.3, 0.4],
+            "NDVI_t_01": [0.5, 0.6],
+        }
+    )
+    with pytest.raises(RuntimeError, match="Gemini no esta configurado"):
+        build_phenology_text_block(df, skip_llm=False, cache_dir=tmp_path)
+
+
+def test_build_phenology_text_block_runs_with_injected_client(
+    tmp_path: Path,
+) -> None:
+    """Con cliente inyectado, no exige env vars y produce shape correcto."""
+    n = 3
+
+    def mock_client(prompt: str, *, model: str, temperature: float) -> str:
+        return "Descripcion sintetica deterministica."
+
+    set_llm_client(mock_client)
+
+    def mock_encode(
+        descriptions: list[str],
+        *,
+        encoder: str = "sentence-transformers",
+        model_name: str | None = None,
+    ) -> np.ndarray:
+        return np.ones((len(descriptions), 12), dtype=np.float32)
+
+    original_encode = pd_mod.encode_descriptions
+    pd_mod.encode_descriptions = mock_encode  # type: ignore[assignment]
+    try:
+        df = pl.DataFrame(
+            {
+                "parcel_id": [f"p{i}" for i in range(n)],
+                "year": [2019] * n,
+                "NDVI_t_00": [0.2, 0.3, 0.5],
+                "NDVI_t_01": [0.6, 0.7, 0.8],
+            }
+        )
+        block = build_phenology_text_block(
+            df,
+            skip_llm=False,
+            cache_dir=tmp_path,
+            progress_every=1,
+        )
+    finally:
+        pd_mod.encode_descriptions = original_encode  # type: ignore[assignment]
+
+    assert block.height == n
+    text_cols = [c for c in block.columns if c.startswith("pheno_text_")]
+    assert len(text_cols) == 12
+
+
+def test_has_credentials_detects_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``_has_credentials`` lee la primera env var presente y no vacia."""
+    for var in _CREDENTIAL_ENV_VARS:
+        monkeypatch.delenv(var, raising=False)
+    assert _has_credentials() is False
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key-value")
+    assert _has_credentials() is True
+
+
+def test_has_credentials_ignores_falsy_vertex_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``GOOGLE_GENAI_USE_VERTEXAI=false`` no cuenta como credencial valida."""
+    for var in _CREDENTIAL_ENV_VARS:
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "false")
+    assert _has_credentials() is False
+
+
+def test_build_phenology_text_block_skip_llm_emits_deprecation(
+    tmp_path: Path,
+) -> None:
+    """``skip_llm=True`` debe emitir DeprecationWarning explicito."""
+    df = pl.DataFrame(
+        {
+            "parcel_id": [0],
+            "year": [2019],
+            "NDVI_t_00": [0.5],
+        }
+    )
+    with pytest.warns(DeprecationWarning, match="skip_llm=True"):
+        build_phenology_text_block(df, skip_llm=True, cache_dir=tmp_path)
 
 
 def test_build_phenology_text_block_calls_llm_per_row(tmp_path: Path) -> None:
