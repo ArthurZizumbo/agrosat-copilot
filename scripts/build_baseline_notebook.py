@@ -30,7 +30,13 @@ Secciones que produce US-022 (criterio "Metrica", 20 pts; ultimo extend):
 Patron: ``scripts/build_us018_notebook.py``.
 
 Uso:
-    poetry run python scripts/build_baseline_notebook.py --out notebooks/04_baseline.ipynb
+    poetry run python scripts/build_baseline_notebook.py --out notebooks/baseline/04_baseline.ipynb
+
+Notas US-023-preview:
+- El path canonico se movio a ``notebooks/baseline/`` (decision D-6).
+- P8 agrega celdas v2 que reentrenan los 3 modelos del A3 (XGBoost +
+  TempCNN + InceptionTime) sobre el conjunto de features ganador post
+  ablation P2/P3/P4/P5.
 """
 
 from __future__ import annotations
@@ -131,6 +137,11 @@ CELLS: list[nbf.NotebookNode] = [
         ")\n"
         "COMPARISON_MAX_SAMPLES = 0  # 0 = todas las parcelas del inner join\n"
         "COMPARISON_K_FOLDS = 5\n"
+        "# Nota US-023-preview corrida 3: la antigua seccion 9 (Baseline v2 con 3\n"
+        "# modelos) se movio al notebook standalone `notebooks/baseline/04b_baseline_v2.ipynb`,\n"
+        "# que lee los artefactos persistidos en `reports/baseline/model_comparison_v2/`\n"
+        "# y no requiere reentrenar. El script de training real es\n"
+        "# `scripts/run_baseline_v2_standalone.py` (Makefile target `baseline-v2-full`).\n"
     ),
     _code(
         "import warnings\n"
@@ -863,7 +874,31 @@ CELLS: list[nbf.NotebookNode] = [
         "propias limitaciones y deja un protocolo de evaluacion y una "
         "metrica principal que el resto del proyecto puede heredar."
     ),
+    # ----------------------------------------------------------------------
+    # NOTA US-023-preview corrida 3: la seccion 9 (Baseline v2 con 3 modelos)
+    # se movio al notebook standalone `notebooks/baseline/04b_baseline_v2.ipynb`,
+    # que lee los artefactos persistidos en `reports/baseline/model_comparison_v2/`.
+    # Las celdas eliminadas reentrenaban modelos pesados (~90 min CUDA) y dejaban
+    # el notebook 04 con dependencias condicionales de MLflow/CUDA. El training
+    # real vive ahora en `scripts/run_baseline_v2_standalone.py`.
+    # ----------------------------------------------------------------------
 ]
+
+
+# Stub interno: las celdas de la antigua seccion 9 (Baseline v2 con 3 modelos
+# canonicos, US-023-preview P8) se movieron al notebook standalone
+# `notebooks/baseline/04b_baseline_v2.ipynb` en la corrida 3 (2026-05-26).
+# El bloque condicional (`RUN_BASELINE_V2`) y sus celdas de training fueron
+# eliminados del builder; el lector encuentra las metricas v2 reales en
+# `reports/baseline/model_comparison_v2/model_comparison_v2.parquet` y el
+# training se regenera con `scripts/run_baseline_v2_standalone.py` o el
+# target `make baseline-v2-full`.
+
+_REMOVED_V2_PARAMS_DROPPED = (
+    "RUN_BASELINE_V2, V2_MAX_SAMPLES, V2_K_FOLDS, V2_BUFFER_KM, V2_SEED, "
+    "V2_TEMPORAL_EPOCHS, V2_TEMPORAL_BATCH_SIZE, V2_DEVICE, "
+    "V2_FEATURE_ABLATION_PATH, V2_OUTPUT_DIR"
+)
 
 
 def build_notebook(out_path: Path) -> None:
@@ -891,7 +926,7 @@ def build_notebook(out_path: Path) -> None:
 @app.command()
 def main(
     out: Path = typer.Option(  # noqa: B008
-        Path("notebooks/04_baseline.ipynb"),
+        Path("notebooks/baseline/04_baseline.ipynb"),
         help="Ruta destino del notebook .ipynb.",
     ),
 ) -> None:

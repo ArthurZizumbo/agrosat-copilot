@@ -317,3 +317,18 @@ Tabla académica completa con DOIs por índice en [`docs/spectral_indices.md`](.
   en figuras y reportes derivados.
 - Use scope US-022-c P1: ejecucion del training student en L4 GCP spot sobre 3 ROIs
   italianas (Pianura Padana, Toscana, Puglia) + eval cross-region en PASTIS-R Francia.
+
+## US-023-preview — Paper-faro Frampton 2013 (Red Edge Position)
+
+### Frampton et al. (2013) — "Evaluating the capabilities of Sentinel-2 for quantitative estimation of biophysical variables in vegetation"
+- Source: ISPRS Journal of Photogrammetry and Remote Sensing 82, 83-92.
+- DOI: [10.1016/j.isprsjprs.2013.04.007](https://doi.org/10.1016/j.isprsjprs.2013.04.007).
+- License de la metodologia: open access. La formula linear-4-bands Red
+  Edge Position (REP, eq. 1) se implementa de cero en
+  `ml/features/spectral_signature.py::compute_rep` siguiendo la
+  parametrizacion del paper sobre las bandas Sentinel-2 B04/B05/B06/B07.
+- Attribution required: "REP descriptor adapted from Frampton et al. (2013),
+  DOI 10.1016/j.isprsjprs.2013.04.007" en figuras y reportes derivados.
+- Use scope US-023-preview P5: descriptor compacto de firma espectral
+  por parcela para ablation `with_spectral_signature` / `spectral_signature_only`
+  + integracion como bloque opcional en `ml/features/fusion.py`.

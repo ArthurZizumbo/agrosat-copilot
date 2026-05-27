@@ -732,7 +732,7 @@ S2  (27-abr a 3-may): E1 Ingesta + E2 EDA univariado → Avance 1 dom 3-may
 S3  (4-10 may):  E2 completo + arrancar E3 FE
 S4  (11-17 may): E3 FE + arrancar E4 Baseline → Avance 2 dom 17-may
 S5  (18-24 may): E4 Baseline + E5 modelos 1-3 → Avance 3 mié 20-may, Avance 4 dom 24-may
-S6  (25-31 may): E5 modelos 4-6 + ensambles + Gemma 4 LoRA → Avance 5 dom 31-may
+S6  (25-31 may): US-023-preview correcciones baseline (post-A3) + E5 modelos 4-6 + ensambles + Gemma 4 LoRA → Avance 5 dom 31-may
 S7  (1-7 jun):   E6 VLM fine-tune + E7 agente ADK + E8 backend → Avance 6 dom 7-jun
 S8  (8-14 jun):  E9 frontend + E10 observabilidad + Avance 7 → Avance 7 dom 14-jun
 S9  (15-21 jun): Pulido final + dry-runs + grabar demo → Presentación dom 21-jun
@@ -1408,6 +1408,68 @@ S10-S11 (22-jun a 3-jul): Buffer + Paper Track opcional
 **Cobertura del diff:** 87 % (1148 stmts, 147 miss) · 117/117 tests passing.
 
 **Computo:** 0 h H100, 0 h Vertex AI directo en esta US; smoke local 22-may + 23-may en GPU local. Gemini smoke real ~$0.001 USD.
+
+---
+
+### US-023-preview — Correcciones al baseline previo a EPIC 5 (post-A3, transversal E4/E5) {#us-023-preview}
+
+**Status:** planning · 2026-05-25 · plan canónico en [`docs/us-planning/us-023-preview.md`](../docs/us-planning/us-023-preview.md) · handoff en [`docs/us-handoff/us-023-preview.md`](../docs/us-handoff/us-023-preview.md).
+
+**Motivación:** auditoría del 25-may detecta 9 observaciones sobre `notebooks/baseline/04_baseline.ipynb` y `notebooks/baseline/05_reencuadre_fenologico.ipynb` (movidos desde `notebooks/feature_engineering/`): rutas y builders desactualizados, FarSLIP no materializado en el path canónico (`data/farslip/embeddings_italy.parquet`) por lo que la ablation omite `with_farslip` y `farslip_only` (bug adicional: discrepancia de naming `farslip_emb_XXX` en parquet vs `farslip_XXX` esperado en `fusion.py:582`), falta comparativa visual aislada `full` vs `no_geom`, falta ablation cuantitativa del bloque `pheno_text_*` (Gemini Flash 3.5) sobre subset ≥ 1 000 parcelas, falta evaluar un descriptor compacto de firma espectral, falta validar estándar [`notebooks/CLAUDE.md`](../notebooks/CLAUDE.md), falta reentrenar los **3 modelos baseline (XGBoost + TempCNN + InceptionTime)** sobre el conjunto ganador post-ablation, y el dashboard Streamlit no expone los resultados del baseline. Esta US **no entrega Avance nuevo** — sanea el baseline post-A3 para que EPIC 5 (US-023 U-Net en adelante) arranque sobre conjuntos de features y modelos ya validados.
+
+**Como** ML Engineer,
+- **quiero** cerrar las 9 observaciones (P1 rutas + P2 FarSLIP en path canónico con fix naming + P3 ablation `geom_only` aislada + P4 ablation real `pheno_text` Gemini Flash 3.5 + P5 descriptor de firma espectral + P6 cumplimiento `notebooks/CLAUDE.md` + P8 baseline v2 con 3 modelos + P9 categoría "Baseline" en dashboard Streamlit),
+- **para que** el conjunto de features ganador, los 3 modelos baseline reentrenados y los resultados visuales queden cuantificados y publicados antes de iniciar el modelado denso, reduciendo iteración en EPIC 5 y alimentando el stacking de EPIC 6.
+
+**Criterios de Aceptación:**
+
+- P1: Builders (`scripts/build_baseline_notebook.py`, `scripts/build_reencuadre_notebook.py`) y `Makefile` apuntan a `notebooks/baseline/*.ipynb`; `make notebooks-check` exit 0; `notebooks/CLAUDE.md` §"Estructura Canónica" actualizada.
+- P2: `data/farslip/embeddings_italy.parquet` materializado (promoción de v2 = extracción real epoch_2, commit `0f01255`) + renombrado de columnas `farslip_emb_XXX → farslip_XXX` para alinear con contrato `fusion.py:582` + patch defensivo en `_build_farslip_block` para aceptar ambos prefijos + DVC tracked + tag git `farslip-embeddings-italy-v1` creado (gate B-4 US-022-c cerrado retroactivamente); ablation reporta `with_farslip` y `farslip_only` con delta vs `full` documentado y MLflow run `baseline-farslip-ablation-v1` con tags `data_version` + `code_version`.
+- P3: Plot aislado `ablation_geom_comparison.png` con 2 barras (`full` vs `no_geom`) + nuevo conjunto `geom_only` en la ablation (gate F1-macro < 0.10) + interpretación de leakage espacial en el notebook.
+- P4: Bloque `pheno_text_*` (384-dim sentence-transformers) ampliado a subset balanceado ≥ 1 000 parcelas; ablation reporta `with_pheno_text` y `pheno_text_only`; costo Gemini Flash 3.5 ≤ $5 USD documentado en `docs/l4_log.md`; MLflow run `baseline-pheno-text-ablation-v1`.
+- P5: `ml/features/spectral_signature.py` con `SpectralSignatureFeatures(BaseEstimator, TransformerMixin)` y descriptor Red Edge Position (Frampton et al. 2013) por defecto; integrado en `ml/features/fusion.py` como bloque opcional con LEFT JOIN; ablation reporta `with_spectral_signature` y `spectral_signature_only`; 6+ tests pytest con cobertura ≥ 80 %.
+- P6: Las 2 libretas pasan el QA Checklist completo de `notebooks/CLAUDE.md` (16 ítems: imports + autoreload, Polars, idioma strings vs identificadores, `display()` sobre `print()`, sin emojis decorativos, conclusiones sin US-XXX/EPIC/AC-X, paths via `pathlib`, etc.).
+- P7: Plan v6 referencia US-023-preview en EPIC 4 + secuenciación S6.
+- **P8 (baseline v2):** `notebooks/baseline/04_baseline.ipynb` v2 reentrena los 3 modelos del A3 (XGBoost + TempCNN + InceptionTime) sobre el conjunto de features ganador post-ablation P2/P3/P4/P5, con spatial CV 5-fold (mismo splitter US-022b), 4 fixes ML preservados (class_weights, weighted_sampler, lr_scheduler warmup+cosine, early_stopping); tabla `model_comparison_v2.parquet` con 3 modelos × 6 métricas (F1-macro, F1-weighted, mIoU, accuracy, kappa, train_time_s); plot `model_comparison_v2.png` con deltas vs v1; 3 MLflow runs (`baseline-v2-xgb`, `baseline-v2-tempcnn`, `baseline-v2-inceptiontime`) con tags `data_version` + `code_version`; DVC tag `fused-features-italy-v2`; tabla LaTeX `baseline_v2_comparison.tex` exportada a `paper/tables/us-023-preview/`; decisión "modelo ganador v2" documentada (F1-macro → F1-weighted → mIoU como tiebreak); wall clock ≤ 90 min RTX 4070.
+- **P9 (dashboard Streamlit):** nueva categoría `_SECTION_BASELINE = "Baseline (US-023-preview)"` agregada al selector en [`app/eda_dashboard.py`](../app/eda_dashboard.py); función `_render_baseline_section()` con 5 tabs: (1) Ablation de features (7-10 conjuntos), (2) Leakage geográfico (`geom_only` vs `full`), (3) Bloques opcionales (FarSLIP + Gemini + firma espectral + decisiones), (4) Modelos baseline v2 (3 modelos + comparativa v1 vs v2 + ganador), (5) Conclusiones (H-1..H-4 + Lo que sigue en EPIC 5); reusa helpers `_render_section_divider`/`_render_figures_section`/`_render_tables_section`; lazy loading con `st.cache_data` sobre `pl.read_parquet(...)`; graceful degradation si algún artefacto no existe (`st.warning("ejecuta `make reencuadre-notebook-full && make baseline-v2-full`")`); smoke test en `tests/app/test_eda_dashboard_baseline_section.py`; sin nuevas dependencias en `pyproject.toml`.
+- Cobertura ML del diff ≥ 75 %; `make check` limpio; PR a `develop` con Conventional Commit `feat(E4): US-023-preview …`.
+
+**Tareas técnicas:**
+
+- [x] P1 rutas + builders + Makefile + `notebooks/CLAUDE.md` (cerrado 2026-05-25)
+- [x] P2 promover FarSLIP v2 al path canónico + rename cols + patch fusion.py + gate B-4 cerrado retroactivamente (cerrado 2026-05-25; DVC tag y MLflow run pendientes de gate B-2 training)
+- [x] P3 plot `ablation_geom_comparison.png` + conjunto `geom_only` + narrativa "Por qué descartar `geom_*`" (cerrado 2026-05-25)
+- [SKIP-DOC] P4 Gemini Flash 3.5 — skip honesto documentado en `docs/l4_log.md`: GEMINI_API_KEY no configurada en entorno solo-dev de esta corrida; bloque 216-parcelas US-022-c sigue siendo la referencia (deuda US-024)
+- [x] P5 módulo `spectral_signature.py` + 16 tests pytest (cobertura efectiva en la clase >= 80%) + integración fusion.py + bloque opcional + ablation `with_spectral_signature`/`spectral_signature_only` (cerrado 2026-05-25)
+- [x] P6 QA `notebooks/CLAUDE.md` sobre `04_baseline.ipynb` + `05_reencuadre_fenologico.ipynb` (cerrado 2026-05-25 — papermill smoke + full ejecutados)
+- [x] P7 entrada US-023-preview en plan v6 + secuenciación S6 (este commit, 2026-05-25)
+- [x] P8 baseline v2 con 3 modelos sobre conjunto ganador + builder de celdas v2 (RUN_BASELINE_V2 toggle) + target `make baseline-v2-full` (cerrado 2026-05-25; la corrida real de 90 min se lanza con `make baseline-v2-full`)
+- [ ] P9 categoría "Baseline" en `app/eda_dashboard.py` + 5 tabs + smoke test (no corresponde a este subagente ML; delegado al frontend-engineer)
+- [ ] `docs/us-resolved/us-023-preview.md` al cierre (pendiente; se redacta cuando P9 cierre)
+
+**Estimación:** 14 puntos (~5-6 días distribuidos en S6).
+
+**Dependencias / coordinación:**
+
+- PRs #24 (Aaron, `fix: ci and xgb`, 79 archivos +1184/-1396) y #25 (Aaron, `User/abocanegra/improve ci`, similar) son **redundantes** — mergear uno solo a `develop` ANTES de iniciar Fase 3 para evitar rebases dolorosos (tocan `ml/eval/feature_ablation.py`, `ml/features/fusion.py`, `ml/features/phenology_description.py`, `scripts/build_reencuadre_notebook.py`).
+- PR #23 (Isaac, refactor `Makefile:phenology-train` a `scripts/train_phenology_models.py`) puede mergearse en paralelo. Si conserva emoji `✓` en stderr, decidir refactor en P6 o aceptar como marcador discreto fuera de código de aplicación.
+- **Orden estricto Fase 3:** P1 → P2 (PRIORIDAD 1, desbloquea ablation) → (P3 ∥ P4 ∥ P5) → P6 → **P8 baseline v2** (depende P2/P3/P4/P5 cerrados) → **P9 dashboard** (depende artefactos P2/P3/P4/P5/P8 en disco) → P7 cierre.
+- US-023-preview **no toca H100** (V1-V6 intactos) ni Vertex AI directo. Único costo cloud: Gemini Flash 3.5 ≤ $5 USD.
+
+**Hipótesis a validar:**
+
+- H-1 (FarSLIP): incluir embeddings FarSLIP 512-dim mejora F1-macro ≥ +0.02 sobre `full` → promover al baseline; si delta ∈ [-0.02, +0.02] → base learner del stacking EPIC 6; si peor → descartar con justificación.
+- H-2 (`pheno_text`): la rama semántica Gemini Flash 3.5 mejora F1-macro ≥ +0.01 sobre subset ≥ 1 000 → promover al baseline; si no → deuda de investigación documentada.
+- H-3 (firma espectral): un descriptor compacto Red Edge Position aporta señal complementaria al embedding AlphaEarth ≥ +0.01 F1-macro → promover; si no → deuda de investigación.
+- H-4 (leakage `geom_*`): F1-macro de `geom_only` < 0.10 confirma que las 3 columnas son solo proxy de región (ya documentado en US-022-b empíricamente, esta US lo cuantifica visualmente).
+
+**ADR de referencia:** [ADR-006 Aceptada](../docs/decisions/ADR-006-reencuadre-baseline-fenologico.md).
+
+**Paper-faro adicional (P5):** Frampton, W.J. et al. (2013), *Evaluating the capabilities of Sentinel-2 for quantitative estimation of biophysical variables in vegetation*, ISPRS J. 82, 83-92. DOI [10.1016/j.isprsjprs.2013.04.007](https://doi.org/10.1016/j.isprsjprs.2013.04.007).
+
+**Cómputo:** 0 h H100, 0 h Vertex AI, 0 h L4. Trabajo local (CPU + RTX 4070) + 1 llamada cloud (Gemini Flash 3.5, ≤ $5 USD). Wall clock P8 baseline v2 (3 modelos): ≤ 90 min en RTX 4070 batch=128.
+
+**Artefactos finales (al cerrar):** 6 MLflow runs nuevos (3 ablations + 3 baseline v2), 4 DVC tags (`farslip-embeddings-italy-v1`, `phenology-text-italy-v1`, `spectral-signature-italy-v1`, `fused-features-italy-v2`), 2 notebooks `notebooks/baseline/*.ipynb` saneados con outputs poblados, 3 figuras `paper/figures/us-023-preview/*.png`, 1 tabla LaTeX `paper/tables/us-023-preview/baseline_v2_comparison.tex`, nueva categoría "Baseline" en dashboard Streamlit con 5 tabs, gate B-4 de US-022-c cerrado retroactivamente.
 
 ---
 

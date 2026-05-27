@@ -1,0 +1,4 @@
+model,f1_macro,f1_weighted,miou,delta_vs_baseline
+xgboost,0.5167,0.7709,0.3956,0.1967
+tempcnn,0.1201,0.0395,0.0687,-0.1999
+inceptiontime,0.078,0.0249,0.0424,-0.242

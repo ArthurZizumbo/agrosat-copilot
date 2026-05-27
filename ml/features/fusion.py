@@ -61,10 +61,11 @@ logger = structlog.get_logger(__name__)
 #: bloque Sentinel-1. Difiere del set de 9 stats de US-015 por economía.
 FUSION_STATS: Final[tuple[str, ...]] = ("mean", "std", "p25", "p50", "p95")
 
-#: Nombres canónicos de los 8 bloques del vector fusionado.
-#: El bloque ``phenology_text`` (US-022b-D) es opcional y se incorpora vía
-#: ``LEFT JOIN`` cuando ``include_phenology_text=True`` y los embeddings
-#: textuales se materializaron previamente.
+#: Nombres canónicos de los 9 bloques del vector fusionado.
+#: El bloque ``phenology_text`` (US-022b-D) y ``spectral_signature``
+#: (US-023-preview P5) son opcionales y se incorporan vía ``LEFT JOIN``
+#: cuando ``include_phenology_text=True`` / ``include_spectral_signature=True``
+#: y los parquets correspondientes existen.
 BLOCK_NAMES: Final[tuple[str, ...]] = (
     "alphaearth",
     "indices_stats",
@@ -74,6 +75,7 @@ BLOCK_NAMES: Final[tuple[str, ...]] = (
     "geometry",
     "farslip",
     "phenology_text",
+    "spectral_signature",
 )
 
 #: Conteo esperado de columnas SIN el bloque FarSLIP (excluye `parcel_id`, `year`).
@@ -100,6 +102,18 @@ EXPECTED_COL_COUNT_WITH_FARSLIP_AND_PHENO_TEXT: Final[int] = (
     EXPECTED_COL_COUNT_WITH_FARSLIP + PHENOLOGY_TEXT_EMBED_DIM
 )
 
+#: Numero de features del bloque opcional ``spectral_signature_*`` (US-023-preview
+#: P5). Para el descriptor default ``rep`` con 3 anclas fenologicas se obtienen
+#: 3 columnas; si se cambia el descriptor o las anclas, este conteo varia.
+#: La constante se expone para que los downstream que asuman el descriptor
+#: default puedan pre-validar la shape esperada.
+DEFAULT_SPECTRAL_SIGNATURE_DIM: Final[int] = 3
+
+#: Conteo esperado con el bloque spectral_signature (sin FarSLIP ni pheno_text).
+EXPECTED_COL_COUNT_WITH_SPECTRAL_SIGNATURE: Final[int] = (
+    EXPECTED_COL_COUNT_NO_FARSLIP + DEFAULT_SPECTRAL_SIGNATURE_DIM
+)
+
 #: Polarizaciones Sentinel-1 canónicas del bloque (orden fijo).
 _S1_POLARIZATIONS: Final[tuple[str, ...]] = ("vv", "vh")
 
@@ -110,18 +124,23 @@ AE_COLS: Final[tuple[str, ...]] = tuple(f"ae_{i:02d}" for i in range(64))
 _DEFAULT_FARSLIP_PATH: Final[Path] = Path("data/farslip/embeddings_italy.parquet")
 
 #: Default path para el bloque pheno_text materializado (US-022b-D).
-_DEFAULT_PHENO_TEXT_PATH: Final[Path] = Path(
-    "data/features/phenology_text_italy.parquet"
+_DEFAULT_PHENO_TEXT_PATH: Final[Path] = Path("data/features/phenology_text_italy.parquet")
+
+#: Default path para el bloque spectral_signature materializado (US-023-preview P5).
+_DEFAULT_SPECTRAL_SIGNATURE_PATH: Final[Path] = Path(
+    "data/features/spectral_signature_italy.parquet"
 )
 
 
 __all__ = [
     "AE_COLS",
     "BLOCK_NAMES",
+    "DEFAULT_SPECTRAL_SIGNATURE_DIM",
     "EXPECTED_COL_COUNT_NO_FARSLIP",
     "EXPECTED_COL_COUNT_WITH_FARSLIP",
     "EXPECTED_COL_COUNT_WITH_FARSLIP_AND_PHENO_TEXT",
     "EXPECTED_COL_COUNT_WITH_PHENO_TEXT",
+    "EXPECTED_COL_COUNT_WITH_SPECTRAL_SIGNATURE",
     "FUSION_STATS",
     "PHENOLOGY_TEXT_EMBED_DIM",
     "build_fused_features",
@@ -142,6 +161,8 @@ def build_fused_features(
     farslip_path: str | Path | None = None,
     include_phenology_text: bool = False,
     phenology_text_path: str | Path | None = None,
+    include_spectral_signature: bool = False,
+    spectral_signature_path: str | Path | None = None,
     stats: tuple[str, ...] = FUSION_STATS,
     lazy: bool = True,
     ae_frame: pl.DataFrame | None = None,
@@ -150,6 +171,7 @@ def build_fused_features(
     srtm_frame: pl.DataFrame | None = None,
     era5_frame: pl.DataFrame | None = None,
     phenology_text_frame: pl.DataFrame | None = None,
+    spectral_signature_frame: pl.DataFrame | None = None,
 ) -> pl.DataFrame:
     """Construye el vector de features fusionados por ``(parcel_id, year)``.
 
@@ -190,6 +212,17 @@ def build_fused_features(
         phenology_text_frame: Inyección opcional del bloque
             ``pheno_text_*`` (testing); cuando se pasa, ``phenology_text_path``
             se ignora.
+        include_spectral_signature: Si ``True`` intenta unir el bloque
+            ``spectral_signature_*`` (US-023-preview P5). Mismo patron que
+            FarSLIP: si el path no existe se omite sin fallar. Si
+            ``spectral_signature_frame`` se pasa explicitamente se ignora
+            el path.
+        spectral_signature_path: Ruta al parquet con la firma espectral
+            (output de :class:`ml.features.spectral_signature.SpectralSignatureFeatures`).
+            Default ``data/features/spectral_signature_italy.parquet``.
+        spectral_signature_frame: Inyección opcional del bloque
+            ``spectral_signature_*`` (testing); cuando se pasa,
+            ``spectral_signature_path`` se ignora.
 
     Returns:
         ``pl.DataFrame`` con shape ``(N, 2 + 189)`` o ``(N, 2 + 701)`` si
@@ -210,12 +243,9 @@ def build_fused_features(
     selected_blocks = tuple(b for b in blocks if b in BLOCK_NAMES)
     block_frames: list[pl.LazyFrame] = []
 
-    base = (
-        pl.from_pandas(
-            parcels[["parcel_id", "year"]].astype({"parcel_id": "int64", "year": "int16"})
-        )
-        .lazy()
-    )
+    base = pl.from_pandas(
+        parcels[["parcel_id", "year"]].astype({"parcel_id": "int64", "year": "int16"})
+    ).lazy()
 
     if "alphaearth" in selected_blocks:
         block_frames.append(_build_ae_block(parcels, year=year, injected=ae_frame))
@@ -224,9 +254,7 @@ def build_fused_features(
             _build_indices_stats_block(parcels, year=year, stats=stats, injected=indices_frame)
         )
     if "sentinel1" in selected_blocks:
-        block_frames.append(
-            _build_s1_block(parcels, year=year, stats=stats, injected=s1_frame)
-        )
+        block_frames.append(_build_s1_block(parcels, year=year, stats=stats, injected=s1_frame))
     if "srtm" in selected_blocks:
         block_frames.append(_build_srtm_block(parcels, injected=srtm_frame))
     if "era5_monthly" in selected_blocks:
@@ -245,6 +273,14 @@ def build_fused_features(
         )
         if pheno_block is not None:
             block_frames.append(pheno_block)
+    if "spectral_signature" in selected_blocks and include_spectral_signature:
+        spec_block = _build_spectral_signature_block_lf(
+            parcels,
+            spectral_signature_path=spectral_signature_path,
+            injected=spectral_signature_frame,
+        )
+        if spec_block is not None:
+            block_frames.append(spec_block)
 
     joined = base
     for block in block_frames:
@@ -292,9 +328,7 @@ def _validate_stats(stats: tuple[str, ...]) -> None:
     supported = {"mean", "std", "p25", "p50", "p75", "p95", "min", "max"}
     invalid = [s for s in stats if s not in supported]
     if invalid:
-        raise ValueError(
-            f"Stats no soportadas: {invalid}. Disponibles: {sorted(supported)}."
-        )
+        raise ValueError(f"Stats no soportadas: {invalid}. Disponibles: {sorted(supported)}.")
 
 
 # ---------------------------------------------------------------------------
@@ -366,9 +400,7 @@ def _build_indices_stats_block(
     NDVI_std, ... NDVI_p95, NDWI_mean, ...). Cuando ``injected`` es ``None``
     el helper rellena con ``None`` preservando el contrato exacto.
     """
-    expected_cols = tuple(
-        f"{idx.lower()}_{stat}" for idx in INDEX_NAMES for stat in stats
-    )
+    expected_cols = tuple(f"{idx.lower()}_{stat}" for idx in INDEX_NAMES for stat in stats)
     if injected is not None:
         df = injected
     else:
@@ -415,9 +447,7 @@ def _build_s1_block(
     injected: pl.DataFrame | None,
 ) -> pl.LazyFrame:
     """Bloque Sentinel-1 VV+VH x stats = 10 cols."""
-    expected_cols = tuple(
-        f"s1_{pol}_{stat}" for pol in _S1_POLARIZATIONS for stat in stats
-    )
+    expected_cols = tuple(f"s1_{pol}_{stat}" for pol in _S1_POLARIZATIONS for stat in stats)
     if injected is not None:
         df = injected
     else:
@@ -582,14 +612,22 @@ def _build_farslip_block(
     farslip_cols = tuple(f"farslip_{i:03d}" for i in range(512))
     missing = [c for c in farslip_cols if c not in df.columns]
     if missing:
-        raise ValueError(
-            f"FarSLIP parquet en {resolved} no trae las 512 columnas esperadas. "
-            f"Faltan {len(missing)} cols (ej. {missing[:3]}...)."
-        )
+        # Patch defensivo US-023-preview P2 (decision D-1): acepta tambien
+        # el prefijo legacy ``farslip_emb_NNN`` (v1/v2 originales antes de
+        # la promocion al path canonico). Si detectamos las 512 cols con
+        # prefijo legacy, las renombramos in-memory sin tocar el parquet.
+        legacy_cols = tuple(f"farslip_emb_{i:03d}" for i in range(512))
+        if all(c in df.columns for c in legacy_cols):
+            df = df.rename({lc: fc for lc, fc in zip(legacy_cols, farslip_cols, strict=True)})
+            missing = [c for c in farslip_cols if c not in df.columns]
+        if missing:
+            raise ValueError(
+                f"FarSLIP parquet en {resolved} no trae las 512 columnas esperadas. "
+                f"Faltan {len(missing)} cols (ej. {missing[:3]}...). "
+                "Prefijos aceptados: 'farslip_NNN' (canonico) o 'farslip_emb_NNN' (legacy v1/v2)."
+            )
     if "parcel_id" not in df.columns:
-        raise ValueError(
-            f"FarSLIP parquet en {resolved} no contiene `parcel_id` para el join."
-        )
+        raise ValueError(f"FarSLIP parquet en {resolved} no contiene `parcel_id` para el join.")
 
     # Si el frame FarSLIP no trae `year`, inferimos el año desde parcels.
     if "year" not in df.columns:
@@ -652,9 +690,7 @@ def _build_phenology_text_block_lf(
         raise ValueError("Bloque pheno_text no contiene `parcel_id` para el join.")
     pheno_cols = tuple(c for c in df.columns if c.startswith("pheno_text_"))
     if not pheno_cols:
-        raise ValueError(
-            "Bloque pheno_text no contiene columnas con prefijo `pheno_text_`."
-        )
+        raise ValueError("Bloque pheno_text no contiene columnas con prefijo `pheno_text_`.")
     if "year" not in df.columns:
         year_val = int(parcels["year"].iloc[0]) if len(parcels) else 0
         df = df.with_columns(pl.lit(year_val, dtype=pl.Int16).alias("year"))
@@ -663,6 +699,70 @@ def _build_phenology_text_block_lf(
             pl.col("parcel_id").cast(pl.Int64),
             pl.col("year").cast(pl.Int16),
             *[pl.col(c).cast(pl.Float32) for c in pheno_cols],
+        ]
+    ).lazy()
+
+
+def _build_spectral_signature_block_lf(
+    parcels: gpd.GeoDataFrame,
+    *,
+    spectral_signature_path: str | Path | None,
+    injected: pl.DataFrame | None,
+) -> pl.LazyFrame | None:
+    """Prepara el bloque ``spectral_signature_*`` (US-023-preview P5) para LEFT JOIN.
+
+    Patron simetrico al bloque pheno_text:
+
+    - Si ``injected`` no es ``None``, se usa directamente (testing).
+    - Si el path no existe y se uso el default: warning + ``None`` (la
+      build sigue sin fallar — el bloque se omite).
+    - Si el path no existe y se paso explicitamente: ``FileNotFoundError``.
+    - Las columnas esperadas tienen prefijo ``spectral_signature_NNN``; el
+      conteo K depende del descriptor (default 3 para REP / 3 anclas).
+    """
+    if injected is not None:
+        df = injected
+    else:
+        explicit_path = spectral_signature_path is not None
+        resolved = (
+            Path(spectral_signature_path)
+            if spectral_signature_path is not None
+            else _DEFAULT_SPECTRAL_SIGNATURE_PATH
+        )
+        if not resolved.exists():
+            if explicit_path:
+                raise FileNotFoundError(
+                    f"Bloque spectral_signature no encontrado en {resolved}. "
+                    "Pasa `include_spectral_signature=False` o genera el "
+                    "parquet con ml.features.spectral_signature."
+                )
+            logger.warning(
+                "spectral_signature_block_skipped",
+                reason="default_path_not_found",
+                path=str(resolved),
+                note="US-023-preview P5 aun no ha materializado el bloque",
+            )
+            return None
+        df = pl.read_parquet(resolved)
+
+    if "parcel_id" not in df.columns:
+        raise ValueError(
+            "Bloque spectral_signature no contiene `parcel_id` para el join."
+        )
+    spec_cols = tuple(c for c in df.columns if c.startswith("spectral_signature_"))
+    if not spec_cols:
+        raise ValueError(
+            "Bloque spectral_signature no contiene columnas con prefijo "
+            "`spectral_signature_`."
+        )
+    if "year" not in df.columns:
+        year_val = int(parcels["year"].iloc[0]) if len(parcels) else 0
+        df = df.with_columns(pl.lit(year_val, dtype=pl.Int16).alias("year"))
+    return df.select(
+        [
+            pl.col("parcel_id").cast(pl.Int64),
+            pl.col("year").cast(pl.Int16),
+            *[pl.col(c).cast(pl.Float32) for c in spec_cols],
         ]
     ).lazy()
 

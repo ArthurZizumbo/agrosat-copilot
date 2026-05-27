@@ -82,14 +82,22 @@ def synthetic_features() -> pl.DataFrame:
 def test_build_default_feature_sets_returns_five_sets(
     synthetic_features: pl.DataFrame,
 ) -> None:
+    """Los 5 sets canonicos siempre estan; sets opcionales aparecen segun cols.
+
+    US-023-preview P3 agrega ``geom_only`` cuando hay cols ``geom_*`` — el
+    fixture sintetico las trae, asi que el set esta presente.
+    """
     sets = build_default_feature_sets(synthetic_features.columns)
-    assert set(sets.keys()) == {
+    canonical = {
         "full",
         "no_geom",
         "no_geom_no_era5_srtm",
         "alphaearth_only",
         "phenology_only",
     }
+    assert canonical.issubset(sets.keys())
+    # `geom_only` aparece porque el fixture trae geom_area_ha/perimeter/elongation.
+    assert "geom_only" in sets
 
 
 def test_default_sets_geom_exclusion_correct(synthetic_features: pl.DataFrame) -> None:
@@ -127,6 +135,7 @@ def test_phenology_only_set_contains_pheno_and_fft(
 def test_run_ablation_with_xgb_returns_one_row_per_set(
     synthetic_features: pl.DataFrame,
 ) -> None:
+    """Cada set defaultsumado produce 1 fila; US-023-preview P3 anade `geom_only`."""
     results = run_feature_ablation(
         df=synthetic_features,
         models=("xgb",),
@@ -134,15 +143,17 @@ def test_run_ablation_with_xgb_returns_one_row_per_set(
         buffer_km=0.5,
         seed=42,
     )
-    assert len(results) == 5
+    # 5 canonicos + geom_only (fixture trae cols geom_*) = 6.
+    assert len(results) == 6
     sets_seen = {r.feature_set for r in results}
-    assert sets_seen == {
+    assert {
         "full",
         "no_geom",
         "no_geom_no_era5_srtm",
         "alphaearth_only",
         "phenology_only",
-    }
+        "geom_only",
+    }.issubset(sets_seen)
 
 
 def test_run_ablation_delta_vs_full_correct(synthetic_features: pl.DataFrame) -> None:
@@ -187,8 +198,8 @@ def test_run_ablation_max_samples_subsamples(synthetic_features: pl.DataFrame) -
         buffer_km=0.5,
         seed=42,
     )
-    # No falla, devuelve los 5 sets aunque la base sea mas pequena.
-    assert len(results) == 5
+    # 5 sets canonicos + geom_only (fixture trae cols geom_*) = 6.
+    assert len(results) == 6
 
 
 def test_run_ablation_empty_set_emits_nan_row(synthetic_features: pl.DataFrame) -> None:
@@ -233,9 +244,7 @@ def test_export_ablation_table_writes_csv_and_md(
             delta_vs_full=0.01,
         ),
     ]
-    csv_path, md_path = export_ablation_table(
-        fake_results, tmp_path / "ablation_table"
-    )
+    csv_path, md_path = export_ablation_table(fake_results, tmp_path / "ablation_table")
     assert csv_path.exists()
     assert md_path.exists()
     table = pl.read_csv(csv_path)
@@ -259,3 +268,90 @@ def test_run_ablation_xgb_full_outperforms_or_equals_random(
     # Aceptamos hasta 0.05 (CV espacial puede colapsar folds chicos a 0).
     assert ae_only.f1_macro >= 0.0
     assert ae_only.n_features == 64
+
+
+# ---------------------------------------------------------------------------
+# US-023-preview P3 — geom_only (test cuantitativo de leakage espacial).
+# ---------------------------------------------------------------------------
+
+
+def test_default_sets_includes_geom_only_when_geom_cols_present(
+    synthetic_features: pl.DataFrame,
+) -> None:
+    """Si hay cols `geom_*`, build_default_feature_sets agrega `geom_only`."""
+    sets = build_default_feature_sets(synthetic_features.columns)
+    assert "geom_only" in sets
+    geom_only = sets["geom_only"]
+    assert all(c.startswith("geom_") for c in geom_only)
+    assert len(geom_only) == 3  # area, perimeter, elongation
+
+
+def test_default_sets_omits_geom_only_when_no_geom_cols() -> None:
+    """Sin cols `geom_*`, la llave `geom_only` no se agrega (graceful)."""
+    cols_without_geom = (
+        "parcel_id",
+        "year",
+        "class_id",
+        "ae_00",
+        "ae_01",
+        "ae_02",
+    )
+    sets = build_default_feature_sets(cols_without_geom)
+    assert "geom_only" not in sets
+
+
+# ---------------------------------------------------------------------------
+# US-023-preview P5 — with_spectral_signature / spectral_signature_only.
+# ---------------------------------------------------------------------------
+
+
+def test_default_sets_includes_spectral_signature_when_cols_present() -> None:
+    """Si hay cols `spectral_signature_*`, se agregan los 2 sets opcionales."""
+    cols = (
+        "parcel_id",
+        "year",
+        "class_id",
+        "ae_00",
+        "sog_doy",
+        "NDVI_fft_amp_0",
+        "spectral_signature_000",
+        "spectral_signature_001",
+        "spectral_signature_002",
+    )
+    sets = build_default_feature_sets(cols)
+    assert "with_spectral_signature" in sets
+    assert "spectral_signature_only" in sets
+    spec_only = sets["spectral_signature_only"]
+    assert all(c.startswith("spectral_signature_") for c in spec_only)
+    assert len(spec_only) == 3
+    # `with_spectral_signature` = phenology_only + spectral_signature_*.
+    with_spec = sets["with_spectral_signature"]
+    assert "spectral_signature_000" in with_spec
+    assert "sog_doy" in with_spec
+
+
+def test_default_sets_omits_spectral_signature_when_cols_absent(
+    synthetic_features: pl.DataFrame,
+) -> None:
+    """Sin cols `spectral_signature_*`, las llaves opcionales no se agregan."""
+    sets = build_default_feature_sets(synthetic_features.columns)
+    assert "with_spectral_signature" not in sets
+    assert "spectral_signature_only" not in sets
+
+
+def test_default_sets_pheno_text_only_added_when_pheno_text_cols_present() -> None:
+    """Si hay cols `pheno_text_*`, se agrega tambien `pheno_text_only` (P4 prep)."""
+    cols = (
+        "parcel_id",
+        "year",
+        "class_id",
+        "ae_00",
+        "sog_doy",
+        "NDVI_fft_amp_0",
+        "pheno_text_000",
+        "pheno_text_001",
+    )
+    sets = build_default_feature_sets(cols)
+    assert "with_pheno_text" in sets
+    assert "pheno_text_only" in sets
+    assert all(c.startswith("pheno_text_") for c in sets["pheno_text_only"])

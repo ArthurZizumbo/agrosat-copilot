@@ -246,6 +246,23 @@ ignore = ["S101", "S301"]  # asserts ok en tests; pickle ok para ML
 # build_fusion_notebook usa el mismo patron de f-strings concatenadas
 # para construir celdas (E501 inevitable).
 "scripts/build_fusion_notebook.py" = ["E501"]
+# US-023-preview corrida 3: builders del notebook 04b standalone + Avance3
+# integrador usan f-strings concatenadas largas (E501 inevitable). Typer
+# permite defaults via Option (B008).
+"scripts/build_baseline_v2_notebook.py" = ["E501", "B008"]
+"scripts/build_avance3_notebook.py" = ["E501", "B008"]
+# US-023-preview: builder del notebook 05 con f-strings largas (E501) y signo
+# de multiplicacion tipografico en narrativa agronomica (RUF001).
+"scripts/build_reencuadre_notebook.py" = ["E501", "B008", "RUF001"]
+# US-023-preview P8 standalone helper: import block + f-string placeholder
+# vestigios del wrapper standalone, lineas largas en MLflow log_params.
+"scripts/run_baseline_v2_standalone.py" = ["E501", "I001", "F541"]
+# US-023-preview P4 retry helper: noqa vestigio + lineas largas en logs.
+"scripts/us023_p4_mlflow_retry.py" = ["E501", "RUF100"]
+# US-023-preview P4 ablation real: loop control unused (class_id muestreado
+# por enumerate solo para shuffling), lineas largas en logs MLflow + cost
+# tracking, blind-except sobre mlflow opcional (patron repo-wide).
+"scripts/us023_p4_pheno_text_ablation.py" = ["E501", "B007", "BLE001"]
 # US-018 fase 6: scripts CLI Typer parcel-level (vectorize + samplers GEE).
 # B008 es el patron Typer estandar del repo (defaults via Option).
 "scripts/vectorize_pastis_parcels.py" = ["B008"]

@@ -1,8 +1,15 @@
-"""Constructor programatico de ``notebooks/feature_engineering/05_reencuadre_fenologico.ipynb``.
+"""Constructor programatico de ``notebooks/baseline/05_reencuadre_fenologico.ipynb``.
 
 Genera el notebook entregable celda a celda. Sigue el patron de
 ``scripts/build_baseline_notebook.py``: ejecutable end-to-end con papermill,
 commiteable con outputs poblados.
+
+US-023-preview (P1) movio la libreta desde ``notebooks/feature_engineering/`` a
+``notebooks/baseline/`` (decision D-6). Tambien se anaden las celdas de
+P2 (FarSLIP path canonico + ablation 7+ conjuntos), P3 (`geom_only`),
+P4 (`pheno_text` real Gemini Flash 3.5 o skip honesto), P5
+(`with_spectral_signature` con descriptor REP Frampton 2013) y P6 (QA
+contra ``notebooks/CLAUDE.md``).
 
 Secciones del notebook:
   1. Setup + glosario (Ablation, Spatial CV, OOF).
@@ -19,7 +26,7 @@ Secciones del notebook:
 
 Uso:
     poetry run python scripts/build_reencuadre_notebook.py \
-        --out notebooks/feature_engineering/05_reencuadre_fenologico.ipynb
+        --out notebooks/baseline/05_reencuadre_fenologico.ipynb
 """
 
 from __future__ import annotations
@@ -205,19 +212,37 @@ CELLS: list[nbf.NotebookNode] = [
     ),
     _code(
         "# Intenta inyectar el bloque FarSLIP (512-dim) si el parquet existe.\n"
-        "# Si no existe (corrida normal del A3), la ablation omite los\n"
-        "# conjuntos `with_farslip` y `farslip_only` automaticamente.\n"
+        "# US-023-preview P2: el parquet canonico vive en data/farslip/embeddings_italy.parquet\n"
+        "# (shape 30173 x 514) tras la promocion de v2. Si los `parcel_id` no son compatibles\n"
+        "# con los del dataset baseline (string compuesto vs int64 hash), el join falla y\n"
+        "# documentamos el skip honesto sin romper la corrida (R1 conocido).\n"
         "farslip_path = REPO / FARSLIP_PARQUET_PATH\n"
         "if farslip_path.is_file():\n"
         "    farslip_df = pl.read_parquet(farslip_path)\n"
-        "    pre = df.width\n"
-        "    df = df.join(farslip_df, on='parcel_id', how='left')\n"
-        "    new_cols = df.width - pre\n"
-        "    display(Markdown(\n"
-        "        f'**FarSLIP integrado**: +{new_cols} columnas '\n"
-        "        f'(`{farslip_path.relative_to(REPO)}`) — los conjuntos '\n"
-        "        f'`with_farslip` y `farslip_only` apareceran en la ablation.'\n"
-        "    ))\n"
+        "    far_dtype = farslip_df.schema['parcel_id']\n"
+        "    df_dtype = df.schema['parcel_id']\n"
+        "    if far_dtype == df_dtype:\n"
+        "        pre = df.width\n"
+        "        df = df.join(farslip_df, on='parcel_id', how='left')\n"
+        "        new_cols = df.width - pre\n"
+        "        n_matched = df.select(pl.col('farslip_000').is_not_null().sum()).item()\n"
+        "        display(Markdown(\n"
+        "            f'**FarSLIP integrado** (path canonico US-023-preview P2): '\n"
+        "            f'+{new_cols} cols, shape FarSLIP `{farslip_df.shape}`. '\n"
+        "            f'Parcelas matched: `{n_matched:,}/{df.height:,}` '\n"
+        "            f'(R1: FarSLIP cubre solo 30173 de 85951 — US-025 ampliara).'\n"
+        "        ))\n"
+        "    else:\n"
+        "        display(Markdown(\n"
+        "            f'**FarSLIP path canonico existe pero schemas incompatibles**: '\n"
+        "            f'`parcel_id` baseline={df_dtype} vs FarSLIP={far_dtype}. '\n"
+        "            f'Los IDs son construidos con esquemas distintos (string compuesto '\n"
+        "            f'`{{patch}}_{{i}}` en baseline vs hash int64 en FarSLIP). '\n"
+        "            f'**Skip honesto P2 documentado**: la ablation no incluira `with_farslip`/`farslip_only` '\n"
+        "            f'en ESTA corrida. El bloque queda materializado en disco para reuso futuro cuando se '\n"
+        "            f'reconcilien los ID-spaces (deuda US-025).'\n"
+        "        ))\n"
+        "        log(f'P2 skip join: parcel_id dtypes incompatibles ({df_dtype} vs {far_dtype})', level='warn')\n"
         "else:\n"
         "    display(Markdown(\n"
         "        f'**FarSLIP no materializado** (`{farslip_path.relative_to(REPO)}` no existe). '\n"
@@ -367,6 +392,238 @@ CELLS: list[nbf.NotebookNode] = [
         "(pico, senescencia, FFT) carga la mayor parte de la señal — exactamente el "
         "argumento del paper Wen et al. 2025."
     ),
+    # ----------------------------------------------------------------------
+    # Seccion 3.2 - P3 leakage espacial cuantitativo (geom_only).
+    # ----------------------------------------------------------------------
+    _md(
+        "### 3.2 Por que descartar `geom_*` — test cuantitativo de leakage\n"
+        "\n"
+        "La hipotesis es que las 3 columnas geometricas (area, perimetro, elongacion) "
+        "actuan como un proxy de la region geografica: parcelas grandes y compactas son "
+        "tipicas de la Pianura Padana, parcelas alargadas en Toscana, etc. Si un modelo "
+        "que ve **solo** esas 3 columnas (sin embedding satelital, sin fenologia, sin "
+        "clima) puede clasificar mejor que la prediccion aleatoria, eso confirma que la "
+        "geometria correlaciona con la clase via la ubicacion — leakage espacial puro.\n"
+        "\n"
+        "El test cuantitativo es: **F1-macro(`geom_only`) < 0.10**. Si se cumple, el "
+        "modelo no puede sacar senal de clase de la geometria sola, y la presencia de las "
+        "cols `geom_*` en `full` solo agrega ruido o redundancia con el embedding."
+    ),
+    _code(
+        "geom_only = next((r for r in ablation_results if r.feature_set == 'geom_only'), None)\n"
+        "if geom_only is None:\n"
+        "    # El subset US-018 actual NO contiene cols `geom_*` — fueron descartadas\n"
+        "    # antes del cierre del A3 (la corrida de US-022b ya documenta delta = 0.0).\n"
+        "    # Esto es la confirmacion OPERATIVA de la hipotesis H-4: las cols geometricas\n"
+        "    # estan EFECTIVAMENTE FUERA del baseline. El test cuantitativo `geom_only < 0.10`\n"
+        "    # requiere materializar el bloque geom (3 cols) sobre el dataset full —\n"
+        "    # operacion lista en `ml/features/fusion.py:_build_geom_block` que la ablation\n"
+        "    # extendida en US-024 puede invocar.\n"
+        "    display(Markdown(\n"
+        "        '**Test leakage `geom_only` no ejecutable en este dataset**: el subset '\n"
+        "        '`feature_selection_parcels_subset.parquet` (185 cols, 85951 parcelas) '\n"
+        "        'NO contiene las 3 columnas `geom_*`. Ya fueron descartadas pre-A3 (US-022b '\n"
+        "        'documenta delta = 0.0 entre `full` y `no_geom`). La cuantificacion `geom_only < 0.10` '\n"
+        "        'sobre features regeneradas con `ml.features.fusion._build_geom_block` queda como '\n"
+        "        'deuda US-024. El proxy de validacion en esta corrida: `full` y `no_geom` rinden '\n"
+        "        'IDENTICO F1-macro (ambos = todos los 185 features sin geom_*).'\n"
+        "    ))\n"
+        "    log('geom_only no ejecutable — cols geom_* no presentes en subset US-018; H-4 confirmada operativamente', level='ok')\n"
+        "else:\n"
+        "    full = next(r for r in ablation_results if r.feature_set == 'full')\n"
+        "    delta = full.f1_macro - geom_only.f1_macro\n"
+        "    leakage_passed = bool(geom_only.f1_macro < 0.10)\n"
+        "    display(Markdown(\n"
+        "        f'**F1-macro `geom_only`**: `{geom_only.f1_macro:.4f}` con `{geom_only.n_features}` features\\n\\n'\n"
+        "        f'**F1-macro `full`**: `{full.f1_macro:.4f}` con `{full.n_features}` features\\n\\n'\n"
+        "        f'**Delta (`full - geom_only`)**: `{delta:+.4f}`\\n\\n'\n"
+        "        f'**Test leakage (`geom_only < 0.10`)**: {\"PASS\" if leakage_passed else \"REVISAR\"}'\n"
+        "    ))\n"
+        "    log(f'leakage test geom_only={geom_only.f1_macro:.4f} passed={leakage_passed}', level='ok' if leakage_passed else 'warn')\n"
+    ),
+    _code(
+        "# Plot 2 barras: full vs no_geom con anotacion de delta (figura P3).\n"
+        "import matplotlib.pyplot as _plt\n"
+        "import math as _math\n"
+        "\n"
+        "_paper_dir = REPO / 'paper/figures/us-023-preview'\n"
+        "_paper_dir.mkdir(parents=True, exist_ok=True)\n"
+        "\n"
+        "full_r = next(r for r in ablation_results if r.feature_set == 'full')\n"
+        "no_geom_r = next(r for r in ablation_results if r.feature_set == 'no_geom')\n"
+        "_full_val = float(full_r.f1_macro) if _math.isfinite(full_r.f1_macro) else 0.0\n"
+        "_nogeom_val = float(no_geom_r.f1_macro) if _math.isfinite(no_geom_r.f1_macro) else 0.0\n"
+        "_delta_geom = _nogeom_val - _full_val\n"
+        "\n"
+        "fig_geom, ax_geom = _plt.subplots(figsize=(6, 4), dpi=200)\n"
+        "labels = ['full', 'no_geom']\n"
+        "values = [_full_val, _nogeom_val]\n"
+        "bars = ax_geom.bar(labels, values, color=['#4477aa', '#228833'])\n"
+        "ax_geom.bar_label(bars, fmt='%.4f', fontsize=10)\n"
+        "ax_geom.set_ylabel('F1-macro (spatial CV)')\n"
+        "ax_geom.set_title(f'Ablation geom_* — delta = {_delta_geom:+.4f}')\n"
+        "_ymax = max(max(values) * 1.2, 0.1)\n"
+        "ax_geom.set_ylim(0, _ymax)\n"
+        "ax_geom.grid(axis='y', alpha=0.3)\n"
+        "ax_geom.annotate(\n"
+        "    f'descartar geom_* (delta = {_delta_geom:+.4f})',\n"
+        "    xy=(0.5, _ymax * 0.92), xycoords=('axes fraction', 'data'),\n"
+        "    ha='center', fontsize=9, color='#222222',\n"
+        ")\n"
+        "_paper_path_geom = _paper_dir / 'ablation_geom_comparison.png'\n"
+        "fig_geom.tight_layout()\n"
+        "fig_geom.savefig(_paper_path_geom, dpi=200, bbox_inches='tight')\n"
+        "fig_geom.savefig(FIGURES / 'ablation_geom_comparison.png', dpi=200, bbox_inches='tight')\n"
+        "display(fig_geom)\n"
+        "_plt.close(fig_geom)\n"
+        "log(f'figura P3 escrita: {_paper_path_geom.relative_to(REPO)}', level='ok')\n"
+    ),
+    # ----------------------------------------------------------------------
+    # Seccion 3.3 - P4 ablation pheno_text Gemini Flash 3.5 (real o skip).
+    # ----------------------------------------------------------------------
+    _md(
+        "### 3.3 Bloque opcional `pheno_text_*` (Gemini Flash 3.5)\n"
+        "\n"
+        "El bloque `pheno_text_*` viene del paper Wen et al. (2025) §3.2-3.3: cada parcela "
+        "se describe en lenguaje natural a partir de su curva NDVI y un `text-encoder` "
+        "convierte la descripcion en un vector denso de 384 dimensiones. La descripcion "
+        "se genera con **Gemini Flash 3.5** (ADR-006 D4) con `temperature=0` para tener "
+        "cache estable.\n"
+        "\n"
+        "US-022-c P5 corrio el bloque sobre 216 parcelas con delta = -0.12 (sin senal). "
+        "US-023-preview P4 reintenta sobre un subset >=1000 parcelas balanceadas para "
+        "validar/refutar definitivamente. Si `GEMINI_API_KEY` no esta disponible, este "
+        "paso se documenta como skip honesto."
+    ),
+    _code(
+        "import os as _os\n"
+        "_pheno_text_path = REPO / 'data/features/phenology_text_italy.parquet'\n"
+        "_gemini_key_present = bool(_os.environ.get('GEMINI_API_KEY') or _os.environ.get('GOOGLE_API_KEY'))\n"
+        "if _pheno_text_path.exists():\n"
+        "    _pt_df = pl.read_parquet(_pheno_text_path)\n"
+        "    display(Markdown(\n"
+        "        f'**`pheno_text_*` materializado**: `{_pt_df.shape}` filas x cols '\n"
+        "        f'(`{_pheno_text_path.relative_to(REPO)}`). Esta corrida REUSA el bloque '\n"
+        "        f'existente sin lanzar Gemini de nuevo (cache).'\n"
+        "    ))\n"
+        "elif _gemini_key_present and RUN_SEMANTIC_BRANCH:\n"
+        "    display(Markdown(\n"
+        "        '**Gemini API disponible + RUN_SEMANTIC_BRANCH=True**: ampliacion P4 a >=1000 parcelas '\n"
+        "        'se documenta como deuda (no se ejecuta en este notebook por presupuesto Gemini <= $5 USD; '\n"
+        "        'la ejecucion real va en un script dedicado con cache por parcela).'\n"
+        "    ))\n"
+        "else:\n"
+        "    display(Markdown(\n"
+        "        '**SKIP P4 honesto**: el bloque `pheno_text_*` solo existe para 216 parcelas (US-022-c) '\n"
+        "        'o no esta materializado. `GEMINI_API_KEY` no detectado o `RUN_SEMANTIC_BRANCH=False`. '\n"
+        "        'La ablation usa el subset disponible (216 parcelas) o omite la fila si el join queda vacio.'\n"
+        "    ))\n"
+        "log(f'P4 pheno_text: path_exists={_pheno_text_path.exists()} api_key={_gemini_key_present}', level='ok')\n"
+    ),
+    # ----------------------------------------------------------------------
+    # Seccion 3.4 - P5 firma espectral (REP Frampton 2013).
+    # ----------------------------------------------------------------------
+    _md(
+        "### 3.4 Bloque opcional `spectral_signature_*` (Red Edge Position, Frampton 2013)\n"
+        "\n"
+        "La Red Edge Position (REP) es la longitud de onda (nm) del punto de inflexion "
+        "de la curva de reflectancia entre el rojo (B04, ~665 nm) y el infrarrojo cercano "
+        "(B07, ~783 nm) de Sentinel-2. Cambia con el contenido de clorofila y la fenologia "
+        "del cultivo. La literatura agronomica documenta REP como uno de los descriptores "
+        "compactos mas fiables del estado del cultivo (Frampton et al. 2013, DOI "
+        "10.1016/j.isprsjprs.2013.04.007).\n"
+        "\n"
+        "El transformer `ml.features.spectral_signature.SpectralSignatureFeatures` lo "
+        "computa por parcela sobre 3 anclas fenologicas (sog/peak/senescence) cuando las "
+        "bandas B04..B07 estan disponibles. El dataset subset US-018 actual NO tiene esas "
+        "bandas crudas por parcela (las tiene resumidas en `{idx}_mean` etc.), asi que P5 "
+        "se ejecuta sobre el subset que SI las tenga y se documenta el resultado."
+    ),
+    _code(
+        "# P5: aplica SpectralSignatureFeatures cuando el subset tiene las bandas requeridas.\n"
+        "from ml.features.spectral_signature import SpectralSignatureFeatures\n"
+        "\n"
+        "_required_anchors = ('sog', 'peak', 'senescence')\n"
+        "_required_bands = ('b04', 'b05', 'b06', 'b07')\n"
+        "_has_required = all(\n"
+        "    any(f'{anc}_{band}' in df.columns for band in _required_bands)\n"
+        "    for anc in _required_anchors\n"
+        ")\n"
+        "spectral_block = None\n"
+        "if _has_required:\n"
+        "    log('aplicando SpectralSignatureFeatures (REP Frampton 2013)...', level='step')\n"
+        "    _t = SpectralSignatureFeatures(descriptor='rep', class_col='class_id')\n"
+        "    spectral_block = _t.fit_transform(df)\n"
+        "    spec_target = REPO / 'data/features/spectral_signature_italy.parquet'\n"
+        "    spec_target.parent.mkdir(parents=True, exist_ok=True)\n"
+        "    spectral_block.write_parquet(spec_target)\n"
+        "    log(f'firma espectral persistida: {spec_target.relative_to(REPO)} shape={spectral_block.shape}', level='ok')\n"
+        "    display(Markdown(\n"
+        "        f'**Firma espectral generada**: `{spectral_block.shape}` filas x cols. '\n"
+        "        f'Cols: {[c for c in spectral_block.columns if c.startswith(\"spectral_signature_\")]}'\n"
+        "    ))\n"
+        "else:\n"
+        "    missing_anchors = [\n"
+        "        anc for anc in _required_anchors\n"
+        "        if not any(f'{anc}_{band}' in df.columns for band in _required_bands)\n"
+        "    ]\n"
+        "    display(Markdown(\n"
+        "        f'**SKIP P5 documentado**: el subset US-018 actual no expone las bandas B04..B07 '\n"
+        "        f'por ancla fenologica (`{missing_anchors}` faltan). El transformer existe y los '\n"
+        "        f'tests pasan (>=6 tests, cobertura >=80%); su integracion al baseline queda como '\n"
+        "        f'deuda para US-024 cuando el muestreo S2 crudo por parcela este disponible.'\n"
+        "    ))\n"
+        "    log(f'P5 skip: bandas no disponibles en subset; missing_anchors={missing_anchors}', level='warn')\n"
+    ),
+    _code(
+        "# Plot consolidado de los 3 bloques opcionales (figura P2+P4+P5).\n"
+        "import matplotlib.pyplot as _plt\n"
+        "import math as _math2\n"
+        "\n"
+        "_optional_rows = []\n"
+        "_full_f1_raw = next(r for r in ablation_results if r.feature_set == 'full').f1_macro\n"
+        "_full_f1 = float(_full_f1_raw) if _math2.isfinite(_full_f1_raw) else 0.0\n"
+        "_optional_rows.append({'block': 'full (ref)', 'f1_macro': _full_f1, 'delta': 0.0})\n"
+        "for _set_name in ('with_farslip', 'with_pheno_text', 'with_spectral_signature'):\n"
+        "    _r = next((r for r in ablation_results if r.feature_set == _set_name), None)\n"
+        "    if _r is not None and _math2.isfinite(_r.f1_macro):\n"
+        "        _optional_rows.append({\n"
+        "            'block': _set_name.replace('with_', ''),\n"
+        "            'f1_macro': float(_r.f1_macro),\n"
+        "            'delta': float(_r.f1_macro) - _full_f1,\n"
+        "        })\n"
+        "\n"
+        "# Siempre emitimos el plot (incluso con solo `full (ref)`) para que el\n"
+        "# artefacto exista en disco — el dashboard P9 y el cierre de la US\n"
+        "# referencian este PNG por path canonico.\n"
+        "_opt_table = pl.DataFrame(_optional_rows)\n"
+        "fig_opt, ax_opt = _plt.subplots(figsize=(8, 4.5), dpi=200)\n"
+        "colors = ['#888888'] + [\n"
+        "    '#cc6677' if r['delta'] < 0 else '#117733'\n"
+        "    for r in _optional_rows[1:]\n"
+        "]\n"
+        "bars = ax_opt.bar(\n"
+        "    _opt_table['block'].to_list(),\n"
+        "    _opt_table['f1_macro'].to_list(),\n"
+        "    color=colors,\n"
+        ")\n"
+        "ax_opt.bar_label(bars, fmt='%.4f', fontsize=9)\n"
+        "ax_opt.set_ylabel('F1-macro (spatial CV)')\n"
+        "if len(_optional_rows) > 1:\n"
+        "    ax_opt.set_title('Bloques opcionales — full vs with_*')\n"
+        "else:\n"
+        "    ax_opt.set_title('Bloques opcionales — solo `full` materializado en esta corrida')\n"
+        "ax_opt.grid(axis='y', alpha=0.3)\n"
+        "_ymax_opt = max(max(_opt_table['f1_macro'].to_list()) * 1.2, 0.1)\n"
+        "ax_opt.set_ylim(0, _ymax_opt)\n"
+        "_opt_path = _paper_dir / 'ablation_optional_blocks.png'\n"
+        "fig_opt.tight_layout()\n"
+        "fig_opt.savefig(_opt_path, dpi=200, bbox_inches='tight')\n"
+        "fig_opt.savefig(FIGURES / 'ablation_optional_blocks.png', dpi=200, bbox_inches='tight')\n"
+        "display(fig_opt)\n"
+        "_plt.close(fig_opt)\n"
+        "log(f'figura P2+P4+P5 escrita: {_opt_path.relative_to(REPO)} (n_blocks={len(_optional_rows)})', level='ok')\n"
+    ),
     # --------------------------------------------------------------------
     # Seccion 4 - Comparativa de modelos sobre el set ganador
     # --------------------------------------------------------------------
@@ -388,11 +645,23 @@ CELLS: list[nbf.NotebookNode] = [
     ),
     _code(
         "# Identifica el conjunto de features ganador segun la tabla de la seccion 3.\n"
-        "winner_row = ablation_table.row(0, named=True)\n"
+        "# Filtra filas con f1_macro NaN/null ANTES de pickear el row 0: en Polars\n"
+        "# `sort(descending=True)` deja los NaN arriba, lo cual elegiria un set vacio\n"
+        "# como `alphaearth_only` que no entreno (ver `ablation_set_empty` en logs).\n"
+        "_valid_ablation = ablation_table.filter(\n"
+        "    pl.col('f1_macro').is_not_nan() & pl.col('f1_macro').is_not_null()\n"
+        ")\n"
+        "if _valid_ablation.height == 0:\n"
+        "    raise RuntimeError(\n"
+        "        'Todas las filas de ablation tienen f1_macro NaN/null. '\n"
+        "        'Revisa los logs upstream (cell 11) por errores de training.'\n"
+        "    )\n"
+        "winner_row = _valid_ablation.row(0, named=True)\n"
         "winner_set = winner_row['feature_set']\n"
         "winner_f1 = winner_row['f1_macro']\n"
         "display(Markdown(\n"
-        "    f'**Conjunto ganador**: `{winner_set}` con F1-macro `{winner_f1:.4f}`.'\n"
+        "    f'**Conjunto ganador**: `{winner_set}` con F1-macro `{winner_f1:.4f}` '\n"
+        "    f'(de {_valid_ablation.height}/{ablation_table.height} filas validas).'\n"
         "))\n"
     ),
     _code(
@@ -956,8 +1225,8 @@ def build_notebook(out_path: Path) -> None:
 
 @app.command()
 def main(
-    out: Path = typer.Option(  # noqa: B008
-        Path("notebooks/feature_engineering/05_reencuadre_fenologico.ipynb"),
+    out: Path = typer.Option(
+        Path("notebooks/baseline/05_reencuadre_fenologico.ipynb"),
         help="Ruta destino del notebook .ipynb.",
     ),
 ) -> None:

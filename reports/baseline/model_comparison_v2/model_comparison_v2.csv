@@ -1,0 +1,4 @@
+model,f1_macro,f1_weighted,miou,accuracy,kappa,train_time_s,mlflow_run_id,source
+xgboost,0.4094206066320682,0.6917153094164705,0.31150366270417357,0.7256925457528126,0.6545564678841854,436.6241021156311,ed898cea68524278bf3bdd9b6c703e6d,"US-023-preview P8 baseline v2 (CUDA RTX 4070, spatial CV 5-fold buffer 1.0 km, feature_set=no_geom)"
+inceptiontime,0.1898032285586303,0.19469625685456673,0.11238609072130958,NaN,0.14965658567454754,2100.5576033592224,056178a2bd7d461b8ac79be820de7036,"US-023-preview P8 baseline v2 (CUDA RTX 4070, spatial CV 5-fold buffer 1.0 km, feature_set=no_geom)"
+tempcnn,0.14352763130468177,0.10888417085270696,0.08179074835807724,NaN,0.09084018275189054,457.07221031188965,3437f9b8756a4a58bf56c6982fd96c2e,"US-023-preview P8 baseline v2 (CUDA RTX 4070, spatial CV 5-fold buffer 1.0 km, feature_set=no_geom)"
