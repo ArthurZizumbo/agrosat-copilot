@@ -278,6 +278,7 @@ def breizhcrops_pixel_series(
     sample_parcels: int | None = None,
     seed: int = 42,
     root: Path | None = None,
+    only_parcel_ids: set[str] | None = None,
 ) -> pl.DataFrame:
     """Convierte series BreizhCrops a un ``pl.DataFrame`` long-format.
 
@@ -299,6 +300,11 @@ def breizhcrops_pixel_series(
             samplear (reproducible con ``seed``). ``None`` carga todas.
         seed: Semilla para el muestreo de parcelas.
         root: Raiz del dataset. ``None`` usa ``data/breizhcrops/``.
+        only_parcel_ids: Si no ``None``, restringe la extraccion a las
+            parcelas cuyo ``id`` (como string) este en el conjunto. Es la
+            via eficiente para extraer un subconjunto previamente muestreado
+            sin expandir toda la region (la region completa son cientos de
+            miles de parcelas). Se aplica ANTES de ``sample_parcels``.
 
     Returns:
         DataFrame Polars con columnas ``parcel_id, t, date, doy, band,
@@ -315,57 +321,73 @@ def breizhcrops_pixel_series(
         return pl.DataFrame(schema=_PIXEL_SERIES_SCHEMA)
 
     order = np.arange(n_parcels)
-    if sample_parcels is not None and sample_parcels < n_parcels:
+    if only_parcel_ids is not None:
+        # Filtra por posiciones cuyo `id` esta en el conjunto pedido. El
+        # indice de breizhcrops usa un RangeIndex posicional, asi que la
+        # posicion en `order` coincide con `ds.index.iloc[pos]`.
+        wanted = {str(p) for p in only_parcel_ids}
+        id_series = ds.index["id"].astype(str).to_numpy()
+        order = np.where(np.isin(id_series, list(wanted)))[0]
+        if order.size == 0:
+            return pl.DataFrame(schema=_PIXEL_SERIES_SCHEMA)
+    if sample_parcels is not None and sample_parcels < order.size:
         rng = np.random.default_rng(seed)
-        order = rng.choice(n_parcels, size=sample_parcels, replace=False)
+        order = rng.choice(order, size=sample_parcels, replace=False)
 
     band_names = BREIZHCROPS_L2A_BANDS
     n_bands = len(band_names)
     frames: list[pl.DataFrame] = []
 
-    for i in order:
-        try:
-            row = ds.index.iloc[int(i)]
-            with _h5_open(ds) as h5:
+    # Abrimos el HDF5 UNA sola vez para toda la extraccion: reabrir el archivo
+    # por parcela domina el tiempo cuando `order` tiene cientos/miles de ids.
+    try:
+        h5_ctx = _h5_open(ds)
+    except Exception:  # noqa: BLE001
+        return pl.DataFrame(schema=_PIXEL_SERIES_SCHEMA)
+
+    with h5_ctx as h5:
+        for i in order:
+            try:
+                row = ds.index.iloc[int(i)]
                 raw = np.asarray(h5[row.path], dtype=np.float64)
-        except Exception:  # noqa: BLE001, S112
-            # Serie ilegible: la saltamos sin abortar la carga completa.
-            # Sin log porque breizhcrops es opcional y el notebook documenta
-            # el modo degradado (espejo de pastis_loader.py).
-            continue
-        if raw.ndim != 2 or raw.shape[0] == 0:
-            continue
+            except Exception:  # noqa: BLE001, S112
+                # Serie ilegible: la saltamos sin abortar la carga completa.
+                # Sin log porque breizhcrops es opcional y el notebook documenta
+                # el modo degradado (espejo de pastis_loader.py).
+                continue
+            if raw.ndim != 2 or raw.shape[0] == 0:
+                continue
 
-        class_id = int(row["classid"])
-        class_name = BREIZHCROPS_CLASSES.get(class_id, "unknown")
-        parcel_id = str(row["id"])
+            class_id = int(row["classid"])
+            class_name = BREIZHCROPS_CLASSES.get(class_id, "unknown")
+            parcel_id = str(row["id"])
 
-        t_steps = raw.shape[0]
-        doa_col = raw[:, 0]
-        dates = np.empty(t_steps, dtype=np.int64)
-        doys = np.empty(t_steps, dtype=np.int64)
-        for ti in range(t_steps):
-            d, doy = _doa_to_date_doy(doa_col[ti])
-            dates[ti] = d
-            doys[ti] = doy
+            t_steps = raw.shape[0]
+            doa_col = raw[:, 0]
+            dates = np.empty(t_steps, dtype=np.int64)
+            doys = np.empty(t_steps, dtype=np.int64)
+            for ti in range(t_steps):
+                d, doy = _doa_to_date_doy(doa_col[ti])
+                dates[ti] = d
+                doys[ti] = doy
 
-        for bi in range(n_bands):
-            col = raw[:, _L2A_BAND_OFFSET + bi]
-            frames.append(
-                pl.DataFrame(
-                    {
-                        "parcel_id": [parcel_id] * t_steps,
-                        "t": np.arange(t_steps, dtype=np.int64),
-                        "date": dates,
-                        "doy": doys,
-                        "band": [band_names[bi]] * t_steps,
-                        "value": col.astype(np.float64),
-                        "class_id": np.full(t_steps, class_id, dtype=np.int16),
-                        "class_name": [class_name] * t_steps,
-                    },
-                    schema=_PIXEL_SERIES_SCHEMA,
+            for bi in range(n_bands):
+                col = raw[:, _L2A_BAND_OFFSET + bi]
+                frames.append(
+                    pl.DataFrame(
+                        {
+                            "parcel_id": [parcel_id] * t_steps,
+                            "t": np.arange(t_steps, dtype=np.int64),
+                            "date": dates,
+                            "doy": doys,
+                            "band": [band_names[bi]] * t_steps,
+                            "value": col.astype(np.float64),
+                            "class_id": np.full(t_steps, class_id, dtype=np.int16),
+                            "class_name": [class_name] * t_steps,
+                        },
+                        schema=_PIXEL_SERIES_SCHEMA,
+                    )
                 )
-            )
 
     if not frames:
         return pl.DataFrame(schema=_PIXEL_SERIES_SCHEMA)

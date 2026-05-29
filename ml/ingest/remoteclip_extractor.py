@@ -285,6 +285,15 @@ def _embed_batch(
     pixel_values = inputs["pixel_values"].to(device)
     with torch.inference_mode():
         features = model.get_image_features(pixel_values=pixel_values)
+    # `get_image_features` deberia devolver un tensor (B, dim) pero algunos
+    # checkpoints RemoteCLIP (chendelong/*) devuelven el output completo
+    # `BaseModelOutputWithPooling`. Normalizamos a tensor antes de L2.
+    if hasattr(features, "image_embeds") and features.image_embeds is not None:
+        features = features.image_embeds
+    elif hasattr(features, "pooler_output") and features.pooler_output is not None:
+        features = features.pooler_output
+    elif hasattr(features, "last_hidden_state"):
+        features = features.last_hidden_state.mean(dim=1)
     features = torch.nn.functional.normalize(features, dim=-1)
     return features.detach().cpu().float()
 
@@ -346,6 +355,12 @@ def extract_remoteclip_embeddings(
     # Asegura parcel_id Utf8 en ambos parquets.
     subset = subset.with_columns(pl.col("parcel_id").cast(pl.Utf8))
     imagery = imagery.with_columns(pl.col("parcel_id").cast(pl.Utf8))
+
+    # PASTIS-R no expone `year` por parcela (es un dataset 2019 monolitico).
+    # Si falta lo materializamos como constante para preservar el esquema de
+    # salida (parcel_id, year, remoteclip_emb_*).
+    if "year" not in subset.columns:
+        subset = subset.with_columns(pl.lit(2019).cast(pl.Int64).alias("year"))
 
     # Join orden estable: imagery merge sobre orden de subset.
     joined = subset.select(["parcel_id", "year"]).join(

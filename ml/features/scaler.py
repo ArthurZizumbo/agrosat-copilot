@@ -94,6 +94,26 @@ def fit_scaler_on_train(
         )
 
     matrix = train_df.to_numpy()
+    # Convertimos +/-inf a NaN antes de cualquier estadistica. Los indices
+    # espectrales con divisiones (MCARI, GCVI, PSRI, etc.) pueden producir
+    # inf cuando el denominador es cero o muy cercano. StandardScaler no
+    # acepta inf; tratarlos como NaN permite imputarlos con la media de
+    # columna como cualquier missing value.
+    n_inf = int(np.isinf(matrix).sum())
+    if n_inf > 0:
+        inf_cols_mask = np.any(np.isinf(matrix), axis=0)
+        inf_cols = [c for c, has_inf in zip(numeric_cols, inf_cols_mask, strict=True) if has_inf]
+        logger.warning(
+            "scaler_replaced_inf_with_nan",
+            n_inf_values=n_inf,
+            n_cols_affected=int(inf_cols_mask.sum()),
+            examples=inf_cols[:5],
+            note=(
+                "Indices espectrales con division por ~0 producen inf. "
+                "Se reemplazan por NaN para imputacion por media de columna."
+            ),
+        )
+        matrix = np.where(np.isinf(matrix), np.nan, matrix)
     # Filtramos columnas all-NaN antes del fit para evitar `RuntimeWarning: Mean
     # of empty slice` en np.nanmean + `invalid value encountered in divide` en
     # sklearn. Ocurre cuando el frame proviene del modo demo sin GEE (todas las

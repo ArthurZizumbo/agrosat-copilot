@@ -12,6 +12,9 @@ Cubre:
   desde `data/processed/pastis_parcels_full.geoparquet` con
   :func:`ml.features.fusion.build_fused_features`.
 - :func:`load_features_dataset_with_meta` — alias seguro del subset US-018.
+- :func:`load_base_plus_alphaearth_2018_2019` — base + AlphaEarth 2018
+  (`ae18_NN`) + AlphaEarth 2019 (`ae19_NN`), el escenario ganador de la
+  ablacion (`base_plus_ae18_ae19`).
 - :func:`train_baseline_three_models` — entrena RF + XGB + LGBM con spatial CV.
 - :func:`build_model_comparison_table` — DataFrame Polars con 5 metricas x N modelos.
 - :func:`materialize_phenology_text_if_missing` — auto-genera bloque pheno_text.
@@ -39,8 +42,10 @@ logger = structlog.get_logger(__name__)
 __all__ = [
     "ModelComparisonRow",
     "build_model_comparison_table",
+    "load_base_plus_alphaearth_2018_2019",
     "load_features_dataset_with_meta",
     "load_or_build_fused_features",
+    "load_temporal_result_from_mlflow",
     "materialize_pastis_eval_subset_if_missing",
     "materialize_phenology_text_if_missing",
     "materialize_remoteclip_if_missing",
@@ -59,6 +64,10 @@ __all__ = [
 _DEFAULT_SUBSET_PATH = Path("data/test_fixtures/feature_selection_parcels_subset.parquet")
 _DEFAULT_PARCELS_PATH = Path("data/processed/pastis_parcels_full.geoparquet")
 _DEFAULT_FUSED_PATH = Path("data/features/features_fused_italy.parquet")
+_DEFAULT_AE18_PATH = Path("data/cache/gee/alphaearth_parcels_parcels_2018_85951.parquet")
+_DEFAULT_AE19_PATH = Path(
+    "data/cache/gee/alphaearth_parcels_pastis_parcels_2019_85951.parquet"
+)
 
 
 def load_features_dataset_with_meta(
@@ -104,18 +113,101 @@ def load_features_dataset_with_meta(
     features = canonical_parcel_id(features)
 
     parcels_gdf = gpd.read_parquet(parcels_path)
-    meta_cols = [
-        c for c in ("parcel_id", "patch_id", "instance_id", "class_name", "fold", "area_m2", "n_pixels")
-        if c in parcels_gdf.columns
-    ]
+    _candidate_meta = (
+        "parcel_id", "patch_id", "instance_id", "class_name", "fold", "area_m2", "n_pixels"
+    )
+    meta_cols = [c for c in _candidate_meta if c in parcels_gdf.columns]
     parcels_meta = pl.from_pandas(parcels_gdf[meta_cols])
     parcels_meta = canonical_parcel_id(parcels_meta)
+
+    # Si el parquet de features ya trae alguna de las columnas meta (por
+    # construccion del subset US-018), las eliminamos de `parcels_meta` antes
+    # del join. De lo contrario Polars suffixa con `_right` y esas columnas
+    # numericas (patch_id, fold, n_pixels) acaban en la matriz X como features
+    # — leakage espacial que el SHAP del 04_baseline expuso.
+    overlap = [c for c in parcels_meta.columns if c != "parcel_id" and c in features.columns]
+    if overlap:
+        parcels_meta = parcels_meta.drop(overlap)
+        logger.info("features_meta_overlap_dropped", overlap=overlap)
 
     enriched = features.join(parcels_meta, on="parcel_id", how="left")
     logger.info(
         "features_loaded_with_meta",
         features_shape=features.shape,
         enriched_shape=enriched.shape,
+    )
+    return enriched
+
+
+def load_base_plus_alphaearth_2018_2019(
+    *,
+    features_path: Path | str = _DEFAULT_SUBSET_PATH,
+    parcels_geoparquet: Path | str = _DEFAULT_PARCELS_PATH,
+    alphaearth_2018_path: Path | str = _DEFAULT_AE18_PATH,
+    alphaearth_2019_path: Path | str = _DEFAULT_AE19_PATH,
+) -> pl.DataFrame:
+    """Carga el escenario ganador: base + AlphaEarth 2018 + AlphaEarth 2019.
+
+    Parte del subset US-018 con metadata real (185 features base) y le anexa
+    los dos embeddings AlphaEarth anuales de 64 dimensiones cada uno: 2018
+    (columnas ``ae18_00..ae18_63``) y 2019 (columnas ``ae19_00..ae19_63``),
+    uniendo por ``parcel_id`` (join 1:1, mismo universo de 85951 parcelas).
+    El resultado es el escenario ``base_plus_ae18_ae19`` que maximizo el
+    F1-macro en la ablacion de escenarios.
+
+    Los parquets de AlphaEarth traen las dimensiones como ``dim_00..dim_63``;
+    se renombran a ``ae18_NN`` / ``ae19_NN`` para que ambos anios coexistan en
+    la misma matriz de features sin colision de nombres.
+
+    Args:
+        features_path: Ruta al parquet de features base (subset US-018).
+        parcels_geoparquet: Geoparquet de parcelas PASTIS-R full (metadata).
+        alphaearth_2018_path: Parquet AlphaEarth 2018 con ``dim_NN``.
+        alphaearth_2019_path: Parquet AlphaEarth 2019 con ``dim_NN``.
+
+    Returns:
+        DataFrame Polars con las features base + 64 columnas ``ae18_NN`` + 64
+        columnas ``ae19_NN``, mas la metadata (``parcel_id``, ``class_id``,
+        ``patch_id``, ``class_name``, ``fold``).
+
+    Raises:
+        FileNotFoundError: si falta alguno de los parquets de AlphaEarth.
+    """
+    base = load_features_dataset_with_meta(
+        path=features_path, parcels_geoparquet=parcels_geoparquet
+    )
+    base = canonical_parcel_id(base)
+
+    def _load_alphaearth(path: Path | str, prefix: str) -> pl.DataFrame:
+        ae_path = Path(path)
+        if not ae_path.exists():
+            raise FileNotFoundError(
+                f"AlphaEarth parquet no encontrado en {ae_path}. "
+                "Ejecuta el pipeline GEE (US-012) o `dvc pull` del cache."
+            )
+        ae = canonical_parcel_id(pl.read_parquet(ae_path))
+        dim_cols = [c for c in ae.columns if c.startswith("dim_")]
+        rename = {c: f"{prefix}_{c.removeprefix('dim_')}" for c in dim_cols}
+        return ae.select(["parcel_id", *dim_cols]).rename(rename)
+
+    ae18 = _load_alphaearth(alphaearth_2018_path, "ae18")
+    ae19 = _load_alphaearth(alphaearth_2019_path, "ae19")
+
+    enriched = base.join(ae18, on="parcel_id", how="left").join(
+        ae19, on="parcel_id", how="left"
+    )
+    n_ae18 = sum(1 for c in enriched.columns if c.startswith("ae18_"))
+    n_ae19 = sum(1 for c in enriched.columns if c.startswith("ae19_"))
+    n_null_ae18 = int(enriched.select(pl.col("ae18_00").is_null().sum()).item())
+    n_null_ae19 = int(enriched.select(pl.col("ae19_00").is_null().sum()).item())
+    logger.info(
+        "base_plus_ae18_ae19_loaded",
+        base_shape=base.shape,
+        enriched_shape=enriched.shape,
+        n_ae18=n_ae18,
+        n_ae19=n_ae19,
+        n_null_ae18=n_null_ae18,
+        n_null_ae19=n_null_ae19,
     )
     return enriched
 
@@ -309,6 +401,81 @@ def build_model_comparison_table(
     return table
 
 
+def load_temporal_result_from_mlflow(
+    model_kind: Literal["tempcnn", "inceptiontime"],
+    *,
+    experiment_name: str = "baseline-05-reencuadre",
+    tracking_uri: str = "http://localhost:5010",
+):
+    """Reconstruye un TemporalModelResult desde un MLflow run ya finalizado.
+
+    Evita re-entrenar TempCNN/InceptionTime cuando ya hay una corrida con
+    metricas registradas. Lee la run mas reciente con `params.model_kind`
+    igual a `model_kind` y `status=FINISHED`, y reconstruye el dataclass
+    de salida usando las metricas `oof_*` y `params.n_classes`.
+
+    Args:
+        model_kind: ``"tempcnn"`` o ``"inceptiontime"``.
+        experiment_name: Nombre del experimento MLflow.
+        tracking_uri: URI del tracking server.
+
+    Returns:
+        :class:`ml.train.phenology_models.TemporalModelResult` con las metricas
+        out-of-fold reconstruidas, ``y_true_oof`` y ``y_pred_oof`` vacios y
+        ``checkpoint_path`` apuntando al artifact si esta disponible.
+
+    Raises:
+        ValueError: si no hay run FINISHED del kind solicitado.
+    """
+    import mlflow
+
+    from ml.train.phenology_models import TemporalModelResult
+
+    mlflow.set_tracking_uri(tracking_uri)
+    client = mlflow.tracking.MlflowClient()
+    exp = client.get_experiment_by_name(experiment_name)
+    if exp is None:
+        raise ValueError(f"experimento `{experiment_name}` no existe en {tracking_uri}.")
+
+    runs = client.search_runs(
+        [exp.experiment_id],
+        filter_string=f"params.model_kind = '{model_kind}' and attributes.status = 'FINISHED'",
+        max_results=1,
+        order_by=["attributes.start_time DESC"],
+    )
+    if not runs:
+        raise ValueError(
+            f"no hay runs FINISHED con model_kind=`{model_kind}` en `{experiment_name}`. "
+            "Re-entrena con train_temporal_model o ajusta la consulta."
+        )
+    run = runs[0]
+    metrics = run.data.metrics
+    params = run.data.params
+
+    n_parcels = int(params.get("n_parcels", 0))
+    n_classes = int(params.get("n_classes", 18))
+    train_time_s = float(metrics.get("train_time_s", 0.0))
+
+    logger.info(
+        "temporal_result_loaded_from_mlflow",
+        model_kind=model_kind,
+        run_id=run.info.run_id[:12],
+        oof_f1_macro=round(float(metrics.get("oof_f1_macro", 0.0)), 4),
+    )
+
+    return TemporalModelResult(
+        model_kind=model_kind,
+        f1_macro=float(metrics.get("oof_f1_macro", 0.0)),
+        f1_weighted=float(metrics.get("oof_f1_weighted", 0.0)),
+        miou=float(metrics.get("oof_miou", 0.0)),
+        cohen_kappa=float(metrics.get("oof_cohen_kappa", 0.0)),
+        train_time_s=train_time_s,
+        n_parcels=n_parcels,
+        n_classes=n_classes,
+        mlflow_run_id=run.info.run_id,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Auto-materializacion de bloques opcionales.
 # ---------------------------------------------------------------------------
@@ -352,6 +519,7 @@ def materialize_s2_anchors_if_missing(
     *,
     output_path: Path | str = Path("data/features/s2_anchors_italy.parquet"),
     year: int = 2023,
+    phenology_anchors_path: Path | str | None = None,
 ) -> Path:
     """Materializa el bloque `{anchor}_b04..b08` si el parquet no existe.
 
@@ -361,6 +529,12 @@ def materialize_s2_anchors_if_missing(
         parcels_geoparquet: Geoparquet de parcelas Italia full.
         output_path: Path destino del bloque S2 anchors.
         year: Anio para el muestreo GEE.
+        phenology_anchors_path: Parquet opcional con anclas calendario por
+            parcela (schema: ``parcel_id, sog_doy, peak_doy, senescence_doy``).
+            Si se provee, el sampler usa DOY especifico por parcela y evita
+            el warning ``phenology_anchors_fallback_static``. Generar con
+            :func:`ml.ingest.pastis_phenology_anchors.build_pastis_phenology_anchors`
+            para PASTIS-R.
 
     Returns:
         Path del parquet generado o existente.
@@ -379,10 +553,15 @@ def materialize_s2_anchors_if_missing(
     if "year" not in parcels.columns:
         parcels["year"] = year
 
+    anchors_path: Path | None = (
+        Path(phenology_anchors_path) if phenology_anchors_path is not None else None
+    )
+
     return sample_s2_anchors_for_parcels(
         parcels=parcels,
         year=year,
         output_path=output,
+        phenology_anchors_path=anchors_path,
     )
 
 

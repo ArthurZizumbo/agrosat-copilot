@@ -54,9 +54,13 @@ __all__ = [
     "FitDiagnosis",
     "FitVerdict",
     "LearningCurveResult",
+    "TemporalLossHistory",
     "ValidationCurveResult",
     "diagnose_fit",
+    "diagnose_temporal_fit",
+    "fetch_loss_history_from_mlflow",
     "plot_learning_curve",
+    "plot_loss_history_from_mlflow",
     "plot_validation_curve",
 ]
 
@@ -644,5 +648,287 @@ def diagnose_fit(
         gap=gap,
         train_acc_max=train_acc,
         val_acc_max=val_acc,
+        explanation=explanation,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Diagnostico para modelos temporales via historial de loss en MLflow.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class TemporalLossHistory:
+    """Historial de loss por epoca de un modelo temporal entrenado con CV.
+
+    ``train_temporal_model`` loggea en MLflow la metrica ``fold{i}_train_loss``
+    (y ``fold{i}_val_loss`` cuando hay split interno de validacion) por epoca.
+    Esta dataclass agrega esos historiales en una vista consolidada para
+    diagnosticar sub/sobreajuste en modelos PyTorch que no implementan la API
+    sklearn que consume :func:`plot_learning_curve`.
+
+    Attributes:
+        model_kind: ``"tempcnn"`` o ``"inceptiontime"``.
+        run_id: ID del run MLflow del que se leyo el historial.
+        epochs: Array de indices de epoca (eje X de la curva).
+        train_loss_mean: Loss de entrenamiento promediada sobre los folds del
+            spatial CV, por epoca.
+        train_loss_std: Desviacion estandar entre folds.
+        val_loss_mean: Loss de validacion interna promediada sobre los folds.
+            Vacio si el entrenamiento no abrio split interno val.
+        val_loss_std: Desviacion estandar entre folds (val).
+        n_folds: Numero de folds detectados en MLflow para este run.
+    """
+
+    model_kind: str
+    run_id: str
+    epochs: np.ndarray
+    train_loss_mean: np.ndarray
+    train_loss_std: np.ndarray
+    val_loss_mean: np.ndarray
+    val_loss_std: np.ndarray
+    n_folds: int
+
+
+def fetch_loss_history_from_mlflow(
+    run_id: str,
+    *,
+    model_kind: str,
+    tracking_uri: str | None = None,
+) -> TemporalLossHistory:
+    """Lee el historial de loss por epoca de un run MLflow de modelo temporal.
+
+    Consulta ``MlflowClient.get_metric_history`` por las metricas
+    ``fold{i}_train_loss`` y ``fold{i}_val_loss`` (i in [0, k)) que loggea
+    :func:`ml.train.phenology_models.train_temporal_model` durante el spatial
+    CV. Agrega los folds por epoca calculando media y desviacion estandar.
+
+    Args:
+        run_id: ID del run MLflow del modelo temporal.
+        model_kind: ``"tempcnn"`` o ``"inceptiontime"`` (solo para etiquetado).
+        tracking_uri: Override del tracking URI; si es ``None`` se resuelve via
+            :func:`ml.utils.mlflow_utils.resolve_tracking_uri`.
+
+    Returns:
+        :class:`TemporalLossHistory` con epochs y curvas agregadas.
+
+    Raises:
+        RuntimeError: si el run no expone ninguna metrica ``fold{i}_train_loss``
+            (probablemente no se loggeo a MLflow durante el entrenamiento).
+    """
+    import mlflow
+    from mlflow.tracking import MlflowClient
+
+    if tracking_uri is None:
+        from ml.utils.mlflow_utils import resolve_tracking_uri
+
+        tracking_uri = resolve_tracking_uri(None, probe_server=False)
+    mlflow.set_tracking_uri(tracking_uri)
+    client = MlflowClient(tracking_uri=tracking_uri)
+
+    run = client.get_run(run_id)
+    metric_keys = list(run.data.metrics.keys())
+    train_keys = sorted(k for k in metric_keys if k.endswith("_train_loss"))
+    val_keys = sorted(k for k in metric_keys if k.endswith("_val_loss"))
+
+    if not train_keys:
+        raise RuntimeError(
+            f"Run {run_id} no expone metricas `fold{{i}}_train_loss`. "
+            "Verifica que el entrenamiento haya recibido `mlflow_uri` y que "
+            "el server haya estado disponible durante la corrida."
+        )
+
+    def _collect(keys: list[str]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        per_fold: list[np.ndarray] = []
+        max_epochs = 0
+        for key in keys:
+            history = client.get_metric_history(run_id, key)
+            if not history:
+                continue
+            history_sorted = sorted(history, key=lambda m: m.step)
+            arr = np.asarray(
+                [m.value for m in history_sorted], dtype=np.float64
+            )
+            per_fold.append(arr)
+            max_epochs = max(max_epochs, arr.size)
+        if not per_fold:
+            empty = np.array([], dtype=np.float64)
+            return empty, empty, empty
+        # Alinea folds rellenando con NaN al final si tuvieron early stopping.
+        aligned = np.full((len(per_fold), max_epochs), np.nan, dtype=np.float64)
+        for i, arr in enumerate(per_fold):
+            aligned[i, : arr.size] = arr
+        epochs = np.arange(max_epochs, dtype=np.int64)
+        mean = np.nanmean(aligned, axis=0)
+        std = np.nanstd(aligned, axis=0)
+        return epochs, mean, std
+
+    epochs, train_mean, train_std = _collect(train_keys)
+    _, val_mean, val_std = _collect(val_keys) if val_keys else (
+        epochs,
+        np.array([], dtype=np.float64),
+        np.array([], dtype=np.float64),
+    )
+
+    return TemporalLossHistory(
+        model_kind=model_kind,
+        run_id=run_id,
+        epochs=epochs,
+        train_loss_mean=train_mean,
+        train_loss_std=train_std,
+        val_loss_mean=val_mean,
+        val_loss_std=val_std,
+        n_folds=len(train_keys),
+    )
+
+
+def plot_loss_history_from_mlflow(
+    history: TemporalLossHistory,
+    *,
+    title: str | None = None,
+) -> Figure:
+    """Traza el historial de loss train vs val por epoca para un modelo temporal.
+
+    Replica el formato visual de :func:`plot_learning_curve` (curva azul train,
+    naranja val, con banda +/-std entre folds) pero leyendo el historial real
+    de PyTorch desde MLflow en lugar de re-entrenar el estimador.
+
+    Args:
+        history: Resultado de :func:`fetch_loss_history_from_mlflow`.
+        title: Titulo de la figura; si es ``None`` se genera desde
+            ``history.model_kind``.
+
+    Returns:
+        Figura matplotlib ``dpi=200`` lista para ``fig.savefig`` o ``display``.
+    """
+    import matplotlib
+
+    matplotlib.use("Agg", force=False)
+    import matplotlib.pyplot as plt
+
+    if history.epochs.size == 0:
+        raise ValueError(
+            f"El historial del run {history.run_id} esta vacio; no hay nada que graficar."
+        )
+
+    if title is None:
+        title = (
+            f"Curva de loss por epoca ({history.model_kind.upper()}) — "
+            f"{history.n_folds} folds spatial CV"
+        )
+
+    fig, ax = plt.subplots(figsize=(8, 5), dpi=_PLOT_DPI)
+    ax.plot(
+        history.epochs,
+        history.train_loss_mean,
+        color="#4C72B0",
+        label="train_loss (media folds)",
+    )
+    ax.fill_between(
+        history.epochs,
+        history.train_loss_mean - history.train_loss_std,
+        history.train_loss_mean + history.train_loss_std,
+        color="#4C72B0",
+        alpha=0.15,
+    )
+    if history.val_loss_mean.size > 0:
+        ax.plot(
+            history.epochs,
+            history.val_loss_mean,
+            color="#DD8452",
+            label="val_loss (media folds)",
+        )
+        ax.fill_between(
+            history.epochs,
+            history.val_loss_mean - history.val_loss_std,
+            history.val_loss_mean + history.val_loss_std,
+            color="#DD8452",
+            alpha=0.15,
+        )
+    ax.set_xlabel("epoca")
+    ax.set_ylabel("loss (cross-entropy)")
+    ax.set_title(title)
+    ax.legend(loc="best")
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    return fig
+
+
+def diagnose_temporal_fit(
+    history: TemporalLossHistory,
+    *,
+    gap_threshold: float = 0.10,
+    high_loss_threshold: float = 1.5,
+) -> FitDiagnosis:
+    """Diagnostica sub/sobreajuste de un modelo temporal desde su loss history.
+
+    Aplica la misma logica de :func:`diagnose_fit` pero adaptada a loss en
+    lugar de accuracy: un gap grande train-val en loss indica overfit; ambas
+    losses altas indican underfit.
+
+    Args:
+        history: Resultado de :func:`fetch_loss_history_from_mlflow`.
+        gap_threshold: Gap absoluto train-val en loss por encima del cual hay
+            sobreajuste. Default 0.10 (cross-entropy ~ log de probabilidad).
+        high_loss_threshold: Umbral de loss por encima del cual ambas curvas
+            se consideran altas (underfit). Default 1.5 (random sobre 18
+            clases es ~log(18) = 2.89; un modelo razonable cae a < 1.5).
+
+    Returns:
+        :class:`FitDiagnosis` con veredicto y explicacion en lenguaje accesible.
+
+    Raises:
+        ValueError: si el historial no tiene epocas o si no hay val_loss.
+    """
+    if history.epochs.size == 0:
+        raise ValueError("El historial de loss esta vacio; no se puede diagnosticar.")
+    if history.val_loss_mean.size == 0:
+        raise ValueError(
+            f"El run {history.run_id} no tiene val_loss loggeado; el "
+            "entrenamiento no abrio split interno de validacion (val_fraction=0)."
+        )
+
+    train_loss = float(history.train_loss_mean[-1])
+    val_loss = float(history.val_loss_mean[-1])
+    # En loss, "gap grande" = val_loss >> train_loss (al reves que accuracy).
+    gap = val_loss - train_loss
+
+    if gap > gap_threshold:
+        verdict: FitVerdict = "overfit"
+        explanation = (
+            f"Sobreajuste: la val_loss ({val_loss:.3f}) supera a la train_loss "
+            f"({train_loss:.3f}) por {gap:.3f} (> {gap_threshold:.2f}). El modelo "
+            f"memoriza el conjunto de entrenamiento."
+        )
+    elif train_loss > high_loss_threshold and val_loss > high_loss_threshold:
+        verdict = "underfit"
+        explanation = (
+            f"Subajuste: train_loss ({train_loss:.3f}) y val_loss "
+            f"({val_loss:.3f}) estan ambos por encima de {high_loss_threshold:.2f}. "
+            f"El modelo no captura la senal ni en el entrenamiento."
+        )
+    else:
+        verdict = "good_fit"
+        explanation = (
+            f"Buen ajuste: gap val-train = {gap:.3f} (<= {gap_threshold:.2f}) y "
+            f"val_loss = {val_loss:.3f} (<= {high_loss_threshold:.2f}). El modelo "
+            f"generaliza de forma consistente con su desempeno en train "
+            f"({train_loss:.3f})."
+        )
+
+    logger.info(
+        "temporal_fit_diagnosed",
+        model_kind=history.model_kind,
+        run_id=history.run_id,
+        verdict=verdict,
+        gap=round(gap, 4),
+        train_loss=round(train_loss, 4),
+        val_loss=round(val_loss, 4),
+    )
+    return FitDiagnosis(
+        verdict=verdict,
+        gap=gap,
+        train_acc_max=train_loss,  # Reusa el campo como train_loss_min.
+        val_acc_max=val_loss,  # Reusa el campo como val_loss_min.
         explanation=explanation,
     )

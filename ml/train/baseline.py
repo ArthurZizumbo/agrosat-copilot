@@ -65,10 +65,17 @@ _META_COLS: tuple[str, ...] = (
     "patch_id",
     "instance_id",
     "class_id",
+    "class_name",
     "fold",
     "n_pixels",
+    "area_m2",
     "geometry",
 )
+
+# Sufijos de columnas que indican un join sin coalesce previo y nunca son
+# features. Defensa en profundidad sobre `_META_COLS`: el bug US-023-preview-v2
+# (patch_id_right importance=0.27 en XGB) entraba aqui via Polars left join.
+_META_SUFFIXES: tuple[str, ...] = ("_right", "_left", "_x", "_y")
 
 # Clases PASTIS-R no agronomicas a descartar (Background, Void label).
 _DROP_CLASS_IDS: tuple[int, ...] = (0, 19)
@@ -649,7 +656,9 @@ def _feature_columns(df: pl.DataFrame) -> tuple[str, ...]:
     cols = [
         c
         for c in df.columns
-        if c not in _META_COLS and df.schema[c].is_numeric()
+        if c not in _META_COLS
+        and not c.endswith(_META_SUFFIXES)
+        and df.schema[c].is_numeric()
     ]
     if not cols:
         raise ValueError("No se encontraron columnas numericas de feature en `df`.")

@@ -36,6 +36,7 @@ logger = structlog.get_logger(__name__)
 
 __all__ = [
     "resolve_tracking_uri",
+    "server_is_reachable",
     "track_experiment",
 ]
 
@@ -44,7 +45,7 @@ _DEFAULT_FILE_STORE = "file:./mlruns"
 _HEALTH_TIMEOUT_S = 2.0
 
 
-def _server_is_reachable(server_url: str, *, timeout: float = _HEALTH_TIMEOUT_S) -> bool:
+def server_is_reachable(server_url: str, *, timeout: float = _HEALTH_TIMEOUT_S) -> bool:
     """Hace un probe HTTP al endpoint ``/health`` del servidor MLflow.
 
     Args:
@@ -61,6 +62,10 @@ def _server_is_reachable(server_url: str, *, timeout: float = _HEALTH_TIMEOUT_S)
             return 200 <= response.status < 300
     except (urllib.error.URLError, OSError, ValueError):
         return False
+
+
+# Alias retro-compatible (modulos internos lo usan).
+_server_is_reachable = server_is_reachable
 
 
 def resolve_tracking_uri(

@@ -254,6 +254,10 @@ ignore = ["S101", "S301"]  # asserts ok en tests; pickle ok para ML
 # US-023-preview: builder del notebook 05 con f-strings largas (E501) y signo
 # de multiplicacion tipografico en narrativa agronomica (RUF001).
 "scripts/build_reencuadre_notebook.py" = ["E501", "B008", "RUF001"]
+# US-023-preview v2: builder unico de los 6 notebooks baseline. Construye las
+# celdas con f-strings concatenadas largas (E501 inevitable) y la narrativa
+# agronomica en espanol usa el signo de multiplicacion tipografico (RUF001).
+"scripts/build_baseline_notebooks_v2.py" = ["E501", "RUF001"]
 # US-023-preview P8 standalone helper: import block + f-string placeholder
 # vestigios del wrapper standalone, lineas largas en MLflow log_params.
 "scripts/run_baseline_v2_standalone.py" = ["E501", "I001", "F541"]

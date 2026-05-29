@@ -74,15 +74,15 @@ def scenario_paths(tmp_path: Path) -> dict[str, str]:
 # ===========================================================================
 
 
-def test_comparison_table_has_six_rows(comparison_result: ComparisonResult) -> None:
-    """La tabla tiene exactamente 6 filas (3 escenarios x 2 modelos)."""
-    assert comparison_result.table.height == 6
+def test_comparison_table_has_nine_rows(comparison_result: ComparisonResult) -> None:
+    """La tabla tiene exactamente 9 filas (3 escenarios x 3 modelos)."""
+    assert comparison_result.table.height == 9
 
 
 def test_comparison_table_three_scenarios(
     comparison_result: ComparisonResult,
 ) -> None:
-    """La tabla cubre los 3 escenarios, cada uno con RF y XGB."""
+    """La tabla cubre los 3 escenarios, cada uno con RF, XGB y LGBM."""
     table = comparison_result.table
     scenarios = set(table.get_column("scenario").to_list())
     assert len(scenarios) == 3
@@ -92,7 +92,7 @@ def test_comparison_table_three_scenarios(
             .get_column("model")
             .to_list()
         )
-        assert sorted(models) == ["RF", "XGB"]
+        assert sorted(models) == ["LGBM", "RF", "XGB"]
 
 
 def test_comparison_uses_same_spatial_cv(
@@ -128,14 +128,14 @@ def test_comparison_table_has_train_time(
 ) -> None:
     """Cada celda reporta train_time_s positivo (wall-clock del fit)."""
     times = comparison_result.table.get_column("train_time_s").to_list()
-    assert len(times) == 6
+    assert len(times) == 9
     assert all(t > 0.0 for t in times)
 
 
 def test_comparison_metrics_in_valid_range(
     comparison_result: ComparisonResult,
 ) -> None:
-    """f1_macro, f1_weighted y miou viven en [0, 1] para las 6 filas."""
+    """f1_macro, f1_weighted y miou viven en [0, 1] para las 9 filas."""
     table = comparison_result.table
     for metric in ("f1_macro", "f1_weighted", "miou"):
         values = table.get_column(metric).to_list()
@@ -183,11 +183,11 @@ def test_comparison_best_scenario_matches_table(
 def test_comparison_max_samples_reduces_dataset(
     scenario_paths: dict[str, str],
 ) -> None:
-    """max_samples > 0 submuestrea el dataset manteniendo las 6 filas."""
+    """max_samples > 0 submuestrea el dataset manteniendo las 9 filas."""
     result = build_comparison_table(
         scenario_paths, k_folds=_TEST_K, max_samples=80, random_state=42
     )
-    assert result.table.height == 6
+    assert result.table.height == 9
     assert result.n_parcels == _TEST_N  # n_parcels = inner join, pre-subsample
 
 
@@ -370,16 +370,16 @@ def test_export_latex_produces_valid_tex(
     assert "\\bottomrule" in content
 
 
-def test_export_latex_has_six_data_rows(
+def test_export_latex_has_nine_data_rows(
     comparison_result: ComparisonResult, tmp_path: Path
 ) -> None:
-    """El .tex contiene las 6 filas de datos (una por escenario x modelo)."""
+    """El .tex contiene las 9 filas de datos (una por escenario x modelo)."""
     out = export_comparison_latex(comparison_result, tmp_path / "comp.tex")
     content = out.read_text(encoding="utf-8")
     # Cada fila de datos termina en `\\` dentro del cuerpo tabular.
     body = content.split("\\midrule")[1].split("\\bottomrule")[0]
     data_rows = [ln for ln in body.splitlines() if "\\\\" in ln]
-    assert len(data_rows) == 6
+    assert len(data_rows) == 9
 
 
 def test_latex_escapes_special_chars(tmp_path: Path) -> None:

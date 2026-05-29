@@ -259,6 +259,9 @@ notebooks/_export/
 docs/general/*
 !docs/general/Rubricas Integrador.html
 
+# ── Auditoria interna (reportes no versionados) ───────────────────────────────
+docs/audit/
+
 # ── Lighthouse / Playwright ───────────────────────────────────────────────────
 docs/auditoria_lh/*.json
 .playwright-mcp/

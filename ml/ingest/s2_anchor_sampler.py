@@ -46,13 +46,19 @@ if TYPE_CHECKING:
 _log = structlog.get_logger(__name__)
 
 
-DEFAULT_BANDS: tuple[str, ...] = ("B04", "B05", "B06", "B07", "B08")
+DEFAULT_BANDS: tuple[str, ...] = ("B4", "B5", "B6", "B7", "B8")
 """Bandas Sentinel-2 muestreadas por defecto.
 
-B04 (red, 665 nm), B05/B06/B07 (red-edge 704/740/783 nm), B08 (NIR 835 nm).
+B4 (red, 665 nm), B5/B6/B7 (red-edge 704/740/783 nm), B8 (NIR 835 nm).
 Estas son las requeridas por la Red Edge Position de Frampton et al. 2013
 y por los momentos red-edge documentados en
 :mod:`ml.features.spectral_signature`.
+
+Notacion sin padding (`B4` y NO `B04`): es la que expone la coleccion GEE
+`COPERNICUS/S2_SR_HARMONIZED` actual. Runs previos con `B04` producian
+`Image.select: Band pattern 'B04' did not match any bands` y dejaban
+`s2_anchors_italy.parquet` con todas las bandas a NULL. Documentado en
+US-023-preview v2 (fix con smoke confirmado: 5.6 s / 100 parcelas).
 """
 
 DEFAULT_ANCHORS: tuple[str, ...] = ("sog", "peak", "senescence")
@@ -75,8 +81,17 @@ COST_PER_PARCEL_USD: float = 0.0003
 
 
 def _band_col_name(anchor: str, band: str) -> str:
-    """Devuelve el nombre de columna canonico ``{anchor}_{band_lower}``."""
-    return f"{anchor}_{band.lower()}"
+    """Devuelve el nombre de columna canonico ``{anchor}_b0N``.
+
+    Independiente de si la banda GEE viene como ``B4`` (sin padding, formato
+    `COPERNICUS/S2_SR_HARMONIZED`) o como ``B04`` (formato legacy), siempre
+    persiste como ``b0N`` con padding a dos digitos. El consumidor
+    :class:`ml.features.spectral_signature.SpectralSignatureFeatures` busca
+    ``{anchor}_b05`` (no ``b5``); mantener ``b0N`` aqui evita que el cambio
+    de notacion GEE rompa el join downstream.
+    """
+    digits = "".join(ch for ch in band if ch.isdigit())
+    return f"{anchor}_b{int(digits):02d}"
 
 
 def _build_schema(

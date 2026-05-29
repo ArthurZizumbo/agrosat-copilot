@@ -57,8 +57,10 @@ _SCENARIO_LABELS: dict[str, str] = {
     "combined": "Vector combinado (187 feat)",
 }
 
-# Modelos de la comparativa, en orden de la tabla.
-_MODEL_KINDS: tuple[str, ...] = ("rf", "xgb")
+# Modelos de la comparativa, en orden de la tabla. Se evaluan los tres
+# baselines tabulares para captar diferencias entre familias (bagging vs
+# boosting clasico vs boosting histogram-based).
+_MODEL_KINDS: tuple[str, ...] = ("rf", "xgb", "lgbm")
 
 # Columnas de metadata que NO son features (se excluyen al contar
 # `n_features`). Espejo de `ml.train.baseline._META_COLS` mas las columnas
@@ -77,6 +79,11 @@ _META_COLS: frozenset[str] = frozenset(
         "geometry",
     }
 )
+
+# Sufijos de columnas que jamas son features (defensa en profundidad sobre
+# `_META_COLS`: el bug US-023-preview-v2 entraba con `patch_id_right` cuando
+# `load_features_dataset_with_meta` hacia un left join sin filtrar overlaps).
+_META_SUFFIXES: tuple[str, ...] = ("_right", "_left", "_x", "_y")
 
 # Orden de columnas de la tabla comparativa final.
 _TABLE_COLUMNS: tuple[str, ...] = (
@@ -100,12 +107,12 @@ class ComparisonResult:
     """Resultado de la comparativa de escenarios del baseline.
 
     Attributes:
-        table: ``pl.DataFrame`` con 6 filas (3 escenarios x 2 modelos) y
+        table: ``pl.DataFrame`` con 9 filas (3 escenarios x 3 modelos) y
             columnas ``(scenario, model, n_features, f1_macro,
             f1_weighted, miou, train_time_s)``, ordenado por ``f1_macro``
             descendente.
         best_scenario: Nombre legible del escenario con mayor ``f1_macro``
-            (sobre el mejor de sus dos modelos).
+            (sobre el mejor de sus tres modelos).
         alphaearth_delta: Delta de ``f1_macro`` del escenario AlphaEarth
             puro frente al Sentinel-2 crudo (mejor modelo de cada uno).
             Cuantifica el valor incremental del embedding; positivo si
@@ -133,13 +140,14 @@ def build_comparison_table(
     max_samples: int = 0,
     random_state: int = 42,
 ) -> ComparisonResult:
-    """Entrena RF+XGB sobre 3 escenarios con el mismo spatial CV.
+    """Entrena RF+XGB+LGBM sobre 3 escenarios con el mismo spatial CV.
 
     Carga los tres parquets de escenario, los alinea por ``parcel_id``
     con un *inner join* (decision D2) para que los tres modelos vean
-    exactamente el mismo conjunto de parcelas, y entrena Random Forest y
-    XGBoost sobre cada vista reusando :func:`ml.train.baseline.train_one_model`
-    (mismo CV espacial 5-fold, decision D3).
+    exactamente el mismo conjunto de parcelas, y entrena Random Forest,
+    XGBoost y LightGBM sobre cada vista reusando
+    :func:`ml.train.baseline.train_one_model` (mismo CV espacial 5-fold,
+    decision D3).
 
     Args:
         scenario_paths: Mapa ``{"alphaearth": ruta, "s2_raw": ruta,
@@ -152,8 +160,9 @@ def build_comparison_table(
         random_state: Semilla determinista.
 
     Returns:
-        Un :class:`ComparisonResult` con la tabla de 6 filas, el escenario
-        ganador y el delta de ``f1_macro`` AlphaEarth vs S2 crudo.
+        Un :class:`ComparisonResult` con la tabla de 9 filas (3 modelos x
+        3 escenarios), el escenario ganador y el delta de ``f1_macro``
+        AlphaEarth vs S2 crudo.
 
     Raises:
         ValueError: si falta alguna de las tres claves de escenario o si
@@ -429,7 +438,7 @@ def _train_scenario_model(
 
     Args:
         scenario_df: DataFrame del escenario ya alineado.
-        model_kind: ``"rf"`` o ``"xgb"``.
+        model_kind: ``"rf"``, ``"xgb"`` o ``"lgbm"``.
         k_folds: Numero de folds del CV espacial.
         buffer_km: Buffer anti-leakage en km.
         random_state: Semilla determinista.
@@ -468,7 +477,9 @@ def _count_features(scenario_df: pl.DataFrame) -> int:
     return sum(
         1
         for col in scenario_df.columns
-        if col not in _META_COLS and scenario_df.schema[col].is_numeric()
+        if col not in _META_COLS
+        and not col.endswith(_META_SUFFIXES)
+        and scenario_df.schema[col].is_numeric()
     )
 
 
@@ -476,10 +487,10 @@ def _best_scenario(table: pl.DataFrame) -> str:
     """Devuelve el escenario con mayor ``f1_macro`` de la tabla.
 
     Args:
-        table: Tabla comparativa de 6 filas.
+        table: Tabla comparativa de 9 filas.
 
     Returns:
-        El nombre legible del escenario ganador (mejor de sus 2 modelos).
+        El nombre legible del escenario ganador (mejor de sus 3 modelos).
     """
     top_row = table.sort("f1_macro", descending=True).row(0, named=True)
     return str(top_row["scenario"])
@@ -492,7 +503,7 @@ def _alphaearth_delta(table: pl.DataFrame) -> float:
     Sentinel-2 crudo. Cuantifica el valor incremental del embedding.
 
     Args:
-        table: Tabla comparativa de 6 filas.
+        table: Tabla comparativa de 9 filas.
 
     Returns:
         ``f1_macro(AlphaEarth) - f1_macro(S2 crudo)``; positivo si el
