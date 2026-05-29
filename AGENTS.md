@@ -10,8 +10,7 @@
 
 | Documento | Propósito |
 |-----------|-----------|
-| [`context/RefinamientoPlaneacionAgroSatCopilot_v6_RESUMEN.md`](context/RefinamientoPlaneacionAgroSatCopilot_v6_RESUMEN.md) | Plan operativo destilado (172 líneas): EPICs, SP, calendario, riesgos, métricas |
-| [`context/RefinamientoPlaneacionAgroSatCopilot_v6.md`](context/RefinamientoPlaneacionAgroSatCopilot_v6.md) | Plan SCRUM completo con US-001 a US-056 |
+| [`context/RefinamientoPlaneacionAgroSatCopilot_v6.md`](context/RefinamientoPlaneacionAgroSatCopilot_v6.md) | Plan SCRUM completo con US-001 a US-056 (EPICs, SP, calendario §10.3, riesgos, métricas) |
 | [`docs/orchestration/skills-catalog.md`](docs/orchestration/skills-catalog.md) | Catálogo de las 30 skills `agrosat-*` |
 | [`docs/orchestration/auto-invoke.md`](docs/orchestration/auto-invoke.md) | Qué skill cargar antes de cada acción |
 | [`docs/orchestration/skill-owners.md`](docs/orchestration/skill-owners.md) | Mapa skill → subagente owner + 9 subagentes |
@@ -71,24 +70,13 @@ Capacidad: 12 h/sem × 3 devs × 10 sem ≈ **150 SP** para MVP.
 
 **Descartados (no reactivar)**: Prithvi-EO-2.0, MiniMax-M2.7, Kimi K2.6, Llama 3.3-70B QLoRA, LangGraph, Prefect, Alembic, DuckDB principal, PWA+Tauri.
 
-## Calendario Inamovible
+## Calendario
 
-Avance 0 (26-abr PDF) · Avance 1 EDA (3-may) · Avance 2 FE (17-may) · Avance 3 Baseline (20-may) · Avance 4 Modelos (24-may) · Avance 5 Final+Ensambles (31-may) · Avance 6 Conclusiones (7-jun PDF) · Avance 7 Resumen (14-jun PDF) · **Presentación final dom 21-jun** · Buffer + Paper Track opcional 22-jun→3-jul.
-
-Sprints semanales + gates en [`context/RefinamientoPlaneacionAgroSatCopilot_v6_RESUMEN.md`](context/RefinamientoPlaneacionAgroSatCopilot_v6_RESUMEN.md) §6 y §12.
+Fuente única de fechas (Avances 0-7 + Presentación + ventanas de cómputo): [ADR-008](docs/decisions/ADR-008-rediseno-calendario-presentacion-27jun.md). No duplicar fechas aquí.
 
 ## Presupuesto Cómputo (80 h H100 + ~50 h L4 spot)
 
-| Ventana | Fecha | Uso | VRAM |
-|---------|-------|-----|------|
-| V1 | 18-20 may (8 h) | Baselines + preliminar TSViT | ~40 GB |
-| V2 | 25-27 may (12 h) | U-TAE + TSViT + Swin-UNETR | ~60 GB |
-| V3 | 28-30 may (24 h) | **Gemma 4 26B-MoE LoRA** | ~82 GB |
-| V4 | 1-3 jun (12 h) | Qwen3-VL LoRA + ensambles | ~92 GB |
-| V5 | 5-7 jun (16 h) | Qwen3.5-35B-A3B vLLM + LoRA traces | ~91 GB |
-| V6 | 18-20 jun (8 h) | Warm vLLM demo | ~91 GB |
-
-Training único $262 spot — $602 on-demand USD. Operativo **~$115 USD/mes** con scale-to-zero.
+Training único $262 spot — $602 on-demand USD. Operativo **~$115 USD/mes** con scale-to-zero. Ventanas H100/L4 con fechas: [ADR-008](docs/decisions/ADR-008-rediseno-calendario-presentacion-27jun.md).
 
 ## Reglas Globales NON-NEGOTIABLE
 
@@ -106,6 +94,7 @@ Training único $262 spot — $602 on-demand USD. Operativo **~$115 USD/mes** co
 12. **Reproducibilidad notebooks**: notebooks se commitean **ejecutados end-to-end con todas sus salidas** (tablas HTML, figuras PNG inline, plots interactivos) para entregable visual del curso. Papermill end-to-end en CI valida que sigan ejecutables. **Sin `.pre-commit-config.yaml`** ni `nbstripout` en quality gates — el `.ipynb` es un artefacto reproducible, no fuente "limpia".
 13. **i18n obligatorio**: todo texto visible en `frontend/i18n/locales/{it,es,en}.json` simultáneamente.
 14. **Atribuciones licencia**: documentadas en [`docs/licenses/DATA_LICENSE.md`](docs/licenses/DATA_LICENSE.md).
+15. **Commits sin `Co-Authored-By` automáticos**: los mensajes de commit no incluyen trailer `Co-Authored-By: Claude` ni similares de asistentes IA. La autoría queda en el `Author:` real. Los asistentes redactan, el equipo firma.
 
 ## Quality Gates (sin pre-commit)
 
@@ -164,7 +153,7 @@ CI replica `make check` en cada PR a `develop` y `main`. Comandos completos en [
 
 ```
 ¿Nueva US?
-  1. Buscar US-XXX en context/RefinamientoPlaneacionAgroSatCopilot_v6_RESUMEN.md → §13 navegación
+  1. Buscar US-XXX en context/RefinamientoPlaneacionAgroSatCopilot_v6.md
   2. Verificar criterios aceptación en plan completo
   3. Crear rama feature/E{epic}-US-XXX-{slug}
   4. Leer AGENTS.md del subdirectorio relevante
@@ -201,7 +190,7 @@ CI replica `make check` en cada PR a `develop` y `main`. Comandos completos en [
 - GeoAnalystBench pass rate ≥ 0.65.
 - Cobertura tests ≥ 70 % backend, ≥ 50 % frontend.
 
-Detalle producto + MLOps en [`context/RefinamientoPlaneacionAgroSatCopilot_v6_RESUMEN.md`](context/RefinamientoPlaneacionAgroSatCopilot_v6_RESUMEN.md) §9.
+Detalle producto + MLOps en [`context/RefinamientoPlaneacionAgroSatCopilot_v6.md`](context/RefinamientoPlaneacionAgroSatCopilot_v6.md).
 
 ## Contacto
 

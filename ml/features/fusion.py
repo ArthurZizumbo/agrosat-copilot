@@ -11,7 +11,7 @@ Layout de columnas (orden estable, downstream depende):
 
 ::
 
-    parcel_id (i64) | year (i16) |
+    parcel_id (Utf8) | year (i16) |
     ae_00 .. ae_63 (64)                                | bloque AlphaEarth
     {idx}_{stat} (17 * 5 = 85)                         | bloque índices x stats
     s1_vv_{stat} | s1_vh_{stat} (2 * 5 = 10)           | bloque Sentinel-1
@@ -49,6 +49,7 @@ import polars as pl
 import structlog
 
 from ml.features.spectral_indices import INDEX_NAMES
+from ml.utils.parcel_id import canonical_parcel_id
 
 logger = structlog.get_logger(__name__)
 
@@ -226,7 +227,8 @@ def build_fused_features(
 
     Returns:
         ``pl.DataFrame`` con shape ``(N, 2 + 189)`` o ``(N, 2 + 701)`` si
-        FarSLIP fue incluido. Primera columna ``parcel_id`` (i64), segunda
+        FarSLIP fue incluido. Primera columna ``parcel_id`` (Utf8 canonico,
+        ver :func:`ml.utils.parcel_id.canonical_parcel_id`), segunda
         ``year`` (i16). El resto en el orden documentado en el módulo.
 
     Raises:
@@ -243,8 +245,12 @@ def build_fused_features(
     selected_blocks = tuple(b for b in blocks if b in BLOCK_NAMES)
     block_frames: list[pl.LazyFrame] = []
 
+    # Esquema canonico: `parcel_id` siempre Utf8. Convertimos desde el
+    # GeoDataFrame con `.astype("string")` para preservar identidades como
+    # `"{patch_id}_{i}"` (baselines US-023-preview) y enteros heredados de
+    # PASTIS sin notacion cientifica.
     base = pl.from_pandas(
-        parcels[["parcel_id", "year"]].astype({"parcel_id": "int64", "year": "int16"})
+        parcels[["parcel_id", "year"]].astype({"parcel_id": "string", "year": "int16"})
     ).lazy()
 
     if "alphaearth" in selected_blocks:
@@ -351,6 +357,7 @@ def _build_ae_block(
         df = injected
     else:
         df = _empty_ae_frame(parcels, year=year)
+    df = canonical_parcel_id(df)
 
     expected_cols = {"parcel_id", "year", *AE_COLS}
     actual_cols = set(df.columns)
@@ -370,7 +377,7 @@ def _build_ae_block(
 
 def _empty_ae_frame(parcels: gpd.GeoDataFrame, *, year: int) -> pl.DataFrame:
     """Devuelve un frame AE con los 64 dims rellenos en ``None``."""
-    pids = parcels["parcel_id"].astype("int64").tolist()
+    pids = parcels["parcel_id"].astype("string").tolist()
     n = len(pids)
     cols: dict[str, list[object]] = {
         "parcel_id": pids,
@@ -379,7 +386,7 @@ def _empty_ae_frame(parcels: gpd.GeoDataFrame, *, year: int) -> pl.DataFrame:
     for c in AE_COLS:
         cols[c] = [None] * n
     schema: dict[str, pl.DataType] = {
-        "parcel_id": pl.Int64(),
+        "parcel_id": pl.Utf8(),
         "year": pl.Int16(),
     }
     for c in AE_COLS:
@@ -405,6 +412,7 @@ def _build_indices_stats_block(
         df = injected
     else:
         df = _empty_indices_frame(parcels, year=year, expected_cols=expected_cols)
+    df = canonical_parcel_id(df)
 
     missing = [c for c in expected_cols if c not in df.columns]
     if missing:
@@ -422,7 +430,7 @@ def _empty_indices_frame(
     expected_cols: tuple[str, ...],
 ) -> pl.DataFrame:
     """Frame índices*stats relleno con ``None``."""
-    pids = parcels["parcel_id"].astype("int64").tolist()
+    pids = parcels["parcel_id"].astype("string").tolist()
     n = len(pids)
     cols: dict[str, list[object]] = {
         "parcel_id": pids,
@@ -431,7 +439,7 @@ def _empty_indices_frame(
     for c in expected_cols:
         cols[c] = [None] * n
     schema: dict[str, pl.DataType] = {
-        "parcel_id": pl.Int64(),
+        "parcel_id": pl.Utf8(),
         "year": pl.Int16(),
     }
     for c in expected_cols:
@@ -452,6 +460,7 @@ def _build_s1_block(
         df = injected
     else:
         df = _empty_generic_frame(parcels, year=year, columns=expected_cols)
+    df = canonical_parcel_id(df)
 
     missing = [c for c in expected_cols if c not in df.columns]
     if missing:
@@ -476,7 +485,7 @@ def _build_srtm_block(
     if injected is not None:
         df = injected
     else:
-        pids = parcels["parcel_id"].astype("int64").tolist()
+        pids = parcels["parcel_id"].astype("string").tolist()
         n = len(pids)
         df = pl.DataFrame(
             {
@@ -487,13 +496,14 @@ def _build_srtm_block(
                 "srtm_aspect_dominant": [None] * n,
             },
             schema={
-                "parcel_id": pl.Int64(),
+                "parcel_id": pl.Utf8(),
                 "year": pl.Int16(),
                 "srtm_elev_mean": pl.Float64(),
                 "srtm_slope_mean": pl.Float64(),
                 "srtm_aspect_dominant": pl.Utf8(),
             },
         )
+    df = canonical_parcel_id(df)
 
     # SRTM puede llegar sin year (DEM estático): completamos con el año base.
     if "year" not in df.columns:
@@ -521,6 +531,7 @@ def _build_era5_block(
         df = injected
     else:
         df = _empty_generic_frame(parcels, year=year, columns=expected_cols)
+    df = canonical_parcel_id(df)
 
     missing = [c for c in expected_cols if c not in df.columns]
     if missing:
@@ -542,7 +553,7 @@ def _build_geom_block(parcels: gpd.GeoDataFrame) -> pl.LazyFrame:
     if len(parcels) == 0:
         return pl.DataFrame(
             schema={
-                "parcel_id": pl.Int64(),
+                "parcel_id": pl.Utf8(),
                 "year": pl.Int16(),
                 "geom_area_ha": pl.Float64(),
                 "geom_perimeter_m": pl.Float64(),
@@ -560,14 +571,14 @@ def _build_geom_block(parcels: gpd.GeoDataFrame) -> pl.LazyFrame:
 
     df = pl.DataFrame(
         {
-            "parcel_id": parcels["parcel_id"].astype("int64").to_numpy(),
+            "parcel_id": parcels["parcel_id"].astype("string").tolist(),
             "year": parcels["year"].astype("int16").to_numpy(),
             "geom_area_ha": area_ha,
             "geom_perimeter_m": perimeter_m,
             "geom_elongation": elongation,
         },
         schema={
-            "parcel_id": pl.Int64(),
+            "parcel_id": pl.Utf8(),
             "year": pl.Int16(),
             "geom_area_ha": pl.Float64(),
             "geom_perimeter_m": pl.Float64(),
@@ -609,6 +620,7 @@ def _build_farslip_block(
         return None
 
     df = pl.read_parquet(resolved)
+    df = canonical_parcel_id(df) if "parcel_id" in df.columns else df
     farslip_cols = tuple(f"farslip_{i:03d}" for i in range(512))
     missing = [c for c in farslip_cols if c not in df.columns]
     if missing:
@@ -636,7 +648,7 @@ def _build_farslip_block(
 
     return df.select(
         [
-            pl.col("parcel_id").cast(pl.Int64),
+            pl.col("parcel_id").cast(pl.Utf8),
             pl.col("year").cast(pl.Int16),
             *[pl.col(c).cast(pl.Float32) for c in farslip_cols],
         ]
@@ -688,6 +700,7 @@ def _build_phenology_text_block_lf(
 
     if "parcel_id" not in df.columns:
         raise ValueError("Bloque pheno_text no contiene `parcel_id` para el join.")
+    df = canonical_parcel_id(df)
     pheno_cols = tuple(c for c in df.columns if c.startswith("pheno_text_"))
     if not pheno_cols:
         raise ValueError("Bloque pheno_text no contiene columnas con prefijo `pheno_text_`.")
@@ -696,7 +709,7 @@ def _build_phenology_text_block_lf(
         df = df.with_columns(pl.lit(year_val, dtype=pl.Int16).alias("year"))
     return df.select(
         [
-            pl.col("parcel_id").cast(pl.Int64),
+            pl.col("parcel_id").cast(pl.Utf8),
             pl.col("year").cast(pl.Int16),
             *[pl.col(c).cast(pl.Float32) for c in pheno_cols],
         ]
@@ -749,6 +762,7 @@ def _build_spectral_signature_block_lf(
         raise ValueError(
             "Bloque spectral_signature no contiene `parcel_id` para el join."
         )
+    df = canonical_parcel_id(df)
     spec_cols = tuple(c for c in df.columns if c.startswith("spectral_signature_"))
     if not spec_cols:
         raise ValueError(
@@ -760,7 +774,7 @@ def _build_spectral_signature_block_lf(
         df = df.with_columns(pl.lit(year_val, dtype=pl.Int16).alias("year"))
     return df.select(
         [
-            pl.col("parcel_id").cast(pl.Int64),
+            pl.col("parcel_id").cast(pl.Utf8),
             pl.col("year").cast(pl.Int16),
             *[pl.col(c).cast(pl.Float32) for c in spec_cols],
         ]
@@ -774,7 +788,7 @@ def _empty_generic_frame(
     columns: Sequence[str],
 ) -> pl.DataFrame:
     """Frame genérico relleno con ``None`` para los nombres de columna dados."""
-    pids = parcels["parcel_id"].astype("int64").tolist()
+    pids = parcels["parcel_id"].astype("string").tolist()
     n = len(pids)
     cols: dict[str, list[object]] = {
         "parcel_id": pids,
@@ -783,7 +797,7 @@ def _empty_generic_frame(
     for c in columns:
         cols[c] = [None] * n
     schema: dict[str, pl.DataType] = {
-        "parcel_id": pl.Int64(),
+        "parcel_id": pl.Utf8(),
         "year": pl.Int16(),
     }
     for c in columns:

@@ -469,3 +469,235 @@ def test_spatial_cv_doc_exists_and_cites_references() -> None:
     assert "H3" in content
     assert "buffer" in content.lower()
     assert "leakage" in content.lower()
+
+
+# ===========================================================================
+# Grupo G — historial de loss desde MLflow (modelos temporales).
+# ===========================================================================
+
+
+class _FakeMetric:
+    """Stub de mlflow.entities.Metric con los atributos que usa el helper."""
+
+    def __init__(self, step: int, value: float) -> None:
+        self.step = step
+        self.value = value
+
+
+def _make_fake_mlflow_client(
+    *,
+    train_per_fold: list[list[float]],
+    val_per_fold: list[list[float]] | None,
+):
+    """Construye un stub de :class:`MlflowClient` con metric history controlada.
+
+    Args:
+        train_per_fold: Lista de listas; entrada ``i`` es la curva de
+            ``fold{i}_train_loss`` por epoca.
+        val_per_fold: Idem para ``fold{i}_val_loss``; ``None`` deshabilita val.
+    """
+    train_keys = [f"fold{i}_train_loss" for i in range(len(train_per_fold))]
+    val_keys = (
+        [f"fold{i}_val_loss" for i in range(len(val_per_fold))]
+        if val_per_fold is not None
+        else []
+    )
+    metric_summary = {k: 0.0 for k in train_keys + val_keys}
+    history_map: dict[str, list[_FakeMetric]] = {}
+    for key, curve in zip(train_keys, train_per_fold, strict=True):
+        history_map[key] = [_FakeMetric(step, v) for step, v in enumerate(curve)]
+    if val_per_fold is not None:
+        for key, curve in zip(val_keys, val_per_fold, strict=True):
+            history_map[key] = [_FakeMetric(step, v) for step, v in enumerate(curve)]
+
+    class _Run:
+        class _Data:
+            metrics = metric_summary
+
+        data = _Data()
+
+    class _FakeClient:
+        def __init__(self, *, tracking_uri: str | None = None) -> None:
+            self.tracking_uri = tracking_uri
+
+        def get_run(self, run_id: str) -> _Run:
+            return _Run()
+
+        def get_metric_history(self, run_id: str, key: str) -> list[_FakeMetric]:
+            return history_map.get(key, [])
+
+    return _FakeClient
+
+
+def test_fetch_loss_history_aggregates_folds(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``fetch_loss_history_from_mlflow`` agrega los folds en media y std."""
+    from ml.eval import learning_curves
+
+    fake_client = _make_fake_mlflow_client(
+        train_per_fold=[[1.0, 0.5, 0.2], [1.2, 0.6, 0.3]],
+        val_per_fold=[[1.1, 0.6, 0.4], [1.3, 0.7, 0.5]],
+    )
+
+    # Bypass mlflow.set_tracking_uri y resolve_tracking_uri en el modulo
+    # bajo test (no toca el server real).
+    monkeypatch.setattr(
+        "ml.eval.learning_curves.MlflowClient" if False else "mlflow.tracking.MlflowClient",
+        fake_client,
+        raising=False,
+    )
+
+    import mlflow
+
+    monkeypatch.setattr(mlflow, "set_tracking_uri", lambda uri: None)
+
+    history = learning_curves.fetch_loss_history_from_mlflow(
+        run_id="fake-run-id",
+        model_kind="tempcnn",
+        tracking_uri="file:///tmp/fake-mlruns",
+    )
+    assert history.model_kind == "tempcnn"
+    assert history.run_id == "fake-run-id"
+    assert history.n_folds == 2
+    np.testing.assert_array_equal(history.epochs, np.array([0, 1, 2]))
+    # Media de los dos folds en train.
+    np.testing.assert_allclose(
+        history.train_loss_mean,
+        np.array([(1.0 + 1.2) / 2, (0.5 + 0.6) / 2, (0.2 + 0.3) / 2]),
+        atol=1e-9,
+    )
+    assert history.train_loss_std.size == 3
+    assert history.val_loss_mean.size == 3
+
+
+def test_fetch_loss_history_raises_when_no_train_loss(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Si el run no expone metricas `fold{i}_train_loss`, lanza RuntimeError."""
+    from ml.eval import learning_curves
+
+    fake_client = _make_fake_mlflow_client(
+        train_per_fold=[],
+        val_per_fold=None,
+    )
+    monkeypatch.setattr(
+        "mlflow.tracking.MlflowClient", fake_client, raising=False
+    )
+
+    import mlflow
+
+    monkeypatch.setattr(mlflow, "set_tracking_uri", lambda uri: None)
+
+    with pytest.raises(RuntimeError, match="no expone metricas"):
+        learning_curves.fetch_loss_history_from_mlflow(
+            run_id="empty-run",
+            model_kind="inceptiontime",
+            tracking_uri="file:///tmp/fake-mlruns",
+        )
+
+
+def test_plot_loss_history_returns_figure() -> None:
+    """``plot_loss_history_from_mlflow`` devuelve una ``Figure`` con dpi 200."""
+    from ml.eval.learning_curves import (
+        TemporalLossHistory,
+        plot_loss_history_from_mlflow,
+    )
+
+    history = TemporalLossHistory(
+        model_kind="tempcnn",
+        run_id="r1",
+        epochs=np.arange(5),
+        train_loss_mean=np.array([1.0, 0.7, 0.5, 0.3, 0.2]),
+        train_loss_std=np.array([0.05, 0.04, 0.03, 0.03, 0.02]),
+        val_loss_mean=np.array([1.1, 0.8, 0.6, 0.4, 0.35]),
+        val_loss_std=np.array([0.05, 0.04, 0.04, 0.03, 0.03]),
+        n_folds=3,
+    )
+    fig = plot_loss_history_from_mlflow(history)
+    assert isinstance(fig, Figure)
+    assert fig.get_dpi() == 200
+
+
+def test_plot_loss_history_raises_when_empty() -> None:
+    """``plot_loss_history_from_mlflow`` falla si el historial esta vacio."""
+    from ml.eval.learning_curves import (
+        TemporalLossHistory,
+        plot_loss_history_from_mlflow,
+    )
+
+    history = TemporalLossHistory(
+        model_kind="tempcnn",
+        run_id="r1",
+        epochs=np.array([], dtype=np.int64),
+        train_loss_mean=np.array([], dtype=np.float64),
+        train_loss_std=np.array([], dtype=np.float64),
+        val_loss_mean=np.array([], dtype=np.float64),
+        val_loss_std=np.array([], dtype=np.float64),
+        n_folds=0,
+    )
+    with pytest.raises(ValueError, match="vacio"):
+        plot_loss_history_from_mlflow(history)
+
+
+def test_diagnose_temporal_fit_overfit() -> None:
+    """Loss train baja, val_loss sube al final -> overfit."""
+    from ml.eval.learning_curves import (
+        TemporalLossHistory,
+        diagnose_temporal_fit,
+    )
+
+    history = TemporalLossHistory(
+        model_kind="tempcnn",
+        run_id="r1",
+        epochs=np.arange(5),
+        train_loss_mean=np.array([1.0, 0.7, 0.4, 0.2, 0.1]),
+        train_loss_std=np.zeros(5),
+        val_loss_mean=np.array([1.1, 0.8, 0.6, 0.7, 0.9]),
+        val_loss_std=np.zeros(5),
+        n_folds=1,
+    )
+    diag = diagnose_temporal_fit(history, gap_threshold=0.10)
+    assert diag.verdict == "overfit"
+    # gap = val_loss - train_loss en el ultimo punto
+    assert diag.gap == pytest.approx(0.9 - 0.1, abs=1e-9)
+
+
+def test_diagnose_temporal_fit_underfit() -> None:
+    """Ambas losses altas y similares -> underfit."""
+    from ml.eval.learning_curves import (
+        TemporalLossHistory,
+        diagnose_temporal_fit,
+    )
+
+    history = TemporalLossHistory(
+        model_kind="inceptiontime",
+        run_id="r2",
+        epochs=np.arange(3),
+        train_loss_mean=np.array([2.5, 2.3, 2.2]),
+        train_loss_std=np.zeros(3),
+        val_loss_mean=np.array([2.6, 2.4, 2.25]),
+        val_loss_std=np.zeros(3),
+        n_folds=1,
+    )
+    diag = diagnose_temporal_fit(history, high_loss_threshold=1.5)
+    assert diag.verdict == "underfit"
+
+
+def test_diagnose_temporal_fit_good_fit() -> None:
+    """Loss train baja, val_loss baja y cerca -> good_fit."""
+    from ml.eval.learning_curves import (
+        TemporalLossHistory,
+        diagnose_temporal_fit,
+    )
+
+    history = TemporalLossHistory(
+        model_kind="tempcnn",
+        run_id="r3",
+        epochs=np.arange(4),
+        train_loss_mean=np.array([1.0, 0.6, 0.4, 0.3]),
+        train_loss_std=np.zeros(4),
+        val_loss_mean=np.array([1.1, 0.7, 0.45, 0.35]),
+        val_loss_std=np.zeros(4),
+        n_folds=1,
+    )
+    diag = diagnose_temporal_fit(history, gap_threshold=0.10, high_loss_threshold=1.5)
+    assert diag.verdict == "good_fit"

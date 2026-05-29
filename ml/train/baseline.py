@@ -34,6 +34,7 @@ from typing import Literal
 import numpy as np
 import polars as pl
 import structlog
+from lightgbm import LGBMClassifier
 from sklearn.base import ClassifierMixin
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import GridSearchCV
@@ -55,7 +56,7 @@ __all__ = [
     "tune_baseline",
 ]
 
-ModelKind = Literal["rf", "xgb"]
+ModelKind = Literal["rf", "xgb", "lgbm"]
 
 # Columnas de metadata que NO son features (se excluyen de la matriz X).
 _META_COLS: tuple[str, ...] = (
@@ -64,10 +65,17 @@ _META_COLS: tuple[str, ...] = (
     "patch_id",
     "instance_id",
     "class_id",
+    "class_name",
     "fold",
     "n_pixels",
+    "area_m2",
     "geometry",
 )
+
+# Sufijos de columnas que indican un join sin coalesce previo y nunca son
+# features. Defensa en profundidad sobre `_META_COLS`: el bug US-023-preview-v2
+# (patch_id_right importance=0.27 en XGB) entraba aqui via Polars left join.
+_META_SUFFIXES: tuple[str, ...] = ("_right", "_left", "_x", "_y")
 
 # Clases PASTIS-R no agronomicas a descartar (Background, Void label).
 _DROP_CLASS_IDS: tuple[int, ...] = (0, 19)
@@ -101,6 +109,27 @@ _XGB_BASE_PARAMS: dict[str, object] = {
     "tree_method": "hist",
     "objective": "multi:softprob",
     "random_state": 42,
+}
+# LightGBM (3er modelo del baseline tabular). Hiperparametros alineados con XGB
+# para una comparacion justa: misma profundidad efectiva (`num_leaves=63 ~ 2^6`
+# con `max_depth=-1`), mismo `learning_rate=0.05`, mismo subsample/colsample.
+# `class_weight="balanced"` reemplaza el `sample_weight` manual que XGB requiere
+# (LGBM si expone el parametro nativamente, decision D5). LGBM acepta NaN sin
+# imputacion previa pero seguimos el mismo `_impute_with` por consistencia.
+# Nota: la rueda PyPI de `lightgbm` no incluye build con CUDA; se queda en CPU.
+_LGBM_BASE_PARAMS: dict[str, object] = {
+    "n_estimators": 400,
+    "learning_rate": 0.05,
+    "num_leaves": 63,
+    "max_depth": -1,
+    "min_child_samples": 20,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "class_weight": "balanced",
+    "objective": "multiclass",
+    "n_jobs": -1,
+    "random_state": 42,
+    "verbose": -1,
 }
 
 
@@ -147,6 +176,13 @@ _RF_PARAM_GRID: dict[str, list] = {
 _XGB_PARAM_GRID: dict[str, list] = {
     "n_estimators": [300, 400],
     "max_depth": [6, 8],
+    "learning_rate": [0.05, 0.1],
+}
+# LightGBM: 8 combinaciones (2 x 2 x 2). `num_leaves` acotado a [31, 63] para no
+# crecer arboles que dupliquen el modelo en memoria (mismo criterio que RF).
+_LGBM_PARAM_GRID: dict[str, list] = {
+    "n_estimators": [300, 400],
+    "num_leaves": [31, 63],
     "learning_rate": [0.05, 0.1],
 }
 
@@ -202,18 +238,19 @@ class BaselineResult:
 
 
 def build_estimator(model: ModelKind, hyperparams: dict[str, object]) -> ClassifierMixin:
-    """Instancia un estimador RF o XGB con los hiperparametros dados.
+    """Instancia un estimador RF, XGB o LGBM con los hiperparametros dados.
 
     Args:
-        model: ``"rf"`` para :class:`RandomForestClassifier` o ``"xgb"``
-            para :class:`xgboost.XGBClassifier`.
+        model: ``"rf"`` para :class:`RandomForestClassifier`, ``"xgb"``
+            para :class:`xgboost.XGBClassifier` o ``"lgbm"`` para
+            :class:`lightgbm.LGBMClassifier`.
         hyperparams: Diccionario de hiperparametros del constructor.
 
     Returns:
         El estimador instanciado (sin ajustar).
 
     Raises:
-        ValueError: si ``model`` no es ``"rf"`` ni ``"xgb"``.
+        ValueError: si ``model`` no es ``"rf"``, ``"xgb"`` ni ``"lgbm"``.
     """
     if model == "rf":
         return RandomForestClassifier(**hyperparams)
@@ -223,7 +260,12 @@ def build_estimator(model: ModelKind, hyperparams: dict[str, object]) -> Classif
         xgb_params = dict(hyperparams)
         xgb_params.setdefault("device", resolve_xgb_device())
         return XGBClassifier(**xgb_params)
-    raise ValueError(f"`model` debe ser 'rf' o 'xgb'; recibido {model!r}.")
+    if model == "lgbm":
+        # LGBM se queda en CPU: la rueda PyPI no trae build CUDA. Para GPU
+        # haria falta `pip install lightgbm --config-settings=cmake.define...`
+        # con `device_type="gpu"`, fuera del alcance del baseline.
+        return LGBMClassifier(**hyperparams)  # type: ignore[arg-type]
+    raise ValueError(f"`model` debe ser 'rf', 'xgb' o 'lgbm'; recibido {model!r}.")
 
 
 # ---------------------------------------------------------------------------
@@ -296,7 +338,16 @@ def train_one_model(
     # CV si escala porque `fit_scaler_on_train` es el patron del repo.
     matrix = _impute(_feature_matrix(clean_df, feature_cols))
     final_model = build_estimator(model, params)
-    sample_weight = _sample_weights(y_encoded) if model == "xgb" else None
+    # XGB no expone `class_weight`: inyectamos `sample_weight` inverso a
+    # frecuencia (decision D5). LGBM con `class_weight="balanced"` ya lo
+    # maneja nativamente; si el caller lo quita, caemos a sample_weight.
+    sample_weight: np.ndarray | None
+    if model == "xgb":
+        sample_weight = _sample_weights(y_encoded)
+    elif model == "lgbm" and "class_weight" not in params:
+        sample_weight = _sample_weights(y_encoded)
+    else:
+        sample_weight = None
     if sample_weight is not None:
         final_model.fit(matrix, y_encoded, sample_weight=sample_weight)
     else:
@@ -486,6 +537,10 @@ def evaluate_with_spatial_cv(
         estimator = model_factory()
         if _is_xgb(estimator):
             estimator.fit(x_train, y_train, sample_weight=_sample_weights(y_train))
+        elif _is_lgbm(estimator) and getattr(estimator, "class_weight", None) is None:
+            # LGBM sin `class_weight="balanced"` recibe el sample_weight inverso
+            # a frecuencia para alineacion con XGB (decision D5).
+            estimator.fit(x_train, y_train, sample_weight=_sample_weights(y_train))
         else:
             estimator.fit(x_train, y_train)
         y_pred = estimator.predict(x_test)
@@ -601,7 +656,9 @@ def _feature_columns(df: pl.DataFrame) -> tuple[str, ...]:
     cols = [
         c
         for c in df.columns
-        if c not in _META_COLS and df.schema[c].is_numeric()
+        if c not in _META_COLS
+        and not c.endswith(_META_SUFFIXES)
+        and df.schema[c].is_numeric()
     ]
     if not cols:
         raise ValueError("No se encontraron columnas numericas de feature en `df`.")
@@ -642,12 +699,28 @@ def _encode_labels(df: pl.DataFrame) -> tuple[LabelEncoder, np.ndarray]:
 
 def _base_params(model: ModelKind) -> dict[str, object]:
     """Devuelve una copia de los hiperparametros base del modelo dado."""
-    return dict(_RF_BASE_PARAMS if model == "rf" else _XGB_BASE_PARAMS)
+    if model == "rf":
+        return dict(_RF_BASE_PARAMS)
+    if model == "xgb":
+        return dict(_XGB_BASE_PARAMS)
+    if model == "lgbm":
+        return dict(_LGBM_BASE_PARAMS)
+    raise ValueError(f"`model` debe ser 'rf', 'xgb' o 'lgbm'; recibido {model!r}.")
 
 
 def _default_grid(model: ModelKind) -> dict[str, list]:
     """Devuelve una copia de la grilla de tuning ligero del modelo dado."""
-    return {k: list(v) for k, v in (_RF_PARAM_GRID if model == "rf" else _XGB_PARAM_GRID).items()}
+    if model == "rf":
+        grid = _RF_PARAM_GRID
+    elif model == "xgb":
+        grid = _XGB_PARAM_GRID
+    elif model == "lgbm":
+        grid = _LGBM_PARAM_GRID
+    else:
+        raise ValueError(
+            f"`model` debe ser 'rf', 'xgb' o 'lgbm'; recibido {model!r}."
+        )
+    return {k: list(v) for k, v in grid.items()}
 
 
 def _sample_weights(y_encoded: np.ndarray) -> np.ndarray:
@@ -674,6 +747,11 @@ def _sample_weights(y_encoded: np.ndarray) -> np.ndarray:
 def _is_xgb(estimator: ClassifierMixin) -> bool:
     """Indica si ``estimator`` es un ``XGBClassifier``."""
     return isinstance(estimator, XGBClassifier)
+
+
+def _is_lgbm(estimator: ClassifierMixin) -> bool:
+    """Indica si ``estimator`` es un ``LGBMClassifier``."""
+    return isinstance(estimator, LGBMClassifier)
 
 
 def _column_medians(matrix: np.ndarray) -> np.ndarray:

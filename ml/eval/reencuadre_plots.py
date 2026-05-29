@@ -26,7 +26,7 @@ Plots provistos:
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import matplotlib.figure
 import matplotlib.pyplot as plt
@@ -41,7 +41,11 @@ __all__ = [
     "plot_ablation_bars",
     "plot_class_support_bars",
     "plot_cluster_ndvi_curves",
+    "plot_confusion_matrix_heatmap",
+    "plot_geom_leakage_comparison",
     "plot_model_comparison_bars",
+    "plot_model_comparison_v2_with_v1_overlay",
+    "plot_optional_blocks_ablation",
     "plot_per_class_f1",
     "plot_umap_clusters",
 ]
@@ -539,5 +543,352 @@ def plot_cluster_ndvi_curves(
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.grid(alpha=0.2)
+    fig.tight_layout()
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# 7. Leakage geografico: comparativa explicita full vs no_geom + geom_only.
+# ---------------------------------------------------------------------------
+
+
+def plot_geom_leakage_comparison(
+    results: Sequence[FeatureAblationResult],
+    *,
+    title: str = "Aporte de las columnas geom_*: leakage espacial vs. señal real",
+    figsize: tuple[float, float] = (7.0, 4.0),
+) -> matplotlib.figure.Figure:
+    """Bar plot con 3 barras `full`, `no_geom`, `geom_only` lado a lado.
+
+    Aisla el efecto de las columnas `geom_*` (area, perimetro, elongacion).
+    Si `geom_only` tiene F1-macro alto, hay leakage espacial. Si `full -
+    no_geom` es ~0 y `geom_only` es ~0, las cols no aportan y se pueden
+    descartar.
+
+    Args:
+        results: Resultados de :func:`run_feature_ablation`. Debe contener
+            las llaves `full`, `no_geom`, `geom_only` (o un subset; las
+            faltantes se omiten con anotacion en el plot).
+        title: Titulo del plot.
+        figsize: Tupla (ancho, alto).
+
+    Returns:
+        Figura matplotlib.
+    """
+    target_sets = ("full", "no_geom", "geom_only")
+    by_set = {r.feature_set: float(r.f1_macro) for r in results if r.feature_set in target_sets}
+
+    fig, ax = plt.subplots(figsize=figsize, dpi=110)
+    labels = [s for s in target_sets if s in by_set]
+    values = [by_set[s] for s in labels]
+    palette = {"full": "#4C72B0", "no_geom": "#55A868", "geom_only": "#C44E52"}
+    colors = [palette[s] for s in labels]
+
+    if not labels:
+        ax.text(
+            0.5,
+            0.5,
+            "Sin resultados validos para `full`, `no_geom` ni `geom_only`.",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+            color="#888",
+        )
+        ax.set_axis_off()
+        fig.tight_layout()
+        return fig
+
+    bars = ax.bar(labels, values, color=colors, edgecolor="white")
+    for bar, value in zip(bars, values, strict=True):
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            value + 0.005,
+            f"{value:.3f}",
+            ha="center",
+            va="bottom",
+            fontsize=10,
+        )
+
+    if "full" in by_set and "no_geom" in by_set:
+        delta = by_set["no_geom"] - by_set["full"]
+        ax.text(
+            0.02,
+            0.98,
+            f"delta(no_geom - full) = {delta:+.4f}",
+            transform=ax.transAxes,
+            va="top",
+            ha="left",
+            fontsize=9,
+            color="#444",
+        )
+
+    ax.set_ylabel("F1-macro")
+    ax.set_title(title)
+    ax.set_ylim(0, max(0.1, max(values) * 1.20))
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    fig.tight_layout()
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# 8. Bloques opcionales: with_farslip / with_pheno_text / with_spectral_signature.
+# ---------------------------------------------------------------------------
+
+
+def plot_optional_blocks_ablation(
+    results: Sequence[FeatureAblationResult],
+    *,
+    baseline_set: str = "full",
+    title: str = "Aporte de los bloques opcionales sobre el baseline `full`",
+    figsize: tuple[float, float] = (8.5, 4.5),
+) -> matplotlib.figure.Figure:
+    """Grafica los deltas de bloques opcionales contra un baseline.
+
+    Para cada par `(set, modelo)` calcula el delta vs `baseline_set` (default
+    `full`) y lo grafica como barras horizontales con color segun signo
+    (verde = mejora, rojo = empeora, gris = neutro |delta| < 0.005).
+
+    Args:
+        results: Resultados de :func:`run_feature_ablation`.
+        baseline_set: Conjunto de referencia.
+        title: Titulo del plot.
+        figsize: Tupla (ancho, alto).
+
+    Returns:
+        Figura matplotlib.
+    """
+    by_set: dict[str, float] = {}
+    for r in results:
+        if r.feature_set == baseline_set:
+            continue
+        if not r.feature_set.startswith("with_") and not r.feature_set.endswith("_only"):
+            continue
+        if r.f1_macro != r.f1_macro:  # NaN check
+            continue
+        by_set.setdefault(r.feature_set, float(r.delta_vs_full))
+
+    fig, ax = plt.subplots(figsize=figsize, dpi=110)
+    if not by_set:
+        ax.text(
+            0.5,
+            0.5,
+            "No hay bloques opcionales con resultados validos.",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+            color="#888",
+        )
+        ax.set_axis_off()
+        fig.tight_layout()
+        return fig
+
+    items_sorted = sorted(by_set.items(), key=lambda kv: kv[1])
+    labels = [k for k, _ in items_sorted]
+    deltas = [v for _, v in items_sorted]
+
+    def _color(delta: float) -> str:
+        if abs(delta) < 0.005:
+            return "#888"
+        return "#55A868" if delta > 0 else "#C44E52"
+
+    colors = [_color(d) for d in deltas]
+    bars = ax.barh(labels, deltas, color=colors, edgecolor="white")
+    for bar, value in zip(bars, deltas, strict=True):
+        ax.text(
+            value + (0.001 if value >= 0 else -0.001),
+            bar.get_y() + bar.get_height() / 2,
+            f"{value:+.4f}",
+            va="center",
+            ha="left" if value >= 0 else "right",
+            fontsize=9,
+        )
+
+    ax.axvline(0.0, color="#444", linewidth=1)
+    ax.set_xlabel(f"delta F1-macro vs `{baseline_set}`")
+    ax.set_title(title)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    fig.tight_layout()
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# 9. Matriz de confusion (heatmap).
+# ---------------------------------------------------------------------------
+
+
+def plot_confusion_matrix_heatmap(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    *,
+    class_labels: Sequence[int] | None = None,
+    class_names: Mapping[int, str] | None = None,
+    title: str = "Matriz de confusion (out-of-fold)",
+    normalize: Literal["true", "pred", "all", "none"] = "true",
+    figsize: tuple[float, float] = (8.5, 7.0),
+    cmap: str = "Blues",
+) -> matplotlib.figure.Figure:
+    """Heatmap de matriz de confusion con anotaciones por celda.
+
+    Args:
+        y_true: Etiquetas verdaderas (1D).
+        y_pred: Etiquetas predichas (1D).
+        class_labels: Lista de class_ids a reportar.
+        class_names: Mapping {class_id: nombre legible}.
+        title: Titulo.
+        normalize: `"true"` normaliza por fila (recall por clase), `"pred"`
+            por columna (precision por clase), `"all"` por total, `"none"`
+            sin normalizar.
+        figsize: Tupla (ancho, alto).
+        cmap: Colormap de matplotlib.
+
+    Returns:
+        Figura matplotlib.
+    """
+    from sklearn.metrics import confusion_matrix
+
+    y_true_arr = np.asarray(y_true).ravel()
+    y_pred_arr = np.asarray(y_pred).ravel()
+    if y_true_arr.size == 0:
+        raise ValueError("`y_true` no puede estar vacio.")
+    if class_labels is None:
+        class_labels = sorted({*y_true_arr.tolist(), *y_pred_arr.tolist()})
+    labels_list = list(class_labels)
+
+    cm_norm: str | None = None if normalize == "none" else normalize
+    cm = confusion_matrix(
+        y_true_arr,
+        y_pred_arr,
+        labels=labels_list,
+        normalize=cm_norm,  # type: ignore[arg-type]
+    )
+
+    names = [
+        (class_names.get(cid, str(cid)) if class_names else str(cid))
+        for cid in labels_list
+    ]
+
+    fig, ax = plt.subplots(figsize=figsize, dpi=110)
+    im = ax.imshow(cm, cmap=cmap, aspect="auto")
+    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+
+    ax.set_xticks(np.arange(len(names)))
+    ax.set_yticks(np.arange(len(names)))
+    ax.set_xticklabels(names, rotation=45, ha="right", fontsize=8)
+    ax.set_yticklabels(names, fontsize=8)
+    ax.set_xlabel("Predicho")
+    ax.set_ylabel("Real")
+    ax.set_title(title)
+
+    thresh = float(cm.max()) / 2.0 if cm.size else 0.0
+    fmt = ".2f" if normalize != "none" else "d"
+    for i in range(cm.shape[0]):
+        for j in range(cm.shape[1]):
+            value = cm[i, j]
+            ax.text(
+                j,
+                i,
+                format(value, fmt),
+                ha="center",
+                va="center",
+                color="white" if value > thresh else "black",
+                fontsize=7,
+            )
+
+    fig.tight_layout()
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# 10. Comparativa modelos v2 (XGB + LGBM + RF + TempCNN + InceptionTime) con
+#     overlay opcional del baseline v1 (US-022).
+# ---------------------------------------------------------------------------
+
+
+def plot_model_comparison_v2_with_v1_overlay(
+    v2_metrics: Mapping[str, float],
+    *,
+    v1_metrics: Mapping[str, float] | None = None,
+    metric_name: str = "F1-macro",
+    title: str = "Comparativa modelos baseline v2 (con overlay v1 US-022)",
+    figsize: tuple[float, float] = (8.0, 4.5),
+) -> matplotlib.figure.Figure:
+    """Barras agrupadas v2 con overlay de barras v1 cuando esten disponibles.
+
+    Args:
+        v2_metrics: Mapping {modelo: metrica} de la corrida v2.
+        v1_metrics: Mapping {modelo: metrica} de la corrida v1 (US-022).
+            Solo se solapan los modelos presentes en ambos diccionarios.
+        metric_name: Nombre legible (default `"F1-macro"`).
+        title: Titulo.
+        figsize: Tupla (ancho, alto).
+
+    Returns:
+        Figura matplotlib.
+    """
+    if not v2_metrics:
+        raise ValueError("`v2_metrics` esta vacio.")
+
+    models = list(v2_metrics)
+    values_v2 = [float(v2_metrics[m]) for m in models]
+    values_v1 = [
+        float(v1_metrics[m]) if v1_metrics is not None and m in v1_metrics else None
+        for m in models
+    ]
+
+    fig, ax = plt.subplots(figsize=figsize, dpi=110)
+    x_positions = np.arange(len(models))
+    width = 0.38
+
+    bars_v2 = ax.bar(
+        x_positions - width / 2,
+        values_v2,
+        width=width,
+        label="v2 (US-023-preview)",
+        color="#4C72B0",
+        edgecolor="white",
+    )
+    for bar, value in zip(bars_v2, values_v2, strict=True):
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            value + 0.005,
+            f"{value:.3f}",
+            ha="center",
+            va="bottom",
+            fontsize=8,
+        )
+
+    if any(v is not None for v in values_v1):
+        v1_for_plot = [v if v is not None else 0.0 for v in values_v1]
+        bars_v1 = ax.bar(
+            x_positions + width / 2,
+            v1_for_plot,
+            width=width,
+            label="v1 (US-022)",
+            color="#C44E52",
+            edgecolor="white",
+            alpha=0.7,
+        )
+        for bar, value, original in zip(bars_v1, v1_for_plot, values_v1, strict=True):
+            if original is None:
+                continue
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                value + 0.005,
+                f"{value:.3f}",
+                ha="center",
+                va="bottom",
+                fontsize=8,
+                alpha=0.7,
+            )
+
+    ax.set_xticks(x_positions)
+    ax.set_xticklabels(models, rotation=15, ha="right")
+    ax.set_ylabel(metric_name)
+    ax.set_title(title)
+    ax.legend(loc="upper right", frameon=False)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
     fig.tight_layout()
     return fig

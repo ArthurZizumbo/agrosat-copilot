@@ -2,4 +2,4 @@ outs:
 - md5: e3b74eeca7b397c7a6f65fc5aa2db880
   size: 57568952
   hash: md5
-  path: embeddings_italy_v1.parquet
+  path: embeddings_italy_v1_PLACEHOLDER.parquet

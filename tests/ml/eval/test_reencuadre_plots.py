@@ -29,7 +29,11 @@ from ml.eval.reencuadre_plots import (
     plot_ablation_bars,
     plot_class_support_bars,
     plot_cluster_ndvi_curves,
+    plot_confusion_matrix_heatmap,
+    plot_geom_leakage_comparison,
     plot_model_comparison_bars,
+    plot_model_comparison_v2_with_v1_overlay,
+    plot_optional_blocks_ablation,
     plot_per_class_f1,
     plot_umap_clusters,
 )
@@ -275,3 +279,115 @@ def test_plot_cluster_ndvi_curves_shape_mismatch_raises():
     df = pl.DataFrame({"NDVI_fft_amp_0": [1.0, 2.0], "NDVI_fft_phase_0": [0.1, 0.2]})
     with pytest.raises(ValueError, match="cluster_labels"):
         plot_cluster_ndvi_curves(df, np.array([0, 1, 2]))
+
+
+# ---------------------------------------------------------------------------
+# 7. plot_geom_leakage_comparison
+# ---------------------------------------------------------------------------
+
+
+def test_plot_geom_leakage_comparison_renders_three_bars():
+    results = [
+        _make_ablation_result("full", "xgb", 0.42),
+        _make_ablation_result("no_geom", "xgb", 0.42, delta=0.0),
+        _make_ablation_result("geom_only", "xgb", 0.05, delta=-0.37),
+    ]
+    fig = plot_geom_leakage_comparison(results)
+    assert isinstance(fig, matplotlib.figure.Figure)
+    bars = [
+        p for p in fig.axes[0].patches if isinstance(p, matplotlib.patches.Rectangle)
+    ]
+    assert len(bars) == 3
+
+
+def test_plot_geom_leakage_comparison_with_missing_sets_shows_placeholder():
+    results = [_make_ablation_result("phenology_only", "xgb", 0.30)]
+    fig = plot_geom_leakage_comparison(results)
+    text_objs = [t.get_text() for t in fig.axes[0].texts]
+    assert any("Sin resultados validos" in t for t in text_objs)
+
+
+# ---------------------------------------------------------------------------
+# 8. plot_optional_blocks_ablation
+# ---------------------------------------------------------------------------
+
+
+def test_plot_optional_blocks_ablation_renders_deltas():
+    results = [
+        _make_ablation_result("full", "xgb", 0.40, delta=float("nan")),
+        _make_ablation_result("with_farslip", "xgb", 0.43, delta=0.03),
+        _make_ablation_result("with_pheno_text", "xgb", 0.39, delta=-0.01),
+        _make_ablation_result("farslip_only", "xgb", 0.20, delta=-0.20),
+    ]
+    fig = plot_optional_blocks_ablation(results)
+    assert isinstance(fig, matplotlib.figure.Figure)
+    bars = [
+        p for p in fig.axes[0].patches if isinstance(p, matplotlib.patches.Rectangle)
+    ]
+    # 3 sets opcionales (full no cuenta, NaN no cuenta)
+    assert len(bars) == 3
+
+
+def test_plot_optional_blocks_ablation_empty_shows_placeholder():
+    results = [_make_ablation_result("full", "xgb", 0.40)]
+    fig = plot_optional_blocks_ablation(results)
+    text_objs = [t.get_text() for t in fig.axes[0].texts]
+    assert any("No hay bloques opcionales" in t for t in text_objs)
+
+
+# ---------------------------------------------------------------------------
+# 9. plot_confusion_matrix_heatmap
+# ---------------------------------------------------------------------------
+
+
+def test_plot_confusion_matrix_heatmap_renders_with_labels():
+    y_true = np.array([1, 2, 1, 3, 2, 1, 2, 3])
+    y_pred = np.array([1, 2, 2, 3, 2, 1, 1, 3])
+    class_names = {1: "Trigo", 2: "Maiz", 3: "Vinedo"}
+    fig = plot_confusion_matrix_heatmap(
+        y_true, y_pred, class_labels=[1, 2, 3], class_names=class_names
+    )
+    assert isinstance(fig, matplotlib.figure.Figure)
+    ax = fig.axes[0]
+    xticklabels = [t.get_text() for t in ax.get_xticklabels()]
+    assert "Trigo" in xticklabels
+
+
+def test_plot_confusion_matrix_heatmap_empty_raises():
+    with pytest.raises(ValueError):
+        plot_confusion_matrix_heatmap(np.array([]), np.array([]))
+
+
+def test_plot_confusion_matrix_heatmap_normalize_none():
+    y_true = np.array([1, 1, 2, 2])
+    y_pred = np.array([1, 2, 2, 2])
+    fig = plot_confusion_matrix_heatmap(y_true, y_pred, normalize="none")
+    assert isinstance(fig, matplotlib.figure.Figure)
+
+
+# ---------------------------------------------------------------------------
+# 10. plot_model_comparison_v2_with_v1_overlay
+# ---------------------------------------------------------------------------
+
+
+def test_plot_model_comparison_v2_with_v1_overlay_renders_both():
+    v2 = {"xgboost": 0.45, "lgbm": 0.44, "tempcnn": 0.20}
+    v1 = {"xgboost": 0.41, "tempcnn": 0.14}
+    fig = plot_model_comparison_v2_with_v1_overlay(v2, v1_metrics=v1)
+    assert isinstance(fig, matplotlib.figure.Figure)
+    # Buscamos al menos las 3 barras v2 + 2 barras v1.
+    bars = [
+        p for p in fig.axes[0].patches if isinstance(p, matplotlib.patches.Rectangle)
+    ]
+    assert len(bars) >= 5
+
+
+def test_plot_model_comparison_v2_without_v1_overlay():
+    v2 = {"xgboost": 0.45, "lgbm": 0.44}
+    fig = plot_model_comparison_v2_with_v1_overlay(v2)
+    assert isinstance(fig, matplotlib.figure.Figure)
+
+
+def test_plot_model_comparison_v2_empty_raises():
+    with pytest.raises(ValueError):
+        plot_model_comparison_v2_with_v1_overlay({})

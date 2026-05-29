@@ -11,6 +11,7 @@ from __future__ import annotations
 import numpy as np
 import polars as pl
 import pytest
+from lightgbm import LGBMClassifier
 
 from ml.train.baseline import (
     BaselineResult,
@@ -109,3 +110,59 @@ def test_train_deterministic_with_seed(synthetic_df: pl.DataFrame) -> None:
     a = train_one_model(synthetic_df, model="rf", random_state=7)
     b = train_one_model(synthetic_df, model="rf", random_state=7)
     assert a.metrics["f1_macro"] == pytest.approx(b.metrics["f1_macro"])
+
+
+# ---------------------------------------------------------------------------
+# LightGBM (3er modelo del baseline tabular, paralelo a RF/XGB).
+# ---------------------------------------------------------------------------
+
+
+def test_build_estimator_lgbm_returns_lgbm() -> None:
+    """build_estimator('lgbm', {}) devuelve una instancia de LGBMClassifier."""
+    estimator = build_estimator("lgbm", {})
+    assert isinstance(estimator, LGBMClassifier)
+
+
+def test_train_one_model_lgbm_returns_baseline_result(
+    synthetic_df: pl.DataFrame,
+) -> None:
+    """train_one_model('lgbm') corre fit + spatial CV y devuelve BaselineResult."""
+    result = train_one_model(synthetic_df, model="lgbm", k_folds=2)
+    assert isinstance(result, BaselineResult)
+    assert result.model_kind == "lgbm"
+    assert set(result.metrics.keys()) == _METRIC_KEYS
+    f1 = result.metrics["f1_macro"]
+    assert 0.0 <= f1 <= 1.0
+    assert len(result.feature_cols) == 10
+
+
+def test_tune_baseline_lgbm_returns_best_params(synthetic_df: pl.DataFrame) -> None:
+    """tune_baseline('lgbm') con grilla minima devuelve dict de best_params."""
+    best = tune_baseline(
+        synthetic_df,
+        model="lgbm",
+        param_grid={"n_estimators": [50, 100], "num_leaves": [15, 31]},
+        k_folds=2,
+    )
+    assert isinstance(best, dict)
+    assert "n_estimators" in best
+    assert "num_leaves" in best
+
+
+def test_lgbm_handles_nan_natively(synthetic_df: pl.DataFrame) -> None:
+    """LGBM acepta NaN en la matriz X sin que el fit se rompa.
+
+    Inyectamos NaN en ~5% de las celdas de las features y verificamos que
+    el entrenamiento completa y devuelve metricas finitas.
+    """
+    rng = np.random.default_rng(123)
+    feature_cols = [c for c in synthetic_df.columns if c.startswith("feat_")]
+    matrix = synthetic_df.select(feature_cols).to_numpy().astype(np.float64)
+    mask = rng.random(matrix.shape) < 0.05
+    matrix[mask] = np.nan
+    df_with_nan = synthetic_df.with_columns(
+        [pl.Series(name=c, values=matrix[:, j]) for j, c in enumerate(feature_cols)]
+    )
+    result = train_one_model(df_with_nan, model="lgbm", k_folds=2)
+    assert result.model_kind == "lgbm"
+    assert np.isfinite(result.metrics["f1_macro"])

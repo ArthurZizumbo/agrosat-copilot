@@ -187,10 +187,21 @@ train-baseline:  ## US-019 — Entrena RF + XGB con tuning y registra runs MLflo
 baseline-test:  ## US-019 — pytest baseline.py + metrics.py + mlflow_utils.py
 	poetry run python -m pytest tests/ml/train tests/ml/eval tests/ml/utils -q
 
-baseline-notebook:  ## US-019/020/021/022 + US-023-preview P1 — Reconstruye y ejecuta notebooks/baseline/04_baseline.ipynb
-	poetry run python scripts/build_baseline_notebook.py --out notebooks/baseline/04_baseline.ipynb
+baseline-notebook:  ## US-019/020/021/022 + US-023-preview v2 — Reconstruye y ejecuta notebooks/baseline/04_baseline.ipynb
+	poetry run python scripts/build_baseline_notebooks_v2.py --only 04_baseline
 	MPLBACKEND=Agg poetry run papermill notebooks/baseline/04_baseline.ipynb \
 	  notebooks/baseline/04_baseline.ipynb --no-progress-bar
+
+baseline-notebooks-v2-build:  ## US-023-preview v2 — Reconstruye los 6 notebooks de baseline (sin ejecutar)
+	poetry run python scripts/build_baseline_notebooks_v2.py
+
+baseline-notebooks-v2-run:  ## US-023-preview v2 — Ejecuta los 6 notebooks de baseline con papermill (orden secuencial, requiere GEMINI_API_KEY + GEE)
+	MPLBACKEND=Agg poetry run papermill notebooks/baseline/04b_baseline.ipynb notebooks/baseline/04b_baseline.ipynb --no-progress-bar
+	MPLBACKEND=Agg poetry run papermill notebooks/baseline/04_baseline.ipynb notebooks/baseline/04_baseline.ipynb --no-progress-bar
+	MPLBACKEND=Agg poetry run papermill notebooks/baseline/04c_baseline.ipynb notebooks/baseline/04c_baseline.ipynb --no-progress-bar
+	MPLBACKEND=Agg poetry run papermill notebooks/baseline/04_farslip_eval_pastis.ipynb notebooks/baseline/04_farslip_eval_pastis.ipynb --no-progress-bar
+	MPLBACKEND=Agg poetry run papermill notebooks/baseline/05_reencuadre_fenologico.ipynb notebooks/baseline/05_reencuadre_fenologico.ipynb --no-progress-bar
+	MPLBACKEND=Agg poetry run papermill notebooks/baseline/Avance3.Equipo17.ipynb notebooks/baseline/Avance3.Equipo17.ipynb --no-progress-bar
 
 baseline-notebook-check:  ## US-022 — papermill end-to-end de 04_baseline.ipynb con parametros reducidos (CI, ~5 min)
 	poetry run python scripts/build_baseline_notebook.py --out notebooks/baseline/04_baseline.ipynb

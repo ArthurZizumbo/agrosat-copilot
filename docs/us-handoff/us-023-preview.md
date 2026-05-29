@@ -1037,3 +1037,45 @@ arrojo 0 hardcoded keys.
 
 Pendiente: `dvc push` al merge a `develop` (requiere remote sincronizado).
 
+---
+
+## Snapshot 2026-05-30 — AlphaEarth conectado + agrupacion HCAT + de-risk cross-region
+
+**Rama**: `us-023-preview-v2` · **Estado**: en progreso — baseline saneado y 04b ejecutado; resto de notebooks PENDIENTE de correr en la nube (VM L4 GCP).
+
+### Que se cerro esta sesion (cifras reales, full 85951, XGBoost, spatial CV 5-fold buffer 1km, GPU)
+
+- **AlphaEarth conectado al vector**: se descargo AlphaEarth 2018 sobre las 85951 parcelas PASTIS (`scripts/download_alphaearth_2018_pastis.py`) y se unio 2018 + 2019 al subset de features (185 -> 313 columnas, join 1:1 por `parcel_id` sin nulls). Antes el embedding no entraba al vector de entrenamiento (causa raiz del baseline bajo, documentada en la auditoria interna).
+- **Agrupacion HCAT Level-1** (`ml/analysis/hcat_grouping.py`, nuevo): mapeo de las 18 clases PASTIS a 6 grupos HCAT v3 con codigos documentados + `evaluate_flat_vs_grouped` apples-to-apples.
+  - F1-macro **18 clases planas = 0.4365** | **6 grupos HCAT = 0.6535** (delta **+0.217**).
+  - El salto recupera la confusion entre cultivos hermanos (trigo-con-trigo, cereal-con-cereal), no es maquillaje: metodo Russwurm 2018 / HCAT v3. Leido por familias el baseline supera el umbral 0.60.
+  - Artefactos: `reports/baseline/grouped_vs_flat/comparison.parquet` + `per_class_f1_flat18.parquet` + `per_class_f1_hcat_l1_6.parquet`.
+- **Transfer cross-region (PoC, de-risk)**: `scripts/_poc_transfer_pastis_to_breizhcrops.py` + `ml/features/breizhcrops_features.py` (adaptador a las mismas 185 features). PASTIS-R 2019 -> BreizhCrops 2017 zero-shot: F1-macro **0.21 (TRANSFER_DEBIL)**. Solo rapeseed (0.70) y meadow (0.51) transfieren; el resto colapsa por confound de mascara de nubes (NDVI saturado) + ausencia de AlphaEarth en region destino. Conclusion: el eje cross-region es defendible PERO no plug-and-play; requiere re-enmascarar nubes o domain-adaptation. No se vende como hecho.
+- **Saneamiento datos-ilusion**: embeddings FarSLIP (`embeddings_italy*`, mode placeholder seeded) y RemoteCLIP PASTIS (2 patrones unicos) renombrados a `*_PLACEHOLDER` con `data/farslip/PLACEHOLDER_README.md` que documenta como regenerar dato real.
+- **Fixes**: `ml/train/baseline.py` defensa `_META_SUFFIXES` (leakage `patch_id_right`); `ml/features/scaler.py` inf -> NaN antes de StandardScaler.
+- **Calendario**: `docs/decisions/ADR-008` reencuadra Avances 4-7 y presentacion a 27-jun.
+
+### Notebooks
+
+| Notebook | Estado | Nota |
+|----------|--------|------|
+| `04b_baseline.ipynb` | **HECHO** | Ejecutado end-to-end (12/13 celdas con output, 3 figuras, 0 errores). Seccion 8 (18 vs 6 grupos HCAT) sobre subset 8k. Conclusiones con cifras reales y descomposicion del salto (LGBM 185 feat 0.38 -> XGB 313 feat 0.54 -> HCAT 6 grupos 0.75). |
+| `04_baseline.ipynb` | **PENDIENTE (nube L4)** | Builder con seccion 8 HCAT full ya integrado (helper compartido `_hcat_grouping_cells`). Papermill full ~2h bloquea la maquina local; se corre en VM L4 GCP. |
+| `04c_baseline.ipynb` | **PENDIENTE (nube L4)** | Ablation de bloques. |
+| `05_reencuadre_fenologico.ipynb` | **PENDIENTE (nube L4)** | Fenologia + ablation opcionales. |
+| `Avance3.Equipo17.ipynb` | **PENDIENTE (nube L4)** | Integrador A3. |
+
+### Revisiones pre-PR (esta sesion)
+
+- **agrosat-code-review**: codigo core de alta calidad; 2 scripts ad-hoc renombrados a `scripts/_*.py` (regla CLAUDE.md:126). Resuelto.
+- **agrosat-security-audit** + **/security-review (Anthropic)**: sin secretos hardcoded, credenciales GEE/Gemini via env/ADC, sin RCE/inyeccion. **NO FINDINGS**.
+- Tests: 13 nuevos (`test_hcat_grouping`, `test_breizhcrops_features`) pasan; suite ml/ verde.
+- Tamanos: todos los archivos del PR < 5 MB (OK para GitHub directo).
+
+### Pendiente para cierre
+
+- [ ] Correr en VM L4 GCP (PR a la nube): `04_baseline.ipynb` full + `04c_baseline.ipynb` + `05_reencuadre_fenologico.ipynb` + `Avance3.Equipo17.ipynb` end-to-end con papermill, outputs poblados.
+- [ ] Verificar disponibilidad de ADC/service-account en la VM antes de `scripts/download_alphaearth_2018_pastis.py`.
+- [ ] `make notebooks-check` + `make check` finales pre-PR a `develop`.
+- [ ] `dvc push` de los artefactos nuevos al remote.
+

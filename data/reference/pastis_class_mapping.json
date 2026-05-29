@@ -85,6 +85,38 @@
         "18": "special_crops"
       }
     },
+    "hcat_l1_6": {
+      "description": "6 super-classes alineadas con HCAT (Hierarchical Crop and Agriculture Taxonomy) v3 Level-1, metodo Russwurm et al. 2018 / paper Hierarchical-Crop H2Crop (arXiv:2506.06155). Fusiona las 18 clases planas PASTIS-R en 6 grupos botanico-comerciales. Objetivo: subir el F1-macro de forma legitima al colapsar clases hermanas inseparables (p.ej. Soft winter wheat vs Winter durum wheat = trigo-con-trigo) en su grupo HCAT comun. Cada fusion documenta su codigo HCAT en hcat_codes.",
+      "hcat_codes": {
+        "CEREALS": "3300000000 cereals (HCAT L1) — agrupa wheat 3301xxxxxx, barley 3302xxxxxx, maize 3303000000, triticale 3304xxxxxx, sorghum 3305000000, mixed cereal 3300010000",
+        "OILSEEDS": "3400000000 oilseed crops (HCAT L1) — rapeseed 3401010101, sunflower 3401050000",
+        "ROOT_CROPS": "3500000000 root/tuber crops (HCAT L1) — sugar beet 3500010000, potato 3500020000",
+        "LEGUMES": "3600000000 leguminous crops / pulses (HCAT L1) — leguminous fodder 3600060000, soybean 3601000000",
+        "PERMANENT_WOODY": "3900000000 permanent / woody crops (HCAT L1) — grapevine 3901000000, orchard / fruit trees 3902000000",
+        "OTHER": "3000000000 raiz / no-asignable a un grupo botanico estricto — grassland-meadow 3370000000 y fruits/vegetables/flowers 3800000000 (horticultura mixta)"
+      },
+      "map": {
+        "1":  "OTHER",
+        "2":  "CEREALS",
+        "3":  "CEREALS",
+        "4":  "CEREALS",
+        "5":  "OILSEEDS",
+        "6":  "CEREALS",
+        "7":  "OILSEEDS",
+        "8":  "PERMANENT_WOODY",
+        "9":  "ROOT_CROPS",
+        "10": "CEREALS",
+        "11": "CEREALS",
+        "12": "OTHER",
+        "13": "ROOT_CROPS",
+        "14": "LEGUMES",
+        "15": "LEGUMES",
+        "16": "PERMANENT_WOODY",
+        "17": "CEREALS",
+        "18": "CEREALS"
+      },
+      "notes": "Mapeo de las 18 clases PASTIS a 6 grupos HCAT L1: CEREALS (Soft winter wheat, Winter durum wheat, Winter barley, Spring barley, Corn, Winter triticale, Mixed cereal, Sorghum), OILSEEDS (Winter rapeseed, Sunflower), ROOT_CROPS (Beet, Potatoes), LEGUMES (Leguminous fodder, Soybeans), PERMANENT_WOODY (Grapevine, Orchard), OTHER (Meadow, Fruits/vegetables/flowers). Distinto de agronomic_group (5 grupos): hcat_l1_6 separa OILSEEDS de LEGUMES y deja Meadow + horticultura mixta en OTHER en vez de mezclar oleaginosas con leguminosas."
+    },
     "cereals_winter_vs_spring": {
       "description": "Binary view restricted to cereal classes (9 classes -> 2 groups). Useful for AC-7 US-012 (DTW mono- vs double-cycle).",
       "filter": "class_id in [2, 3, 4, 6, 10, 11, 17]",
