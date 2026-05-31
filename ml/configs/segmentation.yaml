@@ -1,0 +1,50 @@
+# Config de segmentacion densa PASTIS-R (EPIC 5, Avance 4)
+# Convencion compartida del equipo para comparabilidad de las 6 arquitecturas.
+# Consumida por el notebook Colab y como referencia del CLI ml.train.train_segmentation.
+
+dataset:
+  root: data/PASTIS-R
+  num_classes: 20        # 0 background, 1-18 cultivos, 19 void
+  ignore_index: 19       # void ignorado en loss y metricas
+  target_size: 256       # resize bilinear imagen / nearest label
+  # Folds oficiales PASTIS (metadata.geojson), espacialmente disjuntos -> sin leakage.
+  train_folds: [1, 2, 3]
+  val_folds: [4]
+  test_folds: [5]
+
+# Hiperparametros por modelo. Recortados para L4 24GB (ventana V2) / Colab Pro.
+models:
+  # Modelo #1 (Aaron) - CNN clasica 2D sobre composite temporal median.
+  unet:
+    builder: ml.models.segmentation:build_unet
+    encoder_name: resnet50
+    encoder_weights: imagenet
+    temporal_reduction: median
+    epochs: 30
+    batch_size: 8
+    lr: 1.0e-4
+    weight_decay: 1.0e-4
+
+  # Modelo #6 (Aaron) - AnySat foundation model congelado + cabeza lineal.
+  anysat:
+    builder: ml.models.anysat_wrapper:AnySatSegmenter
+    hub_repo: gastruc/anysat
+    temporal_reduction: none
+    fixed_t: 10
+    patch_size: 10
+    freeze: true
+    epochs: 30
+    batch_size: 4          # serie temporal (fixed_t, 10, 256, 256) -> mas VRAM
+    lr: 1.0e-3             # solo entrena la cabeza -> lr mas alto
+
+# Tracking
+mlflow:
+  experiment: agrosat-segmentation
+  tags:
+    epic: E5
+    avance: A4
+
+# Salidas
+outputs:
+  checkpoints_dir: artifacts/segmentation
+  comparison_parquet: reports/segmentation/model_comparison_avance4_aaron.parquet
