@@ -133,8 +133,13 @@ def _make_loader(
     batch_size: int,
     shuffle: bool,
     num_workers: int,
+    pin_memory: bool = False,
 ) -> DataLoader:
-    """Construye un ``DataLoader`` sobre un :class:`PASTISDataset`."""
+    """Construye un ``DataLoader`` sobre un :class:`PASTISDataset`.
+
+    Con GPU conviene ``pin_memory`` (acelera la transferencia a la GPU) y, si hay
+    varios workers, ``persistent_workers`` para no recrearlos en cada epoca.
+    """
     dataset = PASTISDataset(
         patch_ids,
         root=root,
@@ -148,6 +153,8 @@ def _make_loader(
         shuffle=shuffle,
         num_workers=num_workers,
         drop_last=False,
+        pin_memory=pin_memory,
+        persistent_workers=num_workers > 0,
     )
 
 
@@ -258,13 +265,14 @@ def run_training(
     # Normalizacion con stats de los folds de train (sin leakage del fold de val).
     norm = load_norm_stats(root, folds=tr_folds)
 
+    pin = dev.type == "cuda"
     train_loader = _make_loader(
         train_ids, root=root, reduction=reduction, target_size=target_size, norm=norm,
-        batch_size=batch_size, shuffle=True, num_workers=num_workers,
+        batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=pin,
     )
     val_loader = _make_loader(
         val_ids, root=root, reduction=reduction, target_size=target_size, norm=norm,
-        batch_size=batch_size, shuffle=False, num_workers=num_workers,
+        batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin,
     )
 
     # Materializa parametros Lazy (la cabeza Conv1x1 de AnySat usa nn.LazyConv2d,

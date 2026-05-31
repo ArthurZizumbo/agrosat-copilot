@@ -34,7 +34,6 @@ from torch.utils.data import Dataset
 
 from ml.ingest.pastis_loader import (
     PASTIS_S2_BANDS,
-    load_pastis_patch,
     pastis_patch_index,
 )
 
@@ -210,6 +209,42 @@ def _select_frames(n_t: int, fixed_t: int) -> list[int]:
     return list(range(n_t)) + [n_t - 1] * (fixed_t - n_t)
 
 
+def _load_pastis_metadata_index(root: Path) -> dict[str, dict[str, Any]]:
+    """Parsea ``metadata.geojson`` una sola vez y devuelve fechas y fold por patch.
+
+    Evita re-parsear el geojson (~19 MB) en cada ``__getitem__``, que es
+    prohibitivo leyendo desde un Drive montado. Se invoca solo cuando el dataset
+    necesita las fechas (modo temporal) o el fold (``return_meta``).
+
+    Args:
+        root: Raiz del dataset PASTIS-R.
+
+    Returns:
+        Diccionario ``{patch_id: {"dates": [int], "fold": int | None}}``. Vacio
+        si ``metadata.geojson`` no existe.
+    """
+    meta_path = root / "metadata.geojson"
+    if not meta_path.exists():
+        return {}
+    with meta_path.open(encoding="utf-8") as fh:
+        md = json.load(fh)
+    index: dict[str, dict[str, Any]] = {}
+    for feat in md.get("features", []):
+        props = feat.get("properties", {}) or {}
+        pid_raw = feat.get("id") or props.get("ID_PATCH")
+        if pid_raw is None:
+            continue
+        dates_raw = props.get("dates-S2", {})
+        dates = (
+            [int(v) for _, v in sorted(dates_raw.items(), key=lambda kv: int(kv[0]))]
+            if isinstance(dates_raw, dict)
+            else []
+        )
+        fold = int(props["Fold"]) if props.get("Fold") is not None else None
+        index[str(pid_raw)] = {"dates": dates, "fold": fold}
+    return index
+
+
 class PASTISDataset(Dataset):
     """Dataset denso PASTIS-R para segmentacion semantica multitemporal.
 
@@ -265,6 +300,10 @@ class PASTISDataset(Dataset):
         # (10, 1, 1) para broadcasting sobre (T, 10, H, W) o (10, H, W).
         self._mean = mean.reshape(_N_BANDS, 1, 1)
         self._std = std.reshape(_N_BANDS, 1, 1)
+        # Parsea metadata.geojson una sola vez (no en cada __getitem__) cuando
+        # hace falta: fechas para el modo temporal, fold para return_meta.
+        needs_meta = temporal_reduction == "none" or return_meta
+        self._meta_index = _load_pastis_metadata_index(self.root) if needs_meta else {}
 
     def __len__(self) -> int:
         """Numero de patches en el dataset."""
@@ -284,12 +323,16 @@ class PASTISDataset(Dataset):
             Diccionario con ``image``, ``semantic`` y, opcionalmente, ``dates``
             (modo temporal) y ``patch_id``/``fold`` (si ``return_meta``).
         """
-        patch = load_pastis_patch(self.patch_ids[idx], root=self.root, load_annotations=True)
-        s2 = patch["s2"].astype(np.float32)  # (T, 10, 128, 128)
-        s2 = self._normalize(s2)
+        pid = self.patch_ids[idx]
+        # Carga directa de los .npy (1 archivo por patch), sin re-parsear el
+        # metadata.geojson de ~19 MB en cada item.
+        s2 = np.load(self.root / "DATA_S2" / f"S2_{pid}.npy").astype(np.float32)
+        s2 = self._normalize(s2)  # (T, 10, 128, 128)
 
-        semantic = patch.get("semantic")
-        if semantic is None:
+        tgt_path = self.root / "ANNOTATIONS" / f"TARGET_{pid}.npy"
+        if tgt_path.exists():
+            semantic = np.load(tgt_path)[0]  # canal 0 = etiqueta semantica
+        else:
             semantic = np.zeros(s2.shape[-2:], dtype=np.uint8)
         label = torch.from_numpy(semantic.astype(np.int64))
         label = _resize_spatial(label, self.target_size, label=True)
@@ -314,13 +357,13 @@ class PASTISDataset(Dataset):
                 align_corners=False,
             )
             item["image"] = series  # (fixed_t, 10, S, S)
-            dates = patch.get("dates_s2") or [0] * n_t
+            dates = self._meta_index.get(pid, {}).get("dates") or [0] * n_t
             sel_dates = [int(dates[i]) if i < len(dates) else 0 for i in frames]
             # Los modelos temporales esperan dia-del-anio, no el YYYYMMDD crudo.
             sel_doy = [_yyyymmdd_to_doy(d) for d in sel_dates]
             item["dates"] = torch.tensor(sel_doy, dtype=torch.int64)
 
         if self.return_meta:
-            item["patch_id"] = patch["patch_id"]
-            item["fold"] = patch.get("fold")
+            item["patch_id"] = pid
+            item["fold"] = self._meta_index.get(pid, {}).get("fold")
         return item

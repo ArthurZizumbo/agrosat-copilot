@@ -126,7 +126,15 @@ def _build_cells() -> list:
             "SUBSET = 0            # 0 = todos; reducir (p.ej. 60) si la sesion es corta\n"
             "EPOCHS_UNET = 30\n"
             "EPOCHS_ANYSAT = 30\n"
-            "MLFLOW_URI = 'file:./mlruns'\n\n"
+            "MLFLOW_URI = 'file:./mlruns'\n"
+            "# Por defecto se lee directo de Drive (sin copiar). Varios workers leen en\n"
+            "# paralelo para compensar la latencia. Si vas a entrenar muchas epocas y\n"
+            "# preferis acelerar, pone COPY_TO_LOCAL=True (copia una vez al disco efimero).\n"
+            "COPY_TO_LOCAL = False\n"
+            "# Tamanos pensados para una GPU L4 (24 GB). En T4 (16 GB) bajar a la mitad.\n"
+            "BATCH_UNET = 16\n"
+            "BATCH_ANYSAT = 8\n"
+            "NUM_WORKERS = 4 if _IN_COLAB else 0\n\n"
             "print('PASTIS_ROOT:', PASTIS_ROOT, '| exists:', PASTIS_ROOT.exists())\n"
             "print('device:', DEVICE, '| target_size:', TARGET_SIZE, '| subset:', SUBSET)"
         )
@@ -134,12 +142,16 @@ def _build_cells() -> list:
 
     cells.append(
         md(
-            "## Copia del dataset al disco local\n\n"
-            "Leer desde el Drive montado es lento porque cada archivo pasa por una capa de red. "
-            "Copiar el dataset una vez al disco local de la sesión hace que las épocas lean mucho "
-            "más rápido. Solo se copia lo que estos modelos usan: las imágenes Sentinel-2, las "
-            "anotaciones y los dos archivos de metadatos. La copia es reanudable: si se corta o se "
-            "vuelve a ejecutar la celda, retoma donde quedó. En local no hace nada."
+            "## Lectura del dataset\n\n"
+            "Por defecto el dataset se lee directo desde Drive, sin copiar nada: así se evita la "
+            "espera inicial y no se pierde trabajo si la sesión se reinicia. Para que la lectura no "
+            "sea un cuello de botella, el loader abre cada parche con un solo acceso a disco (no "
+            "vuelve a leer el archivo de metadatos en cada paso) y el DataLoader usa varios procesos "
+            "en paralelo.\n\n"
+            "Si vas a entrenar muchas épocas y preferís acelerar la lectura, poné `COPY_TO_LOCAL = "
+            "True` en la celda anterior: copia una sola vez al disco local de la sesión y a partir de "
+            "ahí lee desde SSD. Ese disco es efímero, así que si la sesión se reinicia hay que "
+            "volver a copiar. En local esta celda no hace nada."
         )
     )
 
@@ -184,11 +196,11 @@ def _build_cells() -> list:
             "    print(f'Listo: {len(todo)} archivos ({total_bytes / 1e9:.1f} GB) en "
             "{time.time() - t0:.0f}s -> {dst_root}')\n"
             "    return dst_root\n\n"
-            "if _IN_COLAB:\n"
+            "if _IN_COLAB and COPY_TO_LOCAL:\n"
             "    PASTIS_ROOT = copy_pastis_to_local(PASTIS_ROOT, '/content/PASTIS-R')\n"
             "    print('PASTIS_ROOT (local):', PASTIS_ROOT, '| exists:', PASTIS_ROOT.exists())\n"
             "else:\n"
-            "    print('Local: no se copia. PASTIS_ROOT =', PASTIS_ROOT)"
+            "    print('Lectura directa desde:', PASTIS_ROOT, '| exists:', PASTIS_ROOT.exists())"
         )
     )
 
@@ -216,9 +228,9 @@ def _build_cells() -> list:
             "# Entrenamiento de la U-Net.\n"
             "from ml.train.train_segmentation import run_training\n\n"
             "unet_result = run_training(\n"
-            "    model='unet', epochs=EPOCHS_UNET, batch_size=8, target_size=TARGET_SIZE,\n"
+            "    model='unet', epochs=EPOCHS_UNET, batch_size=BATCH_UNET, target_size=TARGET_SIZE,\n"
             "    subset=SUBSET, device=DEVICE, root=PASTIS_ROOT, mlflow_uri=MLFLOW_URI,\n"
-            "    comparison_path=COMPARISON_PATH,\n"
+            "    comparison_path=COMPARISON_PATH, num_workers=NUM_WORKERS,\n"
             ")\n"
             "unet_result"
         )
@@ -244,9 +256,10 @@ def _build_cells() -> list:
             "    from ml.models.anysat_wrapper import load_anysat_encoder\n"
             "    _ = load_anysat_encoder()  # descarga y valida los pesos antes de entrenar\n"
             "    anysat_result = run_training(\n"
-            "        model='anysat', epochs=EPOCHS_ANYSAT, batch_size=4, target_size=TARGET_SIZE,\n"
+            "        model='anysat', epochs=EPOCHS_ANYSAT, batch_size=BATCH_ANYSAT, "
+            "target_size=TARGET_SIZE,\n"
             "        subset=SUBSET, device=DEVICE, root=PASTIS_ROOT, mlflow_uri=MLFLOW_URI,\n"
-            "        comparison_path=COMPARISON_PATH,\n"
+            "        comparison_path=COMPARISON_PATH, num_workers=NUM_WORKERS,\n"
             "    )\n"
             "except Exception as exc:\n"
             "    print('AnySat no disponible en esta corrida:', exc)\n"
