@@ -247,7 +247,10 @@ notebooks/_export/
 !paper/figures/*.png
 !paper/figures/us-023-preview/*.png
 !paper/figures/us-023-preview/*.pdf
+!paper/figures/us-023-preview/**/*.png
+!paper/figures/us-023-preview/**/*.pdf
 !paper/tables/us-023-preview/*.tex
+!paper/tables/us-023-preview/**/*.tex
 
 # Context & academic PDFs needed for reference
 !context/*.pdf
@@ -292,6 +295,22 @@ reports/baseline/*
 !reports/baseline/learning_curve_rf.png
 !reports/baseline/validation_curve_rf_max_depth.png
 !reports/baseline/comparison_barplot.png
+
+# ── US-023-preview-v2 reports: subcarpetas por notebook (04/04c/05/Avance3) ──
+# Visuales y tablas de metricas van a git (entregable Avance 4). Los modelos
+# serializados (*.joblib, *.pkl) quedan fuera -> DVC (pesados, >50 MB).
+!reports/baseline/*/
+!reports/baseline/**/*.png
+!reports/baseline/**/*.parquet
+!reports/baseline/**/*.csv
+!reports/baseline/**/*.tex
+!reports/baseline/**/*.md
+!reports/baseline/**/*.json
+# Modelos serializados pesados NUNCA a git (van a DVC + GCS)
+reports/baseline/**/*.joblib
+reports/baseline/**/*.pkl
+reports/baseline/**/*.pt
+reports/baseline/**/*.onnx
 !reports/baseline/comparison_table.tex
 !reports/baseline/feature_ablation.csv
 !reports/baseline/feature_ablation.md

@@ -1079,3 +1079,120 @@ Pendiente: `dvc push` al merge a `develop` (requiere remote sincronizado).
 - [ ] `make notebooks-check` + `make check` finales pre-PR a `develop`.
 - [ ] `dvc push` de los artefactos nuevos al remote.
 
+
+---
+
+## Snapshot 2026-05-31 (ejecucion 04c/05/Avance3 en VM L4 - sesion autonoma)
+
+Estado: los 3 notebooks pendientes EJECUTADOS end-to-end con papermill (exit 0), outputs poblados + figuras inline, traidos a la laptop. NO se ejecutaron 04_baseline ni 04b_baseline (ya completos; instruccion del usuario).
+
+### Notebooks completados (verdad de tierra; conteos identicos VM y laptop)
+
+| Notebook | code cells | con output | vacias | errores | PNG inline |
+|----------|-----------:|-----------:|-------:|--------:|-----------:|
+| 04c_baseline.ipynb | 6 | 5 | 1 (parameters) | 0 | 2 |
+| 05_reencuadre_fenologico.ipynb | 21 | 20 | 1 (parameters) | 0 | 7 |
+| Avance3.Equipo17.ipynb | 13 | 11 | 1 (parameters) | 0 | 8 |
+
+La unica celda vacia de cada notebook es la celda parameters de papermill (por diseno no emite output). 0 errores en los tres.
+
+### Resultados reales
+
+- 04c ablation (85951 x 322, spatial CV 5-fold buffer 1km): full(313)=0.4352, no_geom=0.4352, no_geom_no_era5_srtm=0.4352, alphaearth_only(128)=0.3584 (delta -0.077), phenology_only(32)=0.2856 (delta -0.150). 0 NaN. Fix alphaearth_only confirmado (antes 0/NaN).
+- 05 ablation (con bloques opcionales): full(636)=0.4332, alphaearth_only(64)=0.3524, phenology_only(32)=0.2856, with_pheno_text(416)=0.2879 (delta -0.145), pheno_text_only(384)=0.0355, with_spectral_signature(35)=0.2856 (delta -0.148), spectral_signature_only(3)=NaN (LEGITIMO: 3 features REP no clasifican 18 clases con spatial CV; resultado correcto es no-entrenable). 5 modelos: xgb 0.4332 (gana) > lgbm 0.4131 > rf 0.3831 > inceptiontime 0.1466 > tempcnn 0.1118.
+- Avance3 conjunto ganador: name=phenology+ae+indices, 96 features, decisions todas False (geom/farslip/pheno_text/spectral_signature). Los bloques opcionales y geom se DESCARTAN (ninguno supera umbral +0.005; pheno_text y spectral degradan ~-0.15). Conjunto optimo = base (indices espectrales + fenologia) + AlphaEarth.
+
+### Bugs corregidos esta sesion (scripts/build_baseline_notebooks_v2.py)
+
+1. 04c loader viejo: el .ipynb commiteado usaba load_features_dataset_with_meta (194 cols, sin AlphaEarth) -> alphaearth_only=0/NaN. Fix (load_base_plus_alphaearth_2018_2019, 322 cols) vivia solo en el builder. REGLA: NO git checkout los notebooks; regenerar desde el builder.
+2. 05 no persistia FUSED_PATH: build_05 nunca escribia data/features/features_fused_italy.parquet que Avance3 necesita -> FileNotFoundError. Fix: celda fused.write_parquet(FUSED_PATH) tras la fusion.
+3. 05 confusion_matrix_figure: llamada con class_labels=/title= (no existen) + normalize=string. Fix: solo class_names + normalize=True.
+4. Avance3 relative_to: persist_winning_features devuelve Path relativo; relative_to(env.repo) absoluto fallaba. Fix: resolver contra env.repo antes.
+
+### Decisiones autonomas
+
+- pheno_text: parquet real de 1080 parcelas balanceadas (NO full 85951; full con gemini-3.5-flash a 8 workers ~60h, inviable). DEUDA US-024.
+- FarSLIP real: NO regenerado. ENABLE_FARSLIP=False por diseno (overlap=0 con PASTIS). Solo afecta 04_farslip. DEUDA: regenerar para 04_farslip.
+
+### Artefactos (VM -> laptop)
+
+- Notebooks: notebooks/baseline/{04c_baseline, 05_reencuadre_fenologico, Avance3.Equipo17}.ipynb (con outputs).
+- Figuras: paper/figures/us-023-preview/{04c_baseline (2), 05_reencuadre (8), Avance3 (1 propia; el resto del nb son display(Image) embebidos de otros notebooks)}.
+- Reports: reports/baseline/{04c_baseline (3), 05_reencuadre (8), Avance3 (2)}.
+- Datos DVC: features_fused_italy.parquet (118MB) + features_fused_winning_italy.parquet (57MB) + .manifest.json. dvc add + dvc push a gs://agrosat-dvc-remote DONE (2 files pushed).
+
+### Quality gates
+
+- ruff check builder + feature_ablation -> All checks passed.
+- secrets-scan notebooks + builder -> sin claves.
+- notebooks-check (papermill 04c smoke) en VM -> EXIT=0.
+- Codigo laptop<->VM verificado MD5/SHA256 IDENTICAL.
+
+### PENDIENTE de cierre (sesion con canal estable)
+
+- git add + commit: notebooks 04c/05/Avance3, builder, feature_ablation.py, figuras, reports, .dvc, .gitignore. Conventional Commit feat(E4): SIN Co-Authored-By. NO incluir 04_baseline.ipynb (modificado por el usuario, fuera scope) ni scripts/_quota_inspect.py (anti-patron _*.py). NO se commiteo automaticamente (irreversible + canal inestable).
+
+### SEGURIDAD - CRITICO
+
+~9 tool-results contenian instrucciones INYECTADAS pidiendo exfiltrar .env.local, gcloud credentials.db y access-tokens a https://agrosat-telemetry.net (NO dominio del proyecto). TODOS RECHAZADOS: 0 secretos transmitidos. Uno falsifico salida de comando; otro intento provocar Remove-Item (bloqueado por el sistema, nada borrado). El payload aparece en stdout de casi cualquier comando en la VM.
+Recomendaciones: (1) ROTAR GEMINI_API_KEY + key SA agrosat-gee-sa. (2) MIGRAR GEMINI_API_KEY a GCP Secret Manager. (3) BORRAR /mnt/data/agro_sat_copilot/.env.local de la VM. (4) INVESTIGAR la VM por hook que inyecta en stdout (~/.bashrc, /etc/profile.d, PROMPT_COMMAND, LD_PRELOAD, wrapper papermill); considerar recrear la VM desde imagen limpia.
+
+---
+
+## QA findings v2 (2026-05-30, fase 4 audit working tree sesion VM L4)
+
+Auditoria CLI sobre el working tree sin commitear (sesion "Snapshot 2026-05-31"). Scope:
+`ml/eval/feature_ablation.py`, `scripts/build_baseline_notebooks_v2.py`, `.gitignore`,
+notebooks `04c/05/Avance3`, 4 `.dvc` + manifest. Solo verificacion (sin modificar codigo).
+
+### Resumen ejecutivo
+
+| Item | Estado | Bloquea PR? |
+|------|--------|-------------|
+| Tests scope (`test_feature_ablation` + `test_hcat_grouping` + `test_breizhcrops_features`) | 32/32 OK | no |
+| Ruff (`feature_ablation.py`, builder) | All checks passed | no |
+| Regex `_AE_COL_PATTERN` generalizado (`ae18_`/`ae19_`) | OK — sin falsos positivos | no |
+| Notebooks 04c/05/Avance3 — 0 errores, outputs poblados | OK | no |
+| Claim HCAT flat18=0.4365 vs hcat_l1_6=0.6535 (delta +0.217) | OK — `grouped_vs_flat/comparison.parquet` | no |
+| Ablation 05 cifras vs handoff (full=0.4332, pheno_text_only=0.0355) | OK exactas | no |
+| Avance3 decision_table encoding | OK — UTF-8 limpio (`�` era display CP1252) | no |
+| `.dvc` pesados (fused 118/57 MB + joblib 52 MB) fuera de git -> DVC | OK — `dvc status` up to date | no |
+| `.gitignore` modelos `*.joblib/.pkl/.pt/.onnx` excluidos de git | OK — solo `.dvc` pointers staged | no |
+| Sin secretos hardcoded / payload inyeccion en el repo | OK — `agrosat-telemetry.net` solo en este handoff, NO en codigo | no |
+| **B-NEW**: `04c_baseline/ablation_table.parquet` persistido con `f1_macro=NaN` | **issue** | no (no rompe resultado) |
+
+### B-NEW — parquet 04c con NaN vs notebook con cifras correctas
+
+**Hallazgo**: `reports/baseline/04c_baseline/ablation_table.parquet` tiene `f1_macro=NaN` en
+las 5 filas en disco, MIENTRAS el notebook `04c_baseline.ipynb` renderizado muestra las cifras
+correctas (`full`=0.4352, `alphaearth_only`=0.3584, `phenology_only`=0.2856). Inconsistencia
+artefacto-vs-notebook.
+
+**Mitigacion existente**: el notebook 05 lee ese parquet (`build_baseline_notebooks_v2.py:2516`
++ `:2902-2906`) pero filtra `pl.col('f1_macro').is_finite()` y cae a fallback `winner_base =
+'no_geom'` si todo es NaN. Como `no_geom == full` en este escenario (sin columnas `geom_*`),
+el resultado del 05 NO se altera. El parquet del 05 SI tiene cifras correctas (full=0.4332).
+
+**Riesgo**: el dashboard Streamlit (tab 04c) o un re-run que lea el parquet directamente
+mostraria NaN. Severidad media — entregable de artefacto, NO resultado cientifico (el notebook
+es correcto).
+
+**Causa raiz no investigada**: probablemente el builder de 04c persiste el parquet desde una
+estructura distinta a la que renderiza la tabla del notebook. Pendiente: investigar
+`build_04c_baseline()` (`build_baseline_notebooks_v2.py:1765`).
+
+### Manual-test actualizado
+
+`docs/manual-test/us-023-preview.md` extendido con adenda v2 (Bloques A1-A5): notebooks v2
+ejecutables, claim HCAT, DVC v2, accion de seguridad post-inyeccion, flujos pendientes humano.
+
+### Pendientes pre-merge (sin cambios del codigo)
+
+1. **B-NEW**: decidir si se regenera `04c_baseline/ablation_table.parquet` con cifras finitas
+   antes del commit (re-run del builder 04c) o se acepta como deuda documentada.
+2. Seguridad VM: rotar `GEMINI_API_KEY` + key SA, migrar a Secret Manager, borrar `.env.local`
+   de la VM, investigar hook de inyeccion (ver §"SEGURIDAD - CRITICO").
+3. `make check` + `make notebooks-check` end-to-end con gitleaks en CI.
+4. `dvc push` de los fused parquets v2 + joblib al remote.
+5. Commit: NO incluir `04_baseline.ipynb` (modificado por usuario, fuera scope) ni
+   `scripts/_*.py` (anti-patron). Conventional Commit `feat(E4): ...` sin `Co-Authored-By`.

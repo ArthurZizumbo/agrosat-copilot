@@ -1,0 +1,6 @@
+feature_set,model,n_features,f1_macro,f1_weighted,miou,delta_vs_full
+full,xgb,313,NaN,NaN,NaN,
+no_geom,xgb,313,NaN,NaN,NaN,
+no_geom_no_era5_srtm,xgb,313,NaN,NaN,NaN,
+alphaearth_only,xgb,128,NaN,NaN,NaN,
+phenology_only,xgb,32,NaN,NaN,NaN,

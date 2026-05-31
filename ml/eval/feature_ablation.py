@@ -42,12 +42,14 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 #: Patron canonico para detectar columnas AlphaEarth / DINOv3-derived. Acepta
-#: ``ae_NN``, ``ae_NNN``, ``emb_NN``, ``emb_NNN``, ``alphaearth_NN[N]`` y
-#: ``dim_NN[N]``. Generalizado en US-023-preview v2: el patron estrecho
-#: anterior (len exacto 5 o 6) descartaba ``emb_00`` (FarSLIP-style) y
-#: ``ae_063`` (3 digitos cuando un futuro encoder use mas de 100 dims).
+#: ``ae_NN``, ``ae_NNN``, ``emb_NN``, ``emb_NNN``, ``alphaearth_NN[N]``,
+#: ``dim_NN[N]`` y las variantes con anio embebido en el prefijo
+#: (``ae18_NN``, ``ae19_NN``) que produce ``load_base_plus_alphaearth_2018_2019``.
+#: Generalizado en US-023-preview v2: el patron estrecho anterior (len exacto
+#: 5 o 6) descartaba ``emb_00`` (FarSLIP-style), ``ae_063`` (3 digitos) y los
+#: dos anios AlphaEarth (``ae18_``/``ae19_``) del escenario ganador del 04.
 _AE_COL_PATTERN: Final[re.Pattern[str]] = re.compile(
-    r"^(?:ae|emb|alphaearth|dim)_\d{2,3}$"
+    r"^(?:ae|emb|alphaearth|dim)\d{0,4}_\d{2,3}$"
 )
 
 __all__ = [
