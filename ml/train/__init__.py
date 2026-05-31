@@ -16,6 +16,10 @@ from ml.train.phenology_models import (
     build_temporal_tensor,
     train_temporal_model,
 )
+from ml.train.train_segmentation import (
+    phenology_contrastive_loss,
+    train_segmentation,
+)
 
 __all__ = [
     "BaselineResult",
@@ -25,7 +29,9 @@ __all__ = [
     "TemporalModelResult",
     "build_temporal_tensor",
     "evaluate_with_spatial_cv",
+    "phenology_contrastive_loss",
     "train_one_model",
+    "train_segmentation",
     "train_temporal_model",
     "tune_baseline",
 ]

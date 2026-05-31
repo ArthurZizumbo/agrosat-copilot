@@ -1,17 +1,18 @@
 """Muestreo Sentinel-2 por parcela en anclas fenologicas (US-023-preview-v2 P5).
 
-Materializa ``data/features/s2_anchors_italy.parquet`` que consume
+Materializa ``data/features/s2_anchors_pastis.parquet`` que consume
 :class:`ml.features.spectral_signature.SpectralSignatureFeatures`. Para cada
-parcela italiana toma las bandas B04..B08 en 3 ventanas temporales ancladas al
-DOY de Start-of-Growing (SOG), peak NDVI y senescence, calculadas aguas arriba
-en el subset fenologico US-018 (o re-leidas desde un parquet de anclas).
+parcela PASTIS-R (``parcel_id`` formato ``10000_1``, no italiano) toma las
+bandas B04..B08 en 3 ventanas temporales ancladas al DOY de Start-of-Growing
+(SOG), peak NDVI y senescence, calculadas aguas arriba en el subset fenologico
+US-018 (o re-leidas desde un parquet de anclas).
 
 Patron de uso::
 
     poetry run python -m ml.ingest.s2_anchor_sampler \\
-        --parcels-path data/features/parcels_italy_2023.parquet \\
+        --parcels-path data/features/parcels_pastis_2023.parquet \\
         --year 2023 \\
-        --output data/features/s2_anchors_italy.parquet
+        --output data/features/s2_anchors_pastis.parquet
 
 El esquema de salida es deterministico y compatible con
 ``SpectralSignatureFeatures._extract_anchor_bands`` (busca columnas
@@ -57,7 +58,7 @@ y por los momentos red-edge documentados en
 Notacion sin padding (`B4` y NO `B04`): es la que expone la coleccion GEE
 `COPERNICUS/S2_SR_HARMONIZED` actual. Runs previos con `B04` producian
 `Image.select: Band pattern 'B04' did not match any bands` y dejaban
-`s2_anchors_italy.parquet` con todas las bandas a NULL. Documentado en
+`s2_anchors_pastis.parquet` con todas las bandas a NULL. Documentado en
 US-023-preview v2 (fix con smoke confirmado: 5.6 s / 100 parcelas).
 """
 
@@ -72,7 +73,7 @@ al menos una imagen disponible incluso con descarte por nubes.
 """
 
 DEFAULT_CACHE_DIR: Path = Path("data/cache/gee")
-DEFAULT_OUTPUT_PATH: Path = Path("data/features/s2_anchors_italy.parquet")
+DEFAULT_OUTPUT_PATH: Path = Path("data/features/s2_anchors_pastis.parquet")
 
 #: Estimacion conservadora del costo GEE por parcela en USD (free tier oculta
 #: el costo real; este numero sirve para reportar al MLflow log un orden de
@@ -119,7 +120,7 @@ def _parcels_md5(parcels: gpd.GeoDataFrame) -> str:
     else:
         ids = [str(i) for i in range(len(parcels))]
     try:
-        bounds = parcels.total_bounds  # noqa: PD011
+        bounds = parcels.total_bounds
         bbox_str = ",".join(f"{b:.6f}" for b in bounds)
     except Exception:  # noqa: BLE001
         bbox_str = "nobbox"
@@ -430,10 +431,10 @@ def sample_s2_anchors_for_parcels(
 
     # Lazy import de earthengine-api: solo dentro del path "real" para evitar
     # romper tests sin EE instalado.
-    from ml.ingest.gee_sampler import init_ee  # noqa: PLC0415
+    from ml.ingest.gee_sampler import init_ee
 
     try:
-        import ee  # type: ignore[import-untyped]  # noqa: PLC0415
+        import ee  # type: ignore[import-untyped]
     except ImportError as exc:  # pragma: no cover
         raise ImportError(
             "earthengine-api no instalado. Ejecuta `poetry install --with ml,geo`."
@@ -549,7 +550,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     """Entry-point CLI."""
-    import geopandas as gpd  # noqa: PLC0415
+    import geopandas as gpd
 
     args = _build_arg_parser().parse_args(argv)
     parcels_path: Path = args.parcels_path

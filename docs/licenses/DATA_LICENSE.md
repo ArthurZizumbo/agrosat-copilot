@@ -71,6 +71,18 @@ Documenta TODOS los datasets y modelos usados durante el proyecto. Sin esto, el 
 - Citation: Tarasiou, M., Güler, R. A. & Zafeiriou, S. (2022). _Context-self contrastive pretraining for crop type semantic segmentation_. IEEE Transactions on Geoscience and Remote Sensing. arXiv:2104.04310.
 - Use scope EPIC 3/5: **referencia** del segundo paper provisto por el sponsor. El hallazgo interior-vs-frontera (Fig. 2) se implementa como método de FE en `ml/analysis/paper_methods.py` (`boundary_interior_stats`, `compute_boundary_ratio`). Citado en el plan v6 §3.6.
 
+### TSViT — Vision Transformers for Satellite Image Time Series (Tarasiou et al. 2023)
+- Source: `github.com/michaeltrs/DeepSatModels` (arquitectura de referencia)
+- License: código MIT
+- Citation: Tarasiou, M., Chavez, E. & Zafeiriou, S. (2023). _ViTs for SITS: Vision Transformers for Satellite Image Time Series_. CVPR. arXiv:2301.04944.
+- Use scope EPIC 5 US-025: la arquitectura TSViT (encoder temporal-espacial factorizado, K cls tokens, positional encoding temporal por fecha real) se **reimplementa limpia** desde el paper en `ml/models/tsvit_wrapper.py` (NO se vendoriza el repo). Modelo 5 de los 6 segmentadores; Paper 1 del sponsor. Base learner del ensemble final EPIC 6.
+
+### Phenology Description is All You Need! (Wen et al. 2025)
+- Source: `github.com/Shawie66/Phenology-Description-Is-All-You-Need`
+- License: código del repo según su licencia; método de referencia
+- Citation: Wen, S., Zhao, W., Ji, F., Peng, R., Zhang, L. & Wang, Q. (2025). _"Phenology description is all you need!" mapping unknown crop types with remote sensing time-series and LLM generated text alignment_. ISPRS Journal of Photogrammetry and Remote Sensing 228, 141-165. DOI: 10.1016/j.isprsjprs.2025.07.002
+- Use scope EPIC 5 US-025: el método de alineación contrastiva visual-semántica con descripciones fenológicas por clase (curva NDVI media → LLM → embedding) se implementa en `ml/features/phenology_class_prototypes.py` (prototipos por clase con Gemini 3.5 Flash) y `ml/models/pheno_semantic_branch.py` (loss InfoNCE pixel↔prototipo, ec. 15-16). Rama fenológica-contrastiva de TSViT. Paper 2 del sponsor.
+
 ### ERA5-Land Daily Aggregates — Copernicus Climate Change Service (C3S)
 - Source: GEE `ECMWF/ERA5_LAND/DAILY_AGGR`
 - License: Copernicus C3S Climate Data Store ToS (free, full, open)

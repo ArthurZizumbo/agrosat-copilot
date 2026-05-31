@@ -3386,8 +3386,7 @@ version = "0.8.2"
 description = "A new flavour of deep learning operations"
 optional = false
 python-versions = ">=3.9"
-groups = ["ml-gpu-linux"]
-markers = "sys_platform == \"linux\""
+groups = ["ml", "ml-gpu-linux"]
 files = [
     {file = "einops-0.8.2-py3-none-any.whl", hash = "sha256:54058201ac7087911181bfec4af6091bb59380360f069276601256a76af08193"},
     {file = "einops-0.8.2.tar.gz", hash = "sha256:609da665570e5e265e27283aab09e7f279ade90c4f01bcfca111f3d3e13f2827"},
@@ -16929,4 +16928,4 @@ test = ["pytest"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12,<3.13"
-content-hash = "d0d809036732ee60049a50cf945f01cbcadd5b25cb834f45a2043e38d6069b6f"
+content-hash = "2784038c70ba742d24e56482909a08b09595fc3a06f5ab9bcbd43ebcb542c09c"

@@ -313,9 +313,11 @@ class FarSLIPExtractor:
         """Lee crops Sentinel-2 desde rutas TIFF y devuelve tensor batch.
 
         Helper publico consumido por el asset Dagster ``farslip_embeddings_italy``
-        para abstraer el I/O TIFF (4 bandas B02/B03/B04/B08 a 10 m, uint16
-        reflectancia escalada). El preprocessing fino (uint16 -> [0,1], resize a
-        224x224) se aplica dentro de ``extract_embeddings`` via ``_prep_crops``.
+        (nombre del asset conservado por lineage; su contenido es PASTIS-R, no
+        italiano) para abstraer el I/O TIFF (4 bandas B02/B03/B04/B08 a 10 m,
+        uint16 reflectancia escalada). El preprocessing fino (uint16 -> [0,1],
+        resize a 224x224) se aplica dentro de ``extract_embeddings`` via
+        ``_prep_crops``.
 
         Args:
             paths: lista de rutas a ``.tif`` (4 bandas, mismo shape esperado).

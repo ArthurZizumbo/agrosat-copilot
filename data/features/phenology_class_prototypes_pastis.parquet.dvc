@@ -1,0 +1,5 @@
+outs:
+- md5: 87b9c599fe71319922f19e19854a6075
+  size: 173801
+  hash: md5
+  path: phenology_class_prototypes_pastis.parquet
