@@ -1,0 +1,5 @@
+outs:
+- md5: 90f62df4d02b45da155e418dcef93001
+  size: 57814424
+  hash: md5
+  path: features_fused_winning_italy.parquet

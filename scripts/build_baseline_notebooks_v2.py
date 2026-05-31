@@ -1776,7 +1776,7 @@ def build_04c_baseline() -> dict[str, Any]:
             "- `full`: todas las características numéricas disponibles.\n"
             "- `no_geom`: `full` sin las 3 columnas `geom_*`.\n"
             "- `no_geom_no_era5_srtm`: además sin `era5_*` ni `srtm_*`.\n"
-            "- `alphaearth_only`: sólo las 64 dimensiones `ae_*`.\n"
+            "- `alphaearth_only`: sólo las dimensiones AlphaEarth (`ae18_*` + `ae19_*`, 128 cols).\n"
             "- `phenology_only`: 8 atributos fenológicos + 24 FFT NDVI.\n"
             "- `geom_only`: sólo `geom_*` (prueba cuantitativa de fuga espacial).\n\n"
             "**Detección de columnas AlphaEarth**: el detector tolera "
@@ -1850,7 +1850,7 @@ def build_04c_baseline() -> dict[str, Any]:
             "import polars as pl\n"
             "import matplotlib.pyplot as plt\n"
             "from ml.utils.baseline_notebook_helpers import (\n"
-            "    load_features_dataset_with_meta,\n"
+            "    load_base_plus_alphaearth_2018_2019,\n"
             "    run_ablation_and_persist,\n"
             ")\n"
             "from ml.eval.reencuadre_plots import (\n"
@@ -1858,8 +1858,11 @@ def build_04c_baseline() -> dict[str, Any]:
             "    plot_geom_leakage_comparison,\n"
             ")\n"
             "\n"
-            "df = load_features_dataset_with_meta(\n"
-            "    path=FEATURES_PATH,\n"
+            "# Carga el escenario ganador del 04 (base 185 + AlphaEarth 2018 + 2019)\n"
+            "# para que el conjunto `alphaearth_only` tenga las 128 dimensiones reales\n"
+            "# (ae18_NN + ae19_NN); con la carga base anterior quedaba vacio.\n"
+            "df = load_base_plus_alphaearth_2018_2019(\n"
+            "    features_path=FEATURES_PATH,\n"
             "    parcels_geoparquet=PARCELS_GEOPARQUET,\n"
             ")\n"
             "display(Markdown(f'Dataset: `{df.height:,}` parcelas x `{df.width}` cols'))\n"
@@ -2779,6 +2782,19 @@ def build_05_reencuadre() -> dict[str, Any]:
         )
     )
 
+    cells.append(
+        _code(
+            "from pathlib import Path as _P\n"
+            "_fused_out = _P(FUSED_PATH)\n"
+            "_fused_out.parent.mkdir(parents=True, exist_ok=True)\n"
+            "fused.write_parquet(_fused_out)\n"
+            "display(Markdown(\n"
+            "    f'**Fused persistido**: `{_fused_out}` con shape `{fused.shape}`. '\n"
+            "    'Lo consume `Avance3.Equipo17.ipynb` via `select_winning_features`.'\n"
+            "))\n"
+        )
+    )
+
     cells.append(_md("## 3. Ablación con todos los bloques opcionales (sobre el conjunto fused)"))
 
     cells.append(
@@ -3138,11 +3154,10 @@ def build_05_reencuadre() -> dict[str, Any]:
             "        fig_cm = confusion_matrix_figure(\n"
             "            best_temporal.y_true_oof,\n"
             "            best_temporal.y_pred_oof,\n"
-            "            class_labels=sorted(class_names.keys()),\n"
             "            class_names=class_names,\n"
-            "            normalize='true',\n"
-            "            title=f'Matriz de confusión OOF ({best_temporal.model_kind})',\n"
+            "            normalize=True,\n"
             "        )\n"
+            "        display(Markdown(f'**Matriz de confusión OOF** ({best_temporal.model_kind}):'))\n"
             "        fig_cm.savefig(env.figures_dir / f'confusion_matrix_{best_temporal.model_kind}.png', bbox_inches='tight')\n"
             "        display(fig_cm)\n"
             "        plt.close(fig_cm)\n"
@@ -4041,9 +4056,13 @@ def build_avance3() -> dict[str, Any]:
             "    winning, fused,\n"
             "    output_path=WINNING_OUTPUT, overwrite=True,\n"
             ")\n"
+            "# persist_winning_features devuelve un Path relativo; lo resolvemos\n"
+            "# contra env.repo solo para mostrarlo (relative_to exige el mismo tipo).\n"
+            "_winning_abs = winning_path if winning_path.is_absolute() else env.repo / winning_path\n"
+            "_winning_rel = _winning_abs.relative_to(env.repo)\n"
             "display(Markdown(\n"
-            "    f'**Conjunto ganador guardado**: `{winning_path.relative_to(env.repo)}` · '\n"
-            "    f'**Manifest**: `{winning_path.with_suffix(\".manifest.json\").relative_to(env.repo)}`'\n"
+            "    f'**Conjunto ganador guardado**: `{_winning_rel}` · '\n"
+            "    f'**Manifest**: `{_winning_rel.with_suffix(\".manifest.json\")}`'\n"
             "))\n"
             "\n"
             "import json\n"
@@ -4187,9 +4206,12 @@ def build_avance3() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+# 04b_baseline.ipynb se excluye del dispatcher a proposito: ya esta ejecutado
+# end-to-end y validado en disco. No se regenera ni se mueve. La funcion
+# build_04b_baseline() se conserva (comparte _baseline_pilot_cells +
+# _hcat_grouping_cells con build_04_baseline) pero no se despacha.
 BUILDERS = {
     "04_baseline": (build_04_baseline, NOTEBOOK_DIR / "04_baseline.ipynb"),
-    "04b_baseline": (build_04b_baseline, NOTEBOOK_DIR / "04b_baseline.ipynb"),
     "04c_baseline": (build_04c_baseline, NOTEBOOK_DIR / "04c_baseline.ipynb"),
     "04_farslip_eval_pastis": (
         build_04_farslip_eval_pastis,

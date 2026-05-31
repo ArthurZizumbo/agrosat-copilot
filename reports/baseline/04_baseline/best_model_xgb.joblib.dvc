@@ -1,0 +1,5 @@
+outs:
+- md5: 83c48478f9eeeb0a9aec0901c1566dce
+  size: 52037305
+  hash: md5
+  path: best_model_xgb.joblib
