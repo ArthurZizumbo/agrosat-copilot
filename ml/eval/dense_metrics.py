@@ -141,6 +141,28 @@ class DenseConfusionAccumulator:
         pixel_accuracy = float((diag.sum() / total).item())
         return {"miou": miou, "f1_macro": f1_macro, "pixel_accuracy": pixel_accuracy}
 
+    def per_class_iou(self) -> dict[int, float]:
+        """Devuelve el IoU por clase (para el barplot de IoU por clase).
+
+        Returns:
+            Diccionario ``{class_id: iou}`` solo para las clases con soporte en el
+            ground truth (excluyendo ``ignore_index``). Vacio si no hay pixeles.
+        """
+        conf = self._confusion.double()
+        if conf.sum() <= 0:
+            return {}
+        diag = torch.diag(conf)
+        row_sum = conf.sum(dim=1)
+        col_sum = conf.sum(dim=0)
+        union = row_sum + col_sum - diag
+        iou = torch.where(union > 0, diag / union, torch.zeros_like(diag))
+        out: dict[int, float] = {}
+        for c in range(self.num_classes):
+            if c == self.ignore_index or row_sum[c] <= 0:
+                continue
+            out[c] = float(iou[c].item())
+        return out
+
 
 def compute_dense_metrics(
     preds: torch.Tensor | np.ndarray,

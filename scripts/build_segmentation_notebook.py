@@ -190,11 +190,29 @@ _META = {
 }
 
 
-def _build_cells(model: str) -> list:
-    """Construye las celdas del notebook para una arquitectura concreta."""
+def _build_cells(
+    model: str,
+    *,
+    num_workers: int = -1,
+    batch: int = -1,
+    epochs: int = 30,
+    suffix: str = "",
+) -> list:
+    """Construye las celdas del notebook para una arquitectura concreta.
+
+    Args:
+        model: ``unet`` o ``anysat``.
+        num_workers: Override de workers (``-1`` deja el default ``4 if colab``).
+        batch: Override de batch (``-1`` deja el del modelo).
+        epochs: Numero de epocas.
+        suffix: Sufijo para los artefactos (parquet/checkpoints), util para correr
+            una variante en paralelo sin pisar la corrida principal.
+    """
     md = nbf.v4.new_markdown_cell
     code = nbf.v4.new_code_cell
     meta = _META[model]
+    batch_val = batch if batch > 0 else int(meta["batch"])
+    workers_expr = str(num_workers) if num_workers >= 0 else "4 if _IN_COLAB else 0"
     cells = []
 
     cells.append(md(meta["title"] + "\n\n" + meta["intro"]))
@@ -220,6 +238,8 @@ def _build_cells(model: str) -> list:
             "# Configuracion de la corrida.\n"
             "import torch\n\n"
             f"MODEL = '{model}'\n"
+            f"SUFFIX = '{suffix}'          # sufijo de artefactos (para correr variantes en paralelo)\n"
+            f"REDUCTION = '{meta['reduction']}'    # 'median' (U-Net) o 'none' (AnySat, serie temporal)\n"
             "# El dataset vive en Drive; en local se usa la copia del repo.\n"
             "PASTIS_ROOT = Path((shared_folder_path + 'data/PASTIS-R') if shared_folder_path\n"
             "                   else 'data/PASTIS-R')\n"
@@ -230,20 +250,22 @@ def _build_cells(model: str) -> list:
             "SEG_DIR = Path((shared_folder_path if shared_folder_path else '') + 'reports/segmentation')\n"
             "METRICS_DIR = SEG_DIR / 'metrics'\n"
             "FIGURES_DIR = SEG_DIR / 'figures'\n"
-            "CHECKPOINT_DIR = SEG_DIR / 'checkpoints'\n"
+            f"CHECKPOINT_DIR = SEG_DIR / 'checkpoints{suffix}'\n"
             "for _d in (METRICS_DIR, FIGURES_DIR, CHECKPOINT_DIR):\n"
             "    _d.mkdir(parents=True, exist_ok=True)\n"
-            "COMPARISON_PATH = METRICS_DIR / f'model_comparison_avance4_{MODEL}.parquet'\n"
+            f"COMPARISON_PATH = METRICS_DIR / f'model_comparison_avance4_{{MODEL}}{suffix}.parquet'\n"
             "DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'\n"
             "TARGET_SIZE = 256\n"
-            "SUBSET = 0            # 0 = todos; reducir (p.ej. 60) si la sesion es corta\n"
-            "EPOCHS = 30\n"
-            f"BATCH = {meta['batch']}      # pensado para L4 (24 GB); en T4 (16 GB) bajar a la mitad\n"
+            "SUBSET = 0            # 0 = todos; reducir (p.ej. 600) si la sesion es corta\n"
+            f"EPOCHS = {epochs}\n"
+            f"BATCH = {batch_val}\n"
             "MLFLOW_URI = 'file:./mlruns'\n"
             "# Por defecto se lee directo de Drive (sin copiar). Si vas a entrenar muchas epocas y\n"
             "# preferis acelerar, pone COPY_TO_LOCAL=True (copia una vez al disco efimero).\n"
             "COPY_TO_LOCAL = False\n"
-            "NUM_WORKERS = 4 if _IN_COLAB else 0\n\n"
+            "# Leyendo de Drive, num_workers=0 va mas rapido (el FUSE de Drive penaliza la\n"
+            "# concurrencia). Con el dataset copiado a local conviene subirlo a 2-4.\n"
+            f"NUM_WORKERS = {workers_expr}\n\n"
             "print('modelo:', MODEL, '| device:', DEVICE, '| batch:', BATCH)\n"
             "print('PASTIS_ROOT:', PASTIS_ROOT, '| exists:', PASTIS_ROOT.exists())\n"
             "print('artefactos en:', SEG_DIR)"
@@ -349,10 +371,146 @@ def _build_cells(model: str) -> list:
             "                                  class_names=PASTIS_CLASS_MAP, ignore_index=PASTIS_IGNORE_INDEX)\n\n"
             f"fig = confusion_figure(MODEL, '{meta['reduction']}', {meta['confusion_build']},\n"
             "                       result['checkpoint_path'])\n"
-            "_fig_path = FIGURES_DIR / f'confusion_{MODEL}.png'\n"
+            f"_fig_path = FIGURES_DIR / f'confusion_{{MODEL}}{suffix}.png'\n"
             "fig.savefig(_fig_path, bbox_inches='tight', dpi=120)\n"
             "print('Figura guardada en:', _fig_path)\n"
             "fig"
+        )
+    )
+
+    cells.append(
+        md(
+            "## IoU por clase\n\n"
+            "IoU de cada clase sobre el fold de validación, ordenado de menor a mayor, con la "
+            "línea del mIoU. Identifica qué cultivos resuelve bien el modelo y cuáles le cuestan. "
+            "Carga el modelo guardado (no re-entrena) y guarda el PNG en `figures/`."
+        )
+    )
+    cells.append(
+        code(
+            "# IoU por clase (carga el modelo guardado, no re-entrena).\n"
+            "import torch, numpy as np, matplotlib.pyplot as plt\n"
+            "from torch.utils.data import DataLoader\n"
+            "from ml.ingest.pastis_dataset import PASTISDataset, load_norm_stats\n"
+            "from ml.ingest.pastis_loader import PASTIS_CLASS_MAP\n"
+            "from ml.eval.dense_metrics import DenseConfusionAccumulator\n"
+            f"{meta['confusion_import']}\n\n"
+            "_norm = load_norm_stats(PASTIS_ROOT, folds=(1, 2, 3))\n"
+            "_ds = PASTISDataset(split['val'][:40], root=PASTIS_ROOT, target_size=TARGET_SIZE,\n"
+            "                    temporal_reduction=REDUCTION, norm=_norm)\n"
+            "_loader = DataLoader(_ds, batch_size=2)\n"
+            f"_model = ({meta['confusion_build']}).to(DEVICE)\n"
+            "_model.load_state_dict(torch.load(result['checkpoint_path'], map_location=DEVICE))\n"
+            "_model.eval()\n"
+            "_acc = DenseConfusionAccumulator(20, ignore_index=19, device=str(DEVICE))\n"
+            "with torch.no_grad():\n"
+            "    for _b in _loader:\n"
+            "        _img = _b['image'].to(DEVICE)\n"
+            "        _out = _model(_img) if MODEL == 'unet' else _model(_img, _b['dates'].to(DEVICE))\n"
+            "        _acc.update(_out.argmax(1), _b['semantic'].to(DEVICE))\n"
+            "_iou = _acc.per_class_iou()\n"
+            "_items = sorted(_iou.items(), key=lambda kv: kv[1])\n"
+            "_names = [PASTIS_CLASS_MAP.get(c, str(c)) for c, _ in _items]\n"
+            "_vals = [v for _, v in _items]\n"
+            "_miou = float(np.mean(_vals)) if _vals else 0.0\n"
+            "fig, ax = plt.subplots(figsize=(11, 5))\n"
+            "ax.barh(_names, _vals, color='#4C72B0')\n"
+            "ax.axvline(_miou, color='red', linestyle='--', label=f'mIoU={_miou:.3f}')\n"
+            "ax.set_xlim(0, 1); ax.set_xlabel('IoU'); ax.legend()\n"
+            "ax.set_title(f'IoU por clase - {MODEL} (mIoU={_miou:.3f})')\n"
+            "fig.tight_layout()\n"
+            "_p = FIGURES_DIR / f'per_class_iou_{MODEL}{SUFFIX}.png'\n"
+            "fig.savefig(_p, bbox_inches='tight', dpi=120); print('guardado:', _p)\n"
+            "fig"
+        )
+    )
+
+    cells.append(
+        md(
+            "## Comparación visual (RGB / verdad / predicción)\n\n"
+            "Para unas parcelas de validación: la imagen Sentinel-2 en color (bandas B04/B03/B02), "
+            "la máscara verdadera y la predicción del modelo, con el mismo colormap de clases. "
+            "Es la vista cualitativa que muestra de un vistazo qué tan bien delinea las parcelas."
+        )
+    )
+    cells.append(
+        code(
+            "# RGB | ground truth | prediccion para N parcelas (carga el modelo guardado).\n"
+            "import torch, numpy as np, matplotlib.pyplot as plt\n"
+            "from matplotlib.colors import ListedColormap\n"
+            "from ml.ingest.pastis_dataset import PASTISDataset, load_norm_stats\n"
+            "from ml.ingest.pastis_loader import PASTIS_S2_BANDS\n"
+            f"{meta['confusion_import']}\n\n"
+            "_norm = load_norm_stats(PASTIS_ROOT, folds=(1, 2, 3))\n"
+            "_ds = PASTISDataset(split['val'][:4], root=PASTIS_ROOT, target_size=TARGET_SIZE,\n"
+            "                    temporal_reduction=REDUCTION, norm=_norm)\n"
+            f"_model = ({meta['confusion_build']}).to(DEVICE)\n"
+            "_model.load_state_dict(torch.load(result['checkpoint_path'], map_location=DEVICE))\n"
+            "_model.eval()\n"
+            "_cmap = ListedColormap(plt.cm.tab20(np.linspace(0, 1, 20)))\n"
+            "_ri, _gi, _bi = (PASTIS_S2_BANDS.index(x) for x in ('B04', 'B03', 'B02'))\n"
+            "_n = len(_ds)\n"
+            "fig, axes = plt.subplots(_n, 3, figsize=(10, 3 * _n))\n"
+            "axes = np.atleast_2d(axes)\n"
+            "with torch.no_grad():\n"
+            "    for _k in range(_n):\n"
+            "        _it = _ds[_k]\n"
+            "        _img = _it['image']\n"
+            "        _arr = _img if _img.dim() == 3 else _img.median(0).values\n"
+            "        _rgb = _arr[[_ri, _gi, _bi]].permute(1, 2, 0).numpy()\n"
+            "        _lo, _hi = np.percentile(_rgb, 2), np.percentile(_rgb, 98)\n"
+            "        _rgb = np.clip((_rgb - _lo) / (_hi - _lo + 1e-6), 0, 1)\n"
+            "        _x = _img.unsqueeze(0).to(DEVICE)\n"
+            "        _out = (_model(_x) if MODEL == 'unet'\n"
+            "                else _model(_x, _it['dates'].unsqueeze(0).to(DEVICE)))\n"
+            "        _pred = _out.argmax(1)[0].cpu().numpy()\n"
+            "        _gt = _it['semantic'].numpy()\n"
+            "        axes[_k, 0].imshow(_rgb)\n"
+            "        axes[_k, 1].imshow(_gt, cmap=_cmap, vmin=0, vmax=19)\n"
+            "        axes[_k, 2].imshow(_pred, cmap=_cmap, vmin=0, vmax=19)\n"
+            "        for _j, _t in enumerate(('RGB', 'Ground truth', 'Prediction')):\n"
+            "            axes[_k, _j].axis('off')\n"
+            "            if _k == 0:\n"
+            "                axes[_k, _j].set_title(_t)\n"
+            "fig.tight_layout()\n"
+            "_p = FIGURES_DIR / f'samples_{MODEL}{SUFFIX}.png'\n"
+            "fig.savefig(_p, bbox_inches='tight', dpi=120); print('guardado:', _p)\n"
+            "fig"
+        )
+    )
+
+    cells.append(
+        md(
+            "## Curvas de entrenamiento\n\n"
+            "Evolución del loss de entrenamiento y del mIoU de validación por época, a partir del "
+            "historial que el entrenamiento guarda en `metrics/history_<modelo>.parquet`. Sirve para "
+            "ver convergencia y si el modelo se estanca. Si el modelo se entrenó con una versión "
+            "anterior sin historial, esta celda lo avisa."
+        )
+    )
+    cells.append(
+        code(
+            "# Curvas de loss y mIoU por epoca (desde el historial guardado).\n"
+            "import polars as pl, matplotlib.pyplot as plt\n\n"
+            "_hp = METRICS_DIR / f'history_{MODEL}{SUFFIX}.parquet'\n"
+            "if _hp.exists():\n"
+            "    _h = pl.read_parquet(_hp).sort('epoch')\n"
+            "    _ep = _h['epoch'].to_list()\n"
+            "    fig, (_a1, _a2) = plt.subplots(1, 2, figsize=(12, 4))\n"
+            "    _a1.plot(_ep, _h['train_loss'].to_list(), label='Train')\n"
+            "    _a1.set_title('Loss'); _a1.set_xlabel('Epoch'); _a1.legend()\n"
+            "    _a2.plot(_ep, _h['miou'].to_list(), label='Val mIoU (18 clases)', color='orange')\n"
+            "    if 'miou_grouped' in _h.columns:\n"
+            "        _a2.plot(_ep, _h['miou_grouped'].to_list(), label='Val mIoU (6 grupos)', color='green')\n"
+            "    _a2.set_title('mIoU'); _a2.set_xlabel('Epoch'); _a2.legend()\n"
+            "    fig.tight_layout()\n"
+            "    _p = FIGURES_DIR / f'curves_{MODEL}{SUFFIX}.png'\n"
+            "    fig.savefig(_p, bbox_inches='tight', dpi=120); print('guardado:', _p)\n"
+            "    display(fig)\n"
+            "else:\n"
+            "    print('No hay history parquet en', _hp)\n"
+            "    print('El modelo se entreno con una version sin historial; las curvas no estan')\n"
+            "    print('disponibles para esta corrida (re-entrenar con el codigo nuevo las genera).')"
         )
     )
 
@@ -392,18 +550,28 @@ def _build_cells(model: str) -> list:
 def main(
     model: Annotated[str, typer.Option(help="Arquitectura: 'unet' o 'anysat'.")] = "unet",
     out: Annotated[str, typer.Option(help="Ruta de salida (default segun modelo).")] = "",
+    num_workers: Annotated[int, typer.Option(help="Override de workers (-1 = default).")] = -1,
+    batch: Annotated[int, typer.Option(help="Override de batch (-1 = default del modelo).")] = -1,
+    epochs: Annotated[int, typer.Option(help="Numero de epocas.")] = 30,
+    suffix: Annotated[str, typer.Option(help="Sufijo de artefactos (correr en paralelo).")] = "",
 ) -> None:
     """Genera el notebook de segmentacion densa de una arquitectura.
 
     Args:
         model: ``unet`` o ``anysat``.
         out: Ruta destino del ``.ipynb`` (si vacia, se usa el default del modelo).
+        num_workers: Override de workers del DataLoader.
+        batch: Override de batch.
+        epochs: Numero de epocas.
+        suffix: Sufijo de los artefactos para no pisar otra corrida en paralelo.
     """
     if model not in _OUT_BY_MODEL:
         raise typer.BadParameter("`--model` debe ser 'unet' o 'anysat'.")
     out_path = Path(out) if out else _OUT_BY_MODEL[model]
     nb = nbf.v4.new_notebook()
-    nb["cells"] = _build_cells(model)
+    nb["cells"] = _build_cells(
+        model, num_workers=num_workers, batch=batch, epochs=epochs, suffix=suffix
+    )
     nb["metadata"] = {
         "kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
         "language_info": {"name": "python", "version": "3.12"},

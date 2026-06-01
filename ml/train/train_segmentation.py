@@ -426,6 +426,14 @@ def run_training(
         # LUT 18 clases -> 6 grupos HCAT para reportar tambien la metrica agrupada
         # (comparable con el baseline). Ver ml.analysis.hcat_grouping.
         group_lut = hcat6_dense_lut()
+        # Historial por epoca para las curvas de loss/mIoU. Se persiste a Drive
+        # junto al parquet comparativo y se reanuda si ya existe (sobrevive cortes).
+        history_path = comparison_path.with_name(
+            comparison_path.name.replace("model_comparison_avance4", "history")
+        )
+        history: list[dict[str, float]] = []
+        if resume and start_epoch > 0 and history_path.exists():
+            history = pl.read_parquet(history_path).to_dicts()
         for epoch in range(start_epoch, epochs):
             seg_model.train()
             if model == "anysat":
@@ -458,12 +466,17 @@ def run_training(
                 seg_model, model, val_loader, dev, PASTIS_NUM_CLASSES, PASTIS_IGNORE_INDEX,
                 group_lut=group_lut,
             )
-            mlflow.log_metric("train_loss", epoch_loss / max(1, len(train_loader)), step=epoch)
+            train_loss = epoch_loss / max(1, len(train_loader))
+            mlflow.log_metric("train_loss", train_loss, step=epoch)
             for key, value in metrics.items():
                 mlflow.log_metric(f"val_{key}", value, step=epoch)
             if metrics["miou"] >= best["miou"]:
                 best = metrics
             logger.info("segmentation_epoch", epoch=epoch, loss=epoch_loss, **metrics)
+            # Registro del historial por epoca (para las curvas) + persistencia a Drive.
+            history.append({"epoch": epoch, "train_loss": train_loss, **metrics})
+            comparison_path.parent.mkdir(parents=True, exist_ok=True)
+            pl.DataFrame(history).write_parquet(history_path)
             # Checkpoint reanudable cada `checkpoint_every` epocas (y en la ultima).
             if (epoch + 1) % checkpoint_every == 0 or epoch == epochs - 1:
                 _save_checkpoint(
