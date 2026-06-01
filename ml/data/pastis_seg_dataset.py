@@ -130,7 +130,14 @@ def _load_fold_index(metadata_path: Path) -> dict[str, int]:
     out: dict[str, int] = {}
     for feat in gj.get("features", []):
         props = feat.get("properties", {}) or {}
-        pid_raw = feat.get("id") or props.get("ID_PATCH")
+        # `ID_PATCH` es el identificador real del patch (coincide con el nombre
+        # `S2_<ID_PATCH>.npy`). Se prioriza sobre `feat["id"]` porque el
+        # metadata oficial de Zenodo usa `feat["id"]` como indice secuencial
+        # (0, 1, 2, ...) que NO coincide con los nombres de archivo; solo
+        # algunos metadata derivados ponen el patch_id en `feat["id"]`.
+        pid_raw = props.get("ID_PATCH")
+        if pid_raw is None:
+            pid_raw = feat.get("id")
         fold_val = props.get("Fold")
         if pid_raw is None or fold_val is None:
             continue
