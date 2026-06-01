@@ -308,12 +308,20 @@ def _run_epoch(
                     )
 
             if optimizer is not None:
+                # Gradient clipping (max_norm=1.0): imprescindible para TSViT
+                # (transformer) — sin el, los gradientes explotan y el loss
+                # diverge a NaN tras ~8 epochs. Con AMP hay que `unscale_`
+                # antes de clipear. DeepLabv3+ (CNN) tolera no clipear, pero
+                # aplicarlo a ambos es seguro y estabiliza.
                 if scaler is not None and amp_enabled:
                     scaler.scale(loss).backward()
+                    scaler.unscale_(optimizer)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                     scaler.step(optimizer)
                     scaler.update()
                 else:
                     loss.backward()
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                     optimizer.step()
 
             total_loss += float(loss.detach().item())
