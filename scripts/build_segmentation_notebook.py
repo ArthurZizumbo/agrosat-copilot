@@ -57,7 +57,7 @@ _SETUP_CELL = (
     "if _IN_COLAB:\n"
     "    from getpass import getpass\n"
     "    _repo_dir = '/content/agrosat-copilot'\n"
-    "    _branch = 'users/abocanegra/unet-anysat'\n"
+    "    _branch = 'main'\n"
     "    _repo = 'github.com/ArthurZizumbo/agrosat-copilot.git'\n"
     "    if not Path(_repo_dir, 'pyproject.toml').is_file():\n"
     "        _rc = os.system(f'git clone --branch {_branch} --depth 1 "
