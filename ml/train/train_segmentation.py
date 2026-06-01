@@ -49,6 +49,7 @@ Description is All You Need!", ISPRS J. Photogrammetry RS 228 (ec. 15-16).
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -378,6 +379,89 @@ def _evaluate(
 
 
 # ---------------------------------------------------------------------------
+# Checkpointing por epoch (resume tras interrupcion).
+# ---------------------------------------------------------------------------
+
+
+def _save_checkpoint(
+    path: Path,
+    *,
+    epoch: int,
+    model: nn.Module,
+    optimizer: torch.optim.Optimizer,
+    scaler: torch.cuda.amp.GradScaler | None,
+    best_metrics: dict[str, float],
+) -> None:
+    """Persiste el estado completo de entrenamiento para reanudar.
+
+    Guarda ``model``/``optimizer``/``scaler`` state_dicts + el ``epoch`` ya
+    completado + las mejores metricas, de forma atomica (escribe a ``.tmp`` y
+    renombra) para no corromper el checkpoint si el proceso muere a mitad de
+    la escritura.
+
+    Args:
+        path: Ruta destino del checkpoint (``.pt``).
+        epoch: Indice del ultimo epoch COMPLETADO (0-based).
+        model: Modelo cuyo state_dict se guarda.
+        optimizer: Optimizador AdamW.
+        scaler: GradScaler AMP (o ``None`` si no se usa AMP).
+        best_metrics: Mejores metricas de validacion hasta ahora.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "epoch": epoch,
+        "model_state": model.state_dict(),
+        "optimizer_state": optimizer.state_dict(),
+        "scaler_state": scaler.state_dict() if scaler is not None else None,
+        "best_metrics": best_metrics,
+    }
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    torch.save(payload, tmp)
+    tmp.replace(path)
+
+
+def _load_checkpoint(
+    path: Path,
+    *,
+    model: nn.Module,
+    optimizer: torch.optim.Optimizer,
+    scaler: torch.cuda.amp.GradScaler | None,
+    device: torch.device,
+) -> tuple[int, dict[str, float]]:
+    """Carga un checkpoint y restaura el estado de entrenamiento.
+
+    Args:
+        path: Ruta del checkpoint ``.pt``.
+        model: Modelo a restaurar (in-place).
+        optimizer: Optimizador a restaurar (in-place).
+        scaler: GradScaler a restaurar (in-place) o ``None``.
+        device: Dispositivo destino para mapear los tensores.
+
+    Returns:
+        ``(start_epoch, best_metrics)``: el epoch desde el que continuar
+        (= ultimo completado + 1) y las mejores metricas previas.
+    """
+    ckpt = torch.load(path, map_location=device, weights_only=False)
+    model.load_state_dict(ckpt["model_state"])
+    optimizer.load_state_dict(ckpt["optimizer_state"])
+    if scaler is not None and ckpt.get("scaler_state") is not None:
+        scaler.load_state_dict(ckpt["scaler_state"])
+    start_epoch = int(ckpt["epoch"]) + 1
+    best = ckpt.get("best_metrics") or {
+        "miou": -1.0,
+        "f1_macro": 0.0,
+        "pixel_acc": 0.0,
+    }
+    logger.info(
+        "checkpoint_resumed",
+        path=str(path),
+        start_epoch=start_epoch,
+        best_miou=round(best.get("miou", -1.0), 4),
+    )
+    return start_epoch, best
+
+
+# ---------------------------------------------------------------------------
 # API publica
 # ---------------------------------------------------------------------------
 
@@ -402,6 +486,8 @@ def train_segmentation(
     mlflow_uri: str | None = None,
     dice_weight: float = 1.0,
     ce_weight: float = 1.0,
+    ckpt_dir: str | Path | None = None,
+    resume: bool = True,
 ) -> dict[str, float]:
     """Entrena un segmentador denso PASTIS-R con logging MLflow.
 
@@ -516,6 +602,26 @@ def train_segmentation(
     amp_enabled = use_amp and resolved_device.type == "cuda"
     scaler = torch.cuda.amp.GradScaler(enabled=amp_enabled) if amp_enabled else None
 
+    # Checkpoints por epoch: `last.pt` (siempre) + `best.pt` (mejor mIoU).
+    # Permiten reanudar tras interrupcion (la VM L4 se apago una vez).
+    resolved_ckpt_dir = (
+        Path(ckpt_dir)
+        if ckpt_dir is not None
+        else Path("checkpoints/segmentation") / mlflow_run_name
+    )
+    last_ckpt = resolved_ckpt_dir / "last.pt"
+    best_ckpt = resolved_ckpt_dir / "best.pt"
+    start_epoch = 0
+    best_metrics: dict[str, float] = {"miou": -1.0, "f1_macro": 0.0, "pixel_acc": 0.0}
+    if resume and last_ckpt.exists():
+        start_epoch, best_metrics = _load_checkpoint(
+            last_ckpt,
+            model=model,
+            optimizer=optimizer,
+            scaler=scaler,
+            device=resolved_device,
+        )
+
     logger.info(
         "train_segmentation_start",
         run_name=mlflow_run_name,
@@ -528,9 +634,9 @@ def train_segmentation(
         amp=amp_enabled,
         n_train=len(train_ds),  # type: ignore[arg-type]
         n_val=len(val_ds),  # type: ignore[arg-type]
+        start_epoch=start_epoch,
+        ckpt_dir=str(resolved_ckpt_dir),
     )
-
-    best_metrics: dict[str, float] = {"miou": -1.0, "f1_macro": 0.0, "pixel_acc": 0.0}
 
     with track_experiment(
         _EXPERIMENT_NAME,
@@ -557,7 +663,7 @@ def train_segmentation(
             }
         )
 
-        for epoch in range(epochs):
+        for epoch in range(start_epoch, epochs):
             train_loss = _run_epoch(
                 model,
                 train_loader,
@@ -595,9 +701,30 @@ def train_segmentation(
                 val_pixel_acc=round(val_metrics["pixel_acc"], 4),
             )
 
-            if val_metrics["miou"] > best_metrics["miou"]:
+            is_best = val_metrics["miou"] > best_metrics["miou"]
+            if is_best:
                 best_metrics = dict(val_metrics)
                 best_metrics["best_epoch"] = float(epoch + 1)
+
+            # Checkpoint por epoch: `last.pt` siempre (para resume), `best.pt`
+            # cuando mejora el mIoU de validacion (para inferencia posterior).
+            _save_checkpoint(
+                last_ckpt,
+                epoch=epoch,
+                model=model,
+                optimizer=optimizer,
+                scaler=scaler,
+                best_metrics=best_metrics,
+            )
+            if is_best:
+                _save_checkpoint(
+                    best_ckpt,
+                    epoch=epoch,
+                    model=model,
+                    optimizer=optimizer,
+                    scaler=scaler,
+                    best_metrics=best_metrics,
+                )
 
         # mIoU inicial -1.0 indica que ningun epoch corrio (no deberia pasar).
         if best_metrics["miou"] < 0.0:
@@ -606,6 +733,10 @@ def train_segmentation(
         mlflow.log_metric("best_val_miou", best_metrics["miou"])
         mlflow.log_metric("best_val_f1_macro", best_metrics["f1_macro"])
         mlflow.log_metric("best_val_pixel_acc", best_metrics["pixel_acc"])
+        # Sube el mejor checkpoint a MLflow como artefacto (para inferencia
+        # reproducible desde el run, no solo desde el disco local).
+        if best_ckpt.exists():
+            mlflow.log_artifact(str(best_ckpt), artifact_path="checkpoint")
 
     logger.info(
         "train_segmentation_done",
@@ -648,6 +779,8 @@ def build_and_train(
     lr: float = 1e-3,
     lambda_contrast: float = 0.3,
     num_workers: int = 0,
+    ckpt_dir: str | Path | None = None,
+    resume: bool = True,
     mlflow_run_name: str | None = None,
     mlflow_uri: str | None = None,
 ) -> dict[str, float]:
@@ -752,6 +885,8 @@ def build_and_train(
         prototypes=prototypes,
         lambda_contrast=lambda_contrast,
         num_workers=num_workers,
+        ckpt_dir=ckpt_dir,
+        resume=resume,
         num_classes=n_classes,
         mlflow_uri=mlflow_uri,
     )
@@ -779,6 +914,19 @@ def _build_arg_parser() -> argparse.ArgumentParser:  # pragma: no cover
     p.add_argument("--device", default="auto", choices=("auto", "cuda", "cpu"))
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--lambda-contrast", type=float, default=0.3)
+    p.add_argument(
+        "--ckpt-dir",
+        default=None,
+        help=(
+            "Directorio de checkpoints. Default checkpoints/segmentation/"
+            "<run-name>. Guarda last.pt (resume) + best.pt (inferencia) por epoch."
+        ),
+    )
+    p.add_argument(
+        "--no-resume",
+        action="store_true",
+        help="Ignora last.pt y entrena desde cero (por defecto reanuda).",
+    )
     p.add_argument(
         "--num-workers",
         type=int,
@@ -819,6 +967,8 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover
         lr=args.lr,
         lambda_contrast=args.lambda_contrast,
         num_workers=args.num_workers,
+        ckpt_dir=args.ckpt_dir,
+        resume=not args.no_resume,
         mlflow_run_name=args.run_name,
         mlflow_uri=args.mlflow_uri,
     )
