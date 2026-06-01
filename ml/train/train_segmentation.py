@@ -398,6 +398,7 @@ def _save_checkpoint(
     model: nn.Module,
     optimizer: torch.optim.Optimizer,
     scaler: torch.cuda.amp.GradScaler | None,
+    scheduler: torch.optim.lr_scheduler.LRScheduler | None,
     best_metrics: dict[str, float],
 ) -> None:
     """Persiste el estado completo de entrenamiento para reanudar.
@@ -421,6 +422,7 @@ def _save_checkpoint(
         "model_state": model.state_dict(),
         "optimizer_state": optimizer.state_dict(),
         "scaler_state": scaler.state_dict() if scaler is not None else None,
+        "scheduler_state": scheduler.state_dict() if scheduler is not None else None,
         "best_metrics": best_metrics,
     }
     tmp = path.with_suffix(path.suffix + ".tmp")
@@ -434,6 +436,7 @@ def _load_checkpoint(
     model: nn.Module,
     optimizer: torch.optim.Optimizer,
     scaler: torch.cuda.amp.GradScaler | None,
+    scheduler: torch.optim.lr_scheduler.LRScheduler | None,
     device: torch.device,
 ) -> tuple[int, dict[str, float]]:
     """Carga un checkpoint y restaura el estado de entrenamiento.
@@ -454,6 +457,8 @@ def _load_checkpoint(
     optimizer.load_state_dict(ckpt["optimizer_state"])
     if scaler is not None and ckpt.get("scaler_state") is not None:
         scaler.load_state_dict(ckpt["scaler_state"])
+    if scheduler is not None and ckpt.get("scheduler_state") is not None:
+        scheduler.load_state_dict(ckpt["scheduler_state"])
     start_epoch = int(ckpt["epoch"]) + 1
     best = ckpt.get("best_metrics") or {
         "miou": -1.0,
@@ -496,6 +501,8 @@ def train_segmentation(
     ce_weight: float = 1.0,
     ckpt_dir: str | Path | None = None,
     resume: bool = True,
+    warmup_epochs: int = 10,
+    lr_min: float = 5e-6,
 ) -> dict[str, float]:
     """Entrena un segmentador denso PASTIS-R con logging MLflow.
 
@@ -610,6 +617,29 @@ def train_segmentation(
     amp_enabled = use_amp and resolved_device.type == "cuda"
     scaler = torch.cuda.amp.GradScaler(enabled=amp_enabled) if amp_enabled else None
 
+    # LR schedule de Tarasiou et al. 2023 (TSViT, §4.1 "Implementation
+    # details"): warmup lineal 0 -> lr hasta `warmup_epochs`, luego cosine
+    # decay a `lr_min`. El warmup es lo que estabiliza el transformer (sin el,
+    # el LR alto desde el step 0 hace divergir el loss a NaN ~epoch 8). Aplica
+    # por epoch; para DeepLabv3+ (CNN) tambien ayuda pero no es critico.
+    scheduler = torch.optim.lr_scheduler.SequentialLR(
+        optimizer,
+        schedulers=[
+            torch.optim.lr_scheduler.LinearLR(
+                optimizer,
+                start_factor=1e-3,
+                end_factor=1.0,
+                total_iters=max(1, warmup_epochs),
+            ),
+            torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer,
+                T_max=max(1, epochs - warmup_epochs),
+                eta_min=lr_min,
+            ),
+        ],
+        milestones=[max(1, warmup_epochs)],
+    )
+
     # Checkpoints por epoch: `last.pt` (siempre) + `best.pt` (mejor mIoU).
     # Permiten reanudar tras interrupcion (la VM L4 se apago una vez).
     resolved_ckpt_dir = (
@@ -627,6 +657,7 @@ def train_segmentation(
             model=model,
             optimizer=optimizer,
             scaler=scaler,
+            scheduler=scheduler,
             device=resolved_device,
         )
 
@@ -694,15 +725,18 @@ def train_segmentation(
                 use_phenology=use_phenology,
             )
 
+            current_lr = optimizer.param_groups[0]["lr"]
             mlflow.log_metric("train_loss", train_loss, step=epoch)
             mlflow.log_metric("val_miou", val_metrics["miou"], step=epoch)
             mlflow.log_metric("val_f1_macro", val_metrics["f1_macro"], step=epoch)
             mlflow.log_metric("val_pixel_acc", val_metrics["pixel_acc"], step=epoch)
+            mlflow.log_metric("lr", current_lr, step=epoch)
 
             logger.info(
                 "train_segmentation_epoch",
                 run_name=mlflow_run_name,
                 epoch=epoch + 1,
+                lr=round(current_lr, 6),
                 train_loss=round(train_loss, 4),
                 val_miou=round(val_metrics["miou"], 4),
                 val_f1_macro=round(val_metrics["f1_macro"], 4),
@@ -722,6 +756,7 @@ def train_segmentation(
                 model=model,
                 optimizer=optimizer,
                 scaler=scaler,
+                scheduler=scheduler,
                 best_metrics=best_metrics,
             )
             if is_best:
@@ -731,8 +766,12 @@ def train_segmentation(
                     model=model,
                     optimizer=optimizer,
                     scaler=scaler,
+                    scheduler=scheduler,
                     best_metrics=best_metrics,
                 )
+
+            # Avanza el LR schedule (warmup -> cosine) al final de cada epoch.
+            scheduler.step()
 
         # mIoU inicial -1.0 indica que ningun epoch corrio (no deberia pasar).
         if best_metrics["miou"] < 0.0:
