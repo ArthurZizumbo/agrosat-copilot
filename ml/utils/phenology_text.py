@@ -1,9 +1,9 @@
 """Wrapper de alto nivel para materializar el bloque ``pheno_text_*``.
 
 Este modulo orquesta la generacion de descripciones fenologicas con
-Gemini 3.5 Flash sobre el dataset full (Italia ~85951 parcelas) y
-persiste el resultado como un parquet listo para ``LEFT JOIN`` en
-``ml.features.fusion``.
+Gemini 3.5 Flash sobre el dataset full (PASTIS-R, ~85951 parcelas;
+``parcel_id`` formato ``10000_1``, no italiano) y persiste el resultado
+como un parquet listo para ``LEFT JOIN`` en ``ml.features.fusion``.
 
 Contrato (US-023-preview v2):
 
@@ -106,7 +106,7 @@ def _stratified_sample(
 def materialize_phenology_text(
     parcels_features_path: Path | str,
     *,
-    output_path: Path = Path("data/features/phenology_text_italy.parquet"),
+    output_path: Path = Path("data/features/phenology_text_pastis.parquet"),
     max_parcels: int | None = None,
     balanced_by_class: bool = True,
     min_per_class: int = 30,
@@ -123,7 +123,7 @@ def materialize_phenology_text(
 
     Comportamiento canonico:
 
-    1. Lee el dataset de features full (Italia ~85951 parcelas) desde
+    1. Lee el dataset de features full (PASTIS-R, ~85951 parcelas) desde
        ``parcels_features_path``.
     2. Si ``enforce_api_key=True``: verifica credenciales Gemini con
        :func:`_check_credentials_or_raise`. Si no hay cliente inyectado
@@ -143,7 +143,7 @@ def materialize_phenology_text(
 
     Args:
         parcels_features_path: Path al parquet de features completas
-            (Italia full, ~85951 parcelas).
+            (PASTIS-R full, ~85951 parcelas).
         output_path: Path destino del parquet con embeddings textuales.
         max_parcels: Limite superior de parcelas a procesar tras el
             muestreo balanceado. ``None`` = sin limite.

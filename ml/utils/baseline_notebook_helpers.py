@@ -8,8 +8,9 @@ como una composicion de llamadas + markdown + display, sin codigo inline.
 Cubre:
 
 - :func:`load_or_build_fused_features` — carga features fused con auto-build.
-  Si `data/features/features_fused_italy.parquet` no existe, construye
-  desde `data/processed/pastis_parcels_full.geoparquet` con
+  Si `data/features/features_fused_pastis.parquet` no existe (ni su variante
+  legacy `_italy`), construye desde
+  `data/processed/pastis_parcels_full.geoparquet` con
   :func:`ml.features.fusion.build_fused_features`.
 - :func:`load_features_dataset_with_meta` — alias seguro del subset US-018.
 - :func:`load_base_plus_alphaearth_2018_2019` — base + AlphaEarth 2018
@@ -35,6 +36,7 @@ from typing import Literal
 import polars as pl
 import structlog
 
+from ml.utils.dataset_paths import resolve_dataset_path
 from ml.utils.parcel_id import canonical_parcel_id
 
 logger = structlog.get_logger(__name__)
@@ -63,7 +65,7 @@ __all__ = [
 
 _DEFAULT_SUBSET_PATH = Path("data/test_fixtures/feature_selection_parcels_subset.parquet")
 _DEFAULT_PARCELS_PATH = Path("data/processed/pastis_parcels_full.geoparquet")
-_DEFAULT_FUSED_PATH = Path("data/features/features_fused_italy.parquet")
+_DEFAULT_FUSED_PATH = Path("data/features/features_fused_pastis.parquet")
 _DEFAULT_AE18_PATH = Path("data/cache/gee/alphaearth_parcels_parcels_2018_85951.parquet")
 _DEFAULT_AE19_PATH = Path(
     "data/cache/gee/alphaearth_parcels_pastis_parcels_2019_85951.parquet"
@@ -229,9 +231,12 @@ def load_or_build_fused_features(
     las parcelas full y persiste el resultado.
 
     Args:
-        output_path: Ruta al parquet fused (default
-            `data/features/features_fused_italy.parquet`).
-        parcels_geoparquet: Geoparquet de parcelas Italia full.
+        output_path: Ruta al parquet fused (default canonico
+            `data/features/features_fused_pastis.parquet`; al usar el default
+            se resuelve via :func:`resolve_dataset_path`, que cae al legacy
+            `_italy` si ya esta materializado en disco). El contenido es
+            PASTIS-R frances, no italiano.
+        parcels_geoparquet: Geoparquet de parcelas PASTIS-R full.
         year: Anio de referencia para los muestreos GEE.
         overwrite: Si True regenera el parquet aunque exista.
         include_farslip: Si True incluye el bloque FarSLIP.
@@ -244,7 +249,13 @@ def load_or_build_fused_features(
     Raises:
         FileNotFoundError: si el geoparquet de parcelas no existe.
     """
-    output = Path(output_path)
+    # Lectura: si se uso el default canonico, se resuelve a la variante
+    # existente (`_pastis` o legacy `_italy`). Si el caller paso un path
+    # explicito, se respeta tal cual.
+    if output_path is _DEFAULT_FUSED_PATH:
+        output = resolve_dataset_path(_DEFAULT_FUSED_PATH)
+    else:
+        output = Path(output_path)
     if output.exists() and not overwrite:
         logger.info("fused_features_cache_hit", path=str(output))
         return pl.read_parquet(output)
@@ -484,7 +495,7 @@ def load_temporal_result_from_mlflow(
 def materialize_phenology_text_if_missing(
     parcels_features_path: Path | str,
     *,
-    output_path: Path | str = Path("data/features/phenology_text_italy.parquet"),
+    output_path: Path | str = Path("data/features/phenology_text_pastis.parquet"),
     enforce_api_key: bool = True,
     max_parcels: int | None = None,
 ) -> Path:
@@ -517,7 +528,7 @@ def materialize_phenology_text_if_missing(
 def materialize_s2_anchors_if_missing(
     parcels_geoparquet: Path | str,
     *,
-    output_path: Path | str = Path("data/features/s2_anchors_italy.parquet"),
+    output_path: Path | str = Path("data/features/s2_anchors_pastis.parquet"),
     year: int = 2023,
     phenology_anchors_path: Path | str | None = None,
 ) -> Path:
@@ -526,7 +537,7 @@ def materialize_s2_anchors_if_missing(
     Wrapper sobre :func:`ml.ingest.s2_anchor_sampler.sample_s2_anchors_for_parcels`.
 
     Args:
-        parcels_geoparquet: Geoparquet de parcelas Italia full.
+        parcels_geoparquet: Geoparquet de parcelas PASTIS-R full.
         output_path: Path destino del bloque S2 anchors.
         year: Anio para el muestreo GEE.
         phenology_anchors_path: Parquet opcional con anclas calendario por
@@ -567,8 +578,8 @@ def materialize_s2_anchors_if_missing(
 
 def materialize_spectral_signature_if_missing(
     *,
-    s2_anchors_path: Path | str = Path("data/features/s2_anchors_italy.parquet"),
-    output_path: Path | str = Path("data/features/spectral_signature_italy.parquet"),
+    s2_anchors_path: Path | str = Path("data/features/s2_anchors_pastis.parquet"),
+    output_path: Path | str = Path("data/features/spectral_signature_pastis.parquet"),
     descriptor: Literal["rep", "sam", "redge_moments"] = "rep",
 ) -> Path:
     """Materializa la firma espectral si no existe, desde anclas S2 ya muestreadas.
@@ -590,7 +601,10 @@ def materialize_spectral_signature_if_missing(
         logger.info("spectral_signature_cache_hit", path=str(output))
         return output
 
-    anchors_path = Path(s2_anchors_path)
+    # Lectura del bloque de anclas S2: resolvemos a la variante existente
+    # (`_pastis` canonico o legacy `_italy`) para no re-muestrear si el
+    # artefacto ya esta en disco bajo el nombre heredado.
+    anchors_path = resolve_dataset_path(s2_anchors_path)
     if not anchors_path.exists():
         raise FileNotFoundError(
             f"S2 anchors no encontrado en {anchors_path}. Ejecuta "

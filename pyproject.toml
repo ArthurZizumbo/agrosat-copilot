@@ -126,6 +126,7 @@ breizhcrops = "^0.0.4.1"
 # universaliza) y choca con `numba 0.65` de vllm; shap 0.50 pide `numba >=0.54`
 # en Python <3.14 — compatible con el resto del stack.
 shap = "^0.50.0"
+einops = "^0.8.2"
 
 [tool.poetry.group.ml-gpu]
 optional = true

@@ -1,8 +1,9 @@
 """Extraccion de embeddings FarSLIP a parquet (US-022-c P1 etapa 6).
 
-Carga el student FarSLIP entrenado en GCP L4 (MLflow `farslip-clip-italy-v1@Production`
-o ruta local) y proyecta cada parcela italiana sobre el espacio de embeddings
-512-dim, persistiendo el resultado a parquet con esquema estable:
+Carga el student FarSLIP entrenado en GCP L4 (MLflow `farslip-clip-italy-v1@Production`,
+nombre de modelo conservado por lineage; o ruta local) y proyecta cada parcela
+PASTIS-R (``parcel_id`` formato ``10000_1``, no italiana) sobre el espacio de
+embeddings 512-dim, persistiendo el resultado a parquet con esquema estable:
 
 - ``parcel_id`` (int64) — identificador de la parcela aguas arriba.
 - ``year`` (int32) — anio del crop temporal asociado.
@@ -20,7 +21,7 @@ Uso CLI tipico::
     python -m ml.farslip.extract_embeddings \\
         --student-checkpoint mlflow://Models/farslip-clip-italy-v1@Production \\
         --parcels-parquet data/features/features_fused_v1.parquet \\
-        --rois italy --output data/farslip/embeddings_italy.parquet
+        --rois italy --output data/farslip/embeddings_pastis.parquet
 """
 
 from __future__ import annotations

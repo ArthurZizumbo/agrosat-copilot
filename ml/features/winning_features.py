@@ -3,9 +3,10 @@
 Cierra el ciclo del baseline US-023-preview: una vez ejecutadas las
 ablaciones (FarSLIP, pheno_text, spectral_signature, geom_only), esta
 funcion decide cuales bloques se promueven y persiste el parquet final
-`data/features/features_fused_winning_italy.parquet` que consumen los
+`data/features/features_fused_winning_pastis.parquet` que consumen los
 modelos densos de EPIC 5 (U-Net, U-TAE, TSViT, Swin-UNETR) y los ensambles
-de EPIC 6.
+de EPIC 6. El contenido es PASTIS-R frances (parcel_id formato `10000_1`),
+de ahi la nomenclatura canonica `_pastis`.
 
 Regla de decision (alineada con el plan US-023-preview):
 
@@ -146,7 +147,7 @@ def persist_winning_features(
     fused_df: pl.DataFrame,
     *,
     output_path: Path | str = Path(
-        "data/features/features_fused_winning_italy.parquet"
+        "data/features/features_fused_winning_pastis.parquet"
     ),
     overwrite: bool = False,
 ) -> Path:
@@ -255,7 +256,7 @@ def _base_block_cols(available_cols: Sequence[str], *, include_geom: bool) -> li
             cols.append(c)
         elif "_fft_" in c:
             cols.append(c)
-        elif c.startswith("ae_") or c.startswith("dim_") or c.startswith("emb_") or c.startswith("alphaearth_"):
+        elif c.startswith(("ae_", "dim_", "emb_", "alphaearth_")):
             cols.append(c)
         elif c.startswith("era5_") or c.startswith("srtm_"):
             cols.append(c)

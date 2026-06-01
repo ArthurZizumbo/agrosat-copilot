@@ -5,7 +5,7 @@ RF/XGBoost (US-019/020/021) y los heads tabulares de las arquitecturas de
 segmentación (EPIC 5). El vector concatena 6 bloques heterogéneos alineados
 por ``(parcel_id, year)`` con un layout determinista, más un séptimo bloque
 opcional (FarSLIP, 512-dim) que se incorpora vía ``LEFT JOIN`` cuando los
-embeddings se entreguen en ``data/farslip/embeddings_italy.parquet``.
+embeddings se entreguen en ``data/farslip/embeddings_pastis.parquet``.
 
 Layout de columnas (orden estable, downstream depende):
 
@@ -49,6 +49,7 @@ import polars as pl
 import structlog
 
 from ml.features.spectral_indices import INDEX_NAMES
+from ml.utils.dataset_paths import resolve_dataset_path
 from ml.utils.parcel_id import canonical_parcel_id
 
 logger = structlog.get_logger(__name__)
@@ -121,15 +122,17 @@ _S1_POLARIZATIONS: Final[tuple[str, ...]] = ("vv", "vh")
 #: Nombres de columnas AlphaEarth (``ae_00 .. ae_63``).
 AE_COLS: Final[tuple[str, ...]] = tuple(f"ae_{i:02d}" for i in range(64))
 
-#: Default path para los embeddings FarSLIP (US-016b).
-_DEFAULT_FARSLIP_PATH: Final[Path] = Path("data/farslip/embeddings_italy.parquet")
+#: Default path para los embeddings FarSLIP (US-016b). Nomenclatura canonica
+#: ``_pastis`` (el contenido es PASTIS-R, no italiano); se resuelve via
+#: :func:`resolve_dataset_path` que cae al legacy ``_italy`` si aplica.
+_DEFAULT_FARSLIP_PATH: Final[Path] = Path("data/farslip/embeddings_pastis.parquet")
 
 #: Default path para el bloque pheno_text materializado (US-022b-D).
-_DEFAULT_PHENO_TEXT_PATH: Final[Path] = Path("data/features/phenology_text_italy.parquet")
+_DEFAULT_PHENO_TEXT_PATH: Final[Path] = Path("data/features/phenology_text_pastis.parquet")
 
 #: Default path para el bloque spectral_signature materializado (US-023-preview P5).
 _DEFAULT_SPECTRAL_SIGNATURE_PATH: Final[Path] = Path(
-    "data/features/spectral_signature_italy.parquet"
+    "data/features/spectral_signature_pastis.parquet"
 )
 
 
@@ -188,7 +191,8 @@ def build_fused_features(
             ``farslip_path`` no existe, emite warning y omite el bloque sin
             fallar la build.
         farslip_path: Ruta al parquet con embeddings FarSLIP. Default
-            ``data/farslip/embeddings_italy.parquet``.
+            ``data/farslip/embeddings_pastis.parquet`` (se resuelve via
+            :func:`resolve_dataset_path`, cae al legacy ``_italy`` si aplica).
         include_phenology_text: Si ``True`` intenta unir el bloque
             ``pheno_text_*`` (US-022b-D, Wen et al. 2025). Mismo patron
             que FarSLIP: si el path no existe se omite sin fallar. Si
@@ -197,7 +201,9 @@ def build_fused_features(
         phenology_text_path: Ruta al parquet con los embeddings textuales
             de la rama semantica (output de
             :func:`ml.features.phenology_description.build_phenology_text_block`).
-            Default ``data/features/phenology_text_italy.parquet``.
+            Default ``data/features/phenology_text_pastis.parquet`` (se
+            resuelve via :func:`resolve_dataset_path`, cae al legacy
+            ``_italy`` si aplica).
         stats: Stats temporales aplicados a índices y S1. Default
             :data:`FUSION_STATS`. Cambiar este parámetro rompe el contrato
             de 85 columnas del bloque índices — utilizar solo en ablation.
@@ -220,7 +226,9 @@ def build_fused_features(
             el path.
         spectral_signature_path: Ruta al parquet con la firma espectral
             (output de :class:`ml.features.spectral_signature.SpectralSignatureFeatures`).
-            Default ``data/features/spectral_signature_italy.parquet``.
+            Default ``data/features/spectral_signature_pastis.parquet`` (se
+            resuelve via :func:`resolve_dataset_path`, cae al legacy
+            ``_italy`` si aplica).
         spectral_signature_frame: Inyección opcional del bloque
             ``spectral_signature_*`` (testing); cuando se pasa,
             ``spectral_signature_path`` se ignora.
@@ -603,7 +611,11 @@ def _build_farslip_block(
       devuelve ``None`` (el bloque se omite sin fallar).
     """
     explicit_path = farslip_path is not None
-    resolved = Path(farslip_path) if farslip_path is not None else _DEFAULT_FARSLIP_PATH
+    resolved = (
+        Path(farslip_path)
+        if explicit_path
+        else resolve_dataset_path(_DEFAULT_FARSLIP_PATH)
+    )
 
     if not resolved.exists():
         if explicit_path:
@@ -679,8 +691,8 @@ def _build_phenology_text_block_lf(
         explicit_path = phenology_text_path is not None
         resolved = (
             Path(phenology_text_path)
-            if phenology_text_path is not None
-            else _DEFAULT_PHENO_TEXT_PATH
+            if explicit_path
+            else resolve_dataset_path(_DEFAULT_PHENO_TEXT_PATH)
         )
         if not resolved.exists():
             if explicit_path:
@@ -739,8 +751,8 @@ def _build_spectral_signature_block_lf(
         explicit_path = spectral_signature_path is not None
         resolved = (
             Path(spectral_signature_path)
-            if spectral_signature_path is not None
-            else _DEFAULT_SPECTRAL_SIGNATURE_PATH
+            if explicit_path
+            else resolve_dataset_path(_DEFAULT_SPECTRAL_SIGNATURE_PATH)
         )
         if not resolved.exists():
             if explicit_path:

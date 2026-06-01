@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+# El loss fenologico de segmentacion no depende de paquetes pesados (geopandas,
+# h3, etc.) y debe poder importarse siempre, incluso en un entorno de Colab. No
+# se re-exporta la funcion `train_segmentation` para no sombrear el submodulo del
+# mismo nombre (los consumidores importan del modulo directo `ml.train.train_segmentation`).
+from ml.train.train_segmentation import phenology_contrastive_loss
+
+__all__ = [
+    "phenology_contrastive_loss",
+]
+
 # El baseline tabular y los modelos de fenologia dependen de paquetes pesados
-# (geopandas, h3, etc.) que no siempre estan instalados, por ejemplo en un entorno
-# de segmentacion en Colab. Se importan de forma tolerante para no bloquear el
-# resto del paquete: train_segmentation no usa ninguna de esas dependencias y debe
-# poder importarse sin ellas.
+# (geopandas, h3, etc.) que no siempre estan instalados. Se importan de forma
+# tolerante para no bloquear el resto del paquete.
 try:
     from ml.train.baseline import (
         BaselineResult,
@@ -23,7 +31,7 @@ try:
         train_temporal_model,
     )
 
-    __all__ = [
+    __all__ += [
         "BaselineResult",
         "ModelKind",
         "TemporalDataset",
@@ -36,4 +44,4 @@ try:
         "tune_baseline",
     ]
 except ImportError:  # pragma: no cover - dependencias opcionales ausentes
-    __all__ = []
+    pass
