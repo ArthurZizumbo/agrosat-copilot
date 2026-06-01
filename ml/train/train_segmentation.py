@@ -59,8 +59,8 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from ml.eval.metrics import (
-    _per_class_iou_from_cm,
     dense_confusion_matrix,
+    dense_metrics_from_cm,
 )
 from ml.models.deeplabv3plus import build_dice_ce_loss
 from ml.utils.mlflow_utils import track_experiment
@@ -354,7 +354,10 @@ def _evaluate(
             (se descarta para la metrica; solo importan los logits).
 
     Returns:
-        Diccionario ``{"miou", "f1_macro", "pixel_acc"}``.
+        Tupla ``(metrics, cm)``: el diccionario completo de metricas
+        (``miou``, ``f1_macro``, ``pixel_acc``, ``balanced_acc``,
+        ``cohen_kappa``, ``per_class_iou``, ``per_class_f1``) y la matriz de
+        confusion densa acumulada del split (para artefactos al final).
     """
     model.eval()
     cm = np.zeros((num_classes, num_classes), dtype=np.int64)
@@ -367,23 +370,7 @@ def _evaluate(
                 preds, y, n_classes=num_classes, ignore_index=ignore_index
             )
 
-    cm_f = cm.astype(np.float64)
-    iou = _per_class_iou_from_cm(cm)
-    miou = 0.0 if np.all(np.isnan(iou)) else float(np.nanmean(iou))
-
-    tp = np.diag(cm_f)
-    fp = cm_f.sum(axis=0) - tp
-    fn = cm_f.sum(axis=1) - tp
-    denom = 2.0 * tp + fp + fn
-    present = (cm_f.sum(axis=1) + cm_f.sum(axis=0)) > 0.0
-    with np.errstate(divide="ignore", invalid="ignore"):
-        f1 = np.where(denom > 0.0, 2.0 * tp / denom, 0.0)
-    f1_macro = 0.0 if not np.any(present) else float(f1[present].mean())
-
-    total = int(cm.sum())
-    pixel_acc = 0.0 if total == 0 else float(np.trace(cm)) / float(total)
-
-    return {"miou": miou, "f1_macro": f1_macro, "pixel_acc": pixel_acc}
+    return dense_metrics_from_cm(cm), cm
 
 
 # ---------------------------------------------------------------------------
@@ -474,6 +461,75 @@ def _load_checkpoint(
     return start_epoch, best
 
 
+def _log_final_artifacts(
+    ckpt_dir: Path,
+    *,
+    best_cm: np.ndarray,
+    best_metrics: dict[str, float],
+    num_classes: int,
+) -> None:
+    """Genera y loguea a MLflow los artefactos finales del mejor epoch.
+
+    Produce dos artefactos del mejor modelo en validacion:
+    1. ``confusion_matrix.png``: matriz de confusion normalizada (recall),
+       util para ver que clases/grupos confunde el modelo.
+    2. ``per_class_metrics.json``: IoU y F1 por clase + las metricas macro.
+
+    Args:
+        ckpt_dir: Directorio donde escribir los artefactos antes de subirlos.
+        best_cm: Matriz de confusion densa del mejor epoch.
+        best_metrics: Diccionario de metricas del mejor epoch (incluye
+            ``per_class_iou`` y ``per_class_f1``).
+        num_classes: Numero de clases (18 o 6).
+    """
+    import json
+
+    import matplotlib.pyplot as plt
+    import mlflow
+
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
+
+    # Matriz de confusion (figura). Reconstruye y_true/y_pred desde la cm
+    # expandiendo conteos seria caro; en su lugar dibujamos la cm directamente.
+    cm_f = best_cm.astype(np.float64)
+    row_sums = cm_f.sum(axis=1, keepdims=True)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        cm_norm = np.where(row_sums > 0.0, cm_f / row_sums, 0.0)
+    fig, ax = plt.subplots(figsize=(8, 7))
+    im = ax.imshow(cm_norm, cmap="Blues", vmin=0.0, vmax=1.0)
+    ax.set_xlabel("Prediccion")
+    ax.set_ylabel("Etiqueta real")
+    ax.set_title(f"Matriz de confusion normalizada ({num_classes} clases)")
+    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cm_path = ckpt_dir / "confusion_matrix.png"
+    fig.tight_layout()
+    fig.savefig(cm_path, dpi=150)
+    plt.close(fig)
+
+    metrics_path = ckpt_dir / "per_class_metrics.json"
+    metrics_path.write_text(
+        json.dumps(
+            {
+                "num_classes": num_classes,
+                "best_epoch": best_metrics.get("best_epoch"),
+                "miou": best_metrics.get("miou"),
+                "f1_macro": best_metrics.get("f1_macro"),
+                "pixel_acc": best_metrics.get("pixel_acc"),
+                "balanced_acc": best_metrics.get("balanced_acc"),
+                "cohen_kappa": best_metrics.get("cohen_kappa"),
+                "per_class_iou": best_metrics.get("per_class_iou"),
+                "per_class_f1": best_metrics.get("per_class_f1"),
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    mlflow.log_artifact(str(cm_path), artifact_path="eval")
+    mlflow.log_artifact(str(metrics_path), artifact_path="eval")
+    logger.info("final_artifacts_logged", cm=str(cm_path), metrics=str(metrics_path))
+
+
 # ---------------------------------------------------------------------------
 # API publica
 # ---------------------------------------------------------------------------
@@ -503,6 +559,7 @@ def train_segmentation(
     resume: bool = True,
     warmup_epochs: int = 10,
     lr_min: float = 5e-6,
+    patience: int = 0,
 ) -> dict[str, float]:
     """Entrena un segmentador denso PASTIS-R con logging MLflow.
 
@@ -675,7 +732,12 @@ def train_segmentation(
         n_val=len(val_ds),  # type: ignore[arg-type]
         start_epoch=start_epoch,
         ckpt_dir=str(resolved_ckpt_dir),
+        patience=patience,
     )
+
+    # Estado de early stopping y cm del mejor epoch (para artefactos finales).
+    epochs_no_improve = 0
+    best_cm = np.zeros((resolved_classes, resolved_classes), dtype=np.int64)
 
     with track_experiment(
         _EXPERIMENT_NAME,
@@ -716,7 +778,7 @@ def train_segmentation(
                 scaler=scaler,
                 use_amp=use_amp,
             )
-            val_metrics = _evaluate(
+            val_metrics, val_cm = _evaluate(
                 model,
                 val_loader,
                 device=resolved_device,
@@ -730,6 +792,8 @@ def train_segmentation(
             mlflow.log_metric("val_miou", val_metrics["miou"], step=epoch)
             mlflow.log_metric("val_f1_macro", val_metrics["f1_macro"], step=epoch)
             mlflow.log_metric("val_pixel_acc", val_metrics["pixel_acc"], step=epoch)
+            mlflow.log_metric("val_balanced_acc", val_metrics["balanced_acc"], step=epoch)
+            mlflow.log_metric("val_cohen_kappa", val_metrics["cohen_kappa"], step=epoch)
             mlflow.log_metric("lr", current_lr, step=epoch)
 
             logger.info(
@@ -741,12 +805,18 @@ def train_segmentation(
                 val_miou=round(val_metrics["miou"], 4),
                 val_f1_macro=round(val_metrics["f1_macro"], 4),
                 val_pixel_acc=round(val_metrics["pixel_acc"], 4),
+                val_balanced_acc=round(val_metrics["balanced_acc"], 4),
+                val_cohen_kappa=round(val_metrics["cohen_kappa"], 4),
             )
 
             is_best = val_metrics["miou"] > best_metrics["miou"]
             if is_best:
                 best_metrics = dict(val_metrics)
                 best_metrics["best_epoch"] = float(epoch + 1)
+                best_cm = val_cm.copy()  # cm del mejor epoch (para artefactos)
+                epochs_no_improve = 0
+            else:
+                epochs_no_improve += 1
 
             # Checkpoint por epoch: `last.pt` siempre (para resume), `best.pt`
             # cuando mejora el mIoU de validacion (para inferencia posterior).
@@ -773,6 +843,18 @@ def train_segmentation(
             # Avanza el LR schedule (warmup -> cosine) al final de cada epoch.
             scheduler.step()
 
+            # Early stopping: corta si val_miou no mejora en `patience` epochs
+            # (DeepLabv3+ tiende a sobreajustar tras ~7 epochs). 0 = desactivado.
+            if patience > 0 and epochs_no_improve >= patience:
+                logger.info(
+                    "early_stopping",
+                    run_name=mlflow_run_name,
+                    epoch=epoch + 1,
+                    best_epoch=int(best_metrics.get("best_epoch", 0)),
+                    patience=patience,
+                )
+                break
+
         # mIoU inicial -1.0 indica que ningun epoch corrio (no deberia pasar).
         if best_metrics["miou"] < 0.0:
             best_metrics = {"miou": 0.0, "f1_macro": 0.0, "pixel_acc": 0.0}
@@ -780,6 +862,18 @@ def train_segmentation(
         mlflow.log_metric("best_val_miou", best_metrics["miou"])
         mlflow.log_metric("best_val_f1_macro", best_metrics["f1_macro"])
         mlflow.log_metric("best_val_pixel_acc", best_metrics["pixel_acc"])
+        mlflow.log_metric("best_val_balanced_acc", best_metrics.get("balanced_acc", 0.0))
+        mlflow.log_metric("best_val_cohen_kappa", best_metrics.get("cohen_kappa", 0.0))
+
+        # Artefactos del mejor epoch: matriz de confusion (figura PNG) +
+        # metricas por clase (JSON). Para el notebook y el analisis.
+        _log_final_artifacts(
+            resolved_ckpt_dir,
+            best_cm=best_cm,
+            best_metrics=best_metrics,
+            num_classes=resolved_classes,
+        )
+
         # Sube el mejor checkpoint a MLflow como artefacto (para inferencia
         # reproducible desde el run, no solo desde el disco local).
         if best_ckpt.exists():
@@ -828,6 +922,7 @@ def build_and_train(
     num_workers: int = 0,
     ckpt_dir: str | Path | None = None,
     resume: bool = True,
+    patience: int = 0,
     mlflow_run_name: str | None = None,
     mlflow_uri: str | None = None,
 ) -> dict[str, float]:
@@ -934,6 +1029,7 @@ def build_and_train(
         num_workers=num_workers,
         ckpt_dir=ckpt_dir,
         resume=resume,
+        patience=patience,
         num_classes=n_classes,
         mlflow_uri=mlflow_uri,
     )
@@ -967,6 +1063,15 @@ def _build_arg_parser() -> argparse.ArgumentParser:  # pragma: no cover
         help=(
             "Directorio de checkpoints. Default checkpoints/segmentation/"
             "<run-name>. Guarda last.pt (resume) + best.pt (inferencia) por epoch."
+        ),
+    )
+    p.add_argument(
+        "--patience",
+        type=int,
+        default=0,
+        help=(
+            "Early stopping: corta si val_miou no mejora en N epochs. "
+            "0 = desactivado. DeepLabv3+ sobreajusta tras ~7 epochs."
         ),
     )
     p.add_argument(
@@ -1016,6 +1121,7 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover
         num_workers=args.num_workers,
         ckpt_dir=args.ckpt_dir,
         resume=not args.no_resume,
+        patience=args.patience,
         mlflow_run_name=args.run_name,
         mlflow_uri=args.mlflow_uri,
     )

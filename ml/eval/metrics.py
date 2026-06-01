@@ -47,6 +47,7 @@ __all__ = [
     "confusion_matrix_figure",
     "dense_confusion_matrix",
     "dense_f1_macro",
+    "dense_metrics_from_cm",
     "dense_miou",
     "dense_pixel_accuracy",
     "segmentation_metrics_report",
@@ -532,4 +533,81 @@ def segmentation_metrics_report(
         "f1_macro": f1_macro,
         "pixel_acc": pixel_acc,
         "per_class_iou": per_class_iou,
+    }
+
+
+def dense_metrics_from_cm(cm: np.ndarray) -> dict[str, Any]:
+    """Extrae todas las metricas de segmentacion de una matriz de confusion.
+
+    Calcula el reporte completo a partir de una ``cm`` ya acumulada (de todo
+    el split), sin recomputar predicciones. Incluye macro, per-class y dos
+    metricas robustas al desbalance (PASTIS tiene clases con ~50x diferencia
+    de frecuencia): Cohen kappa y balanced accuracy (recall promedio).
+
+    Args:
+        cm: Matriz de confusion ``(n_classes, n_classes)`` densa (filas =
+            ground truth, columnas = prediccion).
+
+    Returns:
+        Diccionario con:
+        - ``miou``: mean IoU macro (clases ausentes excluidas).
+        - ``f1_macro``: F1 macro sobre clases presentes.
+        - ``pixel_acc``: accuracy global (overall accuracy).
+        - ``balanced_acc``: media de los recalls por clase presente.
+        - ``cohen_kappa``: acuerdo corregido por azar.
+        - ``per_class_iou`` / ``per_class_f1``: listas ``(n_classes,)`` con
+          ``None`` para las clases ausentes del split.
+    """
+    cm_f = cm.astype(np.float64)
+    n_classes = cm.shape[0]
+
+    iou = _per_class_iou_from_cm(cm)
+    miou = 0.0 if np.all(np.isnan(iou)) else float(np.nanmean(iou))
+
+    tp = np.diag(cm_f)
+    fp = cm_f.sum(axis=0) - tp
+    fn = cm_f.sum(axis=1) - tp
+    support = cm_f.sum(axis=1)  # n pixeles reales por clase
+    present = (support + cm_f.sum(axis=0)) > 0.0
+
+    denom_f1 = 2.0 * tp + fp + fn
+    with np.errstate(divide="ignore", invalid="ignore"):
+        f1 = np.where(denom_f1 > 0.0, 2.0 * tp / denom_f1, np.nan)
+    f1_macro = 0.0 if not np.any(present) else float(np.nanmean(f1[present]))
+
+    total = float(cm_f.sum())
+    pixel_acc = 0.0 if total == 0.0 else float(np.trace(cm_f) / total)
+
+    # Balanced accuracy = media de recalls (TP / support) sobre clases con
+    # al menos un pixel real. Robusta al desbalance porque cada clase pesa
+    # igual independientemente de su frecuencia.
+    with np.errstate(divide="ignore", invalid="ignore"):
+        recall = np.where(support > 0.0, tp / support, np.nan)
+    has_support = support > 0.0
+    balanced_acc = (
+        0.0 if not np.any(has_support) else float(np.nanmean(recall[has_support]))
+    )
+
+    # Cohen kappa a partir de la matriz de confusion (formula directa).
+    p_o = pixel_acc
+    expected = float((cm_f.sum(axis=0) * cm_f.sum(axis=1)).sum())
+    p_e = 0.0 if total == 0.0 else expected / (total * total)
+    cohen_kappa = 0.0 if (1.0 - p_e) == 0.0 else float((p_o - p_e) / (1.0 - p_e))
+
+    per_class_iou: list[float | None] = [
+        (None if np.isnan(v) else float(v)) for v in iou
+    ]
+    per_class_f1: list[float | None] = [
+        (None if (i >= n_classes or np.isnan(f1[i])) else float(f1[i]))
+        for i in range(n_classes)
+    ]
+
+    return {
+        "miou": miou,
+        "f1_macro": f1_macro,
+        "pixel_acc": pixel_acc,
+        "balanced_acc": balanced_acc,
+        "cohen_kappa": cohen_kappa,
+        "per_class_iou": per_class_iou,
+        "per_class_f1": per_class_f1,
     }
