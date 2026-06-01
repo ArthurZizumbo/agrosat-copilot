@@ -163,6 +163,18 @@ Documenta TODOS los datasets y modelos usados durante el proyecto. Sin esto, el 
 - License: DINOv3 License (research + commercial con restricciones específicas)
 - Aceptar términos antes de descargar
 
+### AnySat — IGN / Gabriel Astruc et al.
+- Source: `torch.hub` repo `gastruc/anysat` (entrypoint `anysat`, pesos preentrenados)
+- License: MIT (codigo y pesos del repositorio oficial)
+- Citation: Astruc, G., Gonthier, N., Mallet, C., Landrieu, L. (2024). _AnySat: An
+  Earth Observation Model for Any Resolutions, Scales, and Modalities_. arXiv:2412.14123.
+- Attribution required: "AnySat (Astruc et al., 2024, IGN)" en figuras y reportes
+  derivados del modelo #6 del Avance 4.
+- Use scope Avance 4 (EPIC 5): foundation model EO multimodal/multitemporal usado
+  con **encoder congelado** como extractor de features densas + cabeza lineal
+  entrenable para segmentacion semantica sobre PASTIS-R. Carga via `torch.hub` en
+  Colab/L4 (wrapper `ml/models/anysat_wrapper.py`). NO se reentrena el encoder.
+
 ### e5-mistral-7b-instruct (embeddings RAG)
 - HF: `intfloat/e5-mistral-7b-instruct`
 - License: MIT

@@ -252,6 +252,13 @@ ignore = ["S101", "S301"]  # asserts ok en tests; pickle ok para ML
 # permite defaults via Option (B008).
 "scripts/build_baseline_v2_notebook.py" = ["E501", "B008"]
 "scripts/build_avance3_notebook.py" = ["E501", "B008"]
+# Avance 4: builders de los notebooks de segmentacion (modelos #1/#6) y del
+# integrador de los 6, con celdas por strings concatenadas largas (E501) y
+# Typer Option (B008).
+# Las celdas markdown llevan prosa en espanol con acentos y guion largo
+# tipografico (entregable visual), de ahi RUF001/RUF002/RUF003.
+"scripts/build_segmentation_notebook.py" = ["E501", "B008", "RUF001", "RUF002", "RUF003"]
+"scripts/build_avance4_notebook.py" = ["E501", "B008", "RUF001", "RUF002", "RUF003"]
 # US-023-preview: builder del notebook 05 con f-strings largas (E501) y signo
 # de multiplicacion tipografico en narrativa agronomica (RUF001).
 "scripts/build_reencuadre_notebook.py" = ["E501", "B008", "RUF001"]
