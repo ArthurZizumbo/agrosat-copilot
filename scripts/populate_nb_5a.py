@@ -1,5 +1,5 @@
 """Inserta la Seccion de evaluacion (checkpoints reales locales) en
-``notebooks/models/5a_deeplabv3plus.ipynb`` y actualiza
+``notebooks/segmentation/5a_deeplabv3plus.ipynb`` y actualiza
 parametros/conclusiones.
 
 No re-entrena: carga los ``best.pt`` de DeepLabv3+ entrenados en local (variante
@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-NB = Path("notebooks/models/5a_deeplabv3plus.ipynb")
+NB = Path("notebooks/segmentation/5a_deeplabv3plus.ipynb")
 
 
 def _md(src: str) -> dict:
@@ -293,9 +293,12 @@ new_cells = [
     sec_cm_md, sec_cm,
     sec_pred_md, sec_pred,
 ]
-already = any("Seccion 3 - Evaluacion del modelo" in "".join(c["source"]) for c in cells)
+# Idempotencia robusta a la ortografia: se detecta por un identificador en
+# ingles (estable a tildes) presente en la celda de setup de la evaluacion.
+already = any("ml.eval.segmentation_inference" in "".join(c["source"]) for c in cells)
 if not already:
     cells[concl_idx:concl_idx] = new_cells
-
-NB.write_text(json.dumps(nb, ensure_ascii=False, indent=1), encoding="utf-8")
-print(f"5a poblada: {len(cells)} celdas, Seccion de evaluacion insertada.")
+    NB.write_text(json.dumps(nb, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(f"5a poblada: {len(cells)} celdas, Seccion de evaluacion insertada.")
+else:
+    print("5a: la Seccion de evaluacion ya estaba presente; no se modifica.")

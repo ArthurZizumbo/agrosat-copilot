@@ -1,5 +1,5 @@
 """Inserta la Seccion 5 de evaluacion (checkpoints reales 30 epochs) en
-``notebooks/models/5b_tsvit.ipynb`` y actualiza parametros/conclusiones.
+``notebooks/segmentation/5b_tsvit.ipynb`` y actualiza parametros/conclusiones.
 
 No entrena: carga los ``best.pt`` traidos de la VM L4 y genera el analisis
 visual (matriz de confusion, IoU/F1 por clase, predicciones RGB|GT|pred,
@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-NB = Path("notebooks/models/5b_tsvit.ipynb")
+NB = Path("notebooks/segmentation/5b_tsvit.ipynb")
 
 
 def _md(src: str) -> dict:
@@ -277,10 +277,12 @@ sec5_cells = [
     sec5_cm_md, sec5_cm,
     sec5_pred_md, sec5_pred,
 ]
-# Evitar duplicar si ya se inserto.
-already = any("Seccion 5 - Evaluacion" in "".join(c["source"]) for c in cells)
+# Idempotencia robusta a la ortografia: se detecta por un identificador en
+# ingles (estable a tildes) presente en la celda de setup de la Seccion 5.
+already = any("ml.eval.segmentation_inference" in "".join(c["source"]) for c in cells)
 if not already:
     cells[concl_idx:concl_idx] = sec5_cells
-
-NB.write_text(json.dumps(nb, ensure_ascii=False, indent=1), encoding="utf-8")
-print(f"5b poblada: {len(cells)} celdas, Seccion 5 insertada antes de Conclusiones.")
+    NB.write_text(json.dumps(nb, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(f"5b poblada: {len(cells)} celdas, Seccion 5 insertada antes de Conclusiones.")
+else:
+    print("5b: la Seccion 5 ya estaba presente; no se modifica.")

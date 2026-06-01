@@ -1,4 +1,4 @@
-"""Helpers DRY para los notebooks de segmentacion ``notebooks/models/5*.ipynb``.
+"""Helpers DRY para los notebooks de segmentacion ``notebooks/segmentation/5*.ipynb``.
 
 Centraliza los patrones que se repiten en ``5a_deeplabv3plus.ipynb`` y
 ``5b_tsvit.ipynb`` para que cada celda quede como una composicion de llamadas +
