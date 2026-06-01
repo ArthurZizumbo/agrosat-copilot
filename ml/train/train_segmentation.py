@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -284,6 +285,7 @@ def run_training(
     mlflow_uri: str = "",
     resume: bool = True,
     checkpoint_every: int = 1,
+    on_epoch: Callable[[int, dict[str, float]], None] | None = None,
 ) -> dict[str, Any]:
     """Entrena un modelo de segmentacion densa y registra metricas en MLflow.
 
@@ -306,6 +308,10 @@ def run_training(
         output_dir: Directorio destino de los checkpoints ``.pt``.
         comparison_path: Parquet comparativo que consume el notebook integrador.
         mlflow_uri: Override del tracking URI MLflow (vacio = autoresolucion).
+        on_epoch: Callback opcional ``(epoch, metrics)`` invocado tras evaluar
+            cada epoca. Lo usa el ajuste fino con Optuna para reportar la metrica
+            intermedia y podar trials malos (``optuna.TrialPruned``); si lanza,
+            la excepcion se propaga y aborta el entrenamiento de ese trial.
 
     Returns:
         Diccionario con ``model``, ``miou``, ``f1_macro``, ``pixel_accuracy``,
@@ -473,6 +479,10 @@ def run_training(
             if metrics["miou"] >= best["miou"]:
                 best = metrics
             logger.info("segmentation_epoch", epoch=epoch, loss=epoch_loss, **metrics)
+            # Hook por epoca (ajuste fino Optuna: reporta metrica intermedia y poda).
+            # Si lanza (TrialPruned), la excepcion se propaga y corta este entrenamiento.
+            if on_epoch is not None:
+                on_epoch(epoch, metrics)
             # Registro del historial por epoca (para las curvas) + persistencia a Drive.
             history.append({"epoch": epoch, "train_loss": train_loss, **metrics})
             comparison_path.parent.mkdir(parents=True, exist_ok=True)
