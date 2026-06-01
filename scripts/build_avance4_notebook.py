@@ -139,14 +139,21 @@ def _build_cells() -> list:
             "# --- Consolidar los parquets de los integrantes (desde el Drive compartido) ---\n"
             "REPORTS = Path((shared_folder_path if shared_folder_path else '')\n"
             "               + 'reports/segmentation/metrics')\n"
+            "FIGURES = Path((shared_folder_path if shared_folder_path else '')\n"
+            "               + 'reports/segmentation/figures')\n"
+            "# Los 6 modelos del Avance 4. El integrador muestra los que ya exportaron su\n"
+            "# parquet y deja placeholder para los pendientes (no hay que tocar el notebook).\n"
+            "EXPECTED = ['unet', 'anysat', 'deeplabv3plus', 'segformer', 'utae', 'tsvit']\n"
             "parts = sorted(REPORTS.glob('model_comparison_avance4_*.parquet'))\n"
-            "print('parquets encontrados:', [p.name for p in parts])\n\n"
+            "_avail = {p.stem.replace('model_comparison_avance4_', '').replace('_fast', '')\n"
+            "          for p in parts}\n"
+            "print('disponibles:', sorted(_avail))\n"
+            "print('pendientes :', [m for m in EXPECTED if m not in _avail])\n\n"
             "if parts:\n"
             "    table = pl.concat([pl.read_parquet(p) for p in parts], how='vertical_relaxed')\n"
             "    table = table.unique(subset=['model'], keep='last').sort('miou', descending=True)\n"
             "else:\n"
-            "    print('Aun no hay parquets. Corre primero 04d_segmentation_unet_anysat.ipynb '\n"
-            "          'y los notebooks de los demas modelos.')\n"
+            "    print('Aun no hay parquets en', REPORTS)\n"
             "    table = pl.DataFrame()\n\n"
             "_cols = ['model', 'miou_grouped', 'f1_macro_grouped', 'pixel_accuracy_grouped',\n"
             "         'miou', 'f1_macro', 'pixel_accuracy', 'train_time_s', 'epochs']\n"
@@ -166,6 +173,39 @@ def _build_cells() -> list:
             "    display(fig)\n"
             "else:\n"
             "    print('Tabla vacia: nada que graficar todavia.')"
+        )
+    )
+
+    cells.append(
+        md(
+            "## Reportes visuales por modelo\n\n"
+            "Para cada modelo: curvas de entrenamiento, IoU por clase, matriz de confusión y la "
+            "comparación RGB / verdad / predicción, tal como las dejó cada notebook en "
+            "`reports/segmentation/figures/`. Los modelos que todavía no corrieron muestran un "
+            "placeholder, así el cuaderno se completa solo a medida que cada uno entrena."
+        )
+    )
+
+    cells.append(
+        code(
+            "# --- Galeria de figuras por modelo (desde figures/ en Drive) ---\n"
+            "from IPython.display import Image, Markdown, display\n\n"
+            "_fig_types = [('curves', 'Curvas de entrenamiento'),\n"
+            "              ('per_class_iou', 'IoU por clase'),\n"
+            "              ('confusion', 'Matriz de confusion'),\n"
+            "              ('samples', 'RGB / verdad / prediccion')]\n"
+            "for _m in EXPECTED:\n"
+            "    display(Markdown(f'### {_m}'))\n"
+            "    _shown = False\n"
+            "    for _key, _label in _fig_types:\n"
+            "        _f = FIGURES / f'{_key}_{_m}.png'\n"
+            "        if _f.exists():\n"
+            "            display(Markdown(f'**{_label}**'))\n"
+            "            display(Image(filename=str(_f)))\n"
+            "            _shown = True\n"
+            "    if not _shown:\n"
+            "        display(Markdown(f'_Pendiente: aun no hay figuras para `{_m}` "
+            "(correr su notebook de entrenamiento)._'))"
         )
     )
 
@@ -193,9 +233,10 @@ def _build_cells() -> list:
         md(
             "## Ajuste fino del top-2 (30 pts)\n\n"
             "Cada modelo del top-2 se afina con **Optuna (>=30 trials)** sobre `lr`, `weight_decay` "
-            "y `batch_size`, reusando `ml.train.train_segmentation.run_training` (ver hook en "
-            "`04d_segmentation_unet_anysat.ipynb`). Los resultados afinados se exportan a "
-            "`reports/segmentation/tuning_<modelo>.parquet` y se cargan aqui."
+            "y `batch_size`, reusando `ml.train.train_segmentation.run_training` (ver el hook al "
+            "final de cada notebook de modelo, p. ej. `04d_segmentation_unet`). Los resultados "
+            "afinados se exportan a `reports/segmentation/metrics/tuning_<modelo>.parquet` y se "
+            "cargan aqui."
         )
     )
 
@@ -228,14 +269,22 @@ def _build_cells() -> list:
 
     cells.append(
         code(
-            "# --- Modelo final + matriz de confusion ---\n"
+            "# --- Modelo final + sus reportes visuales ---\n"
+            "from IPython.display import Image, Markdown, display\n"
             "if table.height:\n"
             "    final_model = table.row(0, named=True)['model']\n"
-            "    print('Modelo individual final (preliminar por mIoU):', final_model)\n"
-            "    # La matriz de confusion del modelo final se genera en el notebook del\n"
-            "    # responsable (p.ej. 04d para unet/anysat) con dense_confusion_figure.\n"
+            "    _r = table.row(0, named=True)\n"
+            "    display(Markdown(\n"
+            "        f'**Modelo individual final (por mIoU): `{final_model}`** - '\n"
+            "        f'mIoU 6 grupos = {_r.get(\"miou_grouped\")}, '\n"
+            "        f'F1-macro 6 grupos = {_r.get(\"f1_macro_grouped\")}'\n"
+            "    ))\n"
+            "    for _key in ('confusion', 'per_class_iou', 'samples'):\n"
+            "        _f = FIGURES / f'{_key}_{final_model}.png'\n"
+            "        if _f.exists():\n"
+            "            display(Image(filename=str(_f)))\n"
             "else:\n"
-            "    print('Definir el modelo final tras consolidar los 6.')"
+            "    print('Definir el modelo final tras consolidar los modelos.')"
         )
     )
 
