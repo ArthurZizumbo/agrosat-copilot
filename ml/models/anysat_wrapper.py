@@ -187,6 +187,25 @@ class AnySatSegmenter(nn.Module):
             return feats.transpose(1, 2).reshape(b, d, side, side)
         raise ValueError(f"Forma de features densas no soportada: {tuple(feats.shape)}")
 
+    @torch.no_grad()
+    def extract_features(
+        self, image: torch.Tensor, dates: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        """Devuelve el mapa de features denso del encoder congelado ``(B, D, h, w)``.
+
+        Pensado para cachear las features una sola vez y tunear unicamente la cabeza
+        lineal sin re-ejecutar el encoder (el cuello de botella en AnySat). No aplica
+        la cabeza ni el upsample; el llamador entrena su propia cabeza sobre el cache.
+
+        Args:
+            image: ``(B, T, C, H, W)`` serie Sentinel-2 normalizada.
+            dates: ``(B, T)`` dia-del-anio por frame (opcional).
+
+        Returns:
+            Mapa de features denso ``(B, D, h, w)``.
+        """
+        return self._encode(image, dates)
+
     def forward(self, image: torch.Tensor, dates: torch.Tensor | None = None) -> torch.Tensor:
         """Produce logits de segmentacion densos.
 

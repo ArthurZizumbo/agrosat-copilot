@@ -82,7 +82,7 @@ _SETUP_CELL = (
     "if _IN_COLAB:\n"
     "    subprocess.run([sys.executable, '-m', 'pip', '-q', 'install',\n"
     "                    'segmentation-models-pytorch', 'structlog', 'typer', 'polars', "
-    "'mlflow'], check=False)\n\n"
+    "'mlflow', 'optuna'], check=False)\n\n"
     "print('repo:', Path.cwd(), '| colab:', _IN_COLAB, '| drive:', shared_folder_path or '(local)')"
 )
 
@@ -529,22 +529,105 @@ def _build_cells(
         )
     )
 
-    cells.append(
-        md(
+    cells.extend(_tuning_cells(model))
+    return cells
+
+
+def _tuning_cells(model: str) -> list[dict]:
+    """Celdas de ajuste fino Optuna (>=30 trials) especificas del modelo.
+
+    En AnySat el encoder esta congelado: se cachean sus features una vez y cada
+    trial entrena solo la cabeza lineal (segundos/trial). En la U-Net se reentrena
+    la red completa por trial sobre un subset reducido. Ambas exportan
+    ``tuning_<modelo>.parquet`` que consume el integrador.
+    """
+    md = nbf.v4.new_markdown_cell
+    code = nbf.v4.new_code_cell
+    if model == "anysat":
+        tuning_md = (
+            "## Ajuste fino del top-2 (Optuna)\n\n"
+            "Como AnySat entra al top-2, se afinan sus hiperparametros con Optuna (>=30 trials). "
+            "El encoder esta congelado, asi que sus features densas no cambian entre trials: se "
+            "cachean una sola vez y cada trial entrena solo la cabeza lineal (Conv 1x1) sobre ese "
+            "cache, en segundos en vez de los ~30 min por epoca que cuesta re-correr el encoder. "
+            "Se busca `lr` y `weight_decay` maximizando el mIoU de los 6 grupos HCAT; el resumen se "
+            "exporta a `reports/segmentation/metrics/tuning_<modelo>.parquet`, que el integrador "
+            "`Avance4.Equipo17` levanta y muestra."
+        )
+        tuning_code = (
+            "# Ajuste fino de la cabeza lineal con Optuna (>=30 trials). El encoder de AnySat\n"
+            "# esta congelado: se cachean sus features UNA vez y cada trial entrena solo la\n"
+            "# cabeza Conv1x1 sobre ese cache (segundos por trial en vez de ~30 min/epoca).\n"
+            "import optuna\n"
+            "import polars as pl\n"
+            "from ml.models.anysat_wrapper import AnySatSegmenter, load_anysat_encoder\n"
+            "from ml.ingest.pastis_dataset import load_norm_stats, pastis_fold_split, PASTIS_NUM_CLASSES\n"
+            "from ml.tune.anysat_head_tuning import cache_encoder_features, train_head\n\n"
+            "TUNE_TRIALS = 30\n"
+            "TUNE_EPOCHS = 8\n"
+            "TUNE_SUBSET = SUBSET if SUBSET else 300\n\n"
+            "# Split y normalizacion identicos al entrenamiento (folds oficiales, sin leakage).\n"
+            "_split = pastis_fold_split(PASTIS_ROOT, train_folds=(1, 2, 3), val_folds=(4,), test_folds=())\n"
+            "_tr, _va = _split['train'], _split['val']\n"
+            "if TUNE_SUBSET:\n"
+            "    _tr, _va = _tr[:TUNE_SUBSET], _va[:max(1, TUNE_SUBSET // 2)]\n"
+            "_norm = load_norm_stats(PASTIS_ROOT, folds=(1, 2, 3))\n\n"
+            "# Cacheo de features del encoder congelado (una sola pasada por patch).\n"
+            "_model = AnySatSegmenter(PASTIS_NUM_CLASSES, target_size=TARGET_SIZE, encoder=load_anysat_encoder())\n"
+            "print('cacheando features del encoder (train/val)...')\n"
+            "_train_cache = cache_encoder_features(_model, _tr, root=PASTIS_ROOT, target_size=TARGET_SIZE,\n"
+            "                                      norm=_norm, device=DEVICE, batch_size=4, num_workers=NUM_WORKERS)\n"
+            "_val_cache = cache_encoder_features(_model, _va, root=PASTIS_ROOT, target_size=TARGET_SIZE,\n"
+            "                                    norm=_norm, device=DEVICE, batch_size=4, num_workers=NUM_WORKERS)\n"
+            "print('features cacheadas:', len(_train_cache), 'train /', len(_val_cache),\n"
+            "      'val | D =', _train_cache.feature_dim)\n\n"
+            "def _objective(trial):\n"
+            "    lr = trial.suggest_float('lr', 1e-4, 1e-1, log=True)   # cabeza lineal: tolera lr mas alto\n"
+            "    wd = trial.suggest_float('weight_decay', 1e-6, 1e-2, log=True)\n"
+            "    def _report(epoch, metrics):\n"
+            "        trial.report(metrics['miou_grouped'], step=epoch)\n"
+            "        if trial.should_prune():\n"
+            "            raise optuna.TrialPruned()\n"
+            "    best = train_head(_train_cache, _val_cache, num_classes=PASTIS_NUM_CLASSES,\n"
+            "                      target_size=TARGET_SIZE, lr=lr, weight_decay=wd, epochs=TUNE_EPOCHS,\n"
+            "                      batch_size=8, device=DEVICE, seed=trial.number, on_epoch=_report)\n"
+            "    return best['miou_grouped']\n\n"
+            "study = optuna.create_study(\n"
+            "    direction='maximize', study_name=f'tune-{MODEL}',\n"
+            "    sampler=optuna.samplers.TPESampler(seed=42),\n"
+            "    pruner=optuna.pruners.MedianPruner(n_warmup_steps=2),\n"
+            ")\n"
+            "study.optimize(_objective, n_trials=TUNE_TRIALS)\n\n"
+            "# Resumen de todos los trials -> metrics/tuning_<modelo>.parquet (lo consume el Avance4).\n"
+            "_rows = [{\n"
+            "    'model': MODEL,\n"
+            "    'trial': t.number,\n"
+            "    'state': t.state.name,\n"
+            "    'lr': t.params.get('lr'),\n"
+            "    'weight_decay': t.params.get('weight_decay'),\n"
+            "    'batch_size': BATCH,\n"
+            "    'miou_grouped': t.value,\n"
+            "} for t in study.trials]\n"
+            "tuning = pl.DataFrame(_rows)\n"
+            "TUNING_PARQUET = METRICS_DIR / f'tuning_{MODEL}.parquet'\n"
+            "tuning.write_parquet(TUNING_PARQUET)\n"
+            "print('mejores hiperparametros:', study.best_params)\n"
+            "print('mejor mIoU (6 grupos):', round(study.best_value, 4), '| guardado en', TUNING_PARQUET)\n"
+            "tuning.sort('miou_grouped', descending=True, nulls_last=True)"
+        )
+    else:
+        tuning_md = (
             "## Ajuste fino del top-2 (Optuna)\n\n"
             "Como este modelo entra al top-2, se afinan sus hiperparametros con Optuna (>=30 "
-            "trials) maximizando el mIoU de los 6 grupos HCAT. Cada trial entrena pocas epocas "
-            "sobre un subset reducido y usa pruning para cortar los trials que arrancan mal. El "
-            "resumen se exporta a `reports/segmentation/metrics/tuning_<modelo>.parquet`, que el "
-            "integrador `Avance4.Equipo17` levanta y muestra."
+            "trials) maximizando el mIoU de los 6 grupos HCAT. Cada trial reentrena la red sobre "
+            "un subset reducido y usa pruning para cortar los trials que arrancan mal. El resumen "
+            "se exporta a `reports/segmentation/metrics/tuning_<modelo>.parquet`, que el integrador "
+            "`Avance4.Equipo17` levanta y muestra."
         )
-    )
-
-    cells.append(
-        code(
-            "# Ajuste fino con Optuna sobre el top-2 (>=30 trials). Busca lr y weight_decay\n"
-            "# (y batch_size en la U-Net) maximizando el mIoU de los 6 grupos HCAT. Cada trial\n"
-            "# entrena pocas epocas sobre un subset reducido, con pruning para abortar los malos.\n"
+        tuning_code = (
+            "# Ajuste fino con Optuna sobre el top-2 (>=30 trials). Busca lr, weight_decay y\n"
+            "# batch_size maximizando el mIoU de los 6 grupos HCAT. Cada trial reentrena la red\n"
+            "# sobre un subset reducido, con pruning para abortar los trials malos.\n"
             "import optuna\n"
             "import polars as pl\n"
             "from ml.train.train_segmentation import run_training\n\n"
@@ -559,9 +642,7 @@ def _build_cells(
             "def _objective(trial):\n"
             "    lr = trial.suggest_float('lr', 1e-5, 1e-3, log=True)\n"
             "    wd = trial.suggest_float('weight_decay', 1e-6, 1e-2, log=True)\n"
-            "    # En AnySat el batch queda fijo (a 64 px un batch mayor desborda la GPU);\n"
-            "    # en la U-Net 2D si se explora.\n"
-            "    bs = BATCH if MODEL == 'anysat' else trial.suggest_categorical('batch_size', [4, 8, 16])\n\n"
+            "    bs = trial.suggest_categorical('batch_size', [4, 8, 16])\n\n"
             "    def _report(epoch, metrics):\n"
             "        trial.report(metrics['miou_grouped'], step=epoch)\n"
             "        if trial.should_prune():\n"
@@ -597,9 +678,7 @@ def _build_cells(
             "print('mejor mIoU (6 grupos):', round(study.best_value, 4), '| guardado en', TUNING_PARQUET)\n"
             "tuning.sort('miou_grouped', descending=True, nulls_last=True)"
         )
-    )
-
-    return cells
+    return [md(tuning_md), code(tuning_code)]
 
 
 @app.command()
