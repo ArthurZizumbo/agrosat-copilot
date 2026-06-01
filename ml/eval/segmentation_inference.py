@@ -171,6 +171,63 @@ def rgb_from_patch(x_2d: np.ndarray) -> np.ndarray:
     return np.clip((rgb - lo) / (hi - lo), 0.0, 1.0)
 
 
+@torch.no_grad()
+def evaluate_checkpoint(
+    model: torch.nn.Module,
+    dataset: object,
+    *,
+    model_kind: str,
+    num_classes: int = 18,
+    ignore_index: int = 255,
+    max_patches: int | None = None,
+) -> tuple[dict[str, object], np.ndarray]:
+    """Evalua un checkpoint sobre un split acumulando la matriz de confusion.
+
+    Recorre el ``dataset`` de validacion patch a patch, predice y acumula la
+    matriz de confusion densa; al final deriva todas las metricas con
+    :func:`ml.eval.metrics.dense_metrics_from_cm` (mIoU, F1-macro, pixel_acc,
+    balanced accuracy, Cohen kappa, IoU y F1 por clase). Es el helper que las
+    notebooks ``5*`` invocan para reproducir las cifras del entrenamiento sin
+    re-entrenar: cargan ``best.pt`` y llaman aqui.
+
+    Args:
+        model: Modelo cargado en ``eval()`` (ver :func:`load_segmentation_model`).
+        dataset: ``PASTISSegmentationDataset`` del split de validacion.
+        model_kind: Arquitectura (decide la firma del forward).
+        num_classes: Numero de clases (18 semantico o 6 HCAT).
+        ignore_index: Valor ignorado en las etiquetas.
+        max_patches: Si se da, limita el numero de patches evaluados (smoke).
+
+    Returns:
+        Tupla ``(metrics, cm)``: ``metrics`` es el dict completo de
+        ``dense_metrics_from_cm`` y ``cm`` la matriz de confusion
+        ``(num_classes, num_classes)`` acumulada.
+    """
+    from ml.eval.metrics import dense_confusion_matrix, dense_metrics_from_cm
+
+    n = len(dataset)  # type: ignore[arg-type]
+    if max_patches is not None:
+        n = min(n, max_patches)
+    cm = np.zeros((num_classes, num_classes), dtype=np.int64)
+    for idx in range(n):
+        x, y = dataset[idx]  # type: ignore[index]
+        pred = predict_patch(model, x, model_kind=model_kind)
+        cm += dense_confusion_matrix(
+            pred, y.numpy(), n_classes=num_classes, ignore_index=ignore_index
+        )
+    metrics = dense_metrics_from_cm(cm)
+    logger.info(
+        "checkpoint_evaluated",
+        model_kind=model_kind,
+        n_patches=n,
+        num_classes=num_classes,
+        miou=round(float(metrics["miou"]), 4),
+        f1_macro=round(float(metrics["f1_macro"]), 4),
+        pixel_acc=round(float(metrics["pixel_acc"]), 4),
+    )
+    return metrics, cm
+
+
 def predict_examples(
     model: torch.nn.Module,
     dataset: object,
