@@ -30,13 +30,20 @@ import polars as pl
 # Esquema espejo de run_training (Aaron): columnas que consume la consolidacion.
 # Las metricas *_grouped solo aplican a deeplabv3plus (variante HCAT-6); para los
 # temporales quedan en None (la convencion de la tabla las deja vacias).
+#
+# ``train_time_s`` es el wall-clock real del run de entrenamiento medido en el
+# servidor MLflow local (Docker Postgres :5010, experimento 7
+# ``agrosat-segmentation``): ``end_time - start_time`` del run FINISHED.
+#   - deeplabv3plus (mobilenet, 18 clases, run 1c1e4f6f): 44676.4 s (~12.4 h).
+#   - tsvit          (run 24f70756, batch 16, 30 epochs):  1894.4 s (~31.6 min, RTX 4070).
+#   - tsvit-pheno    (run 0eef8a60, batch 16, 30 epochs):  1915.4 s (~31.9 min, RTX 4070).
 _ROWS = [
     {
         "model": "deeplabv3plus",
         "miou": 0.2709, "f1_macro": 0.3864, "pixel_accuracy": 0.6743,
         "miou_grouped": 0.4682, "f1_macro_grouped": 0.6009,
         "pixel_accuracy_grouped": 0.8018,
-        "train_time_s": None, "epochs": 15,
+        "train_time_s": 44676.4, "epochs": 15,
         "n_train": None, "n_val": 482, "n_trainable_params": None,
         "target_size": 128, "device": "cuda",
     },
@@ -45,7 +52,7 @@ _ROWS = [
         "miou": 0.6215, "f1_macro": 0.7473, "pixel_accuracy": 0.8724,
         "miou_grouped": None, "f1_macro_grouped": None,
         "pixel_accuracy_grouped": None,
-        "train_time_s": None, "epochs": 30,
+        "train_time_s": 1894.4, "epochs": 30,
         "n_train": None, "n_val": 482, "n_trainable_params": None,
         "target_size": 128, "device": "cuda",
     },
@@ -54,7 +61,7 @@ _ROWS = [
         "miou": 0.6253, "f1_macro": 0.7500, "pixel_accuracy": 0.8759,
         "miou_grouped": None, "f1_macro_grouped": None,
         "pixel_accuracy_grouped": None,
-        "train_time_s": None, "epochs": 30,
+        "train_time_s": 1915.4, "epochs": 30,
         "n_train": None, "n_val": 482, "n_trainable_params": None,
         "target_size": 128, "device": "cuda",
     },
