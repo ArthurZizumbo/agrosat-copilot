@@ -137,7 +137,8 @@ def _build_cells() -> list:
     cells.append(
         code(
             "# --- Consolidar los parquets de los integrantes (desde el Drive compartido) ---\n"
-            "REPORTS = Path((shared_folder_path if shared_folder_path else '') + 'reports/segmentation')\n"
+            "REPORTS = Path((shared_folder_path if shared_folder_path else '')\n"
+            "               + 'reports/segmentation/metrics')\n"
             "parts = sorted(REPORTS.glob('model_comparison_avance4_*.parquet'))\n"
             "print('parquets encontrados:', [p.name for p in parts])\n\n"
             "if parts:\n"
@@ -147,8 +148,8 @@ def _build_cells() -> list:
             "    print('Aun no hay parquets. Corre primero 04d_segmentation_unet_anysat.ipynb '\n"
             "          'y los notebooks de los demas modelos.')\n"
             "    table = pl.DataFrame()\n\n"
-            "_cols = ['model', 'miou', 'f1_macro', 'pixel_accuracy', 'train_time_s', 'epochs',\n"
-            "         'n_train', 'n_val']\n"
+            "_cols = ['model', 'miou_grouped', 'f1_macro_grouped', 'pixel_accuracy_grouped',\n"
+            "         'miou', 'f1_macro', 'pixel_accuracy', 'train_time_s', 'epochs']\n"
             "table.select([c for c in _cols if c in table.columns]) if table.height else table"
         )
     )

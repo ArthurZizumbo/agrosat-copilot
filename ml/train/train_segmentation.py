@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import mlflow
+import numpy as np
 import polars as pl
 import structlog
 import torch
@@ -39,6 +40,7 @@ import typer
 from torch import nn
 from torch.utils.data import DataLoader
 
+from ml.analysis.hcat_grouping import hcat6_dense_lut
 from ml.eval.dense_metrics import DenseConfusionAccumulator
 from ml.ingest.pastis_dataset import (
     PASTIS_IGNORE_INDEX,
@@ -48,6 +50,11 @@ from ml.ingest.pastis_dataset import (
     pastis_fold_split,
 )
 from ml.utils.mlflow_utils import track_experiment
+
+try:
+    from tqdm.auto import tqdm
+except ImportError:  # pragma: no cover - tqdm es opcional
+    tqdm = None
 
 logger = structlog.get_logger(__name__)
 app = typer.Typer(add_completion=False, help=__doc__)
@@ -165,16 +172,43 @@ def _evaluate(
     device: torch.device,
     num_classes: int,
     ignore_index: int,
+    group_lut: np.ndarray | None = None,
 ) -> dict[str, float]:
-    """Evalua el modelo en ``loader`` y devuelve mIoU/F1-macro/pixel-accuracy."""
+    """Evalua el modelo y devuelve mIoU/F1-macro/pixel-accuracy.
+
+    Si se pasa ``group_lut`` (LUT 18 clases -> 6 grupos HCAT), tambien computa las
+    mismas tres metricas sobre los 6 grupos agronomicos (sufijo ``_grouped``),
+    para comparabilidad con el baseline. El fondo y el void no entran en esas
+    metricas; predecir fondo sobre un pixel de cultivo se penaliza con una clase
+    extra "no-cultivo" (id 6) que nunca es objetivo, de modo que el macro promedia
+    solo los 6 grupos de cultivo.
+    """
     model.eval()
     acc = DenseConfusionAccumulator(num_classes, ignore_index=ignore_index, device=str(device))
+    acc_grouped = None
+    lut_target = lut_pred = None
+    if group_lut is not None:
+        acc_grouped = DenseConfusionAccumulator(7, ignore_index=255, device=str(device))
+        lut_target = torch.as_tensor(group_lut, device=device)
+        _pred_lut = group_lut.copy()
+        _pred_lut[_pred_lut == 255] = 6  # fondo/void predichos -> clase "no-cultivo"
+        lut_pred = torch.as_tensor(_pred_lut, device=device)
+    iterator = loader
+    if tqdm is not None:
+        iterator = tqdm(loader, desc="validacion", leave=False, unit="batch")
     with torch.no_grad():
-        for batch in loader:
+        for batch in iterator:
             logits = _forward(model, model_name, batch, device)
             preds = logits.argmax(dim=1)
-            acc.update(preds, batch["semantic"].to(device))
-    return acc.compute()
+            target = batch["semantic"].to(device)
+            acc.update(preds, target)
+            if acc_grouped is not None:
+                acc_grouped.update(lut_pred[preds.clamp(0, 19)], lut_target[target.clamp(0, 19)])
+    flat = acc.compute()
+    if acc_grouped is None:
+        return flat
+    grouped = {f"{k}_grouped": v for k, v in acc_grouped.compute().items()}
+    return {**flat, **grouped}
 
 
 def _upsert_comparison_row(row: dict[str, Any], comparison_path: Path) -> None:
@@ -196,6 +230,41 @@ def _upsert_comparison_row(row: dict[str, Any], comparison_path: Path) -> None:
     new.write_parquet(comparison_path)
 
 
+def _save_checkpoint(
+    path: Path,
+    *,
+    epoch: int,
+    model: nn.Module,
+    optimizer: torch.optim.Optimizer,
+    scaler: torch.amp.GradScaler,
+    best: dict[str, float],
+    config: dict[str, Any],
+) -> None:
+    """Guarda el estado completo para poder reanudar el entrenamiento.
+
+    Persiste modelo, optimizer, scaler, la ultima epoca completada, las mejores
+    metricas y la config (para validar que el checkpoint corresponde a la misma
+    corrida). Se sobreescribe cada epoca; en Colab conviene apuntarlo a Drive
+    para que sobreviva el reinicio de la sesion.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    # Escritura atomica: primero a un .tmp y luego rename, para no corromper el
+    # checkpoint si la sesion se corta justo durante el guardado.
+    torch.save(
+        {
+            "epoch": epoch,
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "scaler_state_dict": scaler.state_dict(),
+            "best": best,
+            "config": config,
+        },
+        tmp,
+    )
+    tmp.replace(path)
+
+
 def run_training(
     *,
     model: str = "unet",
@@ -213,6 +282,8 @@ def run_training(
     output_dir: Path = _DEFAULT_OUTPUT,
     comparison_path: Path = _DEFAULT_COMPARISON,
     mlflow_uri: str = "",
+    resume: bool = True,
+    checkpoint_every: int = 1,
 ) -> dict[str, Any]:
     """Entrena un modelo de segmentacion densa y registra metricas en MLflow.
 
@@ -289,6 +360,30 @@ def run_training(
     use_amp = dev.type == "cuda"
     scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
 
+    # Reanudacion: si hay un checkpoint de la misma corrida, continua desde la
+    # epoca siguiente en vez de empezar de cero (clave en Colab, sesion efimera).
+    resume_ckpt_path = output_dir / f"{model}_ckpt.pt"
+    final_model_path = output_dir / f"{model}_pastis.pt"
+    ckpt_config = {"model": model, "target_size": target_size, "epochs": epochs}
+    start_epoch = 0
+    best: dict[str, float] = {"miou": 0.0, "f1_macro": 0.0, "pixel_accuracy": 0.0}
+    if resume and resume_ckpt_path.exists():
+        try:
+            ckpt = torch.load(resume_ckpt_path, map_location=dev)
+            if ckpt.get("config") == ckpt_config:
+                seg_model.load_state_dict(ckpt["model_state_dict"])
+                optimizer.load_state_dict(ckpt["optimizer_state_dict"])
+                scaler.load_state_dict(ckpt["scaler_state_dict"])
+                best = ckpt["best"]
+                start_epoch = ckpt["epoch"] + 1
+                logger.info("segmentation_resume", model=model, start_epoch=start_epoch, **best)
+            else:
+                logger.warning("segmentation_ckpt_config_mismatch", path=str(resume_ckpt_path))
+        except Exception as exc:  # noqa: BLE001 - checkpoint corrupto: arrancar de cero
+            logger.warning(
+                "segmentation_ckpt_load_failed", path=str(resume_ckpt_path), error=str(exc)
+            )
+
     n_trainable = sum(p.numel() for p in trainable)
     n_total = sum(p.numel() for p in seg_model.parameters())
     logger.info(
@@ -305,7 +400,6 @@ def run_training(
     run_name = f"seg-{model}-pastis-v1"
     tracking_override = mlflow_uri or None
     start = time.perf_counter()
-    best: dict[str, float] = {"miou": 0.0, "f1_macro": 0.0, "pixel_accuracy": 0.0}
 
     with track_experiment(
         _EXPERIMENT_NAME, run_name=run_name, tracking_uri=tracking_override, dvc_path=str(root)
@@ -329,13 +423,25 @@ def run_training(
             }
         )
 
-        for epoch in range(epochs):
+        # LUT 18 clases -> 6 grupos HCAT para reportar tambien la metrica agrupada
+        # (comparable con el baseline). Ver ml.analysis.hcat_grouping.
+        group_lut = hcat6_dense_lut()
+        for epoch in range(start_epoch, epochs):
             seg_model.train()
             if model == "anysat":
                 # El encoder congelado permanece en eval; solo la head entrena.
                 seg_model.encoder.eval()
             epoch_loss = 0.0
-            for batch in train_loader:
+            # Barra de progreso por batch dentro de la epoca (avance, it/s, loss).
+            bar = train_loader
+            if tqdm is not None:
+                bar = tqdm(
+                    train_loader,
+                    desc=f"epoca {epoch + 1}/{epochs}",
+                    leave=False,
+                    unit="batch",
+                )
+            for step, batch in enumerate(bar, 1):
                 target = batch["semantic"].to(dev)
                 optimizer.zero_grad()
                 with torch.amp.autocast("cuda", enabled=use_amp):
@@ -345,9 +451,12 @@ def run_training(
                 scaler.step(optimizer)
                 scaler.update()
                 epoch_loss += float(loss.detach())
+                if tqdm is not None:
+                    bar.set_postfix(loss=f"{epoch_loss / step:.3f}")
 
             metrics = _evaluate(
-                seg_model, model, val_loader, dev, PASTIS_NUM_CLASSES, PASTIS_IGNORE_INDEX
+                seg_model, model, val_loader, dev, PASTIS_NUM_CLASSES, PASTIS_IGNORE_INDEX,
+                group_lut=group_lut,
             )
             mlflow.log_metric("train_loss", epoch_loss / max(1, len(train_loader)), step=epoch)
             for key, value in metrics.items():
@@ -355,20 +464,28 @@ def run_training(
             if metrics["miou"] >= best["miou"]:
                 best = metrics
             logger.info("segmentation_epoch", epoch=epoch, loss=epoch_loss, **metrics)
+            # Checkpoint reanudable cada `checkpoint_every` epocas (y en la ultima).
+            if (epoch + 1) % checkpoint_every == 0 or epoch == epochs - 1:
+                _save_checkpoint(
+                    resume_ckpt_path, epoch=epoch, model=seg_model, optimizer=optimizer,
+                    scaler=scaler, best=best, config=ckpt_config,
+                )
 
         train_time_s = time.perf_counter() - start
         mlflow.log_metric("train_time_s", train_time_s)
 
         output_dir.mkdir(parents=True, exist_ok=True)
-        ckpt_path = output_dir / f"{model}_pastis.pt"
-        torch.save(seg_model.state_dict(), ckpt_path)
-        mlflow.log_artifact(str(ckpt_path))
+        torch.save(seg_model.state_dict(), final_model_path)
+        mlflow.log_artifact(str(final_model_path))
 
         comparison_row = {
             "model": model,
             "miou": best["miou"],
             "f1_macro": best["f1_macro"],
             "pixel_accuracy": best["pixel_accuracy"],
+            "miou_grouped": best.get("miou_grouped"),
+            "f1_macro_grouped": best.get("f1_macro_grouped"),
+            "pixel_accuracy_grouped": best.get("pixel_accuracy_grouped"),
             "train_time_s": train_time_s,
             "epochs": epochs,
             "n_train": len(train_ids),
@@ -385,8 +502,11 @@ def run_training(
         "miou": best["miou"],
         "f1_macro": best["f1_macro"],
         "pixel_accuracy": best["pixel_accuracy"],
+        "miou_grouped": best.get("miou_grouped"),
+        "f1_macro_grouped": best.get("f1_macro_grouped"),
+        "pixel_accuracy_grouped": best.get("pixel_accuracy_grouped"),
         "train_time_s": train_time_s,
-        "checkpoint_path": str(ckpt_path),
+        "checkpoint_path": str(final_model_path),
     }
 
 
@@ -409,6 +529,12 @@ def main(
         Path, typer.Option(help="Parquet comparativo (lo consume el integrador).")
     ] = _DEFAULT_COMPARISON,
     mlflow_uri: Annotated[str, typer.Option(help="Tracking URI MLflow (vacio = auto).")] = "",
+    resume: Annotated[
+        bool, typer.Option("--resume/--no-resume", help="Reanudar desde checkpoint si existe.")
+    ] = True,
+    checkpoint_every: Annotated[
+        int, typer.Option(help="Guardar checkpoint cada N epocas.")
+    ] = 1,
 ) -> None:
     """Wrapper CLI de :func:`run_training` (ver su docstring para los argumentos)."""
     try:
@@ -428,6 +554,8 @@ def main(
             output_dir=output_dir,
             comparison_path=comparison_path,
             mlflow_uri=mlflow_uri,
+            resume=resume,
+            checkpoint_every=checkpoint_every,
         )
     except (FileNotFoundError, RuntimeError) as exc:
         logger.warning("segmentation_train_skipped", reason=str(exc))

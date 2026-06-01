@@ -49,6 +49,7 @@ __all__ = [
     "GroupedVsFlatResult",
     "add_hcat_l1_group",
     "evaluate_flat_vs_grouped",
+    "hcat6_dense_lut",
     "hcat_group_id_map",
     "per_label_f1_table",
 ]
@@ -136,6 +137,29 @@ def hcat_group_id_map() -> dict[str, int]:
         alfabeticamente segun :data:`HCAT_L1_GROUP_ORDER`.
     """
     return {group: idx for idx, group in enumerate(HCAT_L1_GROUP_ORDER, start=1)}
+
+
+def hcat6_dense_lut(ignore_index: int = 255) -> np.ndarray:
+    """LUT ``(20,)`` que mapea la etiqueta densa PASTIS (0-19) a grupo HCAT (0-5).
+
+    Para segmentacion densa: las 18 clases de cultivo (1-18) se colapsan a los 6
+    grupos HCAT Level-1 (ids contiguos 0-5 segun :data:`HCAT_L1_GROUP_ORDER`),
+    mientras que el fondo (0) y el void (19) se mapean a ``ignore_index`` para que
+    no entren en las metricas de 6 grupos (asi son comparables con el baseline
+    tabular, que solo evalua cultivos).
+
+    Args:
+        ignore_index: Valor para fondo y void (no agronomicos). Default 255.
+
+    Returns:
+        Array ``int64`` de forma ``(20,)`` indexable por la clase densa: ``lut[c]``
+        da el grupo HCAT 0-5, o ``ignore_index`` para fondo/void.
+    """
+    order = {group: idx for idx, group in enumerate(HCAT_L1_GROUP_ORDER)}  # 0-5
+    lut = np.full(20, ignore_index, dtype=np.int64)
+    for class_id, group in PASTIS_CLASS_TO_HCAT_L1.items():
+        lut[class_id] = order[group]
+    return lut
 
 
 def add_hcat_l1_group(
