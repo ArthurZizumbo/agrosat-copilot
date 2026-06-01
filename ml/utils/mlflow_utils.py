@@ -147,6 +147,11 @@ def track_experiment(
         y artefactos dentro del bloque ``with``.
     """
     resolved_uri = resolve_tracking_uri(tracking_uri, probe_server=probe_server)
+    # MLflow 3.x pone el file store (file:./mlruns) en "maintenance mode" y lanza
+    # excepcion salvo que se habilite explicitamente. Para el flujo local/Colab del
+    # proyecto el file store es suficiente, asi que lo permitimos.
+    if resolved_uri.startswith("file:"):
+        os.environ.setdefault("MLFLOW_ALLOW_FILE_STORE", "true")
     mlflow.set_tracking_uri(resolved_uri)
     mlflow.set_experiment(experiment_name)
 

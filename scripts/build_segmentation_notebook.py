@@ -196,6 +196,8 @@ def _build_cells(
     num_workers: int = -1,
     batch: int = -1,
     epochs: int = 30,
+    target_size: int = 256,
+    subset: int = 0,
     suffix: str = "",
 ) -> list:
     """Construye las celdas del notebook para una arquitectura concreta.
@@ -205,6 +207,8 @@ def _build_cells(
         num_workers: Override de workers (``-1`` deja el default ``4 if colab``).
         batch: Override de batch (``-1`` deja el del modelo).
         epochs: Numero de epocas.
+        target_size: Resolucion espacial (256 por defecto; AnySat usa 64 por VRAM).
+        subset: Limite de patches por split (0 = todos).
         suffix: Sufijo para los artefactos (parquet/checkpoints), util para correr
             una variante en paralelo sin pisar la corrida principal.
     """
@@ -255,8 +259,8 @@ def _build_cells(
             "    _d.mkdir(parents=True, exist_ok=True)\n"
             f"COMPARISON_PATH = METRICS_DIR / f'model_comparison_avance4_{{MODEL}}{suffix}.parquet'\n"
             "DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'\n"
-            "TARGET_SIZE = 256\n"
-            "SUBSET = 0            # 0 = todos; reducir (p.ej. 600) si la sesion es corta\n"
+            f"TARGET_SIZE = {target_size}\n"
+            f"SUBSET = {subset}            # 0 = todos; reducir si la sesion es corta\n"
             f"EPOCHS = {epochs}\n"
             f"BATCH = {batch_val}\n"
             "MLFLOW_URI = 'file:./mlruns'\n"
@@ -553,6 +557,8 @@ def main(
     num_workers: Annotated[int, typer.Option(help="Override de workers (-1 = default).")] = -1,
     batch: Annotated[int, typer.Option(help="Override de batch (-1 = default del modelo).")] = -1,
     epochs: Annotated[int, typer.Option(help="Numero de epocas.")] = 30,
+    target_size: Annotated[int, typer.Option(help="Resolucion espacial (AnySat: 64).")] = 256,
+    subset: Annotated[int, typer.Option(help="Patches por split (0 = todos).")] = 0,
     suffix: Annotated[str, typer.Option(help="Sufijo de artefactos (correr en paralelo).")] = "",
 ) -> None:
     """Genera el notebook de segmentacion densa de una arquitectura.
@@ -570,7 +576,8 @@ def main(
     out_path = Path(out) if out else _OUT_BY_MODEL[model]
     nb = nbf.v4.new_notebook()
     nb["cells"] = _build_cells(
-        model, num_workers=num_workers, batch=batch, epochs=epochs, suffix=suffix
+        model, num_workers=num_workers, batch=batch, epochs=epochs,
+        target_size=target_size, subset=subset, suffix=suffix
     )
     nb["metadata"] = {
         "kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
