@@ -477,13 +477,24 @@ def train_segmentation(
             else torch.as_tensor(np.asarray(prototypes), dtype=torch.float32)
         ).to(resolved_device)
 
+    # `persistent_workers` evita re-spawn de los workers en cada epoch (coste
+    # alto en Windows con spawn); `prefetch_factor` precarga varios batches por
+    # worker para solapar el colapso temporal (np.median ~79ms/patch) con el
+    # paso GPU. Solo aplican con num_workers > 0.
+    loader_kwargs: dict[str, object] = {
+        "pin_memory": resolved_device.type == "cuda",
+    }
+    if num_workers > 0:
+        loader_kwargs["persistent_workers"] = True
+        loader_kwargs["prefetch_factor"] = 4
+
     train_loader = DataLoader(
         train_ds,
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
         drop_last=False,
-        pin_memory=resolved_device.type == "cuda",
+        **loader_kwargs,
     )
     val_loader = DataLoader(
         val_ds,
@@ -491,7 +502,7 @@ def train_segmentation(
         shuffle=False,
         num_workers=num_workers,
         drop_last=False,
-        pin_memory=resolved_device.type == "cuda",
+        **loader_kwargs,
     )
 
     criterion = build_dice_ce_loss(
@@ -636,6 +647,7 @@ def build_and_train(
     device: str = "auto",
     lr: float = 1e-3,
     lambda_contrast: float = 0.3,
+    num_workers: int = 0,
     mlflow_run_name: str | None = None,
     mlflow_uri: str | None = None,
 ) -> dict[str, float]:
@@ -739,6 +751,7 @@ def build_and_train(
         use_phenology=use_phenology,
         prototypes=prototypes,
         lambda_contrast=lambda_contrast,
+        num_workers=num_workers,
         num_classes=n_classes,
         mlflow_uri=mlflow_uri,
     )
@@ -766,6 +779,16 @@ def _build_arg_parser() -> argparse.ArgumentParser:  # pragma: no cover
     p.add_argument("--device", default="auto", choices=("auto", "cuda", "cpu"))
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--lambda-contrast", type=float, default=0.3)
+    p.add_argument(
+        "--num-workers",
+        type=int,
+        default=0,
+        help=(
+            "Workers del DataLoader. El colapso temporal (np.median ~79ms/patch) "
+            "es CPU-bound; subir esto satura la GPU. Optimo ~3/4 de los cores "
+            "fisicos (ej. 12 en un CPU de 16 cores). 0 = serial (CI/debug)."
+        ),
+    )
     p.add_argument("--run-name", default=None)
     p.add_argument("--mlflow-uri", default=None)
     p.add_argument(
@@ -795,6 +818,7 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover
         device=args.device,
         lr=args.lr,
         lambda_contrast=args.lambda_contrast,
+        num_workers=args.num_workers,
         mlflow_run_name=args.run_name,
         mlflow_uri=args.mlflow_uri,
     )
