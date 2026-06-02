@@ -64,52 +64,45 @@ def _build_cells() -> list:
             "**Sponsor academico**: Dr. Gerardo Jose Camacho - gjcamacho@tec.mx\n\n"
             "**Fecha de entrega**: 2026-06-07.\n\n"
             "---\n\n"
-            "## Resumen ejecutivo\n\n"
-            "El Avance 4 comparo **6 arquitecturas** de segmentacion densa sobre "
-            "PASTIS-R y selecciono **TSViT-pheno** como mejor modelo individual "
-            "(mIoU 0.625, F1-macro 0.750, pixel-acc 0.876, fold-4). Este cuaderno "
-            "**mejora ese modelo** atacando la causa raiz de su brecha a produccion: "
-            "el **desbalance de clases** (la diferencia pixel-acc 0.876 vs F1-macro "
-            "0.750 indica que las clases minoritarias hunden el promedio macro).\n\n"
-            "Plan completo, lifts ajustados y compuerta de produccion: "
-            "[plan Avance 5](../../docs/us-planning/avance5-mejora-modelo-final.md)."
+            "## Resumen\n\n"
+            "El Avance 4 evaluo seis arquitecturas de segmentacion densa sobre "
+            "PASTIS-R. TSViT-pheno obtuvo el mejor desempeno individual: mIoU 0.625, "
+            "F1-macro 0.750 y pixel-accuracy 0.876 sobre el fold de validacion. Este "
+            "cuaderno optimiza dicho modelo mediante ponderacion de clases "
+            "(effective-number) y aumento de datos geometrico, para reducir la "
+            "diferencia entre la pixel-accuracy (0.876) y el F1-macro (0.750), "
+            "asociada al desbalance de clases.\n\n"
+            "Documento de planeacion: "
+            "docs/us-planning/avance5-mejora-modelo-final.md."
         )
     )
 
     cells.append(
         md(
-            "## Objetivos y rubrica del Avance 5\n\n"
-            "- **Ensambles (60 pts)**: 4 ensambles homogeneos y heterogeneos "
-            "(EPIC 6) - en cuaderno hermano `ensembles/`.\n"
-            "- **Seleccion del modelo final (20 pts)**: tabla comparativa baseline "
-            "vs mejorado.\n"
-            "- **Graficas interpretadas (>=4, 20 pts)**: curvas, IoU por clase, "
-            "matriz de confusion, comparativa.\n\n"
-            "> **Veredicto honesto** (verificado contra el codigo y el calendario): "
-            "el target F1>=0.80 / mIoU>=0.70 en **flat-18 NO se alcanza** solo con "
-            "el modelo individual; el cierre del ultimo tramo es trabajo de los "
-            "ensambles (EPIC 6). La decision de produccion (Avance 6) se toma por "
-            "**GO-condicional + doble taxonomia** (flat-18 + grouped-6 HCAT) con "
-            "fallback al baseline XGB+AlphaEarth, no declarando victoria sobre el "
-            "umbral."
+            "## Objetivos\n\n"
+            "- Optimizar el modelo individual seleccionado (TSViT-pheno) mediante "
+            "ponderacion de clases y aumento de datos.\n"
+            "- Comparar el modelo optimizado contra el baseline del Avance 4.\n"
+            "- Analizar el error por clase e interpretar las graficas de desempeno.\n\n"
+            "Los umbrales de referencia para produccion son F1-macro >= 0.80 y mIoU "
+            ">= 0.70 sobre las 18 clases. El modelo individual no alcanza dichos "
+            "umbrales en ese esquema; el esquema agrupado de 6 grupos HCAT se reporta "
+            "como metrica complementaria y los ensambles se desarrollan en un "
+            "cuaderno aparte."
         )
     )
 
     cells.append(
         md(
-            "## Como correr en Colab (GPU)\n\n"
-            "El entrenamiento corre en el **servidor de Colab**, no en tu maquina:\n\n"
-            "1. `Entorno de ejecucion -> Cambiar tipo de entorno -> GPU` (L4 / A100 "
-            "en Colab Pro; T4 en free).\n"
-            "2. Ejecuta las celdas en orden: la siguiente **monta Drive, clona el "
-            "repo e instala dependencias** automaticamente (repo privado -> pide "
-            "token una vez).\n"
-            "3. Los **datos PASTIS-R y los artefactos viven en el Drive compartido** "
-            "(`MyDrive/Integrador/`); no se copian al repo.\n"
-            "4. Pon `RUN_TRAINING=True` para lanzar el entrenamiento. En **L4 con "
-            "batch 16** ronda **~1 h** (40 ep; el run de TSViT del Avance 4 fueron 30 "
-            "ep en ~32 min en una RTX 4070); puede variar segun el I/O de Drive. El "
-            "checkpoint se guarda en Drive y la corrida es reanudable."
+            "## Requisitos de ejecucion\n\n"
+            "- Entorno con GPU (L4 o superior).\n"
+            "- En Colab, la celda de inicializacion monta el Drive compartido, clona "
+            "el repositorio (branch `user/abocanegra/semana-5`) e instala las "
+            "dependencias.\n"
+            "- Los datos PASTIS-R y los artefactos residen en el Drive compartido "
+            "(`MyDrive/Integrador/`).\n"
+            "- El entrenamiento se ejecuta con `RUN_TRAINING = True`. El checkpoint "
+            "se persiste en Drive y la corrida admite reanudacion."
         )
     )
 
@@ -169,25 +162,16 @@ def _build_cells() -> list:
             "import matplotlib.pyplot as plt  # noqa: F401\n"
             "import polars as pl\n\n"
             "_base = shared_folder_path if shared_folder_path else ''\n"
-            "# PASTIS-R sigue en Drive (no esta en DVC: no hay data/PASTIS-R.dvc).\n"
-            "PASTIS_ROOT = Path(_base + 'data/PASTIS-R')\n"
-            "# Avance 4 (SOLO lectura): los parquets HOMOLOGADOS estan en GIT (repo),\n"
-            "# no en Drive. Arthur los forzo a git con import_avance4_from_drive.py\n"
-            "# 'para que sea reproducible desde un clon limpio' (commit c223b06). Las\n"
-            "# copias de Drive son las viejas por-integrante (esquemas distintos) que\n"
-            "# rompen el concat: por eso se lee del repo.\n"
-            "A4_METRICS = Path('reports/segmentation/metrics')\n"
-            "# Entregable Avance 5 (escritura): cada etapa con sus propios archivos.\n"
-            "STAGE_DIR = Path(_base + 'reports/best_model')\n"
+            "PASTIS_ROOT = Path(_base + 'data/PASTIS-R')         # datos en Drive\n"
+            "A4_METRICS = Path('reports/segmentation/metrics')   # parquets Avance 4 (git)\n"
+            "STAGE_DIR = Path(_base + 'reports/best_model')       # artefactos Avance 5\n"
             "METRICS_DIR = STAGE_DIR / 'metrics'\n"
             "FIGURES_DIR = STAGE_DIR / 'figures'\n"
             "CHECKPOINT_DIR = STAGE_DIR / 'checkpoints'\n"
             "for _d in (METRICS_DIR, FIGURES_DIR, CHECKPOINT_DIR):\n"
             "    _d.mkdir(parents=True, exist_ok=True)\n"
             "MLFLOW_URI = 'file:' + str(STAGE_DIR / 'mlruns')\n"
-            "# MLflow 3.x bloquea el file store ('maintenance mode'); este opt-out\n"
-            "# lo reactiva. Lo hereda el subprocess de entrenamiento via os.environ.\n"
-            "os.environ['MLFLOW_ALLOW_FILE_STORE'] = 'true'\n\n"
+            "os.environ['MLFLOW_ALLOW_FILE_STORE'] = 'true'  # MLflow 3.x file store\n\n"
             "RUN_NAME = 'alt-tsvit-pheno-cw-aug-v1'  # variante mejorada\n"
             "BASE_RUN_NAME = 'alt-tsvit-pheno-v1'    # baseline del Avance 4\n"
             "EPOCHS = 40                             # best del Avance 4 fue 28/30\n"
@@ -201,10 +185,9 @@ def _build_cells() -> list:
 
     cells.append(
         md(
-            "## 1. Punto de partida: el mejor modelo del Avance 4\n\n"
-            "TSViT-pheno gano por amplio margen (los temporales doblan a los "
-            "spatial-only). La tabla del Avance 4 confirma la seleccion y cuantifica "
-            "la brecha a los targets de produccion (F1>=0.80, mIoU>=0.70)."
+            "## 1. Modelo de partida (Avance 4)\n\n"
+            "Tabla comparativa de las arquitecturas del Avance 4 y diferencia "
+            "respecto a los umbrales de produccion (F1-macro >= 0.80, mIoU >= 0.70)."
         )
     )
 
@@ -212,9 +195,7 @@ def _build_cells() -> list:
         code(
             "# --- Recap Avance 4: tabla comparativa + brecha del mejor modelo ---\n"
             "parts = sorted(A4_METRICS.glob('model_comparison_avance4_*.parquet'))\n"
-            "# Cada integrante exporto su parquet con un esquema distinto (distinto\n"
-            "# numero de columnas), por eso se proyecta a un set comun y se concatena\n"
-            "# con diagonal_relaxed (une por nombre y rellena faltantes con null).\n"
+            "# diagonal_relaxed tolera parquets con distinto esquema entre integrantes.\n"
             "_keep = ['model', 'miou', 'f1_macro', 'pixel_accuracy',\n"
             "         'miou_grouped', 'f1_macro_grouped', 'pixel_accuracy_grouped']\n"
             "_frames = []\n"
@@ -238,24 +219,19 @@ def _build_cells() -> list:
 
     cells.append(
         md(
-            "## 2. Estrategia de mejora (sin cambiar la arquitectura)\n\n"
-            "La brecha es desbalance puro, asi que las palancas atacan el F1-macro "
-            "de las minoritarias, no la arquitectura (que ya es la mejor):\n\n"
-            "| Palanca | Que hace | Flag CLI |\n"
-            "|---------|----------|----------|\n"
-            "| Class-weighted Dice+CE | pondera CE por clase (effective-number) "
+            "## 2. Estrategia de optimizacion\n\n"
+            "Se mantiene la arquitectura TSViT-pheno y se aplican tres ajustes "
+            "orientados al F1-macro de las clases minoritarias:\n\n"
+            "| Ajuste | Descripcion | Parametro |\n"
+            "|--------|-------------|-----------|\n"
+            "| Ponderacion de clases | CrossEntropy ponderado (effective-number) "
             "| `--class-balance effective` |\n"
-            "| Augmentation D4 | flips/rot90 sincronizados (regulariza) "
+            "| Aumento de datos | Flips y rotaciones D4 sincronizados imagen-mascara "
             "| `--augment` |\n"
-            "| 40 ep + early-stopping | el best fue 28/30 (no convergio) "
+            "| Entrenamiento extendido | 40 epocas con early-stopping "
             "| `--epochs 40 --patience 8` |\n\n"
-            "Codigo: `ml/train/train_segmentation.py` (`_resolve_class_weights`) y "
-            "`ml/data/pastis_seg_dataset.py` (`apply_synchronized_augment`).\n\n"
-            "> Los pesos por clase se computan **solo sobre los folds de train** "
-            "(sin leakage). Su cache es efimero (vive en el repo de la sesion, se "
-            "recalcula si reinicias); los **resultados reutilizables** (checkpoint, "
-            "MLflow, parquets, figuras) se guardan en `reports/best_model/` en el "
-            "Drive compartido."
+            "Los pesos por clase se calculan sobre los folds de entrenamiento. Los "
+            "artefactos reutilizables se persisten en `reports/best_model/`."
         )
     )
 
@@ -281,19 +257,23 @@ def _build_cells() -> list:
             "]\n"
             "print('comando:', ' '.join(cmd))\n"
             "if RUN_TRAINING:\n"
-            "    proc = subprocess.run(cmd)\n"
+            "    # Stream stdout+stderr en vivo (subprocess.run no se ve en la celda).\n"
+            "    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,\n"
+            "                            stderr=subprocess.STDOUT, text=True, bufsize=1)\n"
+            "    for _line in proc.stdout:\n"
+            "        print(_line, end='')\n"
+            "    proc.wait()\n"
             "    print('returncode:', proc.returncode)\n"
             "else:\n"
-            "    print('RUN_TRAINING=False -> no entrena. Pon True en Colab con GPU.')"
+            "    print('RUN_TRAINING=False -> no entrena. Pon True para entrenar.')"
         )
     )
 
     cells.append(
         md(
-            "## 3. Comparativa baseline vs mejorado (seleccion - 20 pts)\n\n"
-            "Lee las metricas de validacion (fold-4) de ambos runs desde MLflow y "
-            "las compara. El modelo final es el mejor de los dos por mIoU; el delta "
-            "cuantifica el aporte de las palancas anti-desbalance."
+            "## 3. Comparativa baseline vs optimizado\n\n"
+            "Metricas de validacion (fold 4) del baseline del Avance 4 y del modelo "
+            "optimizado. La seleccion del modelo final se realiza por mIoU."
         )
     )
 
@@ -342,12 +322,10 @@ def _build_cells() -> list:
 
     cells.append(
         md(
-            "## 4. Error analysis per-clase (calibracion + model card)\n\n"
-            "El F1-macro se hunde por unas pocas clases minoritarias. Esta tabla "
-            "(recall / precision / F1 / soporte por cultivo) las identifica y "
-            "alimenta el model card del Avance 6. Usa "
-            "`DenseConfusionAccumulator.per_class_metrics` sobre el fold-4 con el "
-            "checkpoint del modelo final."
+            "## 4. Analisis de error por clase\n\n"
+            "Precision, recall, F1 e IoU por clase sobre el fold de validacion, "
+            "calculados con el checkpoint del modelo final. Identifica las clases "
+            "con menor desempeno."
         )
     )
 
@@ -389,11 +367,9 @@ def _build_cells() -> list:
 
     cells.append(
         md(
-            "## 5. Graficas interpretadas (>=4, 20 pts)\n\n"
+            "## 5. Graficas de desempeno\n\n"
             "Curvas de entrenamiento, IoU por clase, matriz de confusion y "
-            "comparativa baseline vs mejorado. Se reutilizan los helpers de "
-            "`ml/eval/avance4_figures.py` y las figuras exportadas a "
-            "`reports/segmentation/figures/`."
+            "comparativa, generadas a partir de los artefactos del modelo final."
         )
     )
 
@@ -422,25 +398,14 @@ def _build_cells() -> list:
 
     cells.append(
         md(
-            "## 6. Modelo final y compuerta de produccion (Avance 6)\n\n"
-            "**Modelo final**: TSViT-pheno + class-weights + augmentation (variante "
-            "`alt-tsvit-pheno-cw-aug-v1`), seleccionado por mIoU/F1-macro de "
-            "validacion.\n\n"
-            "**Lectura honesta de produccion** (no se fuerza el numero):\n\n"
-            "- En **flat-18** el modelo individual no cruza 0.80/0.70; lo acerca y "
-            "el resto lo cierran los ensambles (EPIC 6).\n"
-            "- En **grouped-6 HCAT** (taxonomia agronomica que el stakeholder "
-            "consume) la metrica es mas alta; se reporta junto al flat-18, nunca "
-            "como sustituto.\n"
-            "- La decision GO / GO-condicional / NO-GO se toma con el **model card** "
-            "+ **arbol de contingencia** con fallback al baseline XGB+AlphaEarth "
-            "(F1>=0.60 garantizado), y despliegue via Pub/Sub + Cloud Run L4 worker "
-            "(regla global 9).\n\n"
-            "Detalle: [plan Avance 5, seccion 5]"
-            "(../../docs/us-planning/avance5-mejora-modelo-final.md).\n\n"
-            "**Proximos pasos**: 4 ensambles obligatorios (cuaderno hermano), 3-fold "
-            "CV del config ganador para el numero defendible con intervalos de "
-            "confianza."
+            "## 6. Modelo final y evaluacion para produccion\n\n"
+            "Modelo seleccionado: TSViT-pheno con ponderacion de clases y aumento de "
+            "datos (`alt-tsvit-pheno-cw-aug-v1`).\n\n"
+            "La evaluacion para produccion contrasta el desempeno contra los "
+            "umbrales F1-macro >= 0.80 y mIoU >= 0.70, en los esquemas de 18 clases "
+            "y de 6 grupos HCAT, con el baseline XGBoost+AlphaEarth como capa de "
+            "respaldo. La inferencia se ejecuta de forma asincrona.\n\n"
+            "_Conclusiones a completar tras la ejecucion del entrenamiento._"
         )
     )
 
