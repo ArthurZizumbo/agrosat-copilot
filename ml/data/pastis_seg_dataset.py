@@ -197,6 +197,47 @@ def _equispaced_indices(n_available: int, n_select: int) -> np.ndarray:
     return np.unique(np.round(idx).astype(int))
 
 
+def apply_synchronized_augment(
+    x: np.ndarray,
+    y: np.ndarray,
+    *,
+    hflip: bool,
+    vflip: bool,
+    rot_k: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Aplica flips/rotaciones D4 de forma SINCRONIZADA a imagen y mascara.
+
+    Las transformaciones operan sobre los dos ultimos ejes (``H, W``), de modo
+    que sirven tanto para ``x`` 2D ``(C, H, W)`` como temporal
+    ``(T, C, H, W)``, preservando la correspondencia pixel-a-pixel con la
+    mascara ``y (H, W)``. Son invariantes de etiqueta para cultivos (una parcela
+    vista desde satelite no tiene orientacion canonica), por lo que regularizan
+    sin introducir sesgo. NO se aplica augmentacion espectral/color: rompería la
+    normalizacion por fold y la señal fenologica.
+
+    Args:
+        x: Tensor de imagen ``(..., H, W)``.
+        y: Mascara de clase ``(H, W)``.
+        hflip: Voltea horizontalmente (eje ``W``) si ``True``.
+        vflip: Voltea verticalmente (eje ``H``) si ``True``.
+        rot_k: Numero de rotaciones de 90 grados (``0..3``) en el plano
+            ``(H, W)``.
+
+    Returns:
+        Tupla ``(x_aug, y_aug)`` con arrays contiguos.
+    """
+    if hflip:
+        x = np.flip(x, axis=-1)
+        y = np.flip(y, axis=-1)
+    if vflip:
+        x = np.flip(x, axis=-2)
+        y = np.flip(y, axis=-2)
+    if rot_k % 4:
+        x = np.rot90(x, k=rot_k, axes=(-2, -1))
+        y = np.rot90(y, k=rot_k, axes=(-2, -1))
+    return np.ascontiguousarray(x), np.ascontiguousarray(y)
+
+
 class PASTISSegmentationDataset(Dataset):
     """Dataset PyTorch de segmentacion densa sobre PASTIS-R.
 
@@ -226,18 +267,20 @@ class PASTISSegmentationDataset(Dataset):
 
     def __init__(
         self,
-        root: Path = _DEFAULT_ROOT,
+        root: Path | str | None = None,
         folds: Sequence[int] = (1, 2, 3),
         n_timesteps: int = 10,
         collapse_time: CollapseMode = "median",
         target: TargetMode = "semantic18",
         ignore_index: int = 255,
         seed: int = 42,
+        augment: bool = False,
     ) -> None:
         """Inicializa el dataset filtrando los patches por fold oficial.
 
         Args:
-            root: Raiz del dataset PASTIS-R (``data/PASTIS-R/`` por defecto).
+            root: Raiz del dataset PASTIS-R. ``None`` usa ``data/PASTIS-R/`` en
+                el repo; pasar una ruta permite apuntar a Drive/GCS en Colab.
             folds: Folds oficiales a incluir (subconjunto de 1..5).
             n_timesteps: Fechas a conservar en modo temporal (submuestreo
                 equiespaciado determinista).
@@ -250,6 +293,11 @@ class PASTISSegmentationDataset(Dataset):
             seed: Semilla para reproducibilidad. El submuestreo temporal ya es
                 determinista (equiespaciado); ``seed`` se conserva para futuras
                 variantes estocasticas y queda registrado.
+            augment: Si ``True`` aplica augmentacion geometrica D4 (flips H/V +
+                rot90 sincronizados imagen-mascara) en ``__getitem__``. Solo
+                debe activarse en el split de TRAIN; el de validacion queda
+                determinista. Las decisiones aleatorias usan el RNG global de
+                ``torch`` (sembrado por worker/epoch por el ``DataLoader``).
 
         Raises:
             ValueError: si ``collapse_time`` o ``target`` no son validos, o si
@@ -268,13 +316,14 @@ class PASTISSegmentationDataset(Dataset):
         if n_timesteps <= 0:
             raise ValueError(f"n_timesteps debe ser positivo, recibido {n_timesteps}.")
 
-        self.root = Path(root)
+        self.root = Path(root) if root is not None else _DEFAULT_ROOT
         self.folds = tuple(int(f) for f in folds)
         self.n_timesteps = int(n_timesteps)
         self.collapse_time = collapse_time
         self.target = target
         self.ignore_index = int(ignore_index)
         self.seed = int(seed)
+        self.augment = bool(augment)
 
         s2_dir = self.root / "DATA_S2"
         if not s2_dir.exists():
@@ -370,6 +419,60 @@ class PASTISSegmentationDataset(Dataset):
         sem = np.clip(semantic.astype(np.int64), 0, 19)
         return self._label_lut[sem]
 
+    def _apply_augment(
+        self, x: np.ndarray, y: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Augmentacion geometrica D4 sincronizada (solo split de train).
+
+        Sortea flip H/V y rotacion de 90 grados con el RNG global de ``torch``
+        (que el ``DataLoader`` siembra por worker y por epoch, manteniendo
+        reproducibilidad dado el seed global y descorrelacion entre workers) y
+        delega en :func:`apply_synchronized_augment`.
+
+        Args:
+            x: Tensor de imagen ``(..., H, W)`` normalizado.
+            y: Mascara de clase ``(H, W)``.
+
+        Returns:
+            Tupla ``(x_aug, y_aug)`` transformada de forma consistente.
+        """
+        hflip = bool(torch.rand(()).item() < 0.5)
+        vflip = bool(torch.rand(()).item() < 0.5)
+        rot_k = int(torch.randint(0, 4, (1,)).item())
+        return apply_synchronized_augment(
+            x, y, hflip=hflip, vflip=vflip, rot_k=rot_k
+        )
+
+    def class_pixel_counts(self) -> np.ndarray:
+        """Cuenta pixeles por clase de entrenamiento sobre este split.
+
+        Lee solo la mascara semantica de cada patch (``TARGET_<pid>.npy[0]``,
+        sin cargar S2) y la remapea al esquema de etiquetas del dataset. Los
+        pixeles ``ignore_index`` quedan fuera del conteo. Sirve para derivar
+        pesos por clase (inverse-frequency / effective-number) que contrarresten
+        el desbalance que castiga el F1-macro (las clases minoritarias dominan
+        el promedio macro).
+
+        Returns:
+            Array int64 de longitud ``num_classes`` con el conteo de pixeles por
+            clase en ``[0, num_classes)``.
+        """
+        counts = np.zeros(self.num_classes, dtype=np.int64)
+        ann_dir = self.root / "ANNOTATIONS"
+        for pid in self.patch_ids:
+            tgt_path = ann_dir / f"TARGET_{pid}.npy"
+            if not tgt_path.exists():
+                continue
+            semantic = np.load(tgt_path)[0]
+            y = self._remap_labels(semantic)
+            valid = (y >= 0) & (y < self.num_classes)
+            if bool(valid.any()):
+                counts += np.bincount(
+                    y[valid].astype(np.int64).ravel(),
+                    minlength=self.num_classes,
+                )
+        return counts
+
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
         """Carga y transforma el patch ``idx`` a ``(x, y)`` tensores.
 
@@ -405,6 +508,9 @@ class PASTISSegmentationDataset(Dataset):
             y = np.full((h, w), self.ignore_index, dtype=np.int64)
         else:
             y = self._remap_labels(semantic)
+
+        if self.augment:
+            x, y = self._apply_augment(x, y)
 
         return torch.from_numpy(np.ascontiguousarray(x)), torch.from_numpy(
             np.ascontiguousarray(y)

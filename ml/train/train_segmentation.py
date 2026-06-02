@@ -60,6 +60,8 @@ if TYPE_CHECKING:  # pragma: no cover - solo anotaciones de tipo
 
     from torch.utils.data import Dataset
 
+    from ml.data.pastis_seg_dataset import PASTISSegmentationDataset
+
 try:
     from tqdm.auto import tqdm
 except ImportError:  # pragma: no cover - tqdm es opcional
@@ -1010,6 +1012,7 @@ def train_segmentation(
     mlflow_uri: str | None = None,
     dice_weight: float = 1.0,
     ce_weight: float = 1.0,
+    class_weights: Sequence[float] | np.ndarray | torch.Tensor | None = None,
     ckpt_dir: str | Path | None = None,
     resume: bool = True,
     warmup_epochs: int = 10,
@@ -1057,6 +1060,10 @@ def train_segmentation(
             :func:`ml.utils.mlflow_utils.resolve_tracking_uri`.
         dice_weight: Peso del termino Dice en la perdida de segmentacion.
         ce_weight: Peso del termino CrossEntropy en la perdida de segmentacion.
+        class_weights: Pesos por clase (longitud ``num_classes``) para el
+            termino CrossEntropy, o ``None`` (sin ponderar). Contrarrestan el
+            desbalance que castiga el F1-macro al subir el gradiente de las
+            clases minoritarias. Se mueven al device junto al criterion.
 
     Returns:
         Diccionario ``{"miou", "f1_macro", "pixel_acc"}`` del **mejor epoch**
@@ -1121,6 +1128,7 @@ def train_segmentation(
     criterion = build_dice_ce_loss(
         ignore_index=ignore_index,
         n_classes=resolved_classes,
+        class_weights=class_weights,
         dice_weight=dice_weight,
         ce_weight=ce_weight,
     ).to(resolved_device)
@@ -1362,11 +1370,132 @@ _DEFAULT_RUN_NAMES: dict[str, str] = {
 }
 
 
+def _class_weights_from_counts(
+    counts: np.ndarray,
+    *,
+    scheme: str,
+    beta: float,
+    clip: tuple[float, float] = (0.5, 4.0),
+) -> np.ndarray:
+    """Deriva pesos por clase a partir de conteos de pixeles.
+
+    Args:
+        counts: Conteo de pixeles por clase (longitud ``C``).
+        scheme: ``"effective"`` (effective-number de Cui et al. 2019,
+            ``(1-beta)/(1-beta^n)``) o ``"inverse"`` (inverse-frequency
+            ``median_freq/freq``).
+        beta: Hiperparametro del esquema effective-number (``~0.9999``).
+        clip: Rango ``[min, max]`` al que se recortan los pesos tras normalizar
+            a media 1 (evita que clases ultra-raras desestabilicen el
+            transformer con el LR alto del warmup).
+
+    Returns:
+        Array float32 de pesos por clase, normalizado a media 1 y recortado. Las
+        clases ausentes (``count == 0``) reciben peso neutro 1.0.
+
+    Raises:
+        ValueError: si ``scheme`` no es ``"effective"`` ni ``"inverse"``.
+    """
+    counts_f = counts.astype(np.float64)
+    present = counts_f > 0
+    safe = np.where(present, counts_f, 1.0)
+    if scheme == "effective":
+        eff_num = 1.0 - np.power(beta, safe)
+        weights = (1.0 - beta) / np.where(eff_num > 0, eff_num, 1.0)
+    elif scheme == "inverse":
+        freq = safe / safe.sum()
+        ref = float(np.median(freq[present])) if present.any() else 1.0
+        weights = ref / freq
+    else:
+        raise ValueError(
+            f"class_balance invalido: {scheme!r}; use 'effective' o 'inverse'."
+        )
+    # Normaliza a media 1 SOLO sobre clases presentes, recorta, y deja las
+    # ausentes (count == 0) en peso neutro 1.0 al final (si se neutralizaran
+    # antes de normalizar quedarian con el peso mas alto tras la division).
+    if present.any():
+        weights = weights / float(weights[present].mean())
+    weights = np.clip(weights, clip[0], clip[1])
+    weights = np.where(present, weights, 1.0)
+    return weights.astype(np.float32)
+
+
+def _resolve_class_weights(
+    train_ds: PASTISSegmentationDataset,
+    *,
+    scheme: str | None,
+    beta: float,
+    n_classes: int,
+    train_folds: tuple[int, ...],
+    target: str,
+) -> np.ndarray | None:
+    """Calcula (con cache en disco) los pesos por clase del split de train.
+
+    Si ``scheme`` es ``None`` devuelve ``None`` (sin ponderar; comportamiento
+    historico). Si no, cuenta pixeles por clase con
+    :meth:`PASTISSegmentationDataset.class_pixel_counts` (cacheado en
+    ``reports/segmentation/metrics/class_counts_<target>_<folds>.json`` para no
+    re-escanear las anotaciones en cada run) y deriva los pesos.
+
+    Args:
+        train_ds: Dataset de entrenamiento (provee los conteos por clase).
+        scheme: ``None`` | ``"effective"`` | ``"inverse"``.
+        beta: Hiperparametro effective-number.
+        n_classes: Numero de clases del esquema de etiquetas activo.
+        train_folds: Folds de train (para la clave de cache).
+        target: ``"semantic18"`` o ``"hcat6"`` (para la clave de cache).
+
+    Returns:
+        Vector de pesos float32 (longitud ``n_classes``) o ``None``.
+    """
+    import json
+
+    if scheme is None:
+        return None
+    folds_tag = "-".join(str(f) for f in train_folds)
+    cache_path = (
+        Path("reports/segmentation/metrics")
+        / f"class_counts_{target}_{folds_tag}.json"
+    )
+    counts: np.ndarray | None = None
+    if cache_path.exists():
+        try:
+            cached = json.loads(cache_path.read_text(encoding="utf-8"))
+            if int(cached.get("n_classes", -1)) == n_classes:
+                counts = np.asarray(cached["counts"], dtype=np.int64)
+        except (ValueError, KeyError, OSError):
+            counts = None
+    if counts is None:
+        counts = train_ds.class_pixel_counts()
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(
+            json.dumps(
+                {
+                    "target": target,
+                    "train_folds": list(train_folds),
+                    "n_classes": n_classes,
+                    "counts": counts.tolist(),
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+    weights = _class_weights_from_counts(counts, scheme=scheme, beta=beta)
+    logger.info(
+        "class_weights_resolved",
+        scheme=scheme,
+        beta=beta,
+        weights=[round(float(w), 3) for w in weights],
+    )
+    return weights
+
+
 def build_and_train(
     model_kind: str,
     *,
     train_folds: tuple[int, ...] = _DEFAULT_TRAIN_FOLDS,
     val_folds: tuple[int, ...] = _DEFAULT_VAL_FOLDS,
+    root: str | Path | None = None,
     epochs: int = 30,
     batch_size: int = 4,
     n_timesteps: int = 10,
@@ -1378,6 +1507,9 @@ def build_and_train(
     ckpt_dir: str | Path | None = None,
     resume: bool = True,
     patience: int = 0,
+    augment: bool = False,
+    class_balance: str | None = None,
+    class_balance_beta: float = 0.9999,
     mlflow_run_name: str | None = None,
     mlflow_uri: str | None = None,
 ) -> dict[str, float]:
@@ -1394,6 +1526,8 @@ def build_and_train(
             fenologia) o ``"tsvit-pheno"`` (temporal con rama contrastiva).
         train_folds: Folds PASTIS-R de entrenamiento.
         val_folds: Folds de validacion (disjuntos del train).
+        root: Raiz de PASTIS-R. ``None`` usa ``data/PASTIS-R`` en el repo;
+            pasar una ruta apunta a Drive/GCS (necesario en Colab).
         epochs: Numero de epochs.
         batch_size: Tamano de batch.
         n_timesteps: T submuestreado para los modelos temporales.
@@ -1427,16 +1561,33 @@ def build_and_train(
     collapse_time = "median" if model_kind == "deeplabv3plus" else None
     run_name = mlflow_run_name or _DEFAULT_RUN_NAMES[model_kind]
 
+    # root permite apuntar PASTIS-R fuera del repo (p.ej. Drive en Colab); None
+    # deja el default del dataset (data/PASTIS-R en el repo).
     train_ds = PASTISSegmentationDataset(
+        root=root,
         folds=train_folds,
         collapse_time=collapse_time,
         n_timesteps=n_timesteps,
         target=target,
+        augment=augment,
     )
     val_ds = PASTISSegmentationDataset(
+        root=root,
         folds=val_folds,
         collapse_time=collapse_time,
         n_timesteps=n_timesteps,
+        target=target,
+    )
+
+    # Pesos por clase (inverse-freq / effective-number) para contrarrestar el
+    # desbalance que castiga el F1-macro. Se computan SOLO sobre los folds de
+    # train (sin leakage del fold de val) y se cachean en disco.
+    class_weights = _resolve_class_weights(
+        train_ds,
+        scheme=class_balance,
+        beta=class_balance_beta,
+        n_classes=n_classes,
+        train_folds=train_folds,
         target=target,
     )
 
@@ -1485,6 +1636,7 @@ def build_and_train(
         ckpt_dir=ckpt_dir,
         resume=resume,
         patience=patience,
+        class_weights=class_weights,
         num_classes=n_classes,
         mlflow_uri=mlflow_uri,
     )
@@ -1554,6 +1706,39 @@ def _build_arg_parser() -> argparse.ArgumentParser:  # pragma: no cover
     p.add_argument(
         "--val-folds", default="4", help="Folds de validacion separados por coma."
     )
+    p.add_argument(
+        "--root",
+        default=None,
+        help=(
+            "Raiz de PASTIS-R. Vacio = data/PASTIS-R en el repo. En Colab apunta "
+            "al Drive montado (p.ej. /content/drive/MyDrive/Integrador/data/PASTIS-R)."
+        ),
+    )
+    p.add_argument(
+        "--augment",
+        action="store_true",
+        help=(
+            "Activa augmentacion geometrica D4 (flips H/V + rot90 sincronizados) "
+            "solo en el split de train. Regulariza el dataset pequeno (~1455 "
+            "patches) sin coste GPU."
+        ),
+    )
+    p.add_argument(
+        "--class-balance",
+        choices=("effective", "inverse"),
+        default=None,
+        help=(
+            "Pondera el CrossEntropy por clase para subir el F1-macro bajo "
+            "desbalance. 'effective' = effective-number (Cui 2019); 'inverse' = "
+            "inverse-frequency. None = sin ponderar (default historico)."
+        ),
+    )
+    p.add_argument(
+        "--class-balance-beta",
+        type=float,
+        default=0.9999,
+        help="Beta del esquema effective-number (solo si --class-balance=effective).",
+    )
     return p
 
 def main_legacy(argv: list[str] | None = None) -> int:  # pragma: no cover
@@ -1565,6 +1750,7 @@ def main_legacy(argv: list[str] | None = None) -> int:  # pragma: no cover
         args.model,
         train_folds=train_folds,
         val_folds=val_folds,
+        root=args.root,
         epochs=args.epochs,
         batch_size=args.batch_size,
         n_timesteps=args.n_timesteps,
@@ -1576,6 +1762,9 @@ def main_legacy(argv: list[str] | None = None) -> int:  # pragma: no cover
         ckpt_dir=args.ckpt_dir,
         resume=not args.no_resume,
         patience=args.patience,
+        augment=args.augment,
+        class_balance=args.class_balance,
+        class_balance_beta=args.class_balance_beta,
         mlflow_run_name=args.run_name,
         mlflow_uri=args.mlflow_uri,
     )

@@ -1,0 +1,447 @@
+"""Builder del notebook integrador Avance 5 (Equipo 17): mejora del modelo final.
+
+Genera ``notebooks/best_model/Avance5.Equipo17.ipynb`` de forma programatica y
+reproducible (mismo patron que ``scripts/build_avance4_notebook.py``). El Avance
+5 parte del **mejor modelo del Avance 4** (TSViT-pheno, mIoU 0.625 / F1-macro
+0.750 en PASTIS-R fold-4) y lo lleva hacia el umbral de produccion atacando el
+desbalance de clases, que es la causa raiz de la brecha (pixel-acc 0.876 vs
+F1-macro 0.750).
+
+Palancas implementadas en el repo y orquestadas por este notebook:
+
+- **Class-weighted Dice+CE** (``--class-balance effective``): pondera el
+  CrossEntropy por clase (effective-number de Cui et al. 2019) para subir el
+  recall de los cultivos minoritarios que hunden el F1-macro.
+- **Augmentation geometrica D4** (``--augment``): flips H/V + rot90 sincronizados
+  imagen-mascara, regularizan el dataset pequeno (~1455 patches) sin coste GPU.
+- **40 epochs con early-stopping** (``--epochs 40 --patience 8``): el best epoch
+  del Avance 4 fue 28/30 (el modelo aun mejoraba al cortar).
+
+El notebook es un **esqueleto funcional reproducible** (degrada con elegancia si
+faltan checkpoints/parquets). Se ejecuta end-to-end en Colab con runtime GPU y se
+commitea con outputs poblados (regla CLAUDE.md 12). El plan completo y el veredicto
+honesto (el target 0.80/0.70 en flat-18 no se alcanza solo con el modelo
+individual; produccion se decide por GO-condicional + doble taxonomia) viven en
+``docs/us-planning/avance5-mejora-modelo-final.md``.
+
+Uso::
+
+    poetry run python scripts/build_avance5_notebook.py \\
+        --out notebooks/best_model/Avance5.Equipo17.ipynb
+
+Operativo permanente (NO viola el anti-patron ``scripts/_*.py``).
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Annotated
+
+import nbformat as nbf
+import typer
+
+app = typer.Typer(add_completion=False, help=__doc__)
+
+_DEFAULT_OUT = Path("notebooks/best_model/Avance5.Equipo17.ipynb")
+
+
+def _build_cells() -> list:
+    """Construye la lista de celdas (markdown + code) del notebook de mejora."""
+    md = nbf.v4.new_markdown_cell
+    code = nbf.v4.new_code_cell
+    cells: list = []
+
+    cells.append(
+        md(
+            "# Avance 5 - Modelo final: mejora del mejor modelo "
+            "(Equipo 17, AgroSatCopilot)\n\n"
+            "## Proyecto Integrador MNA - Tec de Monterrey\n\n"
+            "**Equipo 17**\n\n"
+            "- Carlos Isaac Avila Gutierrez - A01796035\n"
+            "- Carlos Aaron Bocanegra Buitron - A01796345\n"
+            "- Arthur Jafed Zizumbo Velasco - A01796363\n\n"
+            "**Curso**: MNA - Tec de Monterrey - 20-abr -> 3-jul-2026\n\n"
+            "**Sponsor academico**: Dr. Gerardo Jose Camacho - gjcamacho@tec.mx\n\n"
+            "**Fecha de entrega**: 2026-06-07.\n\n"
+            "---\n\n"
+            "## Resumen ejecutivo\n\n"
+            "El Avance 4 comparo **6 arquitecturas** de segmentacion densa sobre "
+            "PASTIS-R y selecciono **TSViT-pheno** como mejor modelo individual "
+            "(mIoU 0.625, F1-macro 0.750, pixel-acc 0.876, fold-4). Este cuaderno "
+            "**mejora ese modelo** atacando la causa raiz de su brecha a produccion: "
+            "el **desbalance de clases** (la diferencia pixel-acc 0.876 vs F1-macro "
+            "0.750 indica que las clases minoritarias hunden el promedio macro).\n\n"
+            "Plan completo, lifts ajustados y compuerta de produccion: "
+            "[plan Avance 5](../../docs/us-planning/avance5-mejora-modelo-final.md)."
+        )
+    )
+
+    cells.append(
+        md(
+            "## Objetivos y rubrica del Avance 5\n\n"
+            "- **Ensambles (60 pts)**: 4 ensambles homogeneos y heterogeneos "
+            "(EPIC 6) - en cuaderno hermano `ensembles/`.\n"
+            "- **Seleccion del modelo final (20 pts)**: tabla comparativa baseline "
+            "vs mejorado.\n"
+            "- **Graficas interpretadas (>=4, 20 pts)**: curvas, IoU por clase, "
+            "matriz de confusion, comparativa.\n\n"
+            "> **Veredicto honesto** (verificado contra el codigo y el calendario): "
+            "el target F1>=0.80 / mIoU>=0.70 en **flat-18 NO se alcanza** solo con "
+            "el modelo individual; el cierre del ultimo tramo es trabajo de los "
+            "ensambles (EPIC 6). La decision de produccion (Avance 6) se toma por "
+            "**GO-condicional + doble taxonomia** (flat-18 + grouped-6 HCAT) con "
+            "fallback al baseline XGB+AlphaEarth, no declarando victoria sobre el "
+            "umbral."
+        )
+    )
+
+    cells.append(
+        md(
+            "## Como correr en Colab (GPU)\n\n"
+            "El entrenamiento corre en el **servidor de Colab**, no en tu maquina:\n\n"
+            "1. `Entorno de ejecucion -> Cambiar tipo de entorno -> GPU` (L4 / A100 "
+            "en Colab Pro; T4 en free).\n"
+            "2. Ejecuta las celdas en orden: la siguiente **monta Drive, clona el "
+            "repo e instala dependencias** automaticamente (repo privado -> pide "
+            "token una vez).\n"
+            "3. Los **datos PASTIS-R y los artefactos viven en el Drive compartido** "
+            "(`MyDrive/Integrador/`); no se copian al repo.\n"
+            "4. Pon `RUN_TRAINING=True` para lanzar el entrenamiento (horas; TSViT "
+            "40 ep ~ 4-8 h segun GPU). El checkpoint se guarda en Drive y la corrida "
+            "es reanudable."
+        )
+    )
+
+    cells.append(
+        code(
+            "# --- Bootstrap Colab: monta Drive, clona el repo, instala deps ---\n"
+            "import os, subprocess, sys\n"
+            "from pathlib import Path\n\n"
+            "_IN_COLAB = False\n"
+            "shared_folder_path = ''\n"
+            "try:\n"
+            "    from google.colab import drive\n"
+            "    drive.mount('/content/drive')\n"
+            "    shared_folder_path = '/content/drive/MyDrive/Integrador/'\n"
+            "    _IN_COLAB = True\n"
+            "except ImportError:\n"
+            "    pass\n\n"
+            "# En Colab el repo no esta presente: se clona una vez.\n"
+            "if _IN_COLAB:\n"
+            "    from getpass import getpass\n"
+            "    _repo_dir = '/content/agrosat-copilot'\n"
+            "    _branch = 'main'\n"
+            "    _repo = 'github.com/ArthurZizumbo/agrosat-copilot.git'\n"
+            "    if not Path(_repo_dir, 'pyproject.toml').is_file():\n"
+            "        _rc = os.system(\n"
+            "            f'git clone --branch {_branch} --depth 1 '\n"
+            "            f'https://{_repo} {_repo_dir}')\n"
+            "        if _rc != 0:  # repo privado: pide token (no se guarda)\n"
+            "            _tok = getpass('GitHub token (repo privado): ')\n"
+            "            os.system(\n"
+            "                f'git clone --branch {_branch} --depth 1 '\n"
+            "                f'https://{_tok}@{_repo} {_repo_dir}')\n\n"
+            "# Localiza el repo por su pyproject.toml y entra en el.\n"
+            "_search = [Path.cwd().resolve(), *Path.cwd().resolve().parents]\n"
+            "if _IN_COLAB:\n"
+            "    _search = [Path('/content/agrosat-copilot'), *_search]\n"
+            "for _cand in _search:\n"
+            "    if (_cand / 'pyproject.toml').is_file():\n"
+            "        if str(_cand) not in sys.path:\n"
+            "            sys.path.insert(0, str(_cand))\n"
+            "        os.chdir(_cand)\n"
+            "        break\n"
+            "else:\n"
+            "    raise RuntimeError('No se encontro el repo agrosat-copilot.')\n\n"
+            "if _IN_COLAB:\n"
+            "    subprocess.run([sys.executable, '-m', 'pip', '-q', 'install',\n"
+            "                    'segmentation-models-pytorch', 'structlog', 'typer',\n"
+            "                    'polars', 'mlflow', 'optuna'], check=False)\n\n"
+            "print('repo:', Path.cwd(), '| colab:', _IN_COLAB,\n"
+            "      '| drive:', shared_folder_path or '(local)')"
+        )
+    )
+
+    cells.append(
+        code(
+            "# --- Configuracion de la corrida (datos y artefactos en Drive) ---\n"
+            "import matplotlib.pyplot as plt  # noqa: F401\n"
+            "import polars as pl\n\n"
+            "_base = shared_folder_path if shared_folder_path else ''\n"
+            "PASTIS_ROOT = Path(_base + 'data/PASTIS-R')\n"
+            "SEG_DIR = Path(_base + 'reports/segmentation')\n"
+            "METRICS_DIR = SEG_DIR / 'metrics'\n"
+            "FIGURES_DIR = SEG_DIR / 'figures'\n"
+            "CHECKPOINT_DIR = SEG_DIR / 'checkpoints'\n"
+            "for _d in (METRICS_DIR, FIGURES_DIR, CHECKPOINT_DIR):\n"
+            "    _d.mkdir(parents=True, exist_ok=True)\n"
+            "MLFLOW_URI = 'file:' + str(SEG_DIR / 'mlruns')\n\n"
+            "RUN_NAME = 'alt-tsvit-pheno-cw-aug-v1'  # variante mejorada\n"
+            "BASE_RUN_NAME = 'alt-tsvit-pheno-v1'    # baseline del Avance 4\n"
+            "EPOCHS = 40                             # best del Avance 4 fue 28/30\n"
+            "DEVICE = 'cuda' if _IN_COLAB else 'auto'\n"
+            "RUN_TRAINING = False                    # True para entrenar (horas)\n\n"
+            "print('PASTIS_ROOT:', PASTIS_ROOT, '| existe:', PASTIS_ROOT.exists())\n"
+            "print('artefactos :', SEG_DIR)\n"
+            "print('device     :', DEVICE, '| run:', RUN_NAME)"
+        )
+    )
+
+    cells.append(
+        md(
+            "## 1. Punto de partida: el mejor modelo del Avance 4\n\n"
+            "TSViT-pheno gano por amplio margen (los temporales doblan a los "
+            "spatial-only). La tabla del Avance 4 confirma la seleccion y cuantifica "
+            "la brecha a los targets de produccion (F1>=0.80, mIoU>=0.70)."
+        )
+    )
+
+    cells.append(
+        code(
+            "# --- Recap Avance 4: tabla comparativa + brecha del mejor modelo ---\n"
+            "parts = sorted(METRICS_DIR.glob('model_comparison_avance4_*.parquet'))\n"
+            "if parts:\n"
+            "    a4 = (pl.concat([pl.read_parquet(p) for p in parts], how='vertical_relaxed')\n"
+            "            .unique(subset=['model'], keep='last')\n"
+            "            .sort('miou', descending=True))\n"
+            "    _cols = ['model', 'miou', 'f1_macro', 'pixel_accuracy']\n"
+            "    display(a4.select([c for c in _cols if c in a4.columns]))\n"
+            "    best = a4.row(0, named=True)\n"
+            "    print(f\"Mejor: {best['model']} | mIoU {best['miou']:.3f} \"\n"
+            "          f\"| F1-macro {best['f1_macro']:.3f}\")\n"
+            "    print(f\"Brecha -> F1: {0.80 - best['f1_macro']:+.3f} \"\n"
+            "          f\"| mIoU: {0.70 - best['miou']:+.3f}\")\n"
+            "else:\n"
+            "    print('No hay parquets de Avance 4 en', METRICS_DIR)"
+        )
+    )
+
+    cells.append(
+        md(
+            "## 2. Estrategia de mejora (sin cambiar la arquitectura)\n\n"
+            "La brecha es desbalance puro, asi que las palancas atacan el F1-macro "
+            "de las minoritarias, no la arquitectura (que ya es la mejor):\n\n"
+            "| Palanca | Que hace | Flag CLI |\n"
+            "|---------|----------|----------|\n"
+            "| Class-weighted Dice+CE | pondera CE por clase (effective-number) "
+            "| `--class-balance effective` |\n"
+            "| Augmentation D4 | flips/rot90 sincronizados (regulariza) "
+            "| `--augment` |\n"
+            "| 40 ep + early-stopping | el best fue 28/30 (no convergio) "
+            "| `--epochs 40 --patience 8` |\n\n"
+            "Codigo: `ml/train/train_segmentation.py` (`_resolve_class_weights`) y "
+            "`ml/data/pastis_seg_dataset.py` (`apply_synchronized_augment`).\n\n"
+            "> Los pesos por clase se computan **solo sobre los folds de train** "
+            "(sin leakage) y se cachean en "
+            "`reports/segmentation/metrics/class_counts_*.json`."
+        )
+    )
+
+    cells.append(
+        code(
+            "# --- Lanzar el entrenamiento de la variante mejorada (subprocess) ---\n"
+            "cmd = [\n"
+            "    sys.executable, '-m', 'ml.train.train_segmentation',\n"
+            "    '--model', 'tsvit-pheno',\n"
+            "    '--target', 'semantic18',\n"
+            "    '--epochs', str(EPOCHS),\n"
+            "    '--patience', '8',\n"
+            "    '--batch-size', '4',\n"
+            "    '--n-timesteps', '10',\n"
+            "    '--device', DEVICE,\n"
+            "    '--root', str(PASTIS_ROOT),\n"
+            "    '--ckpt-dir', str(CHECKPOINT_DIR / RUN_NAME),\n"
+            "    '--mlflow-uri', MLFLOW_URI,\n"
+            "    '--augment',\n"
+            "    '--class-balance', 'effective',\n"
+            "    '--class-balance-beta', '0.9999',\n"
+            "    '--run-name', RUN_NAME,\n"
+            "]\n"
+            "print('comando:', ' '.join(cmd))\n"
+            "if RUN_TRAINING:\n"
+            "    proc = subprocess.run(cmd)\n"
+            "    print('returncode:', proc.returncode)\n"
+            "else:\n"
+            "    print('RUN_TRAINING=False -> no entrena. Pon True en Colab con GPU.')"
+        )
+    )
+
+    cells.append(
+        md(
+            "## 3. Comparativa baseline vs mejorado (seleccion - 20 pts)\n\n"
+            "Lee las metricas de validacion (fold-4) de ambos runs desde MLflow y "
+            "las compara. El modelo final es el mejor de los dos por mIoU; el delta "
+            "cuantifica el aporte de las palancas anti-desbalance."
+        )
+    )
+
+    cells.append(
+        code(
+            "# --- Comparativa de runs (MLflow); degrada si no hay tracking ---\n"
+            "rows = []\n"
+            "try:\n"
+            "    import mlflow\n"
+            "    mlflow.set_tracking_uri(MLFLOW_URI)\n"
+            "    df = mlflow.search_runs(search_all_experiments=True)\n"
+            "    want = {RUN_NAME, BASE_RUN_NAME}\n"
+            "    name_col = 'tags.mlflow.runName'\n"
+            "    if name_col in df.columns:\n"
+            "        for _, r in df[df[name_col].isin(want)].iterrows():\n"
+            "            rows.append({\n"
+            "                'run': r.get(name_col),\n"
+            "                'miou': r.get('metrics.best_miou', r.get('metrics.miou')),\n"
+            "                'f1_macro': r.get('metrics.best_f1_macro',\n"
+            "                                  r.get('metrics.f1_macro')),\n"
+            "                'pixel_acc': r.get('metrics.best_pixel_acc',\n"
+            "                                   r.get('metrics.pixel_acc')),\n"
+            "            })\n"
+            "except Exception as exc:  # noqa: BLE001\n"
+            "    print('MLflow no disponible:', exc)\n\n"
+            "if rows:\n"
+            "    comp = pl.DataFrame(rows).sort('miou', descending=True)\n"
+            "    display(comp)\n"
+            "    _out = METRICS_DIR / 'avance5_best_model_comparison.parquet'\n"
+            "    comp.write_parquet(str(_out))\n"
+            "    print('escrito', _out)\n"
+            "else:\n"
+            "    print('Pendiente: corre el entrenamiento (RUN_TRAINING=True).')"
+        )
+    )
+
+    cells.append(
+        md(
+            "## 4. Error analysis per-clase (calibracion + model card)\n\n"
+            "El F1-macro se hunde por unas pocas clases minoritarias. Esta tabla "
+            "(recall / precision / F1 / soporte por cultivo) las identifica y "
+            "alimenta el model card del Avance 6. Usa "
+            "`DenseConfusionAccumulator.per_class_metrics` sobre el fold-4 con el "
+            "checkpoint del modelo final."
+        )
+    )
+
+    cells.append(
+        code(
+            "# --- Tabla per-clase del modelo final (degrada si falta ckpt/datos) ---\n"
+            "import torch\n"
+            "from torch.utils.data import DataLoader\n\n"
+            "from ml.data.pastis_seg_dataset import PASTISSegmentationDataset\n"
+            "from ml.eval.dense_metrics import DenseConfusionAccumulator\n\n"
+            "CKPT = CHECKPOINT_DIR / RUN_NAME / 'best.pt'\n"
+            "try:\n"
+            "    if not CKPT.exists():\n"
+            "        raise FileNotFoundError(CKPT)\n"
+            "    from ml.models.tsvit_wrapper import build_tsvit\n"
+            "    model = build_tsvit(num_classes=18, n_timesteps=10, img_size=128,\n"
+            "                        in_channels=10, semantic_dim=384)\n"
+            "    state = torch.load(CKPT, map_location='cpu')\n"
+            "    model.load_state_dict(state.get('model', state))\n"
+            "    dev = 'cuda' if torch.cuda.is_available() and DEVICE != 'cpu' else 'cpu'\n"
+            "    model = model.to(dev).eval()\n"
+            "    val_ds = PASTISSegmentationDataset(\n"
+            "        root=PASTIS_ROOT, folds=(4,), collapse_time=None,\n"
+            "        n_timesteps=10, target='semantic18')\n"
+            "    acc = DenseConfusionAccumulator(num_classes=18, ignore_index=255)\n"
+            "    with torch.no_grad():\n"
+            "        for x, y in DataLoader(val_ds, batch_size=4):\n"
+            "            out = model(x.to(dev))\n"
+            "            logits = out[0] if isinstance(out, tuple) else out\n"
+            "            acc.update(logits.argmax(1).cpu(), y)\n"
+            "    per_class = pl.DataFrame(acc.per_class_metrics()).sort('f1')\n"
+            "    display(per_class)\n"
+            "    per_class.write_parquet(\n"
+            "        str(METRICS_DIR / 'avance5_per_class_tsvit_pheno.parquet'))\n"
+            "except Exception as exc:  # noqa: BLE001\n"
+            "    print('Pendiente (corre el entrenamiento primero):', exc)"
+        )
+    )
+
+    cells.append(
+        md(
+            "## 5. Graficas interpretadas (>=4, 20 pts)\n\n"
+            "Curvas de entrenamiento, IoU por clase, matriz de confusion y "
+            "comparativa baseline vs mejorado. Se reutilizan los helpers de "
+            "`ml/eval/avance4_figures.py` y las figuras exportadas a "
+            "`reports/segmentation/figures/`."
+        )
+    )
+
+    cells.append(
+        code(
+            "# --- Galeria de figuras del modelo final (degrada con placeholder) ---\n"
+            "from IPython.display import Image, Markdown, display\n\n"
+            "_fig_types = [('curves', 'Curvas de entrenamiento'),\n"
+            "              ('per_class_iou', 'IoU por clase'),\n"
+            "              ('confusion', 'Matriz de confusion'),\n"
+            "              ('samples', 'RGB / verdad / prediccion')]\n"
+            "_models = ('tsvit-pheno-cw-aug', 'tsvit-pheno', 'tsvit_pheno')\n"
+            "_shown = False\n"
+            "for _key, _label in _fig_types:\n"
+            "    for _model in _models:\n"
+            "        _f = FIGURES_DIR / f'{_key}_{_model}.png'\n"
+            "        if _f.exists():\n"
+            "            display(Markdown(f'**{_label}** ({_model})'))\n"
+            "            display(Image(filename=str(_f)))\n"
+            "            _shown = True\n"
+            "            break\n"
+            "if not _shown:\n"
+            "    display(Markdown('_Pendiente: genera las figuras tras el entrenamiento._'))"
+        )
+    )
+
+    cells.append(
+        md(
+            "## 6. Modelo final y compuerta de produccion (Avance 6)\n\n"
+            "**Modelo final**: TSViT-pheno + class-weights + augmentation (variante "
+            "`alt-tsvit-pheno-cw-aug-v1`), seleccionado por mIoU/F1-macro de "
+            "validacion.\n\n"
+            "**Lectura honesta de produccion** (no se fuerza el numero):\n\n"
+            "- En **flat-18** el modelo individual no cruza 0.80/0.70; lo acerca y "
+            "el resto lo cierran los ensambles (EPIC 6).\n"
+            "- En **grouped-6 HCAT** (taxonomia agronomica que el stakeholder "
+            "consume) la metrica es mas alta; se reporta junto al flat-18, nunca "
+            "como sustituto.\n"
+            "- La decision GO / GO-condicional / NO-GO se toma con el **model card** "
+            "+ **arbol de contingencia** con fallback al baseline XGB+AlphaEarth "
+            "(F1>=0.60 garantizado), y despliegue via Pub/Sub + Cloud Run L4 worker "
+            "(regla global 9).\n\n"
+            "Detalle: [plan Avance 5, seccion 5]"
+            "(../../docs/us-planning/avance5-mejora-modelo-final.md).\n\n"
+            "**Proximos pasos**: 4 ensambles obligatorios (cuaderno hermano), 3-fold "
+            "CV del config ganador para el numero defendible con intervalos de "
+            "confianza."
+        )
+    )
+
+    return cells
+
+
+def _build_notebook() -> nbf.NotebookNode:
+    """Ensambla el ``NotebookNode`` con kernelspec python3 (papermill-friendly)."""
+    nb = nbf.v4.new_notebook()
+    nb.cells = _build_cells()
+    nb.metadata = {
+        "kernelspec": {
+            "display_name": "Python 3",
+            "language": "python",
+            "name": "python3",
+        },
+        "language_info": {"name": "python"},
+    }
+    return nb
+
+
+@app.command()
+def main(
+    out: Annotated[
+        Path, typer.Option(help="Ruta de salida del notebook integrador Avance 5.")
+    ] = _DEFAULT_OUT,
+) -> None:
+    """Escribe el notebook integrador del Avance 5 (esqueleto reproducible)."""
+    out.parent.mkdir(parents=True, exist_ok=True)
+    nb = _build_notebook()
+    nbf.write(nb, str(out))
+    typer.echo(f"escrito {out} ({len(nb.cells)} celdas)")
+
+
+if __name__ == "__main__":
+    app()
