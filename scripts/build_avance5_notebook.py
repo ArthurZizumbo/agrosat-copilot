@@ -106,9 +106,10 @@ def _build_cells() -> list:
             "token una vez).\n"
             "3. Los **datos PASTIS-R y los artefactos viven en el Drive compartido** "
             "(`MyDrive/Integrador/`); no se copian al repo.\n"
-            "4. Pon `RUN_TRAINING=True` para lanzar el entrenamiento (horas; TSViT "
-            "40 ep ~ 4-8 h segun GPU). El checkpoint se guarda en Drive y la corrida "
-            "es reanudable."
+            "4. Pon `RUN_TRAINING=True` para lanzar el entrenamiento. En **L4 con "
+            "batch 16** ronda **~1 h** (40 ep; el run de TSViT del Avance 4 fueron 30 "
+            "ep en ~32 min en una RTX 4070); puede variar segun el I/O de Drive. El "
+            "checkpoint se guarda en Drive y la corrida es reanudable."
         )
     )
 
@@ -246,7 +247,7 @@ def _build_cells() -> list:
             "    '--target', 'semantic18',\n"
             "    '--epochs', str(EPOCHS),\n"
             "    '--patience', '8',\n"
-            "    '--batch-size', '4',\n"
+            "    '--batch-size', '16',\n"
             "    '--n-timesteps', '10',\n"
             "    '--device', DEVICE,\n"
             "    '--root', str(PASTIS_ROOT),\n"
