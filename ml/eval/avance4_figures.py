@@ -36,9 +36,11 @@ logger = structlog.get_logger(__name__)
 __all__ = [
     "confusion_from_cm",
     "curves_from_mlflow",
+    "optuna_convergence_figure",
     "per_class_iou_figure",
     "regen_deeplab_tsvit",
     "regen_isaac_model",
+    "samples_grid",
 ]
 
 #: Mapeo modelo del integrador -> run de MLflow (experimento 7) con su historial.
@@ -51,8 +53,8 @@ _MLFLOW_RUNS = {
 
 def _fetch_epoch_history(
     run_name: str, *, experiment: str, tracking_uri: str
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Lee ``train_loss`` y ``val_miou`` por epoca de un run MLflow por nombre.
+) -> dict[str, np.ndarray]:
+    """Lee las metricas por epoca de un run MLflow por nombre.
 
     Args:
         run_name: Nombre del run (``mlflow.runName``).
@@ -60,10 +62,11 @@ def _fetch_epoch_history(
         tracking_uri: URI del servidor MLflow.
 
     Returns:
-        Tupla ``(epochs, train_loss, val_miou)`` como arrays alineados por epoca.
+        Dict con las series por epoca disponibles: ``train_loss``, ``val_miou``,
+        ``val_f1_macro`` (las que el run haya logueado; ausentes -> array vacio).
 
     Raises:
-        RuntimeError: si no se encuentra el run o no tiene historial por epoca.
+        RuntimeError: si no se encuentra el run o no tiene ``train_loss``.
     """
     import mlflow
     from mlflow.tracking import MlflowClient
@@ -87,12 +90,14 @@ def _fetch_epoch_history(
         hist = sorted(client.get_metric_history(run_id, metric), key=lambda m: m.step)
         return np.asarray([m.value for m in hist], dtype=np.float64)
 
-    train_loss = _series("train_loss")
-    val_miou = _series("val_miou")
-    if train_loss.size == 0:
+    series = {
+        "train_loss": _series("train_loss"),
+        "val_miou": _series("val_miou"),
+        "val_f1_macro": _series("val_f1_macro"),
+    }
+    if series["train_loss"].size == 0:
         raise RuntimeError(f"Run {run_name!r} sin historial `train_loss` por epoca.")
-    epochs = np.arange(train_loss.size, dtype=np.int64)
-    return epochs, train_loss, val_miou
+    return series
 
 
 def curves_from_mlflow(
@@ -105,9 +110,10 @@ def curves_from_mlflow(
 ) -> Path:
     """Genera la figura de curvas de entrenamiento de un modelo desde MLflow.
 
-    Traza ``train_loss`` (eje izquierdo) y ``val_miou`` (eje derecho) por epoca,
-    leidos del servidor MLflow local. Escribe ``curves_<model>.png`` en
-    ``out_dir`` con el nombre que consume el integrador.
+    Layout 1x3 (Loss | mIoU | F1-Macro) leyendo del servidor MLflow local las
+    series que el run logueo por epoca (train_loss, val_miou, val_f1_macro). El
+    panel mIoU y F1 marcan el mejor epoch (el del checkpoint). Escribe
+    ``curves_<model>.png`` en ``out_dir`` con el nombre que consume el integrador.
 
     Args:
         model: Clave del modelo en el integrador (``deeplabv3plus`` / ``tsvit``).
@@ -123,32 +129,58 @@ def curves_from_mlflow(
         KeyError: si ``model`` no esta en el mapeo y no se pasa ``run_name``.
     """
     name = run_name or _MLFLOW_RUNS[model]
-    epochs, train_loss, val_miou = _fetch_epoch_history(
-        name, experiment=experiment, tracking_uri=tracking_uri
+    h = _fetch_epoch_history(name, experiment=experiment, tracking_uri=tracking_uri)
+    train_loss, val_miou, val_f1 = h["train_loss"], h["val_miou"], h["val_f1_macro"]
+
+    # Layout 1x3 (Loss | mIoU | F1-macro), homologado con el estilo del equipo.
+    # Nuestros runs us-025 loguearon train_loss + val_miou + val_f1_macro por
+    # epoca (no train_miou/val_loss), asi que cada panel traza la(s) serie(s)
+    # realmente registradas, sin inventar curvas.
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+
+    axes[0].plot(
+        np.arange(train_loss.size), train_loss, color="#2b6cb0", marker="o", ms=3, label="Train"
     )
+    axes[0].set_title("Loss")
+    axes[0].set_xlabel("Epoca")
+    axes[0].set_ylabel("Loss")
+    axes[0].legend(fontsize=8)
 
-    fig, ax_loss = plt.subplots(figsize=(7, 4))
-    ax_loss.plot(epochs, train_loss, color="#2b6cb0", marker="o", ms=3, label="train loss")
-    ax_loss.set_xlabel("Epoca")
-    ax_loss.set_ylabel("Train loss", color="#2b6cb0")
-    ax_loss.tick_params(axis="y", labelcolor="#2b6cb0")
-
-    if val_miou.size:
-        ax_miou = ax_loss.twinx()
-        ax_miou.plot(
-            np.arange(val_miou.size), val_miou, color="#dd6b20", marker="s", ms=3, label="val mIoU"
+    def _val_panel(ax, series: np.ndarray, title: str, ylabel: str) -> None:
+        if series.size == 0:
+            ax.text(0.5, 0.5, "no registrado", ha="center", va="center", transform=ax.transAxes)
+            ax.set_title(title)
+            return
+        x = np.arange(series.size)
+        ax.plot(x, series, color="#dd6b20", marker="s", ms=3, label="Val")
+        best = int(np.argmax(series))
+        ax.axvline(best, color="#dd6b20", ls="--", lw=1, alpha=0.7)
+        ax.scatter([best], [series[best]], color="#dd6b20", s=60, zorder=5, edgecolor="white")
+        ax.annotate(
+            f"best ep {best}\n{series[best]:.4f}",
+            xy=(best, series[best]),
+            xytext=(-6, -26),
+            textcoords="offset points",
+            ha="right",
+            fontsize=8,
+            color="#9c4221",
         )
-        ax_miou.set_ylabel("Val mIoU", color="#dd6b20")
-        ax_miou.tick_params(axis="y", labelcolor="#dd6b20")
+        ax.set_title(title)
+        ax.set_xlabel("Epoca")
+        ax.set_ylabel(ylabel)
+        ax.legend(fontsize=8)
 
-    ax_loss.set_title(f"Curvas de entrenamiento - {model}")
+    _val_panel(axes[1], val_miou, "mIoU", "mIoU (val)")
+    _val_panel(axes[2], val_f1, "F1-Macro", "F1-macro (val)")
+
+    fig.suptitle(f"Curvas de entrenamiento - {model}")
     fig.tight_layout()
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"curves_{model}.png"
     fig.savefig(out_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
     logger.info(
-        "curves_written", model=model, run=name, epochs=int(epochs.size), path=str(out_path)
+        "curves_written", model=model, run=name, epochs=int(train_loss.size), path=str(out_path)
     )
     return out_path
 
@@ -434,3 +466,201 @@ def regen_isaac_model(
     return confusion_from_cm(
         cm, model, class_names=PASTIS_R_CLASSES, ignore_index=ignore_index, out_dir=out_dir
     )
+
+
+def optuna_convergence_figure(
+    metrics_dir: Path = Path("reports/segmentation/metrics"),
+    *,
+    out_dir: Path = Path("reports/segmentation/figures"),
+) -> Path:
+    """Grafica la convergencia de los estudios Optuna (un panel por modelo).
+
+    Por cada ``tuning_<modelo>.parquet`` traza el mIoU de cada trial COMPLETE
+    (puntos) y la curva *best-so-far* (escalonada), que muestra como Optuna fue
+    encontrando mejores hiperparametros a lo largo de los trials. Los trials
+    podados (PRUNED) se marcan distinto. Usa la columna ``value`` (mIoU val) o
+    ``miou_grouped`` segun el esquema del parquet.
+
+    Args:
+        metrics_dir: Carpeta con los ``tuning_<modelo>.parquet``.
+        out_dir: Carpeta de salida de la figura.
+
+    Returns:
+        Ruta del PNG ``optuna_convergence.png`` escrito.
+
+    Raises:
+        FileNotFoundError: si no hay ningun ``tuning_*.parquet``.
+    """
+    import polars as pl
+
+    parts = sorted(metrics_dir.glob("tuning_*.parquet"))
+    if not parts:
+        raise FileNotFoundError(f"Sin tuning_*.parquet en {metrics_dir}.")
+
+    n = len(parts)
+    ncols = min(2, n)
+    nrows = (n + ncols - 1) // ncols
+    fig, axes = plt.subplots(nrows, ncols, figsize=(7 * ncols, 4 * nrows), squeeze=False)
+
+    for idx, p in enumerate(parts):
+        ax = axes[idx // ncols][idx % ncols]
+        df = pl.read_parquet(p)
+        model = df["model"][0] if "model" in df.columns else p.stem.replace("tuning_", "")
+        metric_col = "value" if "value" in df.columns else "miou_grouped"
+        df = df.sort("trial")
+        trials = df["trial"].to_list()
+        vals = df[metric_col].to_list()
+        states = df["state"].to_list() if "state" in df.columns else ["COMPLETE"] * len(trials)
+
+        comp_x = [t for t, s in zip(trials, states, strict=False) if s == "COMPLETE"]
+        comp_y = [
+            v for v, s in zip(vals, states, strict=False) if s == "COMPLETE" and v is not None
+        ]
+        pruned_x = [t for t, s in zip(trials, states, strict=False) if s == "PRUNED"]
+
+        ax.scatter(comp_x, comp_y, color="#2b6cb0", s=28, label="trial (COMPLETE)", zorder=3)
+        for px in pruned_x:
+            ax.axvline(px, color="#cbd5e0", lw=0.6, alpha=0.6, zorder=1)
+
+        # best-so-far sobre los COMPLETE en orden de trial.
+        if comp_y:
+            order = np.argsort(comp_x)
+            cx = np.asarray(comp_x)[order]
+            cy = np.asarray(comp_y)[order]
+            best_so_far = np.maximum.accumulate(cy)
+            ax.step(cx, best_so_far, where="post", color="#dd6b20", lw=1.8, label="best-so-far")
+            bi = int(np.argmax(cy))
+            ax.scatter([cx[bi]], [cy[bi]], color="#dd6b20", s=80, zorder=5, edgecolor="white")
+            ax.annotate(
+                f"mejor: {cy[bi]:.4f}",
+                xy=(cx[bi], cy[bi]),
+                xytext=(0, 8),
+                textcoords="offset points",
+                ha="center",
+                fontsize=8,
+                color="#9c4221",
+            )
+        ax.set_title(f"{model}  ({len(comp_x)} COMPLETE, {len(pruned_x)} PRUNED)")
+        ax.set_xlabel("Trial")
+        ax.set_ylabel("mIoU")
+        ax.legend(fontsize=7, loc="lower right")
+
+    # Apaga los ejes sobrantes de la grilla.
+    for j in range(n, nrows * ncols):
+        axes[j // ncols][j % ncols].axis("off")
+
+    fig.suptitle("Convergencia del ajuste fino (Optuna) por modelo")
+    fig.tight_layout()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / "optuna_convergence.png"
+    fig.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    logger.info("optuna_convergence_written", n_models=n, path=str(out_path))
+    return out_path
+
+
+def samples_grid(
+    model: str,
+    *,
+    checkpoint: Path,
+    num_classes: int = 18,
+    ignore_index: int = 255,
+    val_folds: tuple[int, ...] = (4,),
+    n_timesteps: int = 10,
+    n_examples: int = 4,
+    device: str = "auto",
+    out_dir: Path = Path("reports/segmentation/figures"),
+) -> Path:
+    """Grilla de ``n_examples`` parches (RGB | verdad | prediccion) + leyenda de clases.
+
+    Para los modelos us-025 (deeplab/tsvit): carga el checkpoint, predice
+    ``n_examples`` parches del fold de validacion y arma una grilla
+    ``n_examples x 3`` con una leyenda de clases (nombres PASTIS) como pie de
+    imagen. Escribe ``samples_<model>.png``.
+
+    Args:
+        model: ``"deeplabv3plus"`` o ``"tsvit"`` (clave del integrador).
+        checkpoint: Ruta al ``best.pt``.
+        num_classes: 18 (semantico) o 6 (HCAT).
+        ignore_index: Etiqueta ignorada.
+        val_folds: Folds de validacion.
+        n_timesteps: T para el temporal.
+        n_examples: Numero de parches a mostrar.
+        device: ``auto`` / ``cuda`` / ``cpu``.
+        out_dir: Carpeta de salida.
+
+    Returns:
+        Ruta del PNG escrito.
+    """
+    from matplotlib import colors
+    from matplotlib.patches import Patch
+
+    from ml.data.pastis_seg_dataset import PASTISSegmentationDataset
+    from ml.eval.segmentation_inference import (
+        load_segmentation_model,
+        predict_patch,
+        rgb_from_patch,
+    )
+    from ml.ingest.pastis_loader import PASTIS_R_CLASSES
+
+    model_kind = "tsvit-pheno" if model == "tsvit" else model
+    collapse = "median" if model == "deeplabv3plus" else None
+    ds = PASTISSegmentationDataset(
+        folds=val_folds, collapse_time=collapse, n_timesteps=n_timesteps, target="semantic18"
+    )
+    net = load_segmentation_model(
+        checkpoint,
+        model_kind=model_kind,
+        num_classes=num_classes,
+        n_timesteps=n_timesteps,
+        device=device,
+    )
+
+    # Parches equiespaciados a lo largo del split (no los primeros 4 seguidos).
+    n = len(ds)  # type: ignore[arg-type]
+    idxs = np.linspace(0, n - 1, num=min(n_examples, n), dtype=int).tolist()
+
+    cmap = plt.get_cmap("tab20", num_classes)
+    norm = colors.Normalize(vmin=0, vmax=num_classes - 1)
+    rows = len(idxs)
+    fig, axes = plt.subplots(rows, 3, figsize=(9, 3 * rows), squeeze=False)
+    present: set[int] = set()
+    titles = ("Entrada (RGB)", "Verdad", "Prediccion")
+    for r, idx in enumerate(idxs):
+        x, y = ds[idx]
+        x_np = x.numpy()
+        rgb = rgb_from_patch(np.median(x_np, axis=0) if x_np.ndim == 4 else x_np)
+        pred = predict_patch(net, x, model_kind=model_kind)
+        yt = np.where(y.numpy() == ignore_index, np.nan, y.numpy().astype(float))
+        axes[r][0].imshow(np.clip(rgb, 0, 1))
+        axes[r][1].imshow(yt, cmap=cmap, norm=norm, interpolation="nearest")
+        axes[r][2].imshow(pred.astype(float), cmap=cmap, norm=norm, interpolation="nearest")
+        for col in range(3):
+            axes[r][col].axis("off")
+            if r == 0:
+                axes[r][col].set_title(titles[col])
+        present.update(int(v) for v in np.unique(y.numpy()) if v != ignore_index)
+        present.update(int(v) for v in np.unique(pred))
+
+    # Leyenda de clases presentes (pie de imagen).
+    handles = [
+        Patch(color=cmap(norm(c)), label=f"{c}: {PASTIS_R_CLASSES.get(c, f'C{c}')}")
+        for c in sorted(present)
+        if c < num_classes
+    ]
+    fig.legend(
+        handles=handles,
+        loc="lower center",
+        ncol=4,
+        fontsize=7,
+        frameon=False,
+        bbox_to_anchor=(0.5, -0.02),
+    )
+    fig.suptitle(f"Ejemplos de prediccion - {model}")
+    fig.tight_layout(rect=(0, 0.04, 1, 0.98))
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"samples_{model}.png"
+    fig.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    logger.info("samples_grid_written", model=model, n=len(idxs), path=str(out_path))
+    return out_path
