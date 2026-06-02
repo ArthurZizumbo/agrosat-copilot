@@ -1,6 +1,6 @@
 outs:
-- md5: d012328d477218811765a1ae56380c8e.dir
-  size: 597640311
-  nfiles: 20
+- md5: 82f5d2f8d66d8dee4277b56cc87bc8fa.dir
+  size: 2194051748
+  nfiles: 28
   hash: md5
   path: segmentation
