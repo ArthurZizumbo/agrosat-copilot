@@ -20,9 +20,11 @@ modelos individuales del Avance 4) para no mezclar entregables.
 
 1. Runtime con GPU (L4/A100 en Colab Pro; T4 en free).
 2. Ejecutar las celdas en orden: la celda de bootstrap **monta Drive, clona el
-   repo (`github.com/ArthurZizumbo/agrosat-copilot`, pide token si es privado) e
-   instala dependencias** automáticamente — el notebook es standalone, igual que
-   los `04*_segmentation`.
+   repo (`github.com/ArthurZizumbo/agrosat-copilot`, branch
+   `user/abocanegra/semana-5`, pide token si es privado) e instala
+   dependencias** automáticamente — el notebook es standalone, igual que los
+   `04*_segmentation`. Cuando el branch se mergee a `main`, ajustar `_branch` en
+   la celda de bootstrap.
 3. Datos `PASTIS-R` y artefactos (métricas, figuras, checkpoints, MLflow) viven
    en el **Drive compartido** (`MyDrive/Integrador/`), no en el repo.
 4. Poner `RUN_TRAINING=True` para entrenar (el checkpoint se guarda en Drive y la

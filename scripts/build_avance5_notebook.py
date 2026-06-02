@@ -130,7 +130,7 @@ def _build_cells() -> list:
             "if _IN_COLAB:\n"
             "    from getpass import getpass\n"
             "    _repo_dir = '/content/agrosat-copilot'\n"
-            "    _branch = 'main'\n"
+            "    _branch = 'user/abocanegra/semana-5'  # branch con la mejora del modelo\n"
             "    _repo = 'github.com/ArthurZizumbo/agrosat-copilot.git'\n"
             "    if not Path(_repo_dir, 'pyproject.toml').is_file():\n"
             "        _rc = os.system(\n"
