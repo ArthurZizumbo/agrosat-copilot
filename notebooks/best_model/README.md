@@ -25,8 +25,11 @@ modelos individuales del Avance 4) para no mezclar entregables.
    dependencias** automáticamente — el notebook es standalone, igual que los
    `04*_segmentation`. Cuando el branch se mergee a `main`, ajustar `_branch` en
    la celda de bootstrap.
-3. Datos `PASTIS-R` y artefactos (métricas, figuras, checkpoints, MLflow) viven
-   en el **Drive compartido** (`MyDrive/Integrador/`), no en el repo.
+3. En el **Drive compartido** (`MyDrive/Integrador/`): los datos en
+   `data/PASTIS-R` y los **artefactos de este entregable en
+   `reports/best_model/`** (`metrics/`, `figures/`, `checkpoints/`, `mlruns/`) —
+   separados de `reports/segmentation/` (Avance 4, que solo se lee para el
+   recap). Cada etapa con sus archivos.
 4. Poner `RUN_TRAINING=True` para entrenar (el checkpoint se guarda en Drive y la
    corrida es reanudable).
 
