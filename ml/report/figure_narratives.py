@@ -1332,6 +1332,93 @@ FE_ALPHAEARTH_NARRATIVES: tuple[FigureNarrative, ...] = (
 # Índice global: notebook_id -> narrativas
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Avance 4 — Segmentacion semantica densa
+# ---------------------------------------------------------------------------
+
+SEGMENTATION_NARRATIVES: tuple[FigureNarrative, ...] = (
+    FigureNarrative(
+        filename="samples_tsvit-pheno.png",
+        title="Predicciones del modelo ganador (TSViT-pheno)",
+        narrative=(
+            "Cada fila compara la imagen RGB del patch, la etiqueta real del "
+            "agricultor y la prediccion del modelo. TSViT-pheno reconstruye las "
+            "parcelas grandes con limites netos; los errores se concentran en "
+            "parcelas pequenas y en los bordes, justo donde la varianza "
+            "espectral es mayor. Es la lectura cualitativa que acompana al "
+            "mIoU de 0,625."
+        ),
+        method=(
+            "Inferencia sobre patches del split de validacion espacial. Se "
+            "muestrean cuatro ejemplos representativos; colores por clase de "
+            "cultivo segun la paleta PASTIS-R."
+        ),
+    ),
+    FigureNarrative(
+        filename="per_class_iou_tsvit.png",
+        title="IoU por clase - donde se pierde el mIoU macro",
+        narrative=(
+            "El IoU por clase revela que el modelo segmenta bien los cultivos "
+            "mayoritarios (cereales de invierno, maiz, praderas) pero cae en "
+            "las clases minoritarias (legumbres, vinedos, frutales). Como el "
+            "mIoU macro promedia todas las clases por igual, esas pocas clases "
+            "con IoU bajo arrastran la metrica global. El camino para cerrar la "
+            "brecha con el target 0,70 es loss ponderada por frecuencia."
+        ),
+        method=(
+            "IoU calculado por clase sobre el split de validacion. Barras "
+            "ordenadas de mayor a menor para visualizar el efecto del "
+            "desbalance ~31x."
+        ),
+    ),
+    FigureNarrative(
+        filename="confusion_tsvit.png",
+        title="Matriz de confusion - que cultivos se confunden",
+        narrative=(
+            "La diagonal concentra la mayor parte de la masa: el modelo acierta "
+            "la clase dominante. Las confusiones fuera de la diagonal siguen el "
+            "patron esperado del EDA: cultivos con calendarios fenologicos "
+            "parecidos (potato, beet, corn) se mezclan entre si, mientras que "
+            "cereales de invierno y praderas quedan bien separados."
+        ),
+        method=(
+            "Matriz de confusion normalizada por fila sobre el split de "
+            "validacion. Cada celda es la fraccion de pixeles de la clase real "
+            "predichos como la clase columna."
+        ),
+    ),
+    FigureNarrative(
+        filename="curves_tsvit-pheno.png",
+        title="Curvas de entrenamiento - convergencia estable",
+        narrative=(
+            "Las curvas de perdida y mIoU de entrenamiento y validacion "
+            "convergen sin divergencia, senal de que el modelo no sobreajusta "
+            "en las 30 epocas presupuestadas. La epoca del mejor checkpoint de "
+            "validacion queda marcada; ese es el modelo que se reporta y se "
+            "promueve al ensamble."
+        ),
+        method=(
+            "Registro de perdida y mIoU por epoca en MLflow. El mejor epoch se "
+            "selecciona por mIoU de validacion (early stopping implicito)."
+        ),
+    ),
+    FigureNarrative(
+        filename="optuna_convergence.png",
+        title="Convergencia de Optuna - ajuste fino eficiente",
+        narrative=(
+            "La curva muestra el mejor valor objetivo acumulado a lo largo de "
+            "los trials de Optuna. El estudio converge pronto porque parte de "
+            "un warm-start desde el mejor checkpoint, evitando gastar ventana "
+            "H100 en reexplorar el espacio de hiperparametros desde cero."
+        ),
+        method=(
+            "Optuna con storage PostgreSQL sobre los dos mejores candidatos "
+            "(TSViT-pheno y U-TAE), 30 trials warm-start desde checkpoint."
+        ),
+    ),
+)
+
+
 NARRATIVES_BY_NOTEBOOK: dict[str, tuple[FigureNarrative, ...]] = {
     "sentinel2": SENTINEL2_NARRATIVES,
     "alphaearth": ALPHAEARTH_NARRATIVES,
@@ -1343,6 +1430,7 @@ NARRATIVES_BY_NOTEBOOK: dict[str, tuple[FigureNarrative, ...]] = {
     "fe-sentinel2": FE_SENTINEL2_NARRATIVES,
     "fe-pastis-spectral-temporal": FE_SPECTRAL_TEMPORAL_NARRATIVES,
     "fe-alphaearth-fusion": FE_ALPHAEARTH_NARRATIVES,
+    "segmentation-avance4": SEGMENTATION_NARRATIVES,
 }
 
 

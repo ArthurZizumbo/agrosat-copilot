@@ -20,16 +20,20 @@ from ml.report.figure_narratives import (
     FigureNarrative,
     get_narrative,
 )
-from ml.report.notebook_content import CARDS
+from ml.report.notebook_content import EDA_DISPLAY_CARDS
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 FIGURES_ROOT = REPO_ROOT / "paper" / "figures"
 
 
 def test_narratives_by_notebook_covers_all_cards() -> None:
-    """``NARRATIVES_BY_NOTEBOOK`` define entrada para cada ficha de ``CARDS``."""
-    notebook_ids = {card.notebook_id for card in CARDS}
-    assert set(NARRATIVES_BY_NOTEBOOK.keys()) == notebook_ids
+    """Cada ficha EDA tiene entrada en ``NARRATIVES_BY_NOTEBOOK``.
+
+    El diccionario cubre ademas las fichas de FE y del Avance 4, por lo que se
+    valida inclusion (subconjunto) y no igualdad estricta.
+    """
+    notebook_ids = {card.notebook_id for card in EDA_DISPLAY_CARDS}
+    assert notebook_ids <= set(NARRATIVES_BY_NOTEBOOK.keys())
 
 
 @pytest.mark.parametrize(

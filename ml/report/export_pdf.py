@@ -21,7 +21,7 @@ import typer
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from ml.report.figure_narratives import get_narrative
-from ml.report.notebook_content import CARDS, NotebookCard, list_figures
+from ml.report.notebook_content import EDA_DISPLAY_CARDS, NotebookCard, list_figures
 
 try:
     import structlog
@@ -152,7 +152,7 @@ def main(
         typer.echo(f"ERROR: template no existe: {template}", err=True)
         raise typer.Exit(code=2)
 
-    card_figures = _collect_card_figures(CARDS, figures_dir)
+    card_figures = _collect_card_figures(EDA_DISPLAY_CARDS, figures_dir)
     total = sum(len(v) for v in card_figures.values())
     logger.info(
         "report_collect_figures",
@@ -171,7 +171,7 @@ def main(
         ],
         "sponsor": "Dr. Gerardo Camacho (gjcamacho@tec.mx)",
         "course": "MNA — Tec de Monterrey",
-        "cards": CARDS,
+        "cards": EDA_DISPLAY_CARDS,
         "card_figures": card_figures,
         "figures_base_url": str(figures_dir.parent) + "/",
         "get_narrative": get_narrative,

@@ -1,9 +1,16 @@
 # Deploy a Streamlit Community Cloud
 
-Esta carpeta contiene **todo lo específico** para desplegar el dashboard EDA
-del Avance 1 (`app/eda_dashboard.py`) en
+Esta carpeta contiene **todo lo específico** para desplegar el dashboard del
+proyecto (`app/eda_dashboard.py`) en
 [share.streamlit.io](https://share.streamlit.io). El resto del repo no se
 contamina con configuración de despliegue.
+
+El dashboard cuenta la **evolución completa del proyecto**: una línea de tiempo
+narrativa (Historia A0→A4) más cuatro secciones por avance — Exploración de
+Datos (A1), Ingeniería de Características (A2), Baseline (A3) y Segmentación
+(A4) —, cada una con narrativa por figura, KPIs y conclusiones. La lógica vive
+en el paquete `app/dashboard/` (theme, loaders, components, layout, spatial,
+timeline, registry, sections/); `app/eda_dashboard.py` es solo el entry point.
 
 ## Archivos
 
@@ -33,12 +40,13 @@ Al hacer clic en **New app** desde el dashboard:
 ```
 agrosat-copilot/
 ├── app/
-│   └── eda_dashboard.py        ← dashboard real
+│   ├── eda_dashboard.py        ← entry point (shim: main + reexports)
+│   └── dashboard/               ← paquete del dashboard (theme, loaders, sections/, ...)
 ├── ml/
-│   └── report/                  ← módulos que el dashboard importa
+│   └── report/                  ← contenido editorial que el dashboard importa
 └── deploy/
     └── streamlit/
-        ├── streamlit_app.py     ← este entry point
+        ├── streamlit_app.py     ← este entry point de Streamlit Cloud
         ├── requirements.txt
         ├── runtime.txt
         ├── packages.txt
