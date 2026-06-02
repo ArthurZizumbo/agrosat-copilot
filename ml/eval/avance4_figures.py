@@ -140,6 +140,22 @@ def curves_from_mlflow(
         )
         ax_miou.set_ylabel("Val mIoU", color="#dd6b20")
         ax_miou.tick_params(axis="y", labelcolor="#dd6b20")
+        # Marca el mejor epoch (el del checkpoint guardado): la curva puede
+        # descender despues por sobreajuste leve, asi que el best.pt NO es
+        # necesariamente el ultimo epoch.
+        best_ep = int(np.argmax(val_miou))
+        best_val = float(val_miou[best_ep])
+        ax_miou.axvline(best_ep, color="#dd6b20", ls="--", lw=1, alpha=0.7)
+        ax_miou.scatter([best_ep], [best_val], color="#dd6b20", s=70, zorder=5, edgecolor="white")
+        ax_miou.annotate(
+            f"best epoch {best_ep}\nval mIoU {best_val:.4f}",
+            xy=(best_ep, best_val),
+            xytext=(-8, -28),
+            textcoords="offset points",
+            ha="right",
+            fontsize=8,
+            color="#9c4221",
+        )
 
     ax_loss.set_title(f"Curvas de entrenamiento - {model}")
     fig.tight_layout()
