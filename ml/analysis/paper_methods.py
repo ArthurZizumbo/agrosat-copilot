@@ -53,11 +53,11 @@ __all__ = [
 
 
 # ---------------------------------------------------------------------------
-# Constantes
+# Constants
 # ---------------------------------------------------------------------------
 
-#: Nombres canonicos de las 4 fases fenologicas (Paper C, PVM crop-growth
-#: calendar). El orden coincide con el indice ``growth_stage`` 0..3.
+#: Canonical names of the 4 phenological stages (Paper C, PVM crop-growth
+#: calendar). The order matches the ``growth_stage`` index 0..3.
 _PHENOLOGY_STAGE_NAMES: tuple[str, ...] = (
     "dormant",
     "green_up",
@@ -65,13 +65,13 @@ _PHENOLOGY_STAGE_NAMES: tuple[str, ...] = (
     "senescence",
 )
 
-#: Tolerancia en dias para considerar que un dia del ano esta "cubierto" por
-#: una observacion satelital (Paper A, analisis de revisita irregular).
+#: Tolerance in days to consider that a day of the year is "covered" by
+#: a satellite observation (Paper A, irregular revisit analysis).
 _DOY_COVERAGE_TOLERANCE_DAYS: int = 15
 
 
 # ---------------------------------------------------------------------------
-# Helpers privados
+# Private helpers
 # ---------------------------------------------------------------------------
 
 
@@ -170,7 +170,7 @@ def boundary_pixel_mask(
     radius = neighbourhood // 2
     mask = np.zeros((h, w), dtype=bool)
 
-    # Padding por replicacion del borde para no introducir falsos contornos.
+    # Edge-replication padding to avoid introducing false contours.
     padded = np.pad(arr, radius, mode="edge")
     for i in range(h):
         for j in range(w):
@@ -257,7 +257,7 @@ def boundary_interior_stats(
         )
 
     semantic_arr = np.asarray(semantic)
-    # Promedio temporal de la banda elegida -> mapa 2D (H, W).
+    # Temporal average of the chosen band -> 2D map (H, W).
     band_map = s2_arr[:, band_index, :, :].mean(axis=0)
 
     boundary = boundary_pixel_mask(semantic_arr, neighbourhood=neighbourhood)
@@ -358,7 +358,7 @@ def compute_boundary_ratio(
     for inst_id in np.unique(instance_arr):
         iid = int(inst_id)
         if iid == 0:
-            continue  # fondo
+            continue  # background
         inst_mask = instance_arr == inst_id
         total = int(inst_mask.sum())
         if total == 0:
@@ -417,11 +417,11 @@ def temporal_sampling_stats(dates: list[int]) -> dict[str, float | int]:
     if n_obs == 0:
         return base
 
-    # Day-of-year de cada adquisicion para la cobertura anual.
+    # Day-of-year of each acquisition for the annual coverage.
     doys = sorted(d for d in (_doy_from_yyyymmdd(v) for v in valid) if d > 0)
 
     if n_obs >= 2:
-        # Gaps en dias calendario absolutos (no DOY, para cruzar anios).
+        # Gaps in absolute calendar days (not DOY, to cross years).
         ordered = sorted(valid)
         days = np.array(
             [
@@ -440,7 +440,7 @@ def temporal_sampling_stats(dates: list[int]) -> dict[str, float | int]:
         base["min_gap_days"] = float(np.min(gaps))
         base["std_gap_days"] = float(np.std(gaps))
 
-    # Cobertura: fraccion de los 365 dias del ano con observacion a <=15 dias.
+    # Coverage: fraction of the 365 days of the year with an observation at <=15 days.
     if doys:
         doy_arr = np.array(doys, dtype=np.int64)
         all_days = np.arange(1, 366)
@@ -597,8 +597,8 @@ def aggregate_rare_classes(
               original mas la key ``"aggregated"`` con la lista de clases
               colapsadas y ``"min_count"`` con el umbral usado.
     """
-    # value_counts devuelve columnas [<name>, "count"]; la primera columna
-    # contiene los valores distintos, la segunda su frecuencia.
+    # value_counts returns columns [<name>, "count"]; the first column
+    # contains the distinct values, the second their frequency.
     vc = y.value_counts(sort=True)
     value_col = vc.columns[0]
     count_map: dict[int, int] = {
@@ -621,8 +621,8 @@ def aggregate_rare_classes(
     ]
     remapped_series = pl.Series(y.name or "class", remapped, dtype=pl.Int64)
 
-    # El report mezcla claves int (conteo por clase) con claves str
-    # ("aggregated", "min_count", "other_label"), por eso el tipo es dict[Any, Any].
+    # The report mixes int keys (per-class count) with str keys
+    # ("aggregated", "min_count", "other_label"), hence the type is dict[Any, Any].
     report: dict[Any, Any] = {int(c): int(n) for c, n in count_map.items()}
     report["aggregated"] = aggregated
     report["min_count"] = int(min_count)
@@ -687,8 +687,8 @@ def phenology_calendar_features(
     if n_stages < 2:
         raise ValueError(f"n_stages debe ser >= 2; recibido {n_stages}")
 
-    # Nombres de etapa: usa los canonicos cuando n_stages == 4, de lo
-    # contrario genera etiquetas genericas stage_0..stage_{n-1}.
+    # Stage names: use the canonical ones when n_stages == 4, otherwise
+    # generate generic labels stage_0..stage_{n-1}.
     if n_stages == len(_PHENOLOGY_STAGE_NAMES):
         stage_names = list(_PHENOLOGY_STAGE_NAMES)
     else:
@@ -779,7 +779,7 @@ def cloud_gap_robustness(
     }
     rng = np.random.default_rng(seed)
 
-    # Numero total de timesteps de la serie.
+    # Total number of timesteps of the series.
     try:
         n_total = int(parcel_timeseries.sizes["time"])
     except (AttributeError, KeyError, TypeError):

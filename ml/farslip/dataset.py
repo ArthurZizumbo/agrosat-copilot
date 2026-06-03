@@ -129,7 +129,7 @@ def _synthetic_crop_uint16(
     )
 
 
-# write_crop_tiff vive en ml.utils.geo_io (Q10 SoC fix).
+# write_crop_tiff lives in ml.utils.geo_io (Q10 SoC fix).
 
 
 def build_farslip_pairs(
@@ -163,7 +163,7 @@ def build_farslip_pairs(
         + ``manifest.parquet`` por ROI. Idempotente (UNIQUE crop_id).
     """
     rng = np.random.default_rng(seed)
-    # Random no cripto: solo decide indice de plantilla CAP para diversidad lexical.
+    # Non-crypto random: only decides the CAP template index for lexical diversity.
     py_rng = random.Random(seed)  # noqa: S311
     vocab = _load_vocabulary(vocabulary_path)
     cap_classes_list = list(vocab["classes"].keys())
@@ -177,7 +177,7 @@ def build_farslip_pairs(
         crops_dir.mkdir(parents=True, exist_ok=True)
         manifest_path = roi_dir / "manifest.parquet"
 
-        # Obtener parcelas: reales o sinteticas.
+        # Get parcels: real or synthetic.
         if parcel_records is not None:
             roi_records = parcel_records.filter(pl.col("region") == roi)
         else:
@@ -188,7 +188,7 @@ def build_farslip_pairs(
                 cap_classes=cap_classes_list,
             )
 
-        # Filtro QA: cloud_prob <= threshold (asume columna presente)
+        # QA filter: cloud_prob <= threshold (assumes the column is present)
         if "cloud_prob" in roi_records.columns:
             roi_records = roi_records.filter(
                 pl.col("cloud_prob") <= qa_cloud_threshold
@@ -233,7 +233,7 @@ def build_farslip_pairs(
 
         new_df = pl.DataFrame(rows, schema=MANIFEST_SCHEMA)
 
-        # Merge idempotente con manifest existente.
+        # Idempotent merge with the existing manifest.
         if manifest_path.exists():
             existing = pl.read_parquet(manifest_path)
             merged = pl.concat([existing, new_df], how="vertical").unique(
@@ -257,7 +257,7 @@ def _generate_synthetic_parcels(
     *, roi: str, n: int, rng: np.random.Generator, cap_classes: list[str]
 ) -> pl.DataFrame:
     """Genera registros sinteticos de parcelas para tests/dryrun."""
-    # Bounding boxes aproximados por ROI (lat, lon ranges)
+    # Approximate bounding boxes per ROI (lat, lon ranges)
     bbox = {
         "pianura_padana": (44.5, 45.7, 8.5, 12.0),
         "toscana": (42.5, 44.2, 10.0, 12.0),
@@ -323,7 +323,7 @@ class FarSLIPDataset(Dataset):
         self.crop_resize_to = crop_resize_to
         self.transform = transform
         if cap_classes is None:
-            # derivar del manifest preservando orden de aparicion.
+            # derive from the manifest preserving order of appearance.
             cap_classes = list(dict.fromkeys(self.df["cap_class"].to_list()))
         if regions is None:
             regions = list(dict.fromkeys(self.df["region"].to_list()))
@@ -396,8 +396,8 @@ class FarSLIPDataset(Dataset):
         p = Path(raw)
         if p.exists():
             return p
-        # Tomar las dos ultimas partes (`crops/{filename}`) y juntarlas a la raiz
-        # del manifest. Si el path no tiene "crops/" usar solo el basename.
+        # Take the last two parts (`crops/{filename}`) and join them to the
+        # manifest root. If the path has no "crops/" use only the basename.
         parts = raw.replace("\\", "/").split("/")
         if "crops" in parts:
             idx = parts.index("crops")
@@ -422,7 +422,7 @@ class FarSLIPDataset(Dataset):
             if not npy_path.exists():
                 raise FileNotFoundError(f"crop no encontrado: {path}")
             arr = np.load(npy_path)
-        # Normaliza uint16 BOA a [0, 1] (factor 10000 estandar Sentinel-2 L2A)
+        # Normalize uint16 BOA to [0, 1] (10000 factor standard Sentinel-2 L2A)
         if arr.dtype == np.uint16:
             arr = arr.astype(np.float32) / 10000.0
         else:
@@ -433,7 +433,7 @@ class FarSLIPDataset(Dataset):
     def _resize_chw(img: torch.Tensor, target: int) -> torch.Tensor:
         if img.shape[-1] == target and img.shape[-2] == target:
             return img
-        # interpolate espera (N, C, H, W)
+        # interpolate expects (N, C, H, W)
         img4 = img.unsqueeze(0)
         out = torch.nn.functional.interpolate(
             img4, size=(target, target), mode="bilinear", align_corners=False

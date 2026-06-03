@@ -64,16 +64,16 @@ FeatureFamily = Literal[
     "alphaearth", "spectral_index", "s1", "srtm", "era5", "geom", "other"
 ]
 
-# Resolucion de figuras de los entregables visuales del Avance 3 (criterio AC-7).
+# Figure resolution for the Avance 3 visual deliverables (criterion AC-7).
 _PLOT_DPI: int = 200
 
-# Regex de las dimensiones del embedding AlphaEarth: `dim_00`..`dim_63`
-# (prefijo real confirmado 2026-05-21 en el parquet parcel-level enriquecido).
+# Regex for the AlphaEarth embedding dimensions: `dim_00`..`dim_63`
+# (real prefix confirmed 2026-05-21 in the enriched parcel-level parquet).
 _ALPHAEARTH_DIM_RE = re.compile(r"^dim_\d{2}$")
 
-# Sufijos estadisticos de los indices espectrales (NDVI_mean, EVI_p95, ...) y
-# armonicos FFT (NDVI_fft_amp_0, ...). Sirven para clasificar la familia
-# `spectral_index` por convencion de nombres en `_classify_family`.
+# Statistical suffixes of the spectral indices (NDVI_mean, EVI_p95, ...) and
+# FFT harmonics (NDVI_fft_amp_0, ...). Used to classify the
+# `spectral_index` family by naming convention in `_classify_family`.
 _SPECTRAL_PREFIXES: tuple[str, ...] = (
     "NDVI", "NDWI", "EVI", "NDMI", "NBR", "MSAVI2", "NDRE", "MCARI",
     "CCCI", "GCVI", "PSRI", "NDCI", "FAPAR", "LAI", "RENDVI", "SAVI", "TSAVI",
@@ -81,7 +81,7 @@ _SPECTRAL_PREFIXES: tuple[str, ...] = (
 
 
 # ---------------------------------------------------------------------------
-# Dataclass de salida.
+# Output dataclass.
 # ---------------------------------------------------------------------------
 
 
@@ -110,7 +110,7 @@ class ShapResult:
 
 
 # ---------------------------------------------------------------------------
-# Helpers privados.
+# Private helpers.
 # ---------------------------------------------------------------------------
 
 
@@ -163,8 +163,8 @@ def _to_numpy_sample(
         .to_numpy()
         .astype(np.float64)
     )
-    # Imputa NaN/inf con la media de columna: TreeExplainer no acepta NaN para
-    # algunos modelos y los +/-inf de ratios espectrales rompen el algoritmo.
+    # Impute NaN/inf with the column mean: TreeExplainer does not accept NaN for
+    # some models and the +/-inf of spectral ratios break the algorithm.
     matrix = _impute_columns(matrix)
     return matrix[row_index], row_index
 
@@ -221,7 +221,7 @@ def _normalize_shap_multiclass(
     Raises:
         ValueError: si la salida no encaja en ninguna de las formas conocidas.
     """
-    # Objeto Explanation -> extraer .values y recursar.
+    # Explanation object -> extract .values and recurse.
     if hasattr(raw, "values") and not isinstance(raw, (list, tuple, np.ndarray)):
         return _normalize_shap_multiclass(
             np.asarray(raw.values, dtype=np.float64),
@@ -229,12 +229,12 @@ def _normalize_shap_multiclass(
             n_features=n_features,
         )
 
-    # Lista/tupla de arrays 2D, uno por clase.
+    # List/tuple of 2D arrays, one per class.
     if isinstance(raw, (list, tuple)):
         per_class = [np.asarray(arr, dtype=np.float64) for arr in raw]
         if not per_class:
             raise ValueError("`shap_values` devolvio una lista vacia.")
-        # stack sobre el ultimo eje -> (n_samples, n_features, n_classes).
+        # stack over the last axis -> (n_samples, n_features, n_classes).
         stacked = np.stack(per_class, axis=-1)
         return _validate_shape(stacked, n_samples, n_features)
 
@@ -242,8 +242,8 @@ def _normalize_shap_multiclass(
     if array.ndim == 2:
         return _validate_shape(array[:, :, np.newaxis], n_samples, n_features)
     if array.ndim == 3:
-        # Algunas versiones devuelven (n_classes, n_samples, n_features);
-        # se reordena al layout canonico si el eje 0 no es n_samples.
+        # Some versions return (n_classes, n_samples, n_features);
+        # reorder to the canonical layout if axis 0 is not n_samples.
         if array.shape[0] != n_samples and array.shape[1] == n_samples:
             array = np.transpose(array, (1, 2, 0))
         return _validate_shape(array, n_samples, n_features)
@@ -338,8 +338,8 @@ def _classify_family(feature_name: str) -> FeatureFamily:
     base = feature_name.split("_", 1)[0]
     if base in _SPECTRAL_PREFIXES:
         return "spectral_index"
-    # Fenologia derivada de NDVI (sog_doy, peak_doy, ndvi_auc, ...): se trata
-    # como indice espectral porque deriva de las series de indices.
+    # Phenology derived from NDVI (sog_doy, peak_doy, ndvi_auc, ...): treated
+    # as a spectral index because it derives from the index series.
     if feature_name.lower().startswith(
         ("sog_", "peak_", "senescence_", "ndvi_", "maturity_")
     ):
@@ -348,7 +348,7 @@ def _classify_family(feature_name: str) -> FeatureFamily:
 
 
 # ---------------------------------------------------------------------------
-# Importancia nativa (criterio AC-1).
+# Native importance (criterion AC-1).
 # ---------------------------------------------------------------------------
 
 
@@ -455,7 +455,7 @@ def _xgb_gain_importances(
 
 
 # ---------------------------------------------------------------------------
-# SHAP (criterios AC-2, AC-3, AC-6).
+# SHAP (criteria AC-2, AC-3, AC-6).
 # ---------------------------------------------------------------------------
 
 
@@ -564,7 +564,7 @@ def shap_summary_plot(
     matrix, _ = _to_numpy_sample(
         X, feature_cols, sample_size=shap_result.values.shape[0]
     )
-    # Importancia agregada sobre clases -> array 2D (n_samples, n_features).
+    # Importance aggregated over classes -> 2D array (n_samples, n_features).
     aggregated = np.abs(shap_result.values).mean(axis=2)
 
     fig = plt.figure(dpi=_PLOT_DPI)
@@ -621,7 +621,7 @@ def shap_dependence_plots(
         .head(top_features)["feature"]
         .to_list()
     )
-    # Clase de referencia: la que concentra mas senal SHAP global.
+    # Reference class: the one concentrating the most global SHAP signal.
     class_idx = int(
         np.abs(shap_result.values).mean(axis=(0, 1)).argmax()
     )
@@ -731,7 +731,7 @@ def shap_waterfall_plot(
 
 
 # ---------------------------------------------------------------------------
-# Analisis de dominancia AlphaEarth (criterio AC-4).
+# AlphaEarth dominance analysis (criterion AC-4).
 # ---------------------------------------------------------------------------
 
 

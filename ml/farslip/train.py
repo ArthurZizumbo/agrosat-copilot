@@ -33,8 +33,8 @@ from ml.utils.seed import propagate_seed
 
 _log = structlog.get_logger(__name__)
 
-# ROIs italianas hardcoded para --rois italy (las 3 zonas del paper US-017).
-# Cuando se agregue Francia (us-022-e), expandir este mapeo a {"italy": [...], "france": [...]}.
+# Italian ROIs hardcoded for --rois italy (the 3 zones of the US-017 paper).
+# When France is added (us-022-e), expand this mapping to {"italy": [...], "france": [...]}.
 _ROIS_BY_KEY: dict[str, tuple[str, ...]] = {
     "italy": ("pianura_padana", "toscana", "puglia"),
 }
@@ -70,7 +70,7 @@ def _build_dataset(dataset_root: Path, rois_key: str) -> tuple[ConcatDataset, in
         )
     roi_slugs = _ROIS_BY_KEY[rois_key]
 
-    # Pre-escaneo: unificar cap_classes y regions de los 3 manifests.
+    # Pre-scan: unify cap_classes and regions across the 3 manifests.
     all_cap_classes: list[str] = []
     all_regions: list[str] = []
     seen_caps: set[str] = set()
@@ -141,9 +141,9 @@ def train(
         seed=seed,
         device="cuda" if torch.cuda.is_available() else "cpu",
     )
-    # US-022-c P1 fix (2026-05-24): instanciar FarSLIPDataset + ConcatDataset por las
-    # 3 ROIs italianas. El CLI previo solo instanciaba el trainer sin dataset, lo cual
-    # gatillaba RuntimeError("dataset y dataloader nulos: nada que entrenar") en distill.py:534.
+    # US-022-c P1 fix (2026-05-24): instantiate FarSLIPDataset + ConcatDataset for the
+    # 3 Italian ROIs. The previous CLI only instantiated the trainer without a dataset, which
+    # triggered RuntimeError("dataset y dataloader nulos: nada que entrenar") in distill.py:534.
     dataset, n_regions, n_categories = _build_dataset(dataset_root, rois)
     _log.info(
         "dataset built",
@@ -174,10 +174,10 @@ def train(
             sd = torch.load(path, map_location=trainer.device, weights_only=True)
             trainer.student.load_state_dict(sd, strict=False)
 
-    # Text prototypes: el paper §3.3 los calcula con el text encoder frozen 1x por epoch.
-    # Para esta primera implementacion CLI usamos prototypes random determinsticos
-    # (seed propagado) — la senal contrastiva se mantiene aunque los prototipos no esten
-    # alineados al vocabulario CAP. Refinamiento a prototypes-from-text-encoder queda como
+    # Text prototypes: paper §3.3 computes them with the frozen text encoder 1x per epoch.
+    # For this first CLI implementation we use deterministic random prototypes
+    # (propagated seed) — the contrastive signal holds even though the prototypes are not
+    # aligned to the CAP vocabulary. Refinement to prototypes-from-text-encoder remains a
     # follow-up post-US-022-c (paper-faithful enhancement, ADR-007 §"Diferencias menores").
     n_protos = cfg.n_regions * cfg.n_categories
     hidden_dim = trainer.teacher.config.hidden_size

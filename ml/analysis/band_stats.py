@@ -73,7 +73,7 @@ def ndvi_temporal(
     """
     group_by = group_by or ["month", "class_name"]
 
-    # Pivot para obtener NIR y Red por píxel
+    # Pivot to obtain NIR and Red per pixel
     pivoted = df.filter(pl.col("band").is_in([nir_band, red_band])).pivot(
         on="band",
         index=[c for c in df.columns if c not in ("band", "value")],
@@ -92,7 +92,7 @@ def ndvi_temporal(
     )
 
     if "month" in group_by and "month" not in pivoted.columns and "date" in pivoted.columns:
-        # date asumido int YYYYMMDD; extraer mes
+        # date assumed int YYYYMMDD; extract month
         pivoted = pivoted.with_columns(
             ((pl.col("date").cast(pl.Int64) // 100) % 100).alias("month")
         )

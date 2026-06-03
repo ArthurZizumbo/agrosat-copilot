@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-# Correlaciones, embeddings y metodos del paper dependen de paquetes pesados
-# (umap, statsmodels, etc.) que no siempre estan instalados, por ejemplo en un
-# entorno de segmentacion en Colab. Se importan de forma tolerante: el mapeo HCAT
-# (hcat_grouping) es un submodulo ligero que no necesita esto.
+# Correlations, embeddings, and paper methods depend on heavy packages
+# (umap, statsmodels, etc.) that are not always installed, for example in a
+# segmentation environment on Colab. They are imported tolerantly: the HCAT mapping
+# (hcat_grouping) is a lightweight submodule that does not need this.
 try:
     from ml.analysis.correlations import (
         SPECTRAL_INDICES_CORE,
@@ -66,5 +66,5 @@ try:
         "umap_2d",
         "vif_table",
     ]
-except ImportError:  # pragma: no cover - dependencias opcionales ausentes
+except ImportError:  # pragma: no cover - optional dependencies absent
     __all__ = []

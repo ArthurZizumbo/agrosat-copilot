@@ -49,7 +49,7 @@ def _parcel_to_dataarray(
 ) -> xr.DataArray:
     """Convierte los pixeles enmascarados de un patch a DataArray (time, band)."""
     # s2_patch shape (T, 10, H, W). mask shape (H, W).
-    # Spatial mean sobre los pixeles enmascarados.
+    # Spatial mean over the masked pixels.
     masked_pixels = s2_patch[:, :, mask].mean(axis=2).astype(np.float32) / 10_000.0
     times = np.array(
         [
@@ -120,7 +120,7 @@ def _process_patch(
         n_pixels = int(mask.sum())
         if n_pixels < min_pixels:
             continue
-        # Clase dominante en esos píxeles.
+        # Dominant class in those pixels.
         sem_in_parcel = semantic[mask]
         if sem_in_parcel.size == 0:
             continue
@@ -147,7 +147,7 @@ def _process_patch(
             continue
 
         row = features_df.row(0, named=True)
-        # Sobrescribir parcel_id con el formato canonico string.
+        # Overwrite parcel_id with the canonical string format.
         row["parcel_id"] = f"{patch_id}_{iid}"
         row["patch_id"] = patch_id
         row["instance_id"] = iid
@@ -222,7 +222,7 @@ def main(
     )
 
     t0 = time.time()
-    # Paralelizar por patch. Cada patch produce ~35 parcelas en promedio.
+    # Parallelize per patch. Each patch produces ~35 parcels on average.
     results = Parallel(n_jobs=n_jobs, backend="loky", verbose=5)(
         delayed(_process_patch_id)(pid, root, min_pixels, indices_to_compute)
         for pid in patch_ids

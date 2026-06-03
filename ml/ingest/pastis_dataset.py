@@ -105,7 +105,7 @@ def load_norm_stats(
 
     mean = np.mean(np.stack(means, axis=0), axis=0)
     std = np.mean(np.stack(stds, axis=0), axis=0)
-    # Evita division por cero en bandas degeneradas.
+    # Avoid division by zero in degenerate bands.
     std = np.where(std <= 0.0, 1.0, std)
     return mean.astype(np.float32), std.astype(np.float32)
 
@@ -297,11 +297,11 @@ class PASTISDataset(Dataset):
         self.ignore_index = ignore_index
         self.return_meta = return_meta
         mean, std = norm if norm is not None else load_norm_stats(self.root)
-        # (10, 1, 1) para broadcasting sobre (T, 10, H, W) o (10, H, W).
+        # (10, 1, 1) for broadcasting over (T, 10, H, W) or (10, H, W).
         self._mean = mean.reshape(_N_BANDS, 1, 1)
         self._std = std.reshape(_N_BANDS, 1, 1)
-        # Parsea metadata.geojson una sola vez (no en cada __getitem__) cuando
-        # hace falta: fechas para el modo temporal, fold para return_meta.
+        # Parse metadata.geojson only once (not in each __getitem__) when
+        # needed: dates for the temporal mode, fold for return_meta.
         needs_meta = temporal_reduction == "none" or return_meta
         self._meta_index = _load_pastis_metadata_index(self.root) if needs_meta else {}
 
@@ -324,14 +324,14 @@ class PASTISDataset(Dataset):
             (modo temporal) y ``patch_id``/``fold`` (si ``return_meta``).
         """
         pid = self.patch_ids[idx]
-        # Carga directa de los .npy (1 archivo por patch), sin re-parsear el
-        # metadata.geojson de ~19 MB en cada item.
+        # Direct load of the .npy files (1 file per patch), without re-parsing
+        # the ~19 MB metadata.geojson in each item.
         s2 = np.load(self.root / "DATA_S2" / f"S2_{pid}.npy").astype(np.float32)
         s2 = self._normalize(s2)  # (T, 10, 128, 128)
 
         tgt_path = self.root / "ANNOTATIONS" / f"TARGET_{pid}.npy"
         if tgt_path.exists():
-            semantic = np.load(tgt_path)[0]  # canal 0 = etiqueta semantica
+            semantic = np.load(tgt_path)[0]  # channel 0 = semantic label
         else:
             semantic = np.zeros(s2.shape[-2:], dtype=np.uint8)
         label = torch.from_numpy(semantic.astype(np.int64))
@@ -348,8 +348,8 @@ class PASTISDataset(Dataset):
             n_t = s2.shape[0]
             frames = _select_frames(n_t, self.fixed_t)
             series = torch.from_numpy(s2[frames])  # (fixed_t, 10, 128, 128) = (N, C, H, W)
-            # La serie ya esta en formato (N, C, H, W); se reescala el plano
-            # espacial directamente (cada frame como un item del "batch").
+            # The series is already in (N, C, H, W) format; the spatial plane
+            # is rescaled directly (each frame as an item of the "batch").
             series = F.interpolate(
                 series,
                 size=(self.target_size, self.target_size),
@@ -359,7 +359,7 @@ class PASTISDataset(Dataset):
             item["image"] = series  # (fixed_t, 10, S, S)
             dates = self._meta_index.get(pid, {}).get("dates") or [0] * n_t
             sel_dates = [int(dates[i]) if i < len(dates) else 0 for i in frames]
-            # Los modelos temporales esperan dia-del-anio, no el YYYYMMDD crudo.
+            # Temporal models expect day-of-year, not the raw YYYYMMDD.
             sel_doy = [_yyyymmdd_to_doy(d) for d in sel_dates]
             item["dates"] = torch.tensor(sel_doy, dtype=torch.int64)
 

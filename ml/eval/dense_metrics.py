@@ -91,7 +91,7 @@ class DenseConfusionAccumulator:
         valid = torch.ones_like(target_t, dtype=torch.bool)
         if self.ignore_index is not None:
             valid &= target_t != self.ignore_index
-        # Defensivo: descarta pixeles fuera de rango (p.ej. pred==num_classes).
+        # Defensive: discard out-of-range pixels (e.g. pred==num_classes).
         valid &= (target_t >= 0) & (target_t < self.num_classes)
         valid &= (preds_t >= 0) & (preds_t < self.num_classes)
 
@@ -120,8 +120,8 @@ class DenseConfusionAccumulator:
             return {"miou": 0.0, "f1_macro": 0.0, "pixel_accuracy": 0.0}
 
         diag = torch.diag(conf)
-        row_sum = conf.sum(dim=1)  # soporte real por clase
-        col_sum = conf.sum(dim=0)  # predicciones por clase
+        row_sum = conf.sum(dim=1)  # real support per class
+        col_sum = conf.sum(dim=0)  # predictions per class
 
         union = row_sum + col_sum - diag
         iou = torch.where(union > 0, diag / union, torch.zeros_like(diag))

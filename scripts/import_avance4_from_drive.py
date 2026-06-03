@@ -35,7 +35,7 @@ from pathlib import Path
 
 import polars as pl
 
-# Esquema del integrador (espejo de run_training de Aaron).
+# Integrator schema (mirror of Aaron's run_training).
 _SCHEMA = {
     "model": pl.Utf8,
     "miou": pl.Float64, "f1_macro": pl.Float64, "pixel_accuracy": pl.Float64,
@@ -46,19 +46,19 @@ _SCHEMA = {
     "target_size": pl.Int64, "device": pl.Utf8,
 }
 
-#: Modelos con parquet+figuras ya en formato integrador (solo copiar).
+#: Models with parquet+figures already in integrator format (just copy).
 _READY = {
     "model_comparison_avance4_unet.parquet": "model_comparison_avance4_unet.parquet",
     "model_comparison_avance4_anysat_fast.parquet": "model_comparison_avance4_anysat_fast.parquet",
 }
 
-#: Modelos con solo results.json en outputs/<dir>/ (convertir).
+#: Models with only results.json in outputs/<dir>/ (to convert).
 _FROM_RESULTS = {
     "segformer": "segformer_b0_pastis",
     "utae": "utae_pastis",
 }
 
-#: Mapeo de nombre de figura del output al patron del integrador.
+#: Mapping of the output figure name to the integrator pattern.
 _FIG_MAP = {
     "training_curves.png": "curves",
     "per_class_iou.png": "per_class_iou",
@@ -116,20 +116,20 @@ def main(argv: list[str] | None = None) -> int:
     dst_metrics.mkdir(parents=True, exist_ok=True)
     dst_figures.mkdir(parents=True, exist_ok=True)
 
-    # 1. Parquets ya listos (unet, anysat_fast).
+    # 1. Parquets already ready (unet, anysat_fast).
     for src_name, dst_name in _READY.items():
         p = src_metrics / src_name
         if p.is_file():
             shutil.copy2(p, dst_metrics / dst_name)
             print(f"copiado parquet {dst_name}")
 
-    # 2. Figuras ya con nombre correcto (unet, anysat_fast).
+    # 2. Figures already with the correct name (unet, anysat_fast).
     if src_figures.is_dir():
         for fig in src_figures.glob("*.png"):
             shutil.copy2(fig, dst_figures / fig.name)
             print(f"copiada figura {fig.name}")
 
-    # 3. segformer / utae: convertir results.json -> parquet + figuras renombradas.
+    # 3. segformer / utae: convert results.json -> parquet + renamed figures.
     for model, out_dir in _FROM_RESULTS.items():
         odir = src / "outputs" / out_dir
         rj = odir / "results.json"
@@ -142,7 +142,7 @@ def main(argv: list[str] | None = None) -> int:
         out_parquet = dst_metrics / f"model_comparison_avance4_{model}.parquet"
         df.write_parquet(out_parquet)
         print(f"convertido {model}: results.json -> {out_parquet.name} (miou={row['miou']})")
-        # Figuras: renombrar al patron del integrador.
+        # Figures: rename to the integrator pattern.
         for orig, key in _FIG_MAP.items():
             fp = odir / orig
             if fp.is_file():

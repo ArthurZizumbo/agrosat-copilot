@@ -210,7 +210,7 @@ def persist_winning_features(
 
 
 # ---------------------------------------------------------------------------
-# Helpers privados.
+# Private helpers.
 # ---------------------------------------------------------------------------
 
 
@@ -218,7 +218,7 @@ def _read_deltas(ablation_table: pl.DataFrame) -> dict[str, float]:
     """Extrae el mapping `{feature_set: delta_vs_full}` (modelo de referencia)."""
     if "delta_vs_full" not in ablation_table.columns:
         return {}
-    # Si hay varios modelos, tomar el con mejor f1_macro en `full`.
+    # If there are several models, take the one with the best f1_macro in `full`.
     ref_model: str | None = None
     if "model" in ablation_table.columns:
         full_rows = ablation_table.filter(pl.col("feature_set") == "full")
@@ -266,7 +266,7 @@ def _base_block_cols(available_cols: Sequence[str], *, include_geom: bool) -> li
             c.startswith(f"{idx.lower()}_")
             for idx in ("NDVI", "NDWI", "EVI", "MSAVI2", "MCARI", "CCCI", "NDRE")
         ):
-            # Indices espectrales x stats (e.g. ndvi_mean, ndwi_p95, ...).
+            # Spectral indices x stats (e.g. ndvi_mean, ndwi_p95, ...).
             cols.append(c)
         elif include_geom and c.startswith("geom_"):
             cols.append(c)

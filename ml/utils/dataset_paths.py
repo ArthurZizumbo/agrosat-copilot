@@ -24,7 +24,7 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
-#: Sufijo legacy (nombre heredado, contenido PASTIS) y el canonico.
+#: Legacy suffix (inherited name, PASTIS content) and the canonical one.
 _LEGACY_SUFFIX = "_italy"
 _CANONICAL_SUFFIX = "_pastis"
 

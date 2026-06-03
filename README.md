@@ -29,17 +29,20 @@
 
 ---
 
-## La historia del proyecto (A1 → A4)
+## La historia del proyecto (A0 → A4)
 
 Cada avance parte del anterior y mejora una métrica medible. Esta tabla es el hilo
-narrativo; el dashboard la cuenta con figuras y conclusiones por hito.
+narrativo; el dashboard la cuenta con figuras y conclusiones por hito, desde el
+punto de partida (A0) hasta lo que sigue.
 
 | Avance | Fase | Qué se hizo | Métrica clave |
 |--------|------|-------------|---------------|
-| **A1** | EDA | 6 notebooks: calidad del dato, desbalance, separabilidad de embeddings AlphaEarth | RF crudo sobre AlphaEarth: **OOB 0,83–0,89** |
-| **A2** | Feature Engineering | 3 notebooks: índices espectrales, features temporales (FFT, fenología), fusión multisensor | Reducción de features hasta **−55,7 %** sin perder señal |
-| **A3** | Baseline | Baseline tabular + reencuadre fenológico; ablation de features y descarte de leakage geográfico | XGBoost **F1-macro 0,41** (+0,09 sobre el baseline 0,32) |
+| **A0** | Setup | Elección de PASTIS-R (etiquetas reales de agricultores) como dataset ancla y AlphaEarth como FM de features; plataforma reproducible (Polars, DVC, MLflow, Dagster) y fijación de la hipótesis temporal | Dataset ancla **PASTIS-R** · 18 clases · **AlphaEarth v2.1** |
+| **A1** | EDA | 6 notebooks: calidad del dato, desbalance (~31x), nubosidad por región y separabilidad de embeddings AlphaEarth | RF crudo sobre AlphaEarth: **OOB 0,83–0,89** |
+| **A2** | Feature Engineering | 3 notebooks: índices espectrales, features temporales (FFT, fenología), fusión multisensor; AlphaEarth (F1 0,52) ≈ espectro-temporal manual (F1 0,54) | Reducción de features hasta **−55,7 %** sin perder señal |
+| **A3** | Baseline | Baseline tabular closed-set + reencuadre fenológico; ablation de features y descarte de leakage geográfico | XGBoost **F1-macro 0,41** (+0,09 sobre el baseline 0,32) |
 | **A4** | Segmentación | 6 arquitecturas densas + ajuste fino Optuna sobre los top-2 | **TSViT-pheno: mIoU 0,625 · F1-macro 0,75 · pixel-acc 0,876** |
+| **Sig.** | Lo que sigue | Ensamble EPIC 6 (voting/bagging/stacking/blending) sobre TSViT-pheno + U-TAE, corrida full en H100 con loss ponderada, y capa conversacional (Gemma 4 + Qwen3.5) | Target final **F1-macro ≥ 0,80** |
 
 **Comparativa del Avance 4 (métricas reales, split de validación espacial):**
 
@@ -75,19 +78,19 @@ poetry run streamlit run app/eda_dashboard.py    # local
 <table>
   <tr>
     <td align="center" width="33%">
-      <img src="img/ArthurZizumbo.png" width="120" style="border-radius:50%"><br>
+      <img src="img/ArthurZizumbo.png" width="130" height="130" style="border-radius:50%;object-fit:contain;background:#f0f0f0"><br>
       <strong>Arthur Zizumbo</strong><br>
       MLOps / Platform Lead<br>
       <sub>Terraform · CI/CD · DVC · MLflow · Dagster · FinOps</sub>
     </td>
     <td align="center" width="33%">
-      <img src="img/AaronBocanegra.jpg" width="120" style="border-radius:50%"><br>
+      <img src="img/AaronBocanegra.jpg" width="130" height="130" style="border-radius:50%;object-fit:contain;background:#f0f0f0"><br>
       <strong>Aaron Bocanegra</strong><br>
       Full-Stack / Backend Lead<br>
       <sub>FastAPI · TiTiler · Nuxt 4 · endpoints ADK · seguridad</sub>
     </td>
     <td align="center" width="33%">
-      <img src="img/IsaacAvila.jpg" width="120" style="border-radius:50%"><br>
+      <img src="img/IsaacAvila.jpg" width="130" height="130" style="border-radius:50%;object-fit:contain;background:#f0f0f0"><br>
       <strong>Isaac Ávila</strong><br>
       ML Engineer / Data Scientist<br>
       <sub>Modelos · fine-tune Gemma 4 + Qwen3-VL · AlphaEarth · Polars</sub>

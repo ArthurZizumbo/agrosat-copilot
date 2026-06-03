@@ -778,10 +778,10 @@ GLOBAL_CARD = NotebookCard(
 )
 
 
-# Fichas nucleo del EDA (las 5 con KPIs canonicos que validan los tests de
-# fuente unica). BreizhCrops y Metodos de la Literatura son fichas
-# complementarias que el dashboard agrega via ``CARDS_EXTRA`` para no perder
-# contenido, manteniendo ``CARDS`` como el conjunto nucleo.
+# EDA core cards (the 5 with canonical KPIs that the single-source tests
+# validate). BreizhCrops and Literature Methods are complementary cards
+# that the dashboard adds via ``CARDS_EXTRA`` to avoid losing
+# content, keeping ``CARDS`` as the core set.
 CARDS: tuple[NotebookCard, ...] = (
     SENTINEL2_CARD,
     ALPHAEARTH_CARD,
@@ -790,16 +790,16 @@ CARDS: tuple[NotebookCard, ...] = (
     GLOBAL_CARD,
 )
 
-# Fichas complementarias del EDA (validacion cross-region y metodos de la
-# literatura). Se insertan entre PASTIS y las conclusiones globales al
-# componer la seccion EDA del dashboard.
+# Complementary EDA cards (cross-region validation and literature
+# methods). They are inserted between PASTIS and the global conclusions when
+# composing the EDA section of the dashboard.
 CARDS_EXTRA: tuple[NotebookCard, ...] = (
     BREIZHCROPS_CARD,
     PAPER_METHODS_CARD,
 )
 
-# Orden de presentacion en el dashboard: las complementarias van antes de las
-# conclusiones globales para que el ultimo tab cierre el Avance 1.
+# Presentation order in the dashboard: the complementary ones go before the
+# global conclusions so that the last tab closes Avance 1.
 EDA_DISPLAY_CARDS: tuple[NotebookCard, ...] = (
     SENTINEL2_CARD,
     ALPHAEARTH_CARD,

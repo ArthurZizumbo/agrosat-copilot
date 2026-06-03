@@ -43,10 +43,10 @@ from matplotlib.figure import Figure
 from sklearn.base import ClassifierMixin
 from sklearn.model_selection import learning_curve, validation_curve
 
-# `ml.train.baseline` se importa de forma diferida dentro de `_to_numpy_xy`
-# para romper el ciclo de imports: `baseline` importa de `ml.eval.metrics`,
-# y `ml.eval.__init__` re-exporta este modulo — un import a nivel de modulo
-# dispararia un circular import al cargar el paquete `ml.eval`.
+# `ml.train.baseline` is imported lazily inside `_to_numpy_xy`
+# to break the import cycle: `baseline` imports from `ml.eval.metrics`,
+# and `ml.eval.__init__` re-exports this module — a module-level import
+# would trigger a circular import when loading the `ml.eval` package.
 
 logger = structlog.get_logger(__name__)
 
@@ -66,16 +66,16 @@ __all__ = [
 
 FitVerdict = Literal["overfit", "underfit", "good_fit"]
 
-# Resolucion de figuras de los entregables visuales del Avance 3 (criterio AC-8).
+# Figure resolution for the visual deliverables of Avance 3 (criterion AC-8).
 _PLOT_DPI: int = 200
 
-# Fracciones de muestras por defecto para la curva de aprendizaje (decision D6:
-# fracciones, no conteos absolutos — se adaptan a cualquier tamano de dataset).
+# Default sample fractions for the learning curve (decision D6:
+# fractions, not absolute counts — they adapt to any dataset size).
 _DEFAULT_TRAIN_SIZES: tuple[float, ...] = (0.1, 0.25, 0.4, 0.55, 0.7, 0.85, 1.0)
 
 
 # ---------------------------------------------------------------------------
-# Dataclasses de salida.
+# Output dataclasses.
 # ---------------------------------------------------------------------------
 
 
@@ -150,7 +150,7 @@ class FitDiagnosis:
 
 
 # ---------------------------------------------------------------------------
-# Helpers privados.
+# Private helpers.
 # ---------------------------------------------------------------------------
 
 
@@ -223,7 +223,7 @@ def _to_numpy_xy(
         contiguas ``(n,)`` y ``kept_idx`` los indices posicionales del ``df``
         original conservados (todos si no hubo subsample).
     """
-    # Import diferido: rompe el ciclo `baseline` <-> `ml.eval` (ver cabecera).
+    # Lazy import: breaks the `baseline` <-> `ml.eval` cycle (see header).
     from ml.train.baseline import (
         _encode_labels,
         _feature_columns,
@@ -240,13 +240,13 @@ def _to_numpy_xy(
     if max_samples <= 0 or max_samples >= n_rows:
         return matrix_all, y_all, kept_idx
 
-    # Subsample estratificado por clase: conserva la proporcion de cada clase.
+    # Class-stratified subsample: preserves the proportion of each class.
     rng = np.random.default_rng(random_state)
     fraction = max_samples / n_rows
     selected: list[np.ndarray] = []
     for cls in np.unique(y_all):
         cls_idx = np.where(y_all == cls)[0]
-        # Al menos una muestra por clase para no perder ninguna etiqueta.
+        # At least one sample per class so no label is lost.
         n_take = max(1, round(cls_idx.size * fraction))
         n_take = min(n_take, cls_idx.size)
         selected.append(rng.choice(cls_idx, size=n_take, replace=False))
@@ -279,7 +279,7 @@ def _remap_cv_splits(
         Lista de splits ``(train_idx, test_idx)`` con indices posicionales del
         dataset reducido; se descartan los folds que se quedan sin train o test.
     """
-    # `position[i]` = nueva posicion del indice original `i`, o -1 si se descarto.
+    # `position[i]` = new position of original index `i`, or -1 if discarded.
     max_original = int(kept_idx.max()) + 1 if kept_idx.size else 0
     position = np.full(max_original, -1, dtype=np.int64)
     position[kept_idx] = np.arange(kept_idx.size, dtype=np.int64)
@@ -339,8 +339,8 @@ def _curve_figure(
     matplotlib.use("Agg", force=False)
     import matplotlib.pyplot as plt
 
-    # Posiciones equiespaciadas: soporta valores no numericos (e.g. `None` en
-    # `max_depth`) sin romper el eje (riesgo R4).
+    # Evenly spaced positions: supports non-numeric values (e.g. `None` in
+    # `max_depth`) without breaking the axis (risk R4).
     positions = np.arange(len(x_values))
     tick_labels = [str(v) for v in x_values]
 
@@ -373,7 +373,7 @@ def _curve_figure(
 
 
 # ---------------------------------------------------------------------------
-# API publica.
+# Public API.
 # ---------------------------------------------------------------------------
 
 
@@ -653,7 +653,7 @@ def diagnose_fit(
 
 
 # ---------------------------------------------------------------------------
-# Diagnostico para modelos temporales via historial de loss en MLflow.
+# Diagnosis for temporal models via loss history in MLflow.
 # ---------------------------------------------------------------------------
 
 
@@ -754,7 +754,7 @@ def fetch_loss_history_from_mlflow(
         if not per_fold:
             empty = np.array([], dtype=np.float64)
             return empty, empty, empty
-        # Alinea folds rellenando con NaN al final si tuvieron early stopping.
+        # Align folds by padding with NaN at the end if they had early stopping.
         aligned = np.full((len(per_fold), max_epochs), np.nan, dtype=np.float64)
         for i, arr in enumerate(per_fold):
             aligned[i, : arr.size] = arr
@@ -890,7 +890,7 @@ def diagnose_temporal_fit(
 
     train_loss = float(history.train_loss_mean[-1])
     val_loss = float(history.val_loss_mean[-1])
-    # En loss, "gap grande" = val_loss >> train_loss (al reves que accuracy).
+    # In loss, "large gap" = val_loss >> train_loss (opposite to accuracy).
     gap = val_loss - train_loss
 
     if gap > gap_threshold:
@@ -928,7 +928,7 @@ def diagnose_temporal_fit(
     return FitDiagnosis(
         verdict=verdict,
         gap=gap,
-        train_acc_max=train_loss,  # Reusa el campo como train_loss_min.
-        val_acc_max=val_loss,  # Reusa el campo como val_loss_min.
+        train_acc_max=train_loss,  # Reuses the field as train_loss_min.
+        val_acc_max=val_loss,  # Reuses the field as val_loss_min.
         explanation=explanation,
     )

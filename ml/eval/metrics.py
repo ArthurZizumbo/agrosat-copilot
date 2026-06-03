@@ -34,7 +34,7 @@ from sklearn.metrics import (
     jaccard_score,
 )
 
-if TYPE_CHECKING:  # pragma: no cover - solo para anotaciones de tipo
+if TYPE_CHECKING:  # pragma: no cover - only for type annotations
     import torch
 
     DenseArray = np.ndarray | torch.Tensor
@@ -176,7 +176,7 @@ def confusion_matrix_figure(
     display_matrix = matrix.astype(np.float64)
     if normalize:
         row_sums = display_matrix.sum(axis=1, keepdims=True)
-        # Evita division por cero en clases ausentes del ground truth.
+        # Avoid division by zero in classes absent from the ground truth.
         row_sums[row_sums == 0.0] = 1.0
         display_matrix = display_matrix / row_sums
 
@@ -275,7 +275,7 @@ def _to_numpy(arr: DenseArray) -> np.ndarray:
         ``numpy`` se devuelve tal cual (``np.asarray`` no copia si el dtype
         y la contiguidad ya coinciden).
     """
-    if hasattr(arr, "detach"):  # torch.Tensor (evita import duro de torch)
+    if hasattr(arr, "detach"):  # torch.Tensor (avoids hard import of torch)
         return arr.detach().cpu().numpy()
     return np.asarray(arr)
 
@@ -304,7 +304,7 @@ def _to_label_array(arr: DenseArray, *, n_classes: int) -> np.ndarray:
     if is_float and data.ndim == 4 and data.shape[1] == n_classes:
         data = data.argmax(axis=1)
     elif is_float and data.ndim == 4:
-        # Float 4-D sin canal == n_classes: asumir canal en eje 1 de todos modos.
+        # Float 4-D without channel == n_classes: assume channel on axis 1 anyway.
         data = data.argmax(axis=1)
     return data.reshape(-1).astype(np.int64, copy=False)
 
@@ -349,8 +349,8 @@ def dense_confusion_matrix(
     valid = (true != ignore_index) & (true >= 0) & (true < n_classes)
     true = true[valid]
     pred = pred[valid]
-    # Las predicciones fuera de rango se cuelan a la ultima clase para no
-    # romper el bincount; en la practica argmax sobre n_classes nunca excede.
+    # Out-of-range predictions are clamped to the last class so as not to
+    # break the bincount; in practice argmax over n_classes never exceeds it.
     pred = np.clip(pred, 0, n_classes - 1)
 
     indices = true * n_classes + pred
@@ -567,7 +567,7 @@ def dense_metrics_from_cm(cm: np.ndarray) -> dict[str, Any]:
     tp = np.diag(cm_f)
     fp = cm_f.sum(axis=0) - tp
     fn = cm_f.sum(axis=1) - tp
-    support = cm_f.sum(axis=1)  # n pixeles reales por clase
+    support = cm_f.sum(axis=1)  # n real pixels per class
     present = (support + cm_f.sum(axis=0)) > 0.0
 
     denom_f1 = 2.0 * tp + fp + fn
@@ -578,9 +578,9 @@ def dense_metrics_from_cm(cm: np.ndarray) -> dict[str, Any]:
     total = float(cm_f.sum())
     pixel_acc = 0.0 if total == 0.0 else float(np.trace(cm_f) / total)
 
-    # Balanced accuracy = media de recalls (TP / support) sobre clases con
-    # al menos un pixel real. Robusta al desbalance porque cada clase pesa
-    # igual independientemente de su frecuencia.
+    # Balanced accuracy = mean of recalls (TP / support) over classes with
+    # at least one real pixel. Robust to imbalance because each class weighs
+    # the same regardless of its frequency.
     with np.errstate(divide="ignore", invalid="ignore"):
         recall = np.where(support > 0.0, tp / support, np.nan)
     has_support = support > 0.0
@@ -588,7 +588,7 @@ def dense_metrics_from_cm(cm: np.ndarray) -> dict[str, Any]:
         0.0 if not np.any(has_support) else float(np.nanmean(recall[has_support]))
     )
 
-    # Cohen kappa a partir de la matriz de confusion (formula directa).
+    # Cohen kappa from the confusion matrix (direct formula).
     p_o = pixel_acc
     expected = float((cm_f.sum(axis=0) * cm_f.sum(axis=1)).sum())
     p_e = 0.0 if total == 0.0 else expected / (total * total)

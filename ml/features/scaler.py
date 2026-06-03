@@ -31,7 +31,7 @@ __all__ = [
 
 
 # ---------------------------------------------------------------------------
-# API pública.
+# Public API.
 # ---------------------------------------------------------------------------
 
 
@@ -94,11 +94,11 @@ def fit_scaler_on_train(
         )
 
     matrix = train_df.to_numpy()
-    # Convertimos +/-inf a NaN antes de cualquier estadistica. Los indices
-    # espectrales con divisiones (MCARI, GCVI, PSRI, etc.) pueden producir
-    # inf cuando el denominador es cero o muy cercano. StandardScaler no
-    # acepta inf; tratarlos como NaN permite imputarlos con la media de
-    # columna como cualquier missing value.
+    # Convert +/-inf to NaN before any statistic. The spectral indices
+    # with divisions (MCARI, GCVI, PSRI, etc.) can produce
+    # inf when the denominator is zero or very close to it. StandardScaler does
+    # not accept inf; treating them as NaN allows imputing them with the column
+    # mean like any missing value.
     n_inf = int(np.isinf(matrix).sum())
     if n_inf > 0:
         inf_cols_mask = np.any(np.isinf(matrix), axis=0)
@@ -114,10 +114,10 @@ def fit_scaler_on_train(
             ),
         )
         matrix = np.where(np.isinf(matrix), np.nan, matrix)
-    # Filtramos columnas all-NaN antes del fit para evitar `RuntimeWarning: Mean
-    # of empty slice` en np.nanmean + `invalid value encountered in divide` en
-    # sklearn. Ocurre cuando el frame proviene del modo demo sin GEE (todas las
-    # cols de bloques no inyectados son null).
+    # Filter all-NaN columns before the fit to avoid `RuntimeWarning: Mean
+    # of empty slice` in np.nanmean + `invalid value encountered in divide` in
+    # sklearn. It happens when the frame comes from the demo mode without GEE (all
+    # the columns of non-injected blocks are null).
     all_nan_mask = np.all(np.isnan(matrix), axis=0)
     if all_nan_mask.any():
         dropped_all_nan = [c for c, drop in zip(numeric_cols, all_nan_mask, strict=True) if drop]
@@ -133,9 +133,9 @@ def fit_scaler_on_train(
                 "Todas las columnas numéricas eran all-NaN. ¿Frame sin GEE poblado?"
             )
         matrix = matrix[:, ~all_nan_mask]
-    # Reemplazamos NaN remanentes por la media de la columna (StandardScaler
-    # no acepta NaN). Ya garantizamos que ninguna columna es all-NaN, así
-    # nanmean no emite warnings.
+    # Replace remaining NaN with the column mean (StandardScaler
+    # does not accept NaN). We already guaranteed that no column is all-NaN, so
+    # nanmean emits no warnings.
     col_means = np.nanmean(matrix, axis=0)
     inds = np.where(np.isnan(matrix))
     matrix[inds] = np.take(col_means, inds[1])
@@ -143,7 +143,7 @@ def fit_scaler_on_train(
     scaler = StandardScaler()
     scaler.fit(matrix)
 
-    # Inyecta metadata para downstream + auditoría.
+    # Inject metadata for downstream + audit.
     scaler._agrosat_meta = {  # type: ignore[attr-defined]
         "version": version,
         "feature_cols": tuple(numeric_cols),
@@ -190,7 +190,7 @@ def load_scaler(path: Path | str) -> StandardScaler:
 
 
 # ---------------------------------------------------------------------------
-# Helpers privados.
+# Private helpers.
 # ---------------------------------------------------------------------------
 
 

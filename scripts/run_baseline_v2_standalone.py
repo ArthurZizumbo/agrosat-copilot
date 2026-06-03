@@ -102,7 +102,7 @@ def main() -> int:
     print(f"Spatial CV: k={V2_K_FOLDS}, buffer={V2_BUFFER_KM} km")
     print(f"Temporal: epochs={V2_TEMPORAL_EPOCHS}, batch={V2_TEMPORAL_BATCH_SIZE}, device={V2_DEVICE}")
 
-    # --- 1. Carga + filtrado ---------------------------------------------
+    # --- 1. Load + filter ------------------------------------------------
     df_raw = _load_baseline_dataset(FEATURES_PATH)
     df = _prepare_dataframe(df_raw)
     print(f"[data] post-prepare shape: {df.shape}")
@@ -203,7 +203,7 @@ def main() -> int:
             "f1_macro": float(temp_res.f1_macro),
             "f1_weighted": float(temp_res.f1_weighted),
             "miou": float(temp_res.miou),
-            "accuracy": float("nan"),  # train_temporal_model no expone accuracy
+            "accuracy": float("nan"),  # train_temporal_model does not expose accuracy
             "kappa": float(temp_res.cohen_kappa),
             "train_time_s": tk_time,
         }
@@ -231,7 +231,7 @@ def main() -> int:
     wall = time.time() - t0
     print(f"\nWall clock total v2 standalone: {wall:.1f}s (target <= 5400s)")
 
-    # --- 5. Persistencia -------------------------------------------------
+    # --- 5. Persistence --------------------------------------------------
     rows = [{"model": k, **v} for k, v in v2_results.items()]
     table = pl.DataFrame(rows).sort("f1_macro", descending=True)
     table.write_parquet(V2_OUTPUT_DIR / "model_comparison_v2.parquet")
@@ -239,7 +239,7 @@ def main() -> int:
     print("\n[persist] tabla v2 escrita:")
     print(table)
 
-    # LaTeX (sin cols mlflow_run_id/source para legibilidad).
+    # LaTeX (without mlflow_run_id/source cols for readability).
     latex_cols = [c for c in table.columns if c not in ("mlflow_run_id", "source")]
     latex = (
         table.select(latex_cols)

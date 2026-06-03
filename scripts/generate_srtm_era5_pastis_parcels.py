@@ -120,8 +120,8 @@ def main(
         gdf = gdf.head(limit).copy()
         logger.info("limited_for_smoke", n=len(gdf))
 
-    # Los samplers existentes esperan parcel_id int. Reasignamos a sequential
-    # int para compatibilidad. El mapping se conserva en parcel_id_str.
+    # The existing samplers expect an int parcel_id. We reassign to a sequential
+    # int for compatibility. The mapping is preserved in parcel_id_str.
     gdf = gdf.reset_index(drop=True)
     gdf["parcel_id_str"] = gdf["parcel_id"].astype(str)
     gdf["parcel_id"] = gdf.index.astype("int64")

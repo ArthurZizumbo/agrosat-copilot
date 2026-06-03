@@ -56,13 +56,13 @@ logger = structlog.get_logger(__name__)
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _DEFAULT_ROOT = _REPO_ROOT / "data" / "PASTIS-R"
 
-#: Escala de reflectancia PASTIS-R: los int16 estan en 0..10000.
+#: PASTIS-R reflectance scale: the int16 values are in 0..10000.
 _S2_SCALE = 10000.0
 
-#: Numero de bandas Sentinel-2 conservadas en PASTIS-R.
+#: Number of Sentinel-2 bands kept in PASTIS-R.
 _N_BANDS = 10
 
-#: Clases no agronomicas (Background, Void) que se mapean a ``ignore_index``.
+#: Non-agronomic classes (Background, Void) mapped to ``ignore_index``.
 _BACKGROUND_ID = 0
 _VOID_ID = 19
 
@@ -104,7 +104,7 @@ def _build_hcat6_lut(ignore_index: int) -> np.ndarray:
     Returns:
         Array int64 de longitud 20 indexable por ``class_id``.
     """
-    name_to_id = hcat_group_id_map()  # nombre -> [1..6]
+    name_to_id = hcat_group_id_map()  # name -> [1..6]
     lut = np.full(20, ignore_index, dtype=np.int64)
     for cid, group_name in PASTIS_CLASS_TO_HCAT_L1.items():
         lut[cid] = name_to_id[group_name] - 1  # [1..6] -> [0..5]
@@ -130,11 +130,11 @@ def _load_fold_index(metadata_path: Path) -> dict[str, int]:
     out: dict[str, int] = {}
     for feat in gj.get("features", []):
         props = feat.get("properties", {}) or {}
-        # `ID_PATCH` es el identificador real del patch (coincide con el nombre
-        # `S2_<ID_PATCH>.npy`). Se prioriza sobre `feat["id"]` porque el
-        # metadata oficial de Zenodo usa `feat["id"]` como indice secuencial
-        # (0, 1, 2, ...) que NO coincide con los nombres de archivo; solo
-        # algunos metadata derivados ponen el patch_id en `feat["id"]`.
+        # `ID_PATCH` is the real patch identifier (matches the name
+        # `S2_<ID_PATCH>.npy`). It is prioritized over `feat["id"]` because the
+        # official Zenodo metadata uses `feat["id"]` as a sequential index
+        # (0, 1, 2, ...) that does NOT match the file names; only
+        # some derived metadata put the patch_id in `feat["id"]`.
         pid_raw = props.get("ID_PATCH")
         if pid_raw is None:
             pid_raw = feat.get("id")
@@ -165,7 +165,7 @@ def _load_fold_norm_stats(
         raw = json.load(fh)
     out: dict[int, tuple[np.ndarray, np.ndarray]] = {}
     for key, stats in raw.items():
-        # key tipo "Fold_3" -> 3
+        # key like "Fold_3" -> 3
         try:
             fold = int(str(key).split("_")[-1])
         except (ValueError, IndexError):
@@ -280,7 +280,7 @@ class PASTISSegmentationDataset(Dataset):
         if not s2_dir.exists():
             raise FileNotFoundError(f"No existe el directorio S2: {s2_dir}")
 
-        # LUT de remapeo de clases (precomputada una sola vez).
+        # Class remapping LUT (precomputed only once).
         self._label_lut: np.ndarray = (
             _build_semantic18_lut(self.ignore_index)
             if target == "semantic18"
@@ -288,12 +288,12 @@ class PASTISSegmentationDataset(Dataset):
         )
         self.num_classes: int = 18 if target == "semantic18" else 6
 
-        # Indice de folds oficial y stats de normalizacion por fold.
+        # Official fold index and per-fold normalization stats.
         fold_index = _load_fold_index(self.root / "metadata.geojson")
         self._fold_of: dict[str, int] = fold_index
         self._norm_stats = _load_fold_norm_stats(self.root / "NORM_S2_patch.json")
 
-        # patch_ids del split = los presentes en disco cuyo fold esta en `folds`.
+        # split patch_ids = those present on disk whose fold is in `folds`.
         wanted = set(self.folds)
         available = {p.stem.split("_", 1)[1] for p in s2_dir.glob("S2_*.npy")}
         self.patch_ids: list[str] = sorted(
@@ -331,7 +331,7 @@ class PASTISSegmentationDataset(Dataset):
         x = s2.astype(np.float32) / _S2_SCALE
         if fold is not None and fold in self._norm_stats:
             mean, std = self._norm_stats[fold]
-            # mean/std en escala de reflectancia 0..10000 -> pasar a 0..1.
+            # mean/std in reflectance scale 0..10000 -> convert to 0..1.
             mean = (mean / _S2_SCALE).reshape(1, _N_BANDS, 1, 1)
             std = (std / _S2_SCALE).reshape(1, _N_BANDS, 1, 1)
             x = (x - mean) / np.where(std == 0.0, 1.0, std)
@@ -353,7 +353,7 @@ class PASTISSegmentationDataset(Dataset):
             return collapsed.astype(np.float32)
         if self.collapse_time == "pick":
             return np.asarray(x[n_t // 2], dtype=np.float32)
-        # Modo temporal: submuestreo equiespaciado determinista.
+        # Temporal mode: deterministic equispaced subsampling.
         idx = _equispaced_indices(n_t, self.n_timesteps)
         return np.asarray(x[idx], dtype=np.float32)
 
@@ -400,7 +400,7 @@ class PASTISSegmentationDataset(Dataset):
 
         semantic = patch["semantic"]
         if semantic is None:
-            # Sin anotacion: todo ignorado (no deberia ocurrir en folds 1-5).
+            # No annotation: everything ignored (should not happen in folds 1-5).
             h, w = x.shape[-2:]
             y = np.full((h, w), self.ignore_index, dtype=np.int64)
         else:

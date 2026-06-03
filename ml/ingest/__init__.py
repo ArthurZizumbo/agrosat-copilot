@@ -4,10 +4,10 @@ Re-exports de los samplers usados por feature engineering downstream
 (US-014/015/016) y la API canónica de bandas Sentinel-2 (PASTIS).
 """
 
-# Los samplers de Google Earth Engine dependen de paquetes pesados (earthengine,
-# geopandas) que no siempre estan instalados, por ejemplo en un entorno de
-# segmentacion en Colab. Se importan de forma tolerante: los loaders de PASTIS
-# (pastis_loader, pastis_dataset) son submodulos directos y no necesitan esto.
+# The Google Earth Engine samplers depend on heavy packages (earthengine,
+# geopandas) that are not always installed, for example in a segmentation
+# environment in Colab. They are imported tolerantly: the PASTIS loaders
+# (pastis_loader, pastis_dataset) are direct submodules and do not need this.
 try:
     from ml.ingest.gee_sampler import (
         ALPHAEARTH_COLLECTION,
@@ -48,5 +48,5 @@ try:
         "sample_s2_roi",
         "sample_srtm_terrain",
     ]
-except ImportError:  # pragma: no cover - dependencias opcionales ausentes
+except ImportError:  # pragma: no cover - optional dependencies absent
     __all__ = []

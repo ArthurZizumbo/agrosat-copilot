@@ -115,7 +115,7 @@ def extract_png_outputs(notebook_path: Path, output_dir: Path) -> list[Path]:
             used_slugs[slug] = count + 1
             target = output_dir / f"cell_{cell_idx:03d}_{slug}_{count}.png"
             if count == 0:
-                # Para evitar siempre el sufijo _0 en el caso comun.
+                # To avoid always having the _0 suffix in the common case.
                 target = output_dir / f"cell_{cell_idx:03d}_{slug}.png"
             target.write_bytes(png_bytes)
             created.append(target)

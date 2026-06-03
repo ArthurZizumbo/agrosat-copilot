@@ -50,10 +50,10 @@ from ml.ingest.pastis_loader import PASTIS_S2_BANDS
 logger = structlog.get_logger(__name__)
 app = typer.Typer(add_completion=False, help=__doc__)
 
-# Nombres de las columnas de banda media en el parquet de salida.
+# Names of the mean-band columns in the output parquet.
 _BAND_MEAN_COLS: list[str] = [f"{band}_mean" for band in PASTIS_S2_BANDS]
 
-# Schema canonico del parquet de salida (orden estable).
+# Canonical schema of the output parquet (stable order).
 _OUTPUT_SCHEMA: dict[str, pl.DataType] = {
     "parcel_id": pl.Utf8(),
     "patch_id": pl.Int64(),
@@ -120,8 +120,8 @@ def aggregate_patch_bands(
         return []
 
     instance = target[1]
-    # Media temporal por banda: (T, 10, H, W) -> (10, H, W). float64 evita
-    # overflow del int16 al sumar T instantes.
+    # Temporal mean per band: (T, 10, H, W) -> (10, H, W). float64 avoids
+    # int16 overflow when summing T time steps.
     band_means_thw = s2.astype(np.float64).mean(axis=0)
 
     records: list[dict[str, object]] = []
@@ -130,10 +130,10 @@ def aggregate_patch_bands(
         mask = instance == instance_id
         n_pixels = int(mask.sum())
         if n_pixels == 0:
-            # La parcela del GeoParquet no tiene pixeles en la mascara
-            # instance de este patch (raro: instance_id desfasado).
+            # The GeoParquet parcel has no pixels in the instance
+            # mask of this patch (rare: misaligned instance_id).
             continue
-        # Media espacial de cada banda sobre los pixeles de la mascara.
+        # Spatial mean of each band over the pixels of the mask.
         band_values = band_means_thw[:, mask].mean(axis=1)
         record: dict[str, object] = {
             "parcel_id": str(parcel["parcel_id"]),
@@ -173,8 +173,8 @@ def _parcels_by_patch(
             "Genera las parcelas con `scripts/vectorize_pastis_parcels.py`."
         )
 
-    # `pl.read_parquet` lee el GeoParquet ignorando la columna `geometry`
-    # binaria; seleccionamos solo las columnas escalares necesarias.
+    # `pl.read_parquet` reads the GeoParquet ignoring the binary `geometry`
+    # column; we select only the scalar columns needed.
     cols = ["parcel_id", "patch_id", "instance_id", "class_id", "fold"]
     parcels_df = pl.read_parquet(parcels_path, columns=cols)
 

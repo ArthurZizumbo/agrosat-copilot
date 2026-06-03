@@ -52,13 +52,13 @@ def stratified_sample(
     total = df.height
     counts = df.group_by(by).agg(pl.len().alias("__count__"))
 
-    # Orden estable de los estratos para reproducibilidad determinística.
+    # Stable order of the strata for deterministic reproducibility.
     counts = counts.sort(by)
 
     fractions: list[pl.DataFrame] = []
     for row in counts.iter_rows(named=True):
         count_g = int(row["__count__"])
-        # cuota proporcional, al menos 1 si el grupo tiene filas
+        # proportional quota, at least 1 if the group has rows
         quota = max(1, math.floor(count_g / total * n))
         quota = min(quota, count_g)
 

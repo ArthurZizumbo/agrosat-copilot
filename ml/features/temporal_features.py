@@ -59,10 +59,10 @@ import xarray as xr
 logger = structlog.get_logger(__name__)
 
 # ---------------------------------------------------------------------------
-# Constantes públicas
+# Public constants
 # ---------------------------------------------------------------------------
 
-#: Índices espectrales canónicos del proyecto (debe coincidir con
+#: Canonical spectral indices of the project (must match
 #: :data:`ml.features.spectral_indices.INDEX_NAMES`).
 DEFAULT_INDICES: Final[tuple[str, ...]] = (
     "NDVI",
@@ -84,10 +84,10 @@ DEFAULT_INDICES: Final[tuple[str, ...]] = (
     "TSAVI",
 )
 
-#: Subset al que se aplica FFT por defecto (US-015 AC-2).
+#: Subset to which FFT is applied by default (US-015 AC-2).
 DEFAULT_FFT_INDICES: Final[tuple[str, ...]] = ("NDVI", "NDWI", "EVI")
 
-#: Sufijos de estadísticos generados por índice.
+#: Suffixes of statistics generated per index.
 _STAT_SUFFIXES: Final[tuple[str, ...]] = (
     "mean",
     "std",
@@ -102,7 +102,7 @@ _STAT_SUFFIXES: Final[tuple[str, ...]] = (
 
 
 # ---------------------------------------------------------------------------
-# API pública
+# Public API
 # ---------------------------------------------------------------------------
 
 
@@ -153,8 +153,8 @@ def extract_temporal_features(
 
     stats_df = _aggregate_stats(lf, indices=indices).collect(engine="streaming")
 
-    # Curvas por índice ya interpoladas a rejilla diaria (compartidas por FFT
-    # y fenología).
+    # Per-index curves already interpolated to a daily grid (shared by FFT
+    # and phenology).
     daily_curves = _interpolate_daily(parcel_timeseries, indices=indices)
 
     fft_df = _fft_harmonics(
@@ -181,7 +181,7 @@ def extract_temporal_features(
 
 
 # ---------------------------------------------------------------------------
-# Helpers privados
+# Private helpers
 # ---------------------------------------------------------------------------
 
 
@@ -281,13 +281,13 @@ def _aggregate_stats(
 
     aggregated_df = aggregated.collect(engine="streaming")
 
-    # Pivot manual a wide para garantizar nombres deterministas.
+    # Manual pivot to wide to guarantee deterministic names.
     pivoted: dict[str, list[object]] = {"parcel_id": [], "year": []}
     for idx in indices:
         for suffix in _STAT_SUFFIXES:
             pivoted[f"{idx}_{suffix}"] = []
 
-    # Esperamos un solo grupo (parcel_id, year) por contrato de entrada.
+    # We expect a single group (parcel_id, year) by input contract.
     grouped = aggregated_df.group_by(["parcel_id", "year"], maintain_order=True)
     for (pid, yr), subdf in grouped:
         pivoted["parcel_id"].append(pid)
@@ -335,7 +335,7 @@ def _interpolate_daily(
     if daily_axis.size < 2:
         return {idx: np.empty(0, dtype=np.float64) for idx in indices}
 
-    # Convertimos timestamps a float (días desde el inicio) para np.interp.
+    # We convert timestamps to float (days since the start) for np.interp.
     x_known = (times - t_min) / np.timedelta64(1, "D")
     x_query = (daily_axis - t_min) / np.timedelta64(1, "D")
 
@@ -352,7 +352,7 @@ def _interpolate_daily(
         order = np.argsort(x_known[mask])
         xk = x_known[mask][order]
         yk = series[mask][order]
-        # np.interp asume xp creciente; ya está ordenado.
+        # np.interp assumes increasing xp; it is already sorted.
         curves[idx] = np.interp(x_query, xk, yk)
 
     return curves
@@ -387,7 +387,7 @@ def _fft_harmonics(
         para ``k`` ∈ ``[0, n_harmonics]``.
     """
     row: dict[str, object] = {"parcel_id": parcel_id, "year": year}
-    n_components = n_harmonics + 1  # incluye DC
+    n_components = n_harmonics + 1  # includes DC
 
     for idx in fft_indices:
         curve = daily_curves.get(idx, np.empty(0, dtype=np.float64))
@@ -431,11 +431,11 @@ def _compute_rfft_components(
             phases.append(None)
             continue
         magnitude = np.abs(spectrum[k])
-        # DC normalizado por N; resto single-sided (x 2 / N).
+        # DC normalized by N; rest single-sided (x 2 / N).
         amp = float(magnitude / n) if k == 0 else float(magnitude * 2.0 / n)
         amps.append(amp)
-        # Fase del DC carece de interpretación física: se reporta 0.0 si la
-        # señal no es nula.
+        # The DC phase lacks physical interpretation: 0.0 is reported if the
+        # signal is non-zero.
         phases.append(0.0 if k == 0 else float(np.angle(spectrum[k])))
 
     return amps, phases
@@ -518,17 +518,17 @@ def _detect_phenology(
     peak_idx = int(np.argmax(ndvi_daily))
     peak_value = float(ndvi_daily[peak_idx])
 
-    # SOG: primer cruce ascendente del umbral antes (o en) el peak.
+    # SOG: first ascending crossing of the threshold before (or at) the peak.
     sog_doy: int | None = None
     for i in range(1, peak_idx + 1):
         if ndvi_daily[i - 1] < sog_threshold <= ndvi_daily[i]:
             sog_doy = i + 1  # DOY 1-based
             break
-    # Caso peak en el borde inicial: si NDVI[0] ya supera el umbral.
+    # Peak at the initial edge case: if NDVI[0] already exceeds the threshold.
     if sog_doy is None and peak_idx == 0 and peak_value >= sog_threshold:
         sog_doy = 1
 
-    # Senescencia: primer cruce descendente del umbral tras el peak.
+    # Senescence: first descending crossing of the threshold after the peak.
     senescence_doy: int | None = None
     for i in range(peak_idx + 1, ndvi_daily.size):
         if ndvi_daily[i - 1] >= sog_threshold > ndvi_daily[i]:
@@ -536,7 +536,7 @@ def _detect_phenology(
             break
 
     if peak_value < sog_threshold:
-        # Curva por debajo del umbral en toda su extensión: graceful None.
+        # Curve below the threshold across its entire extent: graceful None.
         return null_result
 
     ndvi_auc = float(np.trapezoid(ndvi_daily, dx=1.0))
@@ -594,7 +594,7 @@ def _phenology_slopes(
 
     threshold = maturity_pct * peak_value
     above = ndvi_daily >= threshold
-    # Buscamos la racha contigua que contiene al peak.
+    # We search for the contiguous run that contains the peak.
     maturity_days: int | None = None
     if above[peak_idx]:
         left = peak_idx

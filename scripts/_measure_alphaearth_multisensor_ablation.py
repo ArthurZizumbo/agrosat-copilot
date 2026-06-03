@@ -40,7 +40,7 @@ ERA5 = REPO_ROOT / "data/cache/gee/era5_monthly_pastis_fr_full_2019_C.parquet"
 SRTM = REPO_ROOT / "data/cache/gee/srtm_pastis_fr_full.parquet"
 S1 = REPO_ROOT / "data/cache/gee/s1_pastis_fr_full_2019_both_lee_7x7_dB_enriched.parquet"
 
-#: Metadatos a NO arrastrar de los bloques patch-level (evita leakage / duplicados).
+#: Metadata to NOT carry over from the patch-level blocks (avoids leakage / duplicates).
 _META_DROP = ("year", "patch_id", "class_id", "class_name", "fold", "n_pixels", "instance_id", "area_m2")
 
 
@@ -55,7 +55,7 @@ def _ae_block(path: Path, prefix: str) -> pl.DataFrame:
 def _patch_block(path: Path, keep_prefixes: tuple[str, ...]) -> pl.DataFrame:
     """Carga un bloque patch-level y deja solo ``patch_id`` + features numericas."""
     df = pl.read_parquet(path)
-    # parcel_id aqui ES el patch_id entero -> renombrar a patch_id para el join
+    # parcel_id here IS the integer patch_id -> rename to patch_id for the join
     df = df.rename({"parcel_id": "patch_id"})
     feat = [c for c in df.columns if c.startswith(keep_prefixes)]
     return df.select(["patch_id", *feat])
@@ -66,14 +66,14 @@ def main(max_samples: int | None) -> int:
     base_feats = [c for c in sub.columns if c not in (*_META_DROP, "parcel_id")]
     log.info("subset_loaded", rows=sub.height, base_features=len(base_feats))
 
-    # --- AlphaEarth parcel-level (join por parcel_id) ---
+    # --- AlphaEarth parcel-level (join by parcel_id) ---
     ae19 = _ae_block(AE19, "ae19_")
     ae18 = _ae_block(AE18, "ae18_")
     df = sub.join(ae19, on="parcel_id", how="left").join(ae18, on="parcel_id", how="left")
     ae19_cols = [c for c in df.columns if c.startswith("ae19_")]
     ae18_cols = [c for c in df.columns if c.startswith("ae18_")]
 
-    # --- Bloques patch-level (join por patch_id) ---
+    # --- Patch-level blocks (join by patch_id) ---
     era5 = _patch_block(ERA5, ("era5",))
     srtm = _patch_block(SRTM, ("srtm",))
     s1 = _patch_block(S1, ("s1_",))
@@ -90,9 +90,9 @@ def main(max_samples: int | None) -> int:
         total_cols=df.width,
     )
 
-    # --- feature_sets incrementales (cada uno DEBE incluir las 185 base salvo el baseline) ---
+    # --- incremental feature_sets (each MUST include the 185 base except the baseline) ---
     feature_sets = {
-        "full": tuple(base_feats),                                    # 0.4094 esperado (replica)
+        "full": tuple(base_feats),                                    # 0.4094 expected (replica)
         "base_plus_ae19": tuple(base_feats + ae19_cols),
         "base_plus_ae18": tuple(base_feats + ae18_cols),
         "base_plus_ae18_ae19": tuple(base_feats + ae19_cols + ae18_cols),

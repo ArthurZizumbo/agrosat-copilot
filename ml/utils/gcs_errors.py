@@ -23,9 +23,9 @@ para no enmascarar bugs.
 
 from __future__ import annotations
 
-#: Nombres canonicos usados como fallback cuando las libs google.* no estan
-#: disponibles (CI minimo, tests con stubs). Mantener sincronizado con los
-#: bloques try/except de abajo.
+#: Canonical names used as fallback when the google.* libs are not
+#: available (minimal CI, tests with stubs). Keep in sync with the
+#: try/except blocks below.
 _GCS_AUTH_EXC_NAMES = frozenset(
     {
         "DefaultCredentialsError",

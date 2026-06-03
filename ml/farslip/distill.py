@@ -135,7 +135,7 @@ class PatchDistillationLoss(nn.Module):
             mse_term = squared.sum() / n_valid
 
         if self.loss_type in ("cosine", "mse_plus_cosine"):
-            # 1 - cos similarity; ambos ya estan L2-norm si self.normalize True.
+            # 1 - cos similarity; both are already L2-norm if self.normalize True.
             if not self.normalize:
                 s = F.normalize(student, p=2, dim=-1)
                 t = F.normalize(teacher, p=2, dim=-1)
@@ -295,7 +295,7 @@ class FarSLIPTrainerConfig:
 
 
 def _resolve_device(device: str) -> torch.device:
-    """Resuelve ``"auto"`` -> ``"cuda"`` si disponible, sino ``"cpu"``."""
+    """Resolves ``"auto"`` -> ``"cuda"`` if available, otherwise ``"cpu"``."""
     if device == "auto":
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
     return torch.device(device)
@@ -313,7 +313,7 @@ def adapt_patch_embed_to_n_channels(
     in-place. Reusa el mismo bias (no hay bias en patch_embed CLIP).
     """
 
-    # Resolver ``embeddings`` con fallback (transformers 4.x vs 5.x).
+    # Resolve ``embeddings`` with fallback (transformers 4.x vs 5.x).
     if hasattr(vision_model, "embeddings"):
         embeddings = vision_model.embeddings  # type: ignore[union-attr]
     elif hasattr(vision_model, "vision_model"):
@@ -331,8 +331,8 @@ def adapt_patch_embed_to_n_channels(
             f"esperado patch_embed con 3 input channels, got {old_proj.in_channels}"
         )
     out_ch = old_proj.out_channels
-    # Conv2d.kernel_size/stride/padding son tuple[int, int] en runtime aunque
-    # el type-stub publique tuple[int, ...]. Cast explicito para mypy.
+    # Conv2d.kernel_size/stride/padding are tuple[int, int] at runtime although
+    # the type-stub publishes tuple[int, ...]. Explicit cast for mypy.
     k: tuple[int, int] = (old_proj.kernel_size[0], old_proj.kernel_size[1])
     stride: tuple[int, int] = (old_proj.stride[0], old_proj.stride[1])
     if isinstance(old_proj.padding, str):
@@ -350,7 +350,7 @@ def adapt_patch_embed_to_n_channels(
         bias=bias_flag,
     )
     with torch.no_grad():
-        # copiar primeros 3 canales tal cual
+        # copy first 3 channels as-is
         new_proj.weight[:, :3, :, :] = old_proj.weight.detach().clone()
         if target_channels > 3:
             rgb_mean = old_proj.weight.detach().mean(dim=1, keepdim=True)  # (O,1,k,k)
@@ -392,8 +392,8 @@ class FarSLIPDistillationTrainer:
         self._optim = self._build_optimizer()
         self._scheduler: torch.optim.lr_scheduler.LambdaLR | None = None
         self._dataset = dataset
-        # text_prototypes opcional: si None, el trainer espera que el caller
-        # los provea via :meth:`set_text_prototypes` antes de :meth:`train`.
+        # text_prototypes optional: if None, the trainer expects the caller
+        # to provide them via :meth:`set_text_prototypes` before :meth:`train`.
         self._text_prototypes = text_prototypes
         self._patch_loss = PatchDistillationLoss()
         self._cls_loss = RegionCategoryAlignmentLoss(
@@ -408,7 +408,7 @@ class FarSLIPDistillationTrainer:
         teacher.eval()
         for p in teacher.parameters():
             p.requires_grad_(False)
-        # Student arranca como copia exacta del teacher (AC-2)
+        # Student starts as an exact copy of the teacher (AC-2)
         student = copy.deepcopy(teacher)
         for p in student.parameters():
             p.requires_grad_(True)
@@ -427,9 +427,9 @@ class FarSLIPDistillationTrainer:
         contaminaba la pseudo-label con una proyeccion NIR no entrenada.
         """
         adapt_patch_embed_to_n_channels(self.student, self.config.n_in_channels)
-        # Re-mover al device (nuevas capas creadas en CPU).
+        # Move back to the device (new layers created on CPU).
         self.student.to(self.device)
-        # Teacher queda con 3 canales: NO se toca su patch_embed.
+        # Teacher stays with 3 channels: its patch_embed is NOT touched.
 
     def _build_optimizer(self) -> torch.optim.Optimizer:
         return torch.optim.AdamW(
@@ -482,16 +482,16 @@ class FarSLIPDistillationTrainer:
         category_ids = category_ids.to(self.device)
 
         student_out = self.student(pixel_values=images, output_hidden_states=False)
-        # Teacher se queda con 3 canales (RGB puro = B04/B03/B02 = BGR slice).
-        # AC-2: preservamos el CLIP pretrained autentico; el student aprende
-        # a mapear 4 bandas a la misma semantica que el teacher ve en 3.
+        # Teacher stays with 3 channels (pure RGB = B04/B03/B02 = BGR slice).
+        # AC-2: we preserve the authentic pretrained CLIP; the student learns
+        # to map 4 bands to the same semantics the teacher sees in 3.
         teacher_input = images[:, :3, :, :]
         with torch.no_grad():
             teacher_out = self.teacher(
                 pixel_values=teacher_input, output_hidden_states=False
             )
 
-        # CLIPVisionModel last_hidden_state shape: (B, 1+P, D) con CLS en pos 0.
+        # CLIPVisionModel last_hidden_state shape: (B, 1+P, D) with CLS at pos 0.
         student_hidden = student_out.last_hidden_state
         teacher_hidden = teacher_out.last_hidden_state
         student_cls = student_hidden[:, 0, :]
@@ -503,8 +503,8 @@ class FarSLIPDistillationTrainer:
         loss_cls = self._cls_loss(
             student_cls, self._text_prototypes, region_ids, category_ids
         )
-        # auxiliar contrastive imagen-texto-batch: alinea CLS student con CLS teacher
-        # (placeholder ligero para gamma; estabiliza el training)
+        # auxiliary contrastive image-text-batch: aligns student CLS with teacher CLS
+        # (lightweight placeholder for gamma; stabilizes the training)
         cos_aux = 1.0 - F.cosine_similarity(
             F.normalize(student_cls, dim=-1),
             F.normalize(teacher_cls.detach(), dim=-1),
@@ -545,8 +545,8 @@ class FarSLIPDistillationTrainer:
         start = time.monotonic()
         warned = False
 
-        # Import mlflow una sola vez (Q14). ``mlflow`` queda en ``None`` si la
-        # libreria no esta instalada — el loop sigue sin logging remoto.
+        # Import mlflow only once (Q14). ``mlflow`` stays ``None`` if the
+        # library is not installed — the loop continues without remote logging.
         try:
             import mlflow as _mlflow
         except ImportError as exc:  # pragma: no cover
@@ -561,9 +561,9 @@ class FarSLIPDistillationTrainer:
                 _mlflow.set_tags(
                     {
                         "code_version": git_sha(),
-                        # data_version = hash del .dvc file (no ruta local).
-                        # Si el dataset aun no esta DVC-tracked, devuelve
-                        # ``"<path>@untracked"`` y se documenta en el run.
+                        # data_version = hash of the .dvc file (not local path).
+                        # If the dataset is not yet DVC-tracked, returns
+                        # ``"<path>@untracked"`` and it is documented in the run.
                         "data_version": dvc_data_version(
                             str(self.config.dataset_root)
                         ),
@@ -636,7 +636,7 @@ class FarSLIPDistillationTrainer:
                     global_step += 1
 
                 _log.info("epoch done", epoch=epoch, **last_metrics)
-                # Checkpoint por epoch (resilencia AC-9 R3)
+                # Checkpoint per epoch (resilience AC-9 R3)
                 self.save_student(format="safetensors", suffix=f"epoch_{epoch}")
         finally:
             if run_ctx is not None and _mlflow is not None:
@@ -666,12 +666,12 @@ class FarSLIPDistillationTrainer:
         name = "student"
         if suffix:
             name = f"{name}_{suffix}"
-        # ``self.student`` es CLIPVisionModel: TODO el state_dict pertenece al
-        # vision encoder (no hay text encoder en este wrapper). El extractor
-        # carga directamente al ``vision_model`` con ``strict=False`` para
-        # tolerar diferencias de prefijo entre CLIPVisionModel y CLIPModel.
-        # Filtramos defensivamente prefijos `text_*` o `logit_scale` si
-        # alguna iteracion futura introduce un wrapper compuesto.
+        # ``self.student`` is CLIPVisionModel: the ENTIRE state_dict belongs to
+        # the vision encoder (there is no text encoder in this wrapper). The
+        # extractor loads directly into ``vision_model`` with ``strict=False`` to
+        # tolerate prefix differences between CLIPVisionModel and CLIPModel.
+        # We defensively filter `text_*` or `logit_scale` prefixes in case
+        # a future iteration introduces a composite wrapper.
         raw_state = self.student.state_dict()
         state_dict = {
             k: v
@@ -682,7 +682,7 @@ class FarSLIPDistillationTrainer:
             from safetensors.torch import save_file
 
             path = out_dir / f"{name}.safetensors"
-            # safetensors requiere tensors contiguos sobre CPU
+            # safetensors requires contiguous tensors on CPU
             cpu_state = {k: v.detach().contiguous().cpu() for k, v in state_dict.items()}
             save_file(cpu_state, str(path))
         else:

@@ -148,11 +148,11 @@ class AnySatSegmenter(nn.Module):
         try:
             feats = self.encoder(data, patch_size=self.patch_size, output="dense")
         except TypeError:
-            # Encoder sintetico de test: firma simple encoder(image) -> (B, D, h, w).
+            # Synthetic test encoder: simple signature encoder(image) -> (B, D, h, w).
             return self._to_feature_map(self.encoder(image))
 
-        # AnySat 'dense' devuelve channels-last (B, H, W, D) a resolucion completa;
-        # se permuta a channels-first (B, D, H, W) que es lo que espera la cabeza Conv2d.
+        # AnySat 'dense' returns channels-last (B, H, W, D) at full resolution;
+        # it is permuted to channels-first (B, D, H, W), which is what the Conv2d head expects.
         if feats.dim() == 4:
             feats = feats.permute(0, 3, 1, 2).contiguous()
         return self._to_feature_map(feats)
@@ -176,7 +176,7 @@ class AnySatSegmenter(nn.Module):
         if feats.dim() == 4:
             return feats  # (B, D, h, w)
         if feats.dim() == 3:
-            # (B, N, D) -> (B, D, sqrt(N), sqrt(N)) si N es cuadrado perfecto.
+            # (B, N, D) -> (B, D, sqrt(N), sqrt(N)) if N is a perfect square.
             b, n, d = feats.shape
             side = round(n**0.5)
             if side * side != n:

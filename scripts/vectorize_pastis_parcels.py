@@ -77,25 +77,25 @@ def _vectorize_patch(
     for inst_id in unique_instances:
         inst_id_int = int(inst_id)
         if inst_id_int == 0:
-            # 0 = background sin parcela asignada en este píxel.
+            # 0 = background with no parcel assigned in this pixel.
             continue
         mask = (instance == inst_id_int).astype(np.uint8)
         n_pixels = int(mask.sum())
         if n_pixels < min_pixels:
             continue
 
-        # Clase semántica dominante (puede haber 1-2 píxeles minoritarios por
-        # bordes; tomamos la más frecuente).
+        # Dominant semantic class (there may be 1-2 minority pixels at the
+        # edges; we take the most frequent one).
         sem_in_parcel = semantic[mask.astype(bool)]
         if sem_in_parcel.size == 0:
             continue
         cls_values, cls_counts = np.unique(sem_in_parcel, return_counts=True)
         class_id = int(cls_values[np.argmax(cls_counts)])
         if class_id in (0, 19):
-            # Background o Void.
+            # Background or Void.
             continue
 
-        # Vectorizar la máscara. shapes() devuelve generador de
+        # Vectorize the mask. shapes() returns a generator of
         # (geom_dict, value).
         try:
             shapes_iter = list(
@@ -107,10 +107,10 @@ def _vectorize_patch(
         if not shapes_iter:
             continue
 
-        # Si hay varios polígonos disjuntos para el mismo instance_id
-        # (raro pero posible por enmascarado fragmentado), tomamos el más
-        # grande. Alternativa: unirlos como MultiPolygon, pero downstream
-        # GEE prefiere polígonos simples.
+        # If there are several disjoint polygons for the same instance_id
+        # (rare but possible due to fragmented masking), we take the largest
+        # one. Alternative: join them as a MultiPolygon, but downstream
+        # GEE prefers simple polygons.
         best_geom = None
         best_area = -1.0
         for geom_dict, _val in shapes_iter:
@@ -266,7 +266,7 @@ def main(
         logger.error("no_parcels_extracted")
         raise typer.Exit(code=3)
 
-    # Build GeoDataFrame en EPSG:2154 y reproyectar a EPSG:4326 en bulk.
+    # Build GeoDataFrame in EPSG:2154 and reproject to EPSG:4326 in bulk.
     gdf_2154 = gpd.GeoDataFrame(all_records, geometry="geometry", crs="EPSG:2154")
     logger.info("reprojecting_to_4326", n=len(gdf_2154))
     gdf_4326 = gdf_2154.to_crs("EPSG:4326")
@@ -281,7 +281,7 @@ def main(
         file_size_mb=round(file_size_mb, 1),
     )
 
-    # Stats útiles para validación.
+    # Useful stats for validation.
     class_counts = gdf_4326["class_id"].value_counts().sort_index().to_dict()
     fold_counts = gdf_4326["fold"].value_counts().sort_index().to_dict()
     px_stats = {

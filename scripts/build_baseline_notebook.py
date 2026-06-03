@@ -67,7 +67,7 @@ def _params_code(source: str) -> nbf.NotebookNode:
 
 
 # ---------------------------------------------------------------------------
-# Celdas del notebook.
+# Notebook cells.
 # ---------------------------------------------------------------------------
 
 CELLS: list[nbf.NotebookNode] = [
@@ -109,7 +109,7 @@ CELLS: list[nbf.NotebookNode] = [
         "| 7 | Comparativa AlphaEarth vs Sentinel-2 crudo |\n"
         "| 8 | Conclusiones |\n"
     ),
-    # --- Seccion 1 -------------------------------------------------------
+    # --- Section 1 -------------------------------------------------------
     _md(
         "## 1. Carga del conjunto de datos\n"
         "\n"
@@ -169,7 +169,7 @@ CELLS: list[nbf.NotebookNode] = [
         ")\n"
         "class_counts"
     ),
-    # --- Seccion 2 -------------------------------------------------------
+    # --- Section 2 -------------------------------------------------------
     _md(
         "## 2. Por qué Random Forest y XGBoost\n"
         "\n"
@@ -202,7 +202,7 @@ CELLS: list[nbf.NotebookNode] = [
         "CPU de forma transparente; Random Forest corre siempre en CPU "
         "multinucleo. El experimento es reproducible en cualquier laptop."
     ),
-    # --- Seccion 3 — Importancia de caracteristicas ---------------------
+    # --- Section 3 — Feature importance ---------------------------------
     _md(
         "## 3. Importancia de características\n"
         "\n"
@@ -274,7 +274,7 @@ CELLS: list[nbf.NotebookNode] = [
         "                dpi=200, bbox_inches='tight')\n"
         "    plt.show()"
     ),
-    # --- Seccion 4 — Analisis SHAP (US-020) ------------------------------
+    # --- Section 4 — SHAP analysis (US-020) ------------------------------
     _md(
         "## 4. Análisis SHAP\n"
         "\n"
@@ -382,7 +382,7 @@ CELLS: list[nbf.NotebookNode] = [
         "    print(f'Lideran: ' + ', '.join(top_ae))\n"
         "family_counts"
     ),
-    # --- Seccion 5 — Conclusiones de feature engineering (US-020) --------
+    # --- Section 5 — Feature engineering conclusions (US-020) ------------
     _md(
         "## 5. Conclusiones de ingeniería de características\n"
         "\n"
@@ -457,7 +457,7 @@ CELLS: list[nbf.NotebookNode] = [
         "siguientes la incorporen antes de entrenar modelos mas "
         "complejos."
     ),
-    # --- Seccion 5b (US-021) --------------------------------------------
+    # --- Section 5b (US-021) --------------------------------------------
     _md(
         "## 5b. Curvas de aprendizaje y validacion — diagnostico de "
         "sub/sobreajuste\n"
@@ -573,7 +573,7 @@ CELLS: list[nbf.NotebookNode] = [
         "el sobreajuste — esto justifica que las fases siguientes "
         "incorporen arquitecturas temporales con mayor capacidad."
     ),
-    # --- Seccion 6 -------------------------------------------------------
+    # --- Section 6 -------------------------------------------------------
     _md(
         "## 6. Desempeño del baseline\n"
         "\n"
@@ -651,7 +651,7 @@ CELLS: list[nbf.NotebookNode] = [
         "lenguaje-vision) para recuperar senal complementaria que ningun "
         "modelo aislado captura."
     ),
-    # --- Seccion 7 — Comparativa de 3 escenarios (US-022) ----------------
+    # --- Section 7 — Comparison of 3 scenarios (US-022) ------------------
     _md(
         "## 7. Comparativa AlphaEarth vs Sentinel-2 crudo\n"
         "\n"
@@ -805,7 +805,7 @@ CELLS: list[nbf.NotebookNode] = [
         "else:\n"
         "    print('Sin delta — comparativa omitida.')"
     ),
-    # --- Seccion 8 — Conclusiones ---------------------------------------
+    # --- Section 8 — Conclusions ----------------------------------------
     _md(
         "## 8. Conclusiones\n"
         "\n"
@@ -875,23 +875,23 @@ CELLS: list[nbf.NotebookNode] = [
         "metrica principal que el resto del proyecto puede heredar."
     ),
     # ----------------------------------------------------------------------
-    # NOTA US-023-preview corrida 3: la seccion 9 (Baseline v2 con 3 modelos)
-    # se movio al notebook standalone `notebooks/baseline/04b_baseline_v2.ipynb`,
-    # que lee los artefactos persistidos en `reports/baseline/model_comparison_v2/`.
-    # Las celdas eliminadas reentrenaban modelos pesados (~90 min CUDA) y dejaban
-    # el notebook 04 con dependencias condicionales de MLflow/CUDA. El training
-    # real vive ahora en `scripts/run_baseline_v2_standalone.py`.
+    # NOTE US-023-preview run 3: section 9 (Baseline v2 with 3 models)
+    # was moved to the standalone notebook `notebooks/baseline/04b_baseline_v2.ipynb`,
+    # which reads the artifacts persisted in `reports/baseline/model_comparison_v2/`.
+    # The removed cells retrained heavy models (~90 min CUDA) and left
+    # notebook 04 with conditional MLflow/CUDA dependencies. The real training
+    # now lives in `scripts/run_baseline_v2_standalone.py`.
     # ----------------------------------------------------------------------
 ]
 
 
-# Stub interno: las celdas de la antigua seccion 9 (Baseline v2 con 3 modelos
-# canonicos, US-023-preview P8) se movieron al notebook standalone
-# `notebooks/baseline/04b_baseline_v2.ipynb` en la corrida 3 (2026-05-26).
-# El bloque condicional (`RUN_BASELINE_V2`) y sus celdas de training fueron
-# eliminados del builder; el lector encuentra las metricas v2 reales en
-# `reports/baseline/model_comparison_v2/model_comparison_v2.parquet` y el
-# training se regenera con `scripts/run_baseline_v2_standalone.py` o el
+# Internal stub: the cells of the former section 9 (Baseline v2 with 3 canonical
+# models, US-023-preview P8) were moved to the standalone notebook
+# `notebooks/baseline/04b_baseline_v2.ipynb` in run 3 (2026-05-26).
+# The conditional block (`RUN_BASELINE_V2`) and its training cells were
+# removed from the builder; the reader finds the real v2 metrics in
+# `reports/baseline/model_comparison_v2/model_comparison_v2.parquet` and the
+# training is regenerated with `scripts/run_baseline_v2_standalone.py` or the
 # target `make baseline-v2-full`.
 
 _REMOVED_V2_PARAMS_DROPPED = (

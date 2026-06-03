@@ -89,7 +89,7 @@ def _stratified_sample(
     """
     parts: list[pl.DataFrame] = []
     for class_value, sub in df.group_by(class_col, maintain_order=True):
-        del class_value  # solo para debug en pdb si hace falta.
+        del class_value  # only for debugging in pdb if needed.
         n = min(sub.height, min_per_class)
         if sub.height <= min_per_class:
             parts.append(sub)
@@ -188,9 +188,9 @@ def materialize_phenology_text(
         )
         return output_path
 
-    # Validacion de credenciales: la barrera dura vive en
-    # build_phenology_text_block, pero adelantamos el error aqui para
-    # no leer el parquet completo si vamos a fallar.
+    # Credentials validation: the hard barrier lives in
+    # build_phenology_text_block, but we bring the error forward here to
+    # avoid reading the full parquet if we are going to fail.
     if enforce_api_key and _LLM_CLIENT is None:
         _check_credentials_or_raise()
 
@@ -246,7 +246,7 @@ def materialize_phenology_text(
     )
     elapsed_s = time.monotonic() - t_start
 
-    # Validacion del esquema canonico de salida.
+    # Validation of the canonical output schema.
     if parcel_id_col in block.columns and block.schema[parcel_id_col] != pl.Utf8:
         block = canonical_parcel_id(block, col=parcel_id_col)
 

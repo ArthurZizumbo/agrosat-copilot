@@ -49,12 +49,12 @@ __all__ = [
 
 logger = structlog.get_logger(__name__)
 
-#: Dimension de los prototipos de texto fenologico (``all-MiniLM-L6-v2``).
+#: Dimension of the phenological text prototypes (``all-MiniLM-L6-v2``).
 _PROTOTYPE_DIM = 384
 
-#: Maximo de pixeles validos muestreados por batch para el contraste. Acota la
-#: matriz de similitud (n_sampled x num_classes) y el grafo de autograd a algo
-#: que cabe en L4 24GB; el muestreo es estocastico por step (ver Wen §3.3).
+#: Maximum number of valid pixels sampled per batch for the contrast. Bounds the
+#: similarity matrix (n_sampled x num_classes) and the autograd graph to something
+#: that fits in L4 24GB; the sampling is stochastic per step (see Wen §3.3).
 _DEFAULT_MAX_PIXELS = 4096
 
 
@@ -119,8 +119,8 @@ class PhenoSemanticBranch(nn.Module):
         else:
             self.raw_prototypes = nn.Parameter(prototypes)
 
-        # Proyeccion al espacio comun de alineacion (rama semantica del paper,
-        # §3.2; reemplaza el GCN de keywords por una lineal por simplicidad).
+        # Projection to the common alignment space (semantic branch of the paper,
+        # §3.2; replaces the keyword GCN with a linear layer for simplicity).
         self.proj = nn.Linear(_PROTOTYPE_DIM, semantic_dim)
 
         logger.info(
@@ -206,7 +206,7 @@ def phenology_contrastive_loss(
     num_classes, dim = prototypes.shape
     device = visual_proj.device
 
-    # (B, D, H, W) -> (B*H*W, D) y target -> (B*H*W,)
+    # (B, D, H, W) -> (B*H*W, D) and target -> (B*H*W,)
     feats = visual_proj.permute(0, 2, 3, 1).reshape(-1, dim)  # (P, D)
     labels = target.reshape(-1).to(device)  # (P,)
 
@@ -217,7 +217,7 @@ def phenology_contrastive_loss(
     feats = feats[valid]
     labels = labels[valid].long()
 
-    # Submuestreo estocastico para acotar memoria.
+    # Stochastic subsampling to bound memory.
     n_valid = feats.shape[0]
     if n_valid > max_pixels:
         perm = torch.randperm(n_valid, device=device, generator=generator)
@@ -225,29 +225,29 @@ def phenology_contrastive_loss(
         feats = feats[idx]
         labels = labels[idx]
 
-    # Contraste indefinido con una sola clase presente.
+    # Contrast undefined with a single class present.
     if labels.unique().numel() < 2:
         return visual_proj.sum() * 0.0
 
     feats = F.normalize(feats, p=2, dim=-1)  # (S, D)
     protos = F.normalize(prototypes.to(device), p=2, dim=-1)  # (K, D)
 
-    # Logits pixel-prototipo: (S, K).
+    # Pixel-prototype logits: (S, K).
     logits = (feats @ protos.t()) / temperature
 
-    # --- L_v: visual -> semantico (clasificacion del pixel a su prototipo) ---
+    # --- L_v: visual -> semantic (classify the pixel to its prototype) ---
     loss_v = F.cross_entropy(logits, labels)
 
-    # --- L_s: semantico -> visual (cada prototipo presente atrae sus pixeles) -
-    # Transpuesta: (K, S). Para cada clase presente, los positivos son los
-    # pixeles de esa clase; se usa log-mean-exp de los positivos (multi-positivo
-    # estilo InfoNCE supervisado, robusto al numero variable de positivos).
+    # --- L_s: semantic -> visual (each present prototype attracts its pixels) -
+    # Transpose: (K, S). For each present class, the positives are the
+    # pixels of that class; log-mean-exp of the positives is used (multi-positive
+    # supervised-InfoNCE style, robust to the variable number of positives).
     logits_s = logits.t()  # (K, S)
-    log_prob_s = F.log_softmax(logits_s, dim=1)  # (K, S) sobre los pixeles
+    log_prob_s = F.log_softmax(logits_s, dim=1)  # (K, S) over the pixels
     present = torch.unique(labels)
     pos_mask = present.unsqueeze(1) == labels.unsqueeze(0)  # (K_present, S)
     log_prob_present = log_prob_s[present]  # (K_present, S)
-    # Media de log-prob sobre los pixeles positivos de cada clase presente.
+    # Mean log-prob over the positive pixels of each present class.
     pos_counts = pos_mask.sum(dim=1).clamp(min=1)  # (K_present,)
     pos_log_prob = (log_prob_present * pos_mask).sum(dim=1) / pos_counts
     loss_s = -pos_log_prob.mean()
@@ -255,10 +255,10 @@ def phenology_contrastive_loss(
     return 0.5 * (loss_v + loss_s)
 
 
-# TODO(post-Avance): rama de texto con GCN sobre keywords fenologicos (Wen et al.
-# 2025, §3.2). El paper construye un grafo sobre los terminos fenologicos
-# extraidos de las descripciones (siembra/emergencia/pico/senescencia/cosecha) y
-# propaga con una GCN antes de la proyeccion, en lugar de la lineal directa de
-# :class:`PhenoSemanticBranch`. Aqui se usa la proyeccion lineal por simplicidad
-# y por mantener el entrenamiento viable en la ventana L4; el GCN es una mejora
-# de fidelidad al paper que no bloquea el Avance (riesgo/beneficio diferido).
+# TODO(post-Avance): text branch with a GCN over phenological keywords (Wen et al.
+# 2025, §3.2). The paper builds a graph over the phenological terms extracted from
+# the descriptions (sowing/emergence/peak/senescence/harvest) and propagates with
+# a GCN before the projection, instead of the direct linear layer of
+# :class:`PhenoSemanticBranch`. Here the linear projection is used for simplicity
+# and to keep training viable within the L4 window; the GCN is a paper-fidelity
+# improvement that does not block the Avance (deferred risk/benefit trade-off).

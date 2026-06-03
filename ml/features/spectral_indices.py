@@ -57,7 +57,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
-import spyndex  # type: ignore[import-untyped]  # sin py.typed marker upstream
+import spyndex  # type: ignore[import-untyped]  # no py.typed marker upstream
 import xarray as xr
 
 from ml.ingest.pastis_loader import PASTIS_S2_BANDS
@@ -77,7 +77,7 @@ __all__ = [
 ]
 
 
-# Orden canónico literal del plan v6 línea 1104 (CA US-014).
+# Literal canonical order from plan v6 line 1104 (CA US-014).
 INDEX_NAMES: list[str] = [
     "NDVI",
     "NDWI",
@@ -101,7 +101,7 @@ INDEX_NAMES: list[str] = [
 ReduceMethod = Literal["mean", "median", "max", "min", "p10", "p50", "p90", "p95"]
 
 
-# Mapeo bandas canónicas Sentinel-2 (PASTIS_S2_BANDS) → nomenclatura spyndex.
+# Mapping of canonical Sentinel-2 bands (PASTIS_S2_BANDS) -> spyndex nomenclature.
 _BAND_TO_SPYNDEX: dict[str, str] = {
     "B02": "B",
     "B03": "G",
@@ -122,7 +122,7 @@ class _IndexEntry:
 
     name: str
     backend: Literal["spyndex", "custom"]
-    spyndex_name: str | None  # solo para backend='spyndex' (alias permitidos)
+    spyndex_name: str | None  # only for backend='spyndex' (aliases allowed)
     custom_fn: Callable[[xr.DataArray], xr.DataArray] | None = None
     required_bands: tuple[str, ...] = field(default_factory=tuple)
     formula: str = ""
@@ -133,9 +133,9 @@ class _IndexEntry:
 
 
 # ---------------------------------------------------------------------------
-# Fórmulas custom auditadas (no presentes en spyndex 0.10).
-# Versión canónica única del proyecto — no revisitar sin ADR.
-# Referencias completas en docs/spectral_indices.md.
+# Audited custom formulas (not present in spyndex 0.10).
+# Single canonical version of the project -- do not revisit without ADR.
+# Full references in docs/spectral_indices.md.
 # ---------------------------------------------------------------------------
 
 
@@ -144,7 +144,7 @@ def _ndvi_array(da: xr.DataArray) -> xr.DataArray:
     n = da.sel(band="B08").astype(np.float32)
     r = da.sel(band="B04").astype(np.float32)
     denom = n + r
-    # división segura: 0/0 → NaN, no inf
+    # safe division: 0/0 -> NaN, not inf
     ndvi = xr.where(denom != 0, (n - r) / denom, np.float32(np.nan))
     return cast(xr.DataArray, ndvi.astype(np.float32))
 
@@ -168,7 +168,7 @@ def _lai_boegh_2002(da: xr.DataArray) -> xr.DataArray:
     DOI: 10.1016/S0034-4257(01)00342-X.
     """
     ndvi = _ndvi_array(da)
-    # arg = 1 - (NDVI - 0.05) / 0.95. Si NDVI≥1.0 → arg≤0 → log indefinido → NaN.
+    # arg = 1 - (NDVI - 0.05) / 0.95. If NDVI>=1.0 -> arg<=0 -> log undefined -> NaN.
     arg = 1.0 - (ndvi - 0.05) / 0.95
     safe = xr.where(arg > 0, arg, np.float32(np.nan))
     lai = -xr.apply_ufunc(np.log, safe, dask="allowed") / 0.5
@@ -205,7 +205,7 @@ def _ccci_barnes_2000(da: xr.DataArray) -> xr.DataArray:
 
 
 # ---------------------------------------------------------------------------
-# Registro canónico de los 17 índices.
+# Canonical registry of the 17 indices.
 # ---------------------------------------------------------------------------
 
 _INDEX_REGISTRY: dict[str, _IndexEntry] = {
@@ -264,7 +264,7 @@ _INDEX_REGISTRY: dict[str, _IndexEntry] = {
     "MSAVI2": _IndexEntry(
         name="MSAVI2",
         backend="spyndex",
-        spyndex_name="MSAVI",  # alias: spyndex MSAVI ≡ Qi 1994 MSAVI2
+        spyndex_name="MSAVI",  # alias: spyndex MSAVI == Qi 1994 MSAVI2
         required_bands=("B04", "B08"),
         formula="0.5·(2N+1 - √((2N+1)² - 8(N-R)))",
         agronomic_use="SAVI auto-calibrado, no requiere ajustar L.",
@@ -389,7 +389,7 @@ _INDEX_REGISTRY: dict[str, _IndexEntry] = {
 
 
 # ---------------------------------------------------------------------------
-# Helpers privados.
+# Private helpers.
 # ---------------------------------------------------------------------------
 
 
@@ -436,8 +436,8 @@ def _compute_via_spyndex(
     params.update(extra_params)
     result = spyndex.computeIndex(index=spyndex_name, params=params)
 
-    # Defensiva: spyndex puede devolver numpy en algunos paths; reconstruimos
-    # DataArray con coords espaciales del input (excluye 'band').
+    # Defensive: spyndex may return numpy in some paths; we rebuild the
+    # DataArray with spatial coords from the input (excludes 'band').
     if not isinstance(result, xr.DataArray):
         spatial_dims = tuple(d for d in da.dims if d != "band")
         spatial_coords = {d: da.coords[d] for d in spatial_dims if d in da.coords}
@@ -465,7 +465,7 @@ def _attach_attrs(result: xr.DataArray, entry: _IndexEntry, backend: str) -> xr.
 
 
 # ---------------------------------------------------------------------------
-# API pública.
+# Public API.
 # ---------------------------------------------------------------------------
 
 
@@ -590,7 +590,7 @@ def compute_index_cached(
     key = f"{scene_id}:{index}"
     try:
         cached = redis_client.get(key)
-    except Exception:  # noqa: BLE001 — degradación graceful si Redis cae
+    except Exception:  # noqa: BLE001 — graceful degradation if Redis goes down
         return compute_index(da, index)
 
     if cached is not None:
@@ -601,8 +601,8 @@ def compute_index_cached(
                 dims=payload["dims"],
                 attrs=payload.get("attrs", {}),
             )
-        except Exception:  # noqa: BLE001, S110 — fallback si cache corrupto
-            pass  # falla silenciosamente al recompute (cache es best-effort)
+        except Exception:  # noqa: BLE001, S110 — fallback if cache is corrupt
+            pass  # silently falls through to recompute (cache is best-effort)
 
     result = compute_index(da, index)
     try:
@@ -613,8 +613,8 @@ def compute_index_cached(
             "attrs": dict(result.attrs),
         }
         redis_client.setex(key, ttl_seconds, pickle.dumps(payload))
-    except Exception:  # noqa: BLE001, S110 — cache es best-effort, no bloquear
-        pass  # SET falló: devolvemos el cómputo igual
+    except Exception:  # noqa: BLE001, S110 — cache is best-effort, do not block
+        pass  # SET failed: we return the computation anyway
     return result
 
 
@@ -643,7 +643,7 @@ def compute_index_ee(ee_image: ee.Image, index: str) -> ee.Image:
             f"Índice desconocido '{index}'. Disponibles: {INDEX_NAMES}."
         )
     try:
-        import eemont  # noqa: F401  # registra .spectralIndices() en ee.Image
+        import eemont  # noqa: F401  # registers .spectralIndices() on ee.Image
     except Exception as exc:
         raise ImportError(
             "eemont no está disponible o falló al inicializar Earth Engine. "
@@ -656,13 +656,13 @@ def compute_index_ee(ee_image: ee.Image, index: str) -> ee.Image:
         assert entry.spyndex_name is not None
         ee_name = entry.spyndex_name
     else:
-        # Custom: eemont no lo conoce, lanzamos error explícito.
+        # Custom: eemont does not know it, we raise an explicit error.
         raise ValueError(
             f"Índice '{index}' es custom-formula del proyecto (sin equivalente "
             f"en eemont/awesome-spectral-indices). Computar offline con "
             f"compute_index() en su lugar."
         )
 
-    # eemont añade dinámicamente `spectralIndices` a ee.Image al importarse,
-    # por lo que el atributo no existe en los stubs estáticos de earthengine-api.
+    # eemont dynamically adds `spectralIndices` to ee.Image on import,
+    # so the attribute does not exist in the static stubs of earthengine-api.
     return cast("ee.Image", ee_image.spectralIndices([ee_name]))  # type: ignore[attr-defined]

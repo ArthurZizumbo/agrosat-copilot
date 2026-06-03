@@ -149,7 +149,7 @@ class TempCNN(nn.Module):
                     nn.init.zeros_(module.bias)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # Input (B, T, C) -> Conv1d espera (B, C, T)
+        # Input (B, T, C) -> Conv1d expects (B, C, T)
         x = x.transpose(1, 2)
         x = self.block1(x)
         x = self.block2(x)
@@ -221,8 +221,8 @@ class _InceptionModule(nn.Module):
         else:
             bottlenecked = x
         branches = [conv(bottlenecked) for conv in self.conv_branches]
-        # Ajusta a la longitud temporal minima (los kernels grandes pueden
-        # producir T+1 segun parity).
+        # Adjust to the minimum temporal length (large kernels can
+        # produce T+1 depending on parity).
         target_t = min(b.size(-1) for b in branches)
         branches = [b[..., :target_t] for b in branches]
 
@@ -301,12 +301,12 @@ class InceptionTime(nn.Module):
             )
             modules.append(module)
             current_in = out_channels_per_module
-            # Shortcut cada 3 bloques (segun paper).
+            # Shortcut every 3 blocks (per paper).
             shortcuts.append(None if (d + 1) % 3 != 0 else _ShortcutBlock(0, 0))
 
         self.inception_modules = nn.ModuleList(modules)
-        # Construimos shortcuts sabiendo el input residual exacto en forward.
-        # Aqui solo guardamos placeholders; los Conv1d 1x1 se crean lazy.
+        # We build shortcuts knowing the exact residual input in forward.
+        # Here we only store placeholders; the 1x1 Conv1d are created lazily.
         self._build_shortcuts(input_dim, out_channels_per_module)
         self.global_pool = nn.AdaptiveAvgPool1d(1)
         self.dropout = nn.Dropout(dropout)
@@ -328,10 +328,10 @@ class InceptionTime(nn.Module):
             if (d + 1) % 3 != 0:
                 continue
             if d == 2:
-                # Shortcut input -> salida bloque 2
+                # Shortcut input -> block 2 output
                 sc_modules.append(_ShortcutBlock(input_dim, out_channels_per_module))
             else:
-                # Shortcuts subsiguientes: salida previa -> salida actual
+                # Subsequent shortcuts: previous output -> current output
                 sc_modules.append(
                     _ShortcutBlock(out_channels_per_module, out_channels_per_module)
                 )
@@ -347,7 +347,7 @@ class InceptionTime(nn.Module):
                     nn.init.zeros_(module.bias)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # Input (B, T, C) -> Conv1d espera (B, C, T).
+        # Input (B, T, C) -> Conv1d expects (B, C, T).
         x = x.transpose(1, 2)
         residual = x
         shortcut_idx = 0
@@ -364,7 +364,7 @@ class InceptionTime(nn.Module):
 
 
 # ---------------------------------------------------------------------------
-# Factory helper para selector por nombre.
+# Factory helper for selecting by name.
 # ---------------------------------------------------------------------------
 
 

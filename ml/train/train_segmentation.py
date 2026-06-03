@@ -55,21 +55,21 @@ from ml.ingest.pastis_dataset import (
 from ml.models.deeplabv3plus import build_dice_ce_loss
 from ml.utils.mlflow_utils import track_experiment
 
-if TYPE_CHECKING:  # pragma: no cover - solo anotaciones de tipo
+if TYPE_CHECKING:  # pragma: no cover - type annotations only
     from collections.abc import Sequence
 
     from torch.utils.data import Dataset
 
 try:
     from tqdm.auto import tqdm
-except ImportError:  # pragma: no cover - tqdm es opcional
+except ImportError:  # pragma: no cover - tqdm is optional
     tqdm = None
 
 logger = structlog.get_logger(__name__)
 app = typer.Typer(add_completion=False, help=__doc__)
 
-# MLflow 3.x emite emojis al cerrar runs; la consola Windows usa cp1252 y eso
-# provoca UnicodeEncodeError. Forzamos UTF-8 (no-op en Linux/macOS/Colab).
+# MLflow 3.x emits emojis when closing runs; the Windows console uses cp1252 and
+# that causes UnicodeEncodeError. Force UTF-8 (no-op on Linux/macOS/Colab).
 for _stream in (sys.stdout, sys.stderr):
     _reconfigure = getattr(_stream, "reconfigure", None)
     if _reconfigure is not None:
@@ -79,8 +79,8 @@ _EXPERIMENT_NAME = "agrosat-segmentation"
 _DEFAULT_OUTPUT = Path("artifacts/segmentation")
 _DEFAULT_COMPARISON = Path("reports/segmentation/model_comparison_avance4_aaron.parquet")
 _DEFAULT_ROOT = Path("data/PASTIS-R")
-#: Ruta (relativa al repo) del dataset PASTIS-R para resolver el ``data_version``
-#: DVC en los entrenadores DeepLab/TSViT (us-025).
+#: Path (relative to the repo) of the PASTIS-R dataset to resolve the ``data_version``
+#: DVC in the DeepLab/TSViT trainers (us-025).
 _PASTIS_DVC_PATH = "data/PASTIS-R"
 
 
@@ -197,7 +197,7 @@ def _evaluate(
         acc_grouped = DenseConfusionAccumulator(7, ignore_index=255, device=str(device))
         lut_target = torch.as_tensor(group_lut, device=device)
         _pred_lut = group_lut.copy()
-        _pred_lut[_pred_lut == 255] = 6  # fondo/void predichos -> clase "no-cultivo"
+        _pred_lut[_pred_lut == 255] = 6  # predicted background/void -> "non-crop" class
         lut_pred = torch.as_tensor(_pred_lut, device=device)
     iterator = loader
     if tqdm is not None:
@@ -255,8 +255,8 @@ def _save_checkpoint(
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
-    # Escritura atomica: primero a un .tmp y luego rename, para no corromper el
-    # checkpoint si la sesion se corta justo durante el guardado.
+    # Atomic write: first to a .tmp and then rename, to avoid corrupting the
+    # checkpoint if the session is cut off right during the save.
     torch.save(
         {
             "epoch": epoch,
@@ -344,7 +344,7 @@ def run_training(
 
     seg_model, reduction = _build_model(model, PASTIS_NUM_CLASSES, target_size)
     seg_model = seg_model.to(dev)
-    # Normalizacion con stats de los folds de train (sin leakage del fold de val).
+    # Normalization with stats from the train folds (no leakage from the val fold).
     norm = load_norm_stats(root, folds=tr_folds)
 
     pin = dev.type == "cuda"
@@ -357,10 +357,10 @@ def run_training(
         batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin,
     )
 
-    # Materializa parametros Lazy (la cabeza Conv1x1 de AnySat usa nn.LazyConv2d,
-    # que infiere sus canales en el primer forward) con un batch real ANTES de
-    # construir el optimizer; de lo contrario el conteo de params y AdamW fallan
-    # sobre UninitializedParameter.
+    # Materialize Lazy parameters (the AnySat Conv1x1 head uses nn.LazyConv2d,
+    # which infers its channels on the first forward) with a real batch BEFORE
+    # building the optimizer; otherwise the param count and AdamW fail
+    # over UninitializedParameter.
     seg_model.train()
     with torch.no_grad():
         _forward(seg_model, model, next(iter(train_loader)), dev)
@@ -371,8 +371,8 @@ def run_training(
     use_amp = dev.type == "cuda"
     scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
 
-    # Reanudacion: si hay un checkpoint de la misma corrida, continua desde la
-    # epoca siguiente en vez de empezar de cero (clave en Colab, sesion efimera).
+    # Resume: if there is a checkpoint from the same run, continue from the
+    # next epoch instead of starting from scratch (key in Colab, ephemeral session).
     resume_ckpt_path = output_dir / f"{model}_ckpt.pt"
     final_model_path = output_dir / f"{model}_pastis.pt"
     ckpt_config = {"model": model, "target_size": target_size, "epochs": epochs}
@@ -390,7 +390,7 @@ def run_training(
                 logger.info("segmentation_resume", model=model, start_epoch=start_epoch, **best)
             else:
                 logger.warning("segmentation_ckpt_config_mismatch", path=str(resume_ckpt_path))
-        except Exception as exc:  # noqa: BLE001 - checkpoint corrupto: arrancar de cero
+        except Exception as exc:  # noqa: BLE001 - corrupt checkpoint: start from scratch
             logger.warning(
                 "segmentation_ckpt_load_failed", path=str(resume_ckpt_path), error=str(exc)
             )
@@ -434,11 +434,11 @@ def run_training(
             }
         )
 
-        # LUT 18 clases -> 6 grupos HCAT para reportar tambien la metrica agrupada
-        # (comparable con el baseline). Ver ml.analysis.hcat_grouping.
+        # LUT 18 classes -> 6 HCAT groups to also report the grouped metric
+        # (comparable with the baseline). See ml.analysis.hcat_grouping.
         group_lut = hcat6_dense_lut()
-        # Historial por epoca para las curvas de loss/mIoU. Se persiste a Drive
-        # junto al parquet comparativo y se reanuda si ya existe (sobrevive cortes).
+        # Per-epoch history for the loss/mIoU curves. It is persisted to Drive
+        # alongside the comparison parquet and resumed if it already exists (survives cutoffs).
         history_path = comparison_path.with_name(
             comparison_path.name.replace("model_comparison_avance4", "history")
         )
@@ -448,10 +448,10 @@ def run_training(
         for epoch in range(start_epoch, epochs):
             seg_model.train()
             if model == "anysat":
-                # El encoder congelado permanece en eval; solo la head entrena.
+                # The frozen encoder stays in eval; only the head trains.
                 seg_model.encoder.eval()
             epoch_loss = 0.0
-            # Barra de progreso por batch dentro de la epoca (avance, it/s, loss).
+            # Per-batch progress bar within the epoch (progress, it/s, loss).
             bar = train_loader
             if tqdm is not None:
                 bar = tqdm(
@@ -484,15 +484,15 @@ def run_training(
             if metrics["miou"] >= best["miou"]:
                 best = metrics
             logger.info("segmentation_epoch", epoch=epoch, loss=epoch_loss, **metrics)
-            # Hook por epoca (ajuste fino Optuna: reporta metrica intermedia y poda).
-            # Si lanza (TrialPruned), la excepcion se propaga y corta este entrenamiento.
+            # Per-epoch hook (Optuna fine-tuning: reports intermediate metric and prunes).
+            # If it raises (TrialPruned), the exception propagates and cuts off this training.
             if on_epoch is not None:
                 on_epoch(epoch, metrics)
-            # Registro del historial por epoca (para las curvas) + persistencia a Drive.
+            # Per-epoch history logging (for the curves) + persistence to Drive.
             history.append({"epoch": epoch, "train_loss": train_loss, **metrics})
             comparison_path.parent.mkdir(parents=True, exist_ok=True)
             pl.DataFrame(history).write_parquet(history_path)
-            # Checkpoint reanudable cada `checkpoint_every` epocas (y en la ultima).
+            # Resumable checkpoint every `checkpoint_every` epochs (and on the last one).
             if (epoch + 1) % checkpoint_every == 0 or epoch == epochs - 1:
                 _save_checkpoint(
                     resume_ckpt_path, epoch=epoch, model=seg_model, optimizer=optimizer,
@@ -540,9 +540,9 @@ def run_training(
 
 
 # ===========================================================================
-# Entrenadores US-025: DeepLabv3+ (2D) y TSViT (temporal, + rama fenologica).
-# APIs propias (train_segmentation / build_and_train) que invocan los notebooks
-# 5a/5b por subprocess con --model deeplabv3plus|tsvit|tsvit-pheno.
+# US-025 trainers: DeepLabv3+ (2D) and TSViT (temporal, + phenology branch).
+# Own APIs (train_segmentation / build_and_train) that the 5a/5b notebooks
+# invoke by subprocess with --model deeplabv3plus|tsvit|tsvit-pheno.
 # ===========================================================================
 
 def phenology_contrastive_loss(
@@ -605,13 +605,13 @@ def phenology_contrastive_loss(
 
     valid = (y_flat != ignore_index) & (y_flat >= 0) & (y_flat < n_proto)
     if not bool(valid.any()):
-        # Sin pixeles validos: termino neutro que conserva el grafo de grad.
+        # No valid pixels: neutral term that preserves the grad graph.
         return visual_proj.sum() * 0.0
 
     v_valid = v_flat[valid]
     y_valid = y_flat[valid]
 
-    # Submuestreo determinista para acotar la matriz de similitud en VRAM.
+    # Deterministic subsampling to bound the similarity matrix in VRAM.
     n_valid = v_valid.shape[0]
     if n_valid > max_pixels:
         gen = torch.Generator(device="cpu").manual_seed(0)
@@ -621,19 +621,19 @@ def phenology_contrastive_loss(
 
     v_valid = nn.functional.normalize(v_valid, dim=1)  # (P, S)
 
-    # Similitud pixel x prototipo -> logits (P, K).
+    # Pixel x prototype similarity -> logits (P, K).
     logits = (v_valid @ protos.t()) / temperature
 
-    # Direccion 1 (visual): cada pixel debe clasificar a su prototipo de clase.
+    # Direction 1 (visual): each pixel must classify to its class prototype.
     loss_v = nn.functional.cross_entropy(logits, y_valid)
 
-    # Direccion 2 (semantica): por cada clase presente, el prototipo debe
-    # recuperar sus pixeles. Se promedia la similitud prototipo->pixeles de su
-    # clase contra todos los pixeles del batch (InfoNCE simetrico del paper).
+    # Direction 2 (semantic): for each present class, the prototype must
+    # recover its pixels. The prototype->pixels similarity of its class is
+    # averaged against all pixels in the batch (symmetric InfoNCE from the paper).
     present = torch.unique(y_valid)
     proto_logits = (protos[present] @ v_valid.t()) / temperature  # (Kp, P)
-    # Target multi-positivo: para cada prototipo presente, los pixeles de su
-    # clase son los positivos; se usa la media de log-softmax sobre positivos.
+    # Multi-positive target: for each present prototype, the pixels of its
+    # class are the positives; the mean of log-softmax over positives is used.
     log_prob = nn.functional.log_softmax(proto_logits, dim=1)  # (Kp, P)
     pos_mask = (y_valid.unsqueeze(0) == present.unsqueeze(1)).to(log_prob.dtype)
     pos_counts = pos_mask.sum(dim=1).clamp_min(1.0)
@@ -645,7 +645,7 @@ def phenology_contrastive_loss(
 
 
 # ---------------------------------------------------------------------------
-# Helpers de device / forward
+# Device / forward helpers
 # ---------------------------------------------------------------------------
 
 
@@ -693,7 +693,7 @@ def _forward_model(
         out = model(x, return_visual_proj=True)
         if isinstance(out, tuple):
             return out[0], out[1]
-        # El modelo no honro el flag (caso defensivo): solo logits.
+        # The model did not honor the flag (defensive case): only logits.
         return out, None
     out = model(x)
     return out, None
@@ -763,11 +763,11 @@ def _run_epoch(
                     )
 
             if optimizer is not None:
-                # Gradient clipping (max_norm=1.0): imprescindible para TSViT
-                # (transformer) — sin el, los gradientes explotan y el loss
-                # diverge a NaN tras ~8 epochs. Con AMP hay que `unscale_`
-                # antes de clipear. DeepLabv3+ (CNN) tolera no clipear, pero
-                # aplicarlo a ambos es seguro y estabiliza.
+                # Gradient clipping (max_norm=1.0): essential for TSViT
+                # (transformer) — without it, the gradients explode and the loss
+                # diverges to NaN after ~8 epochs. With AMP you must `unscale_`
+                # before clipping. DeepLabv3+ (CNN) tolerates not clipping, but
+                # applying it to both is safe and stabilizes.
                 if scaler is not None and amp_enabled:
                     scaler.scale(loss).backward()
                     scaler.unscale_(optimizer)
@@ -829,7 +829,7 @@ def _evaluate_dense(
 
 
 # ---------------------------------------------------------------------------
-# Checkpointing por epoch (resume tras interrupcion).
+# Per-epoch checkpointing (resume after interruption).
 # ---------------------------------------------------------------------------
 
 
@@ -944,8 +944,8 @@ def _log_final_artifacts(
 
     ckpt_dir.mkdir(parents=True, exist_ok=True)
 
-    # Matriz de confusion (figura). Reconstruye y_true/y_pred desde la cm
-    # expandiendo conteos seria caro; en su lugar dibujamos la cm directamente.
+    # Confusion matrix (figure). Reconstructing y_true/y_pred from the cm by
+    # expanding counts would be costly; instead we draw the cm directly.
     cm_f = best_cm.astype(np.float64)
     row_sums = cm_f.sum(axis=1, keepdims=True)
     with np.errstate(divide="ignore", invalid="ignore"):
@@ -986,7 +986,7 @@ def _log_final_artifacts(
 
 
 # ---------------------------------------------------------------------------
-# API publica
+# Public API
 # ---------------------------------------------------------------------------
 
 
@@ -1090,10 +1090,10 @@ def train_segmentation(
             else torch.as_tensor(np.asarray(prototypes), dtype=torch.float32)
         ).to(resolved_device)
 
-    # `persistent_workers` evita re-spawn de los workers en cada epoch (coste
-    # alto en Windows con spawn); `prefetch_factor` precarga varios batches por
-    # worker para solapar el colapso temporal (np.median ~79ms/patch) con el
-    # paso GPU. Solo aplican con num_workers > 0.
+    # `persistent_workers` avoids re-spawning the workers on each epoch (high
+    # cost on Windows with spawn); `prefetch_factor` preloads several batches per
+    # worker to overlap the temporal collapse (np.median ~79ms/patch) with the
+    # GPU step. They only apply with num_workers > 0.
     loader_kwargs: dict[str, object] = {
         "pin_memory": resolved_device.type == "cuda",
     }
@@ -1129,11 +1129,11 @@ def train_segmentation(
     amp_enabled = use_amp and resolved_device.type == "cuda"
     scaler = torch.cuda.amp.GradScaler(enabled=amp_enabled) if amp_enabled else None
 
-    # LR schedule de Tarasiou et al. 2023 (TSViT, §4.1 "Implementation
-    # details"): warmup lineal 0 -> lr hasta `warmup_epochs`, luego cosine
-    # decay a `lr_min`. El warmup es lo que estabiliza el transformer (sin el,
-    # el LR alto desde el step 0 hace divergir el loss a NaN ~epoch 8). Aplica
-    # por epoch; para DeepLabv3+ (CNN) tambien ayuda pero no es critico.
+    # LR schedule from Tarasiou et al. 2023 (TSViT, §4.1 "Implementation
+    # details"): linear warmup 0 -> lr up to `warmup_epochs`, then cosine
+    # decay to `lr_min`. The warmup is what stabilizes the transformer (without it,
+    # the high LR from step 0 makes the loss diverge to NaN ~epoch 8). Applied
+    # per epoch; for DeepLabv3+ (CNN) it also helps but is not critical.
     scheduler = torch.optim.lr_scheduler.SequentialLR(
         optimizer,
         schedulers=[
@@ -1152,8 +1152,8 @@ def train_segmentation(
         milestones=[max(1, warmup_epochs)],
     )
 
-    # Checkpoints por epoch: `last.pt` (siempre) + `best.pt` (mejor mIoU).
-    # Permiten reanudar tras interrupcion (la VM L4 se apago una vez).
+    # Per-epoch checkpoints: `last.pt` (always) + `best.pt` (best mIoU).
+    # They allow resuming after interruption (the L4 VM shut down once).
     resolved_ckpt_dir = (
         Path(ckpt_dir)
         if ckpt_dir is not None
@@ -1190,7 +1190,7 @@ def train_segmentation(
         patience=patience,
     )
 
-    # Estado de early stopping y cm del mejor epoch (para artefactos finales).
+    # Early stopping state and cm of the best epoch (for final artifacts).
     epochs_no_improve = 0
     best_cm = np.zeros((resolved_classes, resolved_classes), dtype=np.int64)
 
@@ -1268,13 +1268,13 @@ def train_segmentation(
             if is_best:
                 best_metrics = dict(val_metrics)
                 best_metrics["best_epoch"] = float(epoch + 1)
-                best_cm = val_cm.copy()  # cm del mejor epoch (para artefactos)
+                best_cm = val_cm.copy()  # cm of the best epoch (for artifacts)
                 epochs_no_improve = 0
             else:
                 epochs_no_improve += 1
 
-            # Checkpoint por epoch: `last.pt` siempre (para resume), `best.pt`
-            # cuando mejora el mIoU de validacion (para inferencia posterior).
+            # Per-epoch checkpoint: `last.pt` always (for resume), `best.pt`
+            # when the validation mIoU improves (for later inference).
             _save_checkpoint_seg(
                 last_ckpt,
                 epoch=epoch,
@@ -1295,11 +1295,11 @@ def train_segmentation(
                     best_metrics=best_metrics,
                 )
 
-            # Avanza el LR schedule (warmup -> cosine) al final de cada epoch.
+            # Advance the LR schedule (warmup -> cosine) at the end of each epoch.
             scheduler.step()
 
-            # Early stopping: corta si val_miou no mejora en `patience` epochs
-            # (DeepLabv3+ tiende a sobreajustar tras ~7 epochs). 0 = desactivado.
+            # Early stopping: cuts off if val_miou does not improve in `patience` epochs
+            # (DeepLabv3+ tends to overfit after ~7 epochs). 0 = disabled.
             if patience > 0 and epochs_no_improve >= patience:
                 logger.info(
                     "early_stopping",
@@ -1310,7 +1310,7 @@ def train_segmentation(
                 )
                 break
 
-        # mIoU inicial -1.0 indica que ningun epoch corrio (no deberia pasar).
+        # Initial mIoU -1.0 indicates no epoch ran (should not happen).
         if best_metrics["miou"] < 0.0:
             best_metrics = {"miou": 0.0, "f1_macro": 0.0, "pixel_acc": 0.0}
 
@@ -1320,8 +1320,8 @@ def train_segmentation(
         mlflow.log_metric("best_val_balanced_acc", best_metrics.get("balanced_acc", 0.0))
         mlflow.log_metric("best_val_cohen_kappa", best_metrics.get("cohen_kappa", 0.0))
 
-        # Artefactos del mejor epoch: matriz de confusion (figura PNG) +
-        # metricas por clase (JSON). Para el notebook y el analisis.
+        # Best epoch artifacts: confusion matrix (PNG figure) +
+        # per-class metrics (JSON). For the notebook and the analysis.
         _log_final_artifacts(
             resolved_ckpt_dir,
             best_cm=best_cm,
@@ -1329,8 +1329,8 @@ def train_segmentation(
             num_classes=resolved_classes,
         )
 
-        # Sube el mejor checkpoint a MLflow como artefacto (para inferencia
-        # reproducible desde el run, no solo desde el disco local).
+        # Upload the best checkpoint to MLflow as an artifact (for reproducible
+        # inference from the run, not only from the local disk).
         if best_ckpt.exists():
             mlflow.log_artifact(str(best_ckpt), artifact_path="checkpoint")
 
@@ -1345,16 +1345,16 @@ def train_segmentation(
 
 
 # ---------------------------------------------------------------------------
-# Orquestacion CLI: construye dataset + modelo + prototipos y entrena.
-# El notebook `notebooks/models/5_*` invoca esta interfaz por subprocess para
-# que los runs queden documentados en MLflow sin reimplementar logica.
+# CLI orchestration: builds dataset + model + prototypes and trains.
+# The notebook `notebooks/models/5_*` invokes this interface by subprocess so
+# that the runs are documented in MLflow without reimplementing logic.
 # ---------------------------------------------------------------------------
 
-#: Folds oficiales PASTIS-R para train/val/test (split canonico del benchmark).
+#: Official PASTIS-R folds for train/val/test (canonical benchmark split).
 _DEFAULT_TRAIN_FOLDS: tuple[int, ...] = (1, 2, 3)
 _DEFAULT_VAL_FOLDS: tuple[int, ...] = (4,)
 
-#: Nombres de run MLflow por defecto segun el modelo.
+#: Default MLflow run names according to the model.
 _DEFAULT_RUN_NAMES: dict[str, str] = {
     "deeplabv3plus": "alt-deeplabv3plus-mobilenet-v1",
     "tsvit": "alt-tsvit-v1",
@@ -1639,10 +1639,10 @@ def main(
     )
 
 
-if __name__ == "__main__":  # pragma: no cover - dispatcher CLI
-    # Dos CLIs coexisten en este modulo: el Typer de UNet/AnySat (Aaron) y el
-    # argparse de DeepLab/TSViT (us-025). Se rutea por el valor de --model para
-    # que `python -m ml.train.train_segmentation --model X` funcione para ambos.
+if __name__ == "__main__":  # pragma: no cover - CLI dispatcher
+    # Two CLIs coexist in this module: the UNet/AnySat Typer (Aaron) and the
+    # DeepLab/TSViT argparse (us-025). Routing is by the --model value so
+    # that `python -m ml.train.train_segmentation --model X` works for both.
     _US025_MODELS = {"deeplabv3plus", "tsvit", "tsvit-pheno"}
     _argv = sys.argv[1:]
     _model = None

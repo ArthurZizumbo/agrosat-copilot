@@ -59,7 +59,7 @@ __all__ = [
 
 
 # ---------------------------------------------------------------------------
-# Carga / construccion de features.
+# Feature loading / construction.
 # ---------------------------------------------------------------------------
 
 
@@ -122,11 +122,11 @@ def load_features_dataset_with_meta(
     parcels_meta = pl.from_pandas(parcels_gdf[meta_cols])
     parcels_meta = canonical_parcel_id(parcels_meta)
 
-    # Si el parquet de features ya trae alguna de las columnas meta (por
-    # construccion del subset US-018), las eliminamos de `parcels_meta` antes
-    # del join. De lo contrario Polars suffixa con `_right` y esas columnas
-    # numericas (patch_id, fold, n_pixels) acaban en la matriz X como features
-    # — leakage espacial que el SHAP del 04_baseline expuso.
+    # If the features parquet already carries any of the meta columns (by
+    # construction of the US-018 subset), we drop them from `parcels_meta` before
+    # the join. Otherwise Polars suffixes with `_right` and those numeric
+    # columns (patch_id, fold, n_pixels) end up in matrix X as features
+    # — spatial leakage that the SHAP of 04_baseline exposed.
     overlap = [c for c in parcels_meta.columns if c != "parcel_id" and c in features.columns]
     if overlap:
         parcels_meta = parcels_meta.drop(overlap)
@@ -249,9 +249,9 @@ def load_or_build_fused_features(
     Raises:
         FileNotFoundError: si el geoparquet de parcelas no existe.
     """
-    # Lectura: si se uso el default canonico, se resuelve a la variante
-    # existente (`_pastis` o legacy `_italy`). Si el caller paso un path
-    # explicito, se respeta tal cual.
+    # Read: if the canonical default was used, resolve to the existing
+    # variant (`_pastis` or legacy `_italy`). If the caller passed an explicit
+    # path, it is respected as-is.
     if output_path is _DEFAULT_FUSED_PATH:
         output = resolve_dataset_path(_DEFAULT_FUSED_PATH)
     else:
@@ -297,7 +297,7 @@ def load_or_build_fused_features(
 
 
 # ---------------------------------------------------------------------------
-# Entrenamiento de los 3 modelos baseline.
+# Training of the 3 baseline models.
 # ---------------------------------------------------------------------------
 
 
@@ -488,7 +488,7 @@ def load_temporal_result_from_mlflow(
 
 
 # ---------------------------------------------------------------------------
-# Auto-materializacion de bloques opcionales.
+# Auto-materialization of optional blocks.
 # ---------------------------------------------------------------------------
 
 
@@ -601,9 +601,9 @@ def materialize_spectral_signature_if_missing(
         logger.info("spectral_signature_cache_hit", path=str(output))
         return output
 
-    # Lectura del bloque de anclas S2: resolvemos a la variante existente
-    # (`_pastis` canonico o legacy `_italy`) para no re-muestrear si el
-    # artefacto ya esta en disco bajo el nombre heredado.
+    # Read the S2 anchors block: resolve to the existing variant
+    # (`_pastis` canonical or legacy `_italy`) to avoid re-sampling if the
+    # artifact is already on disk under the inherited name.
     anchors_path = resolve_dataset_path(s2_anchors_path)
     if not anchors_path.exists():
         raise FileNotFoundError(
@@ -679,7 +679,7 @@ def materialize_remoteclip_if_missing(
 
 
 # ---------------------------------------------------------------------------
-# Ablation runner que persiste tabla + figures.
+# Ablation runner that persists table + figures.
 # ---------------------------------------------------------------------------
 
 

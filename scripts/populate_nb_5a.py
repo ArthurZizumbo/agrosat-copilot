@@ -34,7 +34,7 @@ def _code(src: str) -> dict:
 nb = json.loads(NB.read_text(encoding="utf-8"))
 cells = nb["cells"]
 
-# 1. Anadir checkpoint_dir + eval_max_patches a la celda de parametros (1).
+# 1. Add checkpoint_dir + eval_max_patches to the parameters cell (1).
 param_src = "".join(cells[1]["source"])
 if "checkpoint_dir" not in param_src:
     param_src = param_src.replace(
@@ -45,8 +45,8 @@ if "checkpoint_dir" not in param_src:
     )
     cells[1]["source"] = param_src.splitlines(keepends=True)
 
-# 2. Atajo skip-if-trained en run_training (celda 4): si el best.pt local ya
-#    existe, leer best_metrics y no re-entrenar.
+# 2. Skip-if-trained shortcut in run_training (cell 4): if the local best.pt
+#    already exists, read best_metrics and do not re-train.
 cell4 = "".join(cells[4]["source"])
 if "skip-if-trained" not in cell4 and "Checkpoint entrenado ya presente" not in cell4:
     shortcut = '''    # Atajo de reproducibilidad (skip-if-trained): si ya existe el checkpoint
@@ -89,7 +89,7 @@ if "skip-if-trained" not in cell4 and "Checkpoint entrenado ya presente" not in 
     cell4 = cell4.replace(marker, shortcut + marker, 1)
     cells[4]["source"] = cell4.splitlines(keepends=True)
 
-# 3. Seccion de evaluacion (checkpoints reales locales). DeepLab es 2D:
+# 3. Evaluation section (real local checkpoints). DeepLab is 2D:
 #    collapse_time="median".
 sec_md = _md(
     """## Seccion 3 - Evaluacion del modelo entrenado
@@ -282,7 +282,7 @@ else:
     display(Markdown("> Sin checkpoint; no se generan predicciones visuales."))'''
 )
 
-# 4. Insertar antes de la celda de Conclusiones.
+# 4. Insert before the Conclusions cell.
 concl_idx = next(
     i for i, c in enumerate(cells)
     if c["cell_type"] == "markdown" and "".join(c["source"]).startswith("## Conclusiones")
@@ -293,8 +293,8 @@ new_cells = [
     sec_cm_md, sec_cm,
     sec_pred_md, sec_pred,
 ]
-# Idempotencia robusta a la ortografia: se detecta por un identificador en
-# ingles (estable a tildes) presente en la celda de setup de la evaluacion.
+# Spelling-robust idempotency: detected by an English identifier
+# (stable to accents) present in the evaluation setup cell.
 already = any("ml.eval.segmentation_inference" in "".join(c["source"]) for c in cells)
 if not already:
     cells[concl_idx:concl_idx] = new_cells

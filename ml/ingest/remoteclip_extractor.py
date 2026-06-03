@@ -285,9 +285,9 @@ def _embed_batch(
     pixel_values = inputs["pixel_values"].to(device)
     with torch.inference_mode():
         features = model.get_image_features(pixel_values=pixel_values)
-    # `get_image_features` deberia devolver un tensor (B, dim) pero algunos
-    # checkpoints RemoteCLIP (chendelong/*) devuelven el output completo
-    # `BaseModelOutputWithPooling`. Normalizamos a tensor antes de L2.
+    # `get_image_features` should return a tensor (B, dim) but some
+    # RemoteCLIP checkpoints (chendelong/*) return the full output
+    # `BaseModelOutputWithPooling`. We normalize to a tensor before L2.
     if hasattr(features, "image_embeds") and features.image_embeds is not None:
         features = features.image_embeds
     elif hasattr(features, "pooler_output") and features.pooler_output is not None:
@@ -352,17 +352,17 @@ def extract_remoteclip_embeddings(
             "esquema esperado: parcel_id, year, image, shape."
         )
 
-    # Asegura parcel_id Utf8 en ambos parquets.
+    # Ensure parcel_id Utf8 in both parquets.
     subset = subset.with_columns(pl.col("parcel_id").cast(pl.Utf8))
     imagery = imagery.with_columns(pl.col("parcel_id").cast(pl.Utf8))
 
-    # PASTIS-R no expone `year` por parcela (es un dataset 2019 monolitico).
-    # Si falta lo materializamos como constante para preservar el esquema de
-    # salida (parcel_id, year, remoteclip_emb_*).
+    # PASTIS-R does not expose `year` per parcel (it is a monolithic 2019 dataset).
+    # If missing, we materialize it as a constant to preserve the output
+    # schema (parcel_id, year, remoteclip_emb_*).
     if "year" not in subset.columns:
         subset = subset.with_columns(pl.lit(2019).cast(pl.Int64).alias("year"))
 
-    # Join orden estable: imagery merge sobre orden de subset.
+    # Stable-order join: imagery merge over subset order.
     joined = subset.select(["parcel_id", "year"]).join(
         imagery, on="parcel_id", how="left"
     )
@@ -379,7 +379,7 @@ def extract_remoteclip_embeddings(
     rows = joined.to_dicts()
     n = len(rows)
 
-    # Procesamiento por batch de parcelas (cada parcela puede tener T frames).
+    # Batch processing of parcels (each parcel may have T frames).
     for start in range(0, n, batch_size):
         chunk = rows[start : start + batch_size]
         images_per_parcel: list[np.ndarray] = []
@@ -393,12 +393,12 @@ def extract_remoteclip_embeddings(
                     parcel_id=row.get("parcel_id"),
                     error=str(exc),
                 )
-                # Frame vacio -> embedding zeros para no romper alineacion.
+                # Empty frame -> zeros embedding to avoid breaking alignment.
                 arr = np.zeros((1, 4, 32, 32), dtype=np.float32)
             rgb = _select_rgb(arr, band_indices)
             rgb_uint8 = _stretch_percentile_uint8(rgb)
-            # ``rgb_uint8`` shape (T, H, W, 3). Aplanamos T y registramos
-            # el parcel_idx para hacer mean pooling post-forward.
+            # ``rgb_uint8`` shape (T, H, W, 3). We flatten T and record
+            # the parcel_idx to do mean pooling post-forward.
             for ti in range(rgb_uint8.shape[0]):
                 images_per_parcel.append(rgb_uint8[ti])
                 frame_to_parcel.append(parcel_idx)
@@ -407,14 +407,14 @@ def extract_remoteclip_embeddings(
             continue
         feats_frames = _embed_batch(model, processor, images_per_parcel, torch_device)
 
-        # Mean pooling temporal por parcela.
+        # Temporal mean pooling per parcel.
         per_parcel: dict[int, list[torch.Tensor]] = {}
         for fi, p_idx in enumerate(frame_to_parcel):
             per_parcel.setdefault(p_idx, []).append(feats_frames[fi])
         for p_idx, frames in per_parcel.items():
             stacked = torch.stack(frames, dim=0)
             mean_emb = stacked.mean(dim=0)
-            # Re-normaliza L2 post mean-pooling.
+            # Re-normalize L2 post mean-pooling.
             mean_emb = torch.nn.functional.normalize(mean_emb, dim=-1)
             embeddings.append(mean_emb)
             parcel_ids_out.append(str(chunk[p_idx]["parcel_id"]))
@@ -434,7 +434,7 @@ def extract_remoteclip_embeddings(
     )
 
     if not embeddings:
-        # Output vacio con esquema valido.
+        # Empty output with a valid schema.
         out_df = pl.DataFrame(schema=_build_output_schema())
     else:
         emb_tensor = torch.stack(embeddings, dim=0).numpy().astype(np.float32)

@@ -34,7 +34,7 @@ class FigureNarrative:
 
 
 # ---------------------------------------------------------------------------
-# US-010 — Sentinel-2 Univariado
+# US-010 — Sentinel-2 univariate
 # ---------------------------------------------------------------------------
 
 SENTINEL2_NARRATIVES: tuple[FigureNarrative, ...] = (
@@ -314,7 +314,7 @@ ALPHAEARTH_NARRATIVES: tuple[FigureNarrative, ...] = (
 
 
 # ---------------------------------------------------------------------------
-# US-012 — Bivariado, Multivariado y Temporal
+# US-012 — Bivariate, multivariate and temporal
 # ---------------------------------------------------------------------------
 
 BIVARIATE_NARRATIVES: tuple[FigureNarrative, ...] = (
@@ -504,7 +504,7 @@ BIVARIATE_NARRATIVES: tuple[FigureNarrative, ...] = (
 
 
 # ---------------------------------------------------------------------------
-# Avance 1 Equipo 17 — PASTIS-R consolidado
+# Avance 1 Equipo 17 — PASTIS-R consolidated
 # ---------------------------------------------------------------------------
 
 PASTIS_NARRATIVES: tuple[FigureNarrative, ...] = (
@@ -643,7 +643,7 @@ PASTIS_NARRATIVES: tuple[FigureNarrative, ...] = (
 
 
 # ---------------------------------------------------------------------------
-# BreizhCrops — Validación cross-region (Rußwurm & Körner, sucesor moderno)
+# BreizhCrops — Cross-region validation (Russwurm & Korner, modern successor)
 # ---------------------------------------------------------------------------
 
 BREIZHCROPS_NARRATIVES: tuple[FigureNarrative, ...] = (
@@ -711,7 +711,7 @@ BREIZHCROPS_NARRATIVES: tuple[FigureNarrative, ...] = (
 
 
 # ---------------------------------------------------------------------------
-# Métodos derivados de la literatura — cuatro artículos de referencia
+# Methods derived from the literature — four reference papers
 # ---------------------------------------------------------------------------
 
 PAPER_METHODS_NARRATIVES: tuple[FigureNarrative, ...] = (
@@ -830,7 +830,7 @@ PAPER_METHODS_NARRATIVES: tuple[FigureNarrative, ...] = (
 
 
 # ---------------------------------------------------------------------------
-# Avance 2 — Ingeniería de Características sobre Sentinel-2 (03a)
+# Avance 2 — Feature engineering on Sentinel-2 (03a)
 # ---------------------------------------------------------------------------
 
 FE_SENTINEL2_NARRATIVES: tuple[FigureNarrative, ...] = (
@@ -1104,7 +1104,7 @@ FE_SENTINEL2_NARRATIVES: tuple[FigureNarrative, ...] = (
 
 
 # ---------------------------------------------------------------------------
-# Avance 2 — Selección y extracción sobre PASTIS-R espectro-temporal (03b)
+# Avance 2 — Selection and extraction on spectro-temporal PASTIS-R (03b)
 # ---------------------------------------------------------------------------
 
 FE_SPECTRAL_TEMPORAL_NARRATIVES: tuple[FigureNarrative, ...] = (
@@ -1237,7 +1237,7 @@ FE_SPECTRAL_TEMPORAL_NARRATIVES: tuple[FigureNarrative, ...] = (
 
 
 # ---------------------------------------------------------------------------
-# Avance 2 — Fusión multisensor y embeddings AlphaEarth (03c)
+# Avance 2 — Multisensor fusion and AlphaEarth embeddings (03c)
 # ---------------------------------------------------------------------------
 
 FE_ALPHAEARTH_NARRATIVES: tuple[FigureNarrative, ...] = (
@@ -1329,11 +1329,11 @@ FE_ALPHAEARTH_NARRATIVES: tuple[FigureNarrative, ...] = (
 
 
 # ---------------------------------------------------------------------------
-# Índice global: notebook_id -> narrativas
+# Global index: notebook_id -> narratives
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
-# Avance 4 — Segmentacion semantica densa
+# Avance 4 — Dense semantic segmentation
 # ---------------------------------------------------------------------------
 
 SEGMENTATION_NARRATIVES: tuple[FigureNarrative, ...] = (

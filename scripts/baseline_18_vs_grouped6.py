@@ -73,14 +73,14 @@ _AE19 = (
 )
 _OUT_DIR = _REPO_ROOT / "reports" / "baseline" / "grouped_vs_flat"
 
-# Grouping canonico HCAT Level-1 (6 grupos). Se reusa el que ya vive en
-# data/reference/pastis_class_mapping.json; aqui solo se referencia el nombre
-# y se documentan los codigos HCAT para defendibilidad. NO redefinir el mapa:
-# es la fuente unica de verdad cargada via PASTIS_R_GROUPINGS.
+# Canonical HCAT Level-1 grouping (6 groups). We reuse the one that already
+# lives in data/reference/pastis_class_mapping.json; here we only reference the
+# name and document the HCAT codes for defensibility. Do NOT redefine the map:
+# it is the single source of truth loaded via PASTIS_R_GROUPINGS.
 _HCAT_GROUPING = "hcat_l1_6"
 
-# Codigos HCAT v3 Level-1 de cada fusion (metodo Russwurm et al. 2018 /
-# H2Crop arXiv:2506.06155). Se imprimen para la defensa del agrupamiento.
+# HCAT v3 Level-1 codes for each fusion (Russwurm et al. 2018 method /
+# H2Crop arXiv:2506.06155). Printed for the defense of the grouping.
 _HCAT_CODES: dict[str, str] = {
     "CEREALS": "3300000000 cereals (wheat 3301, barley 3302, maize 3303, "
     "triticale 3304, sorghum 3305, mixed cereal 3300010000)",
@@ -198,11 +198,11 @@ def _run_scheme(
         metricas OOF y ``per_class_df`` es un DataFrame con ``label_id``,
         ``label_name``, ``f1`` y ``support`` por clase.
     """
-    from ml.train.baseline import _base_params, _encode_labels  # reuso interno
+    from ml.train.baseline import _base_params, _encode_labels  # internal reuse
 
-    # No fijamos `num_class`: XGBClassifier (API sklearn) lo infiere por fold.
-    # Forzarlo rompe los folds donde el train no contiene las 18 clases
-    # (artefacto de subsamples chicos; en el full cada fold trae todas).
+    # We do not set `num_class`: XGBClassifier (sklearn API) infers it per fold.
+    # Forcing it breaks the folds where the train does not contain all 18 classes
+    # (artifact of small subsamples; in the full run each fold has all of them).
     params = _base_params("xgb")
 
     def factory():  # type: ignore[no-untyped-def]
@@ -259,8 +259,8 @@ def _print_per_class(title: str, frame: pl.DataFrame) -> None:
 
 def main() -> None:
     """Punto de entrada: corre ambos esquemas, persiste y reporta."""
-    # La consola Windows (cp1252) no codifica los bordes Unicode de Polars ni
-    # acentos; forzamos UTF-8 en stdout para que el reporte no truene.
+    # The Windows console (cp1252) does not encode the Polars Unicode borders nor
+    # accents; we force UTF-8 on stdout so the report does not crash.
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
 
@@ -277,12 +277,12 @@ def main() -> None:
 
     df = _load_features(args.max_samples)
 
-    # Esquema 1: 18 clases planas.
+    # Scheme 1: 18 flat classes.
     metrics_18, per_class_18 = _run_scheme(
         df, scheme="flat18", k_folds=args.k_folds, buffer_km=args.buffer_km
     )
 
-    # Esquema 2: 6 grupos HCAT L1 (mismas filas -> mismos folds cacheados).
+    # Scheme 2: 6 HCAT L1 groups (same rows -> same cached folds).
     df_grouped = _remap_to_hcat(df)
     metrics_6, per_class_6 = _run_scheme(
         df_grouped, scheme=_HCAT_GROUPING, k_folds=args.k_folds, buffer_km=args.buffer_km

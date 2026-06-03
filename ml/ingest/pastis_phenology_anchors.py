@@ -41,21 +41,21 @@ logger = structlog.get_logger(__name__)
 __all__ = ["build_pastis_phenology_anchors"]
 
 
-#: Fallback agronomico Bretana cuando la conversion falla por parcela.
-#: SOS=90 (emergencia winter wheat / stem elongation, DOY 90-110 literatura).
-#: peak=180 (floracion-llenado trigo + pico LAI cultivos verano).
-#: senescence=220 (cosecha trigo invierno + senescencia maiz temprano).
+#: Brittany agronomic fallback when the conversion fails per parcel.
+#: SOS=90 (winter wheat emergence / stem elongation, DOY 90-110 in literature).
+#: peak=180 (wheat flowering-grain filling + LAI peak of summer crops).
+#: senescence=220 (winter wheat harvest + early maize senescence).
 FALLBACK_DOY_BRITTANY: dict[str, int] = {
     "sog_doy": 90,
     "peak_doy": 180,
     "senescence_doy": 220,
 }
 
-#: Limite inferior del DOY calendario aceptable. SOS antes del DOY=1 wrapea
-#: al fallback Bretana para no producir DOY negativo.
+#: Lower bound of the acceptable calendar DOY. SOS before DOY=1 wraps
+#: to the Brittany fallback to avoid producing a negative DOY.
 MIN_VALID_DOY: int = 1
 
-#: Limite superior del DOY calendario aceptable.
+#: Upper bound of the acceptable calendar DOY.
 MAX_VALID_DOY: int = 365
 
 
@@ -108,7 +108,7 @@ def build_pastis_phenology_anchors(
     if not sub_path.exists():
         raise FileNotFoundError(f"subset features no encontrado en {sub_path}.")
 
-    # 1. Extrae fecha base por patch desde metadata.geojson.
+    # 1. Extract base date per patch from metadata.geojson.
     with meta_path.open(encoding="utf-8") as fh:
         meta = json.load(fh)
 
@@ -118,7 +118,7 @@ def build_pastis_phenology_anchors(
         dates_s2 = props.get("dates-S2", {})
         if not dates_s2:
             continue
-        # Primera fecha cronologica (ordenamos por key int).
+        # First chronological date (we sort by int key).
         first_key = min(dates_s2.keys(), key=int)
         first_yyyymmdd = str(dates_s2[first_key])
         try:
@@ -140,7 +140,7 @@ def build_pastis_phenology_anchors(
         first_date_min=min(patch_base_date.values()).isoformat(),
     )
 
-    # 2. Lee subset US-016 con DOY relativos + patch_id.
+    # 2. Read US-016 subset with relative DOY + patch_id.
     df = pl.read_parquet(sub_path)
     required = {"parcel_id", "patch_id", "sog_doy", "peak_doy", "senescence_doy"}
     missing = required - set(df.columns)
@@ -149,7 +149,7 @@ def build_pastis_phenology_anchors(
             f"subset {sub_path} carece de columnas requeridas: {sorted(missing)}."
         )
 
-    # 3. Convierte DOY relativo -> DOY calendario por parcela.
+    # 3. Convert relative DOY -> calendar DOY per parcel.
     rows: list[dict[str, int | str]] = []
     n_fallback_unknown_patch = 0
     n_fallback_null_doy = 0
@@ -183,7 +183,7 @@ def build_pastis_phenology_anchors(
                 continue
             real_date = base + timedelta(days=int(rel))
             if real_date.year != target_year:
-                # Cae en 2018 (winter sowing) o 2020 (no esperado): fallback.
+                # Falls in 2018 (winter sowing) or 2020 (unexpected): fallback.
                 any_fallback = True
                 converted[anchor] = FALLBACK_DOY_BRITTANY[anchor]
                 continue
@@ -195,8 +195,8 @@ def build_pastis_phenology_anchors(
             converted[anchor] = cal_doy
 
         if any_fallback:
-            # Si al menos un ancla cayo en fallback, lo contabilizamos
-            # pero seguimos usando lo que SI fue real para los otros 2.
+            # If at least one anchor fell into fallback, we count it
+            # but keep using what WAS real for the other 2.
             if all(
                 converted[a] == FALLBACK_DOY_BRITTANY[a]
                 for a in ("sog_doy", "peak_doy", "senescence_doy")

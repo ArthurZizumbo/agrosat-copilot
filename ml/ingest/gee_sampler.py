@@ -28,8 +28,8 @@ ERA5_COLLECTION = "ECMWF/ERA5_LAND/DAILY_AGGR"
 S1_COLLECTION = "COPERNICUS/S1_GRD"
 SRTM_COLLECTION = "USGS/SRTMGL1_003"
 
-#: 8 cuadrantes cardinales usados por `sample_srtm_terrain` para discretizar
-#: la orientación dominante (aspect) en grados [0, 360) → string cardinal.
+#: 8 cardinal quadrants used by `sample_srtm_terrain` to discretize
+#: the dominant orientation (aspect) in degrees [0, 360) -> cardinal string.
 _ASPECT_CARDINALS: tuple[str, ...] = (
     "N",
     "NE",
@@ -191,8 +191,8 @@ def sample_s2_roi(
         )
         info = sample.getInfo()
     except Exception:  # noqa: BLE001
-        # Quota / auth / red — modo degradado: retornamos DataFrame vacío
-        # para no bloquear el notebook EDA. Logueo en notebook con print.
+        # Quota / auth / network — degraded mode: return an empty DataFrame
+        # so the EDA notebook is not blocked. Logging done in notebook via print.
         return pl.DataFrame(
             schema={
                 "roi": pl.Utf8,
@@ -304,12 +304,12 @@ def sample_alphaearth_roi(
             .filterBounds(roi)
             .filterDate(f"{year}-01-01", f"{year + 1}-01-01")
         )
-        # mosaic() vs first(): AlphaEarth distribuye el embedding anual como
-        # tiles disjuntos (~10k imagenes/anio en Europa). first() devuelve una
-        # sola imagen con footprint limitado -> los pixeles fuera de ese tile
-        # caen a null. mosaic() une todos los tiles del anio que tocan la ROI
-        # en un raster continuo. Como cada (px, year) tiene un unico valor,
-        # mosaic() no introduce ambiguedad.
+        # mosaic() vs first(): AlphaEarth distributes the annual embedding as
+        # disjoint tiles (~10k images/year in Europe). first() returns a
+        # single image with limited footprint -> pixels outside that tile
+        # fall to null. mosaic() merges all tiles of the year touching the ROI
+        # into a continuous raster. Since each (px, year) has a single value,
+        # mosaic() introduces no ambiguity.
         image = collection.mosaic().select(band_names)
         sample = image.sample(
             region=roi,
@@ -397,11 +397,11 @@ def sample_alphaearth_at_coords(
     collection = ee.ImageCollection(ALPHAEARTH_COLLECTION).filterDate(
         f"{year}-01-01", f"{year + 1}-01-01"
     )
-    # mosaic() vs first(): la coleccion AlphaEarth tiene ~10k tiles/anio.
-    # first() devuelve un tile arbitrario con footprint limitado -> los
-    # puntos fuera caen a null. mosaic() une todos los tiles del anio en
-    # un raster continuo. Cada (px, year) tiene un unico valor canonico,
-    # asi que mosaic() es deterministico.
+    # mosaic() vs first(): the AlphaEarth collection has ~10k tiles/year.
+    # first() returns an arbitrary tile with limited footprint -> points
+    # outside it fall to null. mosaic() merges all tiles of the year into
+    # a continuous raster. Each (px, year) has a single canonical value,
+    # so mosaic() is deterministic.
     image = collection.mosaic().select(band_names)
 
     by_id: dict[str, dict[str, float | None]] = {
@@ -537,7 +537,7 @@ def sample_dynamic_world_at(
                 year=int(year),
                 error=str(exc),
             )
-            # Batch fallido: anotamos px_id con clase -1 para no corromper el join.
+            # Failed batch: annotate px_id with class -1 so the join is not corrupted.
             for r in chunk.iter_rows(named=True):
                 rows.append(
                     {
@@ -552,8 +552,8 @@ def sample_dynamic_world_at(
         for feat in info.get("features", []):
             props = feat.get("properties", {}) or {}
             pid = str(props.get("px_id", ""))
-            # reduceRegions con ee.Reducer.first() renombra la banda a "first";
-            # con sampleRegions seria "label". Cubrimos ambos por compatibilidad.
+            # reduceRegions with ee.Reducer.first() renames the band to "first";
+            # with sampleRegions it would be "label". We cover both for compatibility.
             cls_val = props.get("first", props.get("label"))
             cls_id = int(cls_val) if cls_val is not None else -1
             rows.append(
@@ -619,10 +619,10 @@ def fetch_s2_ndvi_rgb_for_parcel(
             .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", cloud_pct_max))
             .select(["B2", "B3", "B4", "B8"])
         )
-        # median() colapsa la proyeccion nativa de S2 (UTM 10m) a la default
-        # (EPSG:4326 con scale=1 grado/pixel). Sin reproyectar, sampleRectangle
-        # devuelve un unico pixel porque un bbox de 0.01deg << 1 grado de scale.
-        # Reproyectamos a la proyeccion de la primera imagen (UTM nativo S2 a 10m).
+        # median() collapses the S2 native projection (UTM 10m) to the default
+        # (EPSG:4326 with scale=1 degree/pixel). Without reprojecting, sampleRectangle
+        # returns a single pixel because a 0.01deg bbox << 1 degree of scale.
+        # We reproject to the first image's projection (S2 native UTM at 10m).
         ref_proj = collection.first().select("B4").projection()
         median = collection.median().reproject(crs=ref_proj, scale=scale)
         sample = median.sampleRectangle(region=parcel_geom, defaultValue=0)
@@ -645,10 +645,10 @@ def fetch_s2_ndvi_rgb_for_parcel(
     denom = np.where((b8 + b4) == 0, 1.0, b8 + b4)
     ndvi = (b8 - b4) / denom
 
-    # Stretch percentil 2-98 POR BANDA antes del stack. Aplicar el stretch
-    # global al RGB tras stack colapsa el rango dinamico de las bandas con
-    # menor magnitud, produciendo una imagen aparentemente uniforme cuando
-    # B4 (rojo) >> B3 (verde) >> B2 (azul) en superficies vegetadas.
+    # 2-98 percentile stretch PER BAND before the stack. Applying the global
+    # stretch to the RGB after stacking collapses the dynamic range of the
+    # lower-magnitude bands, producing an apparently uniform image when
+    # B4 (red) >> B3 (green) >> B2 (blue) over vegetated surfaces.
     def _stretch(band: np.ndarray) -> np.ndarray:
         if band.size == 0:
             return band
@@ -709,8 +709,8 @@ def era5_annual_precip(
                 .filterDate(f"{year}-01-01", f"{year + 1}-01-01")
                 .select(["total_precipitation_sum"])
             )
-            # ee.Reducer.sum sobre el axis temporal acumula la precipitacion
-            # diaria del ano completo (metros). Luego reducimos espacialmente.
+            # ee.Reducer.sum over the temporal axis accumulates the daily
+            # precipitation of the full year (meters). Then we reduce spatially.
             annual_img = collection.sum()
             stat = annual_img.reduceRegion(
                 reducer=ee.Reducer.mean(),
@@ -740,19 +740,19 @@ def era5_annual_precip(
 
 
 # ===========================================================================
-# US-016 — samplers nuevos (Sentinel-1, SRTM, ERA5 mensual) por parcela.
+# US-016 — new samplers (Sentinel-1, SRTM, monthly ERA5) per parcel.
 # ===========================================================================
 #
-# Convención común:
-# - `parcels` es un `gpd.GeoDataFrame` con columnas `parcel_id`, `geometry`
-#   (POLYGON EPSG:4326) y opcionalmente `year`. Cada parcela se convierte a
-#   `ee.Geometry` server-side y se reduce con `ee.Reducer.mean()`.
-# - Outputs Polars con cache parquet local en `data/cache/gee/` (mismo patrón
-#   que `sample_alphaearth_*` y `era5_annual_precip`).
-# - Modo degradado: si `ee` no está disponible o GEE falla, se devuelve un
-#   DataFrame vacío con el esquema correcto para no romper la cadena Polars
-#   en el resto del pipeline (los blocks de `ml/features/fusion.py` rellenan
-#   con None las cols faltantes).
+# Common convention:
+# - `parcels` is a `gpd.GeoDataFrame` with columns `parcel_id`, `geometry`
+#   (POLYGON EPSG:4326) and optionally `year`. Each parcel is converted to
+#   `ee.Geometry` server-side and reduced with `ee.Reducer.mean()`.
+# - Polars outputs with local parquet cache in `data/cache/gee/` (same pattern
+#   as `sample_alphaearth_*` and `era5_annual_precip`).
+# - Degraded mode: if `ee` is not available or GEE fails, an empty DataFrame
+#   with the correct schema is returned so the Polars chain is not broken
+#   in the rest of the pipeline (the blocks in `ml/features/fusion.py` fill
+#   the missing cols with None).
 
 
 def _parcels_to_feature_collection(parcels: Any) -> Any:
@@ -855,7 +855,7 @@ def sample_s1_roi_for_parcels(
             collection = collection.filter(ee.Filter.eq("orbitProperties_pass", "DESCENDING"))
 
         if despeckle == "lee_7x7":
-            # focalMean con kernel cuadrado de radio 3 (7x7 pixels).
+            # focalMean with a square kernel of radius 3 (7x7 pixels).
             kernel = ee.Kernel.square(radius=3, units="pixels")
             collection = collection.map(lambda img: img.focalMean(kernel=kernel))
 
@@ -892,14 +892,14 @@ def sample_s1_roi_for_parcels(
                 row[f"s1_{pol.lower()}_p50"] = _safe_float(props.get(f"{pol}_p50"))
                 row[f"s1_{pol.lower()}_p95"] = _safe_float(props.get(f"{pol}_p95"))
                 rows.append(row)
-    except Exception as exc:  # noqa: BLE001 — degradación graceful
+    except Exception as exc:  # noqa: BLE001 — graceful degradation
         _log.warning("s1_sample_failed", error=str(exc), year=int(year))
         return pl.DataFrame(schema=schema)
 
     if not rows:
         return pl.DataFrame(schema=schema)
 
-    # Merge filas VV y VH de la misma parcela.
+    # Merge VV and VH rows of the same parcel.
     merged: dict[int, dict[str, Any]] = {}
     for row in rows:
         pid = int(row["parcel_id"])
@@ -1048,8 +1048,8 @@ def sample_alphaearth_for_parcels(
         .select(band_names)
     )
 
-    # Reasignamos parcel_id (potencialmente string) a int sequential para que
-    # GEE lo devuelva en properties. Mapping inverso al final.
+    # Reassign parcel_id (potentially a string) to a sequential int so that
+    # GEE returns it in properties. Inverse mapping at the end.
     int_to_str: dict[int, str] = {}
     rows: list[dict[str, Any]] = []
     total = len(parcels)
@@ -1158,17 +1158,17 @@ def sample_era5_monthly_climate(
     try:
         fc = _parcels_to_feature_collection(parcels)
         result_rows: dict[int, dict[str, Any]] = {}
-        # Bug-6 fix (smoke real, 2026-05-17):
-        # reduceRegions con scale=11132 (nativa ERA5-Land ~11 km/pixel) y
-        # parcelas sub-pixel (~1 km2 del fixture demo) NO intersecta ningun
-        # pixel: el payload omite por completo la propiedad reducida y queda
-        # solo `{parcel_id}`. Bajamos scale a 1000 m (oversampling 11x) y
-        # anadimos `tileScale=4` para evitar memory errors en parcelas grandes.
-        # Resultado: scale=1000 interpola correctamente el pixel ERA5
-        # contenedor y rellena las 24 cols con valores fisicos plausibles.
-        # Ademas, dependiendo del scale, GEE renombra la propiedad al band
-        # original (`temperature_2m` / `total_precipitation_sum`) o a `mean`;
-        # leemos band-name con fallback a `mean` para cubrir ambos paths.
+        # Bug-6 fix (real smoke test, 2026-05-17):
+        # reduceRegions with scale=11132 (ERA5-Land native ~11 km/pixel) and
+        # sub-pixel parcels (~1 km2 from the demo fixture) does NOT intersect any
+        # pixel: the payload omits the reduced property entirely and only
+        # `{parcel_id}` remains. We lower scale to 1000 m (11x oversampling) and
+        # add `tileScale=4` to avoid memory errors on large parcels.
+        # Result: scale=1000 correctly interpolates the containing ERA5 pixel
+        # and fills the 24 cols with physically plausible values.
+        # Also, depending on the scale, GEE renames the property to the original
+        # band (`temperature_2m` / `total_precipitation_sum`) or to `mean`;
+        # we read the band-name with a fallback to `mean` to cover both paths.
         tband = "temperature_2m"
         pband = "total_precipitation_sum"
         for month in range(1, 13):
@@ -1191,9 +1191,9 @@ def sample_era5_monthly_climate(
                 pid = int(props["parcel_id"])
                 if pid not in result_rows:
                     result_rows[pid] = {"parcel_id": pid, "year": int(year)}
-                # `reduceRegions` con single-band image renombra la propiedad
-                # al nombre del band (no a "mean"); fallback a "mean" por
-                # compatibilidad con mocks viejos / multi-band reducers.
+                # `reduceRegions` with a single-band image renames the property
+                # to the band name (not to "mean"); fallback to "mean" for
+                # compatibility with old mocks / multi-band reducers.
                 tval = _safe_float(props.get(tband, props.get("mean")))
                 if tval is not None and temperature_units == "C":
                     tval = tval - 273.15
@@ -1204,8 +1204,8 @@ def sample_era5_monthly_climate(
                 if pid not in result_rows:
                     result_rows[pid] = {"parcel_id": pid, "year": int(year)}
                 pval = _safe_float(props.get(pband, props.get("mean")))
-                # `pval` proviene del `sum()` mensual (metros) reducido en
-                # espacio; multiplicamos x 1000 para reportar en mm.
+                # `pval` comes from the monthly `sum()` (meters) reduced in
+                # space; we multiply by 1000 to report in mm.
                 result_rows[pid][f"era5_prec_m{month:02d}"] = (
                     pval * 1000.0 if pval is not None else None
                 )

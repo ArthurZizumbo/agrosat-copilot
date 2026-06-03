@@ -35,8 +35,8 @@ from typing import TYPE_CHECKING, Literal, SupportsFloat, cast
 import polars as pl
 import structlog
 
-# Re-export: la implementacion permanece en ml.eval.segmentation_inference.
-# La dependencia es unidireccional (utils -> eval), sin ciclo.
+# Re-export: the implementation remains in ml.eval.segmentation_inference.
+# The dependency is one-directional (utils -> eval), no cycle.
 from ml.eval.segmentation_inference import (
     evaluate_checkpoint,
     load_segmentation_model,
@@ -66,14 +66,14 @@ __all__ = [
     "training_results_table",
 ]
 
-#: run_name MLflow por defecto segun la arquitectura (debe coincidir con el CLI).
+#: Default MLflow run_name per architecture (must match the CLI).
 _DEFAULT_RUN_NAMES = {
     "deeplabv3plus": "alt-deeplabv3plus-mobilenet-v1",
     "tsvit": "alt-tsvit-v1",
     "tsvit-pheno": "alt-tsvit-pheno-v1",
 }
 
-#: Subdirectorio de checkpoint segun arquitectura + target.
+#: Checkpoint subdirectory per architecture + target.
 _CKPT_SUBDIR = {
     ("deeplabv3plus", "semantic18"): "deeplab-18",
     ("deeplabv3plus", "hcat6"): "deeplab-6",
@@ -83,7 +83,7 @@ _CKPT_SUBDIR = {
     ("tsvit-pheno", "hcat6"): "tsvit-pheno-v1",
 }
 
-#: Arquitecturas temporales (reciben ``--n-timesteps`` y serie temporal).
+#: Temporal architectures (receive ``--n-timesteps`` and a time series).
 _TEMPORAL_KINDS = frozenset({"tsvit", "tsvit-pheno"})
 
 
@@ -191,7 +191,7 @@ def run_training_or_load(
         if on_message is not None:
             on_message(msg)
 
-    # 1. Atajo skip-if-trained.
+    # 1. Skip-if-trained shortcut.
     if not run_full:
         sub = _CKPT_SUBDIR.get((model_kind, target))
         if sub is not None:
@@ -225,7 +225,7 @@ def run_training_or_load(
                     cli_command=cli_doc,
                 )
 
-    # 2. Lanzar el CLI de entrenamiento.
+    # 2. Launch the training CLI.
     cmd = [
         py, "-m", "ml.train.train_segmentation",
         "--model", model_kind,
@@ -245,7 +245,7 @@ def run_training_or_load(
         cli_command=cli_doc,
     )
     try:
-        proc = subprocess.run(  # noqa: S603 - cmd se arma con literales controlados, no input externo
+        proc = subprocess.run(  # noqa: S603 - cmd is built from controlled literals, not external input
             cmd, cwd=str(repo), capture_output=True, text=True, check=False
         )
     except OSError as exc:
@@ -583,8 +583,8 @@ def read_segmentation_lineage(
         if exp is None:
             logger.info("lineage_experiment_absent", experiment=experiment_name)
             return None
-        # search_runs con output_format="pandas" (default) devuelve un DataFrame;
-        # el stub de mlflow lo tipa como list[Run], de ahi el cast.
+        # search_runs with output_format="pandas" (default) returns a DataFrame;
+        # the mlflow stub types it as list[Run], hence the cast.
         runs_pd = cast(
             "pd.DataFrame",
             mlflow.search_runs(
@@ -608,7 +608,7 @@ def read_segmentation_lineage(
         }
         keep = [c for c in rename if c in runs_pd.columns]
         return pl.from_pandas(runs_pd[keep]).rename({c: rename[c] for c in keep})
-    except Exception as exc:  # noqa: BLE001 - modo degradado en notebook
+    except Exception as exc:  # noqa: BLE001 - degraded mode in notebook
         logger.warning("lineage_read_failed", error=str(exc))
         return None
 

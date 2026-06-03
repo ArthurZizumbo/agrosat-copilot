@@ -31,7 +31,7 @@ def stretch_2_98(arr: np.ndarray) -> np.ndarray:
         out = (arr - lo) / max(hi - lo, 1e-6)
         return np.clip(out, 0.0, 1.0)
     if arr.ndim == 3:
-        # Detectar layout (C, H, W) vs (H, W, C) por el tamaño del eje
+        # Detect layout (C, H, W) vs (H, W, C) by the axis size
         if arr.shape[0] <= 12 and arr.shape[0] < arr.shape[-1]:
             channels = arr.shape[0]
             out = np.empty_like(arr, dtype=np.float32)
@@ -71,7 +71,7 @@ def folium_rois(rois_yaml: Path, output_path: Path) -> Any:
         m.save(str(output_path))
         return m
 
-    # Centrar en bbox global aproximado
+    # Center on approximate global bbox
     lats: list[float] = []
     lons: list[float] = []
     for r in rois:
@@ -499,7 +499,7 @@ def vif_barplot(
         plt.close(fig)
         return fig
 
-    # Reemplazar inf por un sentinel grande para graficar
+    # Replace inf with a large sentinel for plotting
     sub = vif_df.with_columns(
         pl.when(pl.col("vif").is_infinite()).then(1e3).otherwise(pl.col("vif")).alias("vif_plot")
     ).sort("vif_plot", descending=False)
@@ -594,7 +594,7 @@ def dual_axis_precip_ndvi(
     ax.set_ylabel("Precipitacion anual (mm)")
     ax2.set_ylabel("NDVI maximo anual")
     ax.set_title("ERA5 precip anual vs NDVI maximo por ROI")
-    # Leyenda combinada
+    # Combined legend
     h1, l1 = ax.get_legend_handles_labels()
     h2, l2 = ax2.get_legend_handles_labels()
     ax.legend(h1 + h2, l1 + l2, loc="best", fontsize=8)
@@ -654,7 +654,7 @@ def acf_grid_by_class(
         mean = sub["acf_mean"].to_numpy()
         std = sub["acf_std"].to_numpy()
         n = sub["n"].to_numpy()
-        # IC95 aproximado con normal: mean +/- 1.96 * std / sqrt(n)
+        # Approximate 95% CI with normal: mean +/- 1.96 * std / sqrt(n)
         denom = np.sqrt(np.maximum(n, 1))
         ci = 1.96 * std / denom
         ax.bar(lags, mean, color="#1f77b4", alpha=0.85)
@@ -767,7 +767,7 @@ def cross_region_scatter(
     max_val = float(np.nanmax([x.max() if x.size else 0, y.max() if y.size else 0]))
     ax.plot([0, max_val], [0, max_val], "k--", lw=0.8, alpha=0.6, label="Identidad")
 
-    # Anotar top-K por suma de importance
+    # Annotate top-K by sum of importance
     sorted_idx = np.argsort(-(x + y))[:annotate_top_k]
     for i in sorted_idx:
         ax.annotate(

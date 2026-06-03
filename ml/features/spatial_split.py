@@ -46,10 +46,10 @@ import structlog
 from shapely.geometry import Point
 from sklearn.cluster import KMeans
 
-# Import diferido para no romper colectores que solo necesiten el dataclass.
+# Deferred import to avoid breaking collectors that only need the dataclass.
 try:
     import h3  # type: ignore[import-not-found]
-except ImportError:  # pragma: no cover - cubierto por test condicional
+except ImportError:  # pragma: no cover - covered by conditional test
     h3 = None  # type: ignore[assignment]
 
 logger = structlog.get_logger(__name__)
@@ -61,7 +61,7 @@ __all__ = [
 
 
 # ---------------------------------------------------------------------------
-# Dataclass de salida.
+# Output dataclass.
 # ---------------------------------------------------------------------------
 
 
@@ -85,7 +85,7 @@ class FoldAssignment:
 
 
 # ---------------------------------------------------------------------------
-# API pública.
+# Public API.
 # ---------------------------------------------------------------------------
 
 
@@ -146,22 +146,22 @@ def build_spatial_kfold(
     elif parcels.crs.to_epsg() != 4326:
         parcels = parcels.to_crs("EPSG:4326")
 
-    # Centroide en EPSG:3857 (métrico) para evitar UserWarning de geopandas
-    # sobre operaciones geométricas en CRS geográfico. Re-proyectamos a 4326
-    # para alimentar h3 (que espera lat/lng).
+    # Centroid in EPSG:3857 (metric) to avoid geopandas UserWarning about
+    # geometric operations in a geographic CRS. We re-project to 4326 to
+    # feed h3 (which expects lat/lng).
     centroids = parcels.geometry.to_crs("EPSG:3857").centroid.to_crs("EPSG:4326")
     parcel_ids = parcels["parcel_id"].astype("int64").to_numpy()
     n_parcels = len(parcel_ids)
     if n_parcels == 0:
         return [FoldAssignment(fold_id=i, train_ids=(), val_ids=(), test_ids=()) for i in range(k)]
 
-    # 1) Asigna cada parcela a una celda H3.
+    # 1) Assign each parcel to an H3 cell.
     h3_cells = np.array(
         [_assign_h3_cell(c, h3_res) for c in centroids],
         dtype=object,
     )
 
-    # 2) Clusteriza las celdas únicas con KMeans.
+    # 2) Cluster the unique cells with KMeans.
     unique_cells, inv = np.unique(h3_cells, return_inverse=True)
     cell_centroids = np.array(
         [_cell_to_latlng(c) for c in unique_cells],
@@ -183,7 +183,7 @@ def build_spatial_kfold(
     cell_folds = kmeans.fit_predict(cell_centroids)
     parcel_folds = cell_folds[inv]
 
-    # 3) Aplica buffer de exclusión sobre fronteras inter-fold.
+    # 3) Apply exclusion buffer over inter-fold borders.
     excluded_mask = _apply_buffer_exclusion(
         parcel_ids=parcel_ids,
         parcel_folds=parcel_folds,
@@ -246,7 +246,7 @@ def build_spatial_kfold(
 
 
 # ---------------------------------------------------------------------------
-# Helpers privados.
+# Private helpers.
 # ---------------------------------------------------------------------------
 
 
@@ -256,7 +256,7 @@ def _assign_h3_cell(centroid: Point, h3_res: int) -> str:
     Compatible con h3-py 4.x (``latlng_to_cell``) y 3.x (``geo_to_h3``).
     Si la API 4.x no está disponible, hace fallback.
     """
-    assert h3 is not None  # garantizado por guard en build_spatial_kfold
+    assert h3 is not None  # guaranteed by the guard in build_spatial_kfold
     lat = float(centroid.y)
     lng = float(centroid.x)
     fn: Any
@@ -317,13 +317,13 @@ def _apply_buffer_exclusion(
     if buffer_km <= 0.0 or n == 0:
         return excluded
 
-    # Conversión equirectangular (centro Italia ~ 43°N).
+    # Equirectangular conversion (central Italy ~ 43 deg N).
     deg_per_km_lat = 1.0 / 111.0
     mid_lat = float(np.mean(centroids[:, 1]))
     deg_per_km_lon = 1.0 / (111.320 * max(np.cos(np.radians(mid_lat)), 1e-3))
     buffer_deg_lat = buffer_km * deg_per_km_lat
     buffer_deg_lon = buffer_km * deg_per_km_lon
-    # Norma adimensional: trabajamos en grados; bbox-prefilter + distancia.
+    # Dimensionless norm: we work in degrees; bbox-prefilter + distance.
     for i in range(n):
         if excluded[i]:
             continue
@@ -333,13 +333,13 @@ def _apply_buffer_exclusion(
         bbox_mask = (np.abs(dlat) < buffer_deg_lat) & (np.abs(dlon) < buffer_deg_lon)
         cross_fold = bbox_mask & (parcel_folds != parcel_folds[i])
         if cross_fold.any():
-            # Distancia métrica real con equirectangular.
+            # Real metric distance with equirectangular.
             dist_km = np.sqrt(
                 (dlon[cross_fold] / deg_per_km_lon) ** 2
                 + (dlat[cross_fold] / deg_per_km_lat) ** 2
             )
             if (dist_km < buffer_km).any():
-                # Excluimos la parcela actual y sus vecinas dentro del buffer.
+                # Exclude the current parcel and its neighbors within the buffer.
                 idxs = np.where(cross_fold)[0][dist_km < buffer_km]
                 excluded[i] = True
                 excluded[idxs] = True

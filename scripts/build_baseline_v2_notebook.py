@@ -40,7 +40,7 @@ def _code(source: str) -> nbf.NotebookNode:
 
 
 # ---------------------------------------------------------------------------
-# Celdas del notebook (texto al lector con acentos UTF-8; identificadores ASCII).
+# Notebook cells (reader-facing text with UTF-8 accents; ASCII identifiers).
 # ---------------------------------------------------------------------------
 
 CELLS: list[nbf.NotebookNode] = [
@@ -95,7 +95,7 @@ CELLS: list[nbf.NotebookNode] = [
         "REPO = find_repo_root()\n"
         "display(Markdown(f'**Repositorio detectado:** `{REPO.name}`'))\n"
     ),
-    # --- Seccion 1 ------------------------------------------------------
+    # --- Section 1 ------------------------------------------------------
     _md(
         "## 1. Resultados de los tres modelos\n"
         "\n"
@@ -125,7 +125,7 @@ CELLS: list[nbf.NotebookNode] = [
         "    ])\n"
         ")\n"
     ),
-    # --- Seccion 2 ------------------------------------------------------
+    # --- Section 2 ------------------------------------------------------
     _md(
         "## 2. Comparación contra el baseline anterior\n"
         "\n"
@@ -167,7 +167,7 @@ CELLS: list[nbf.NotebookNode] = [
         ")\n"
         "display(df_deltas)\n"
     ),
-    # --- Seccion 3 ------------------------------------------------------
+    # --- Section 3 ------------------------------------------------------
     _md(
         "## 3. Visualización comparativa\n"
         "\n"
@@ -179,7 +179,7 @@ CELLS: list[nbf.NotebookNode] = [
         "_fig_path = REPO / 'paper/figures/us-023-preview/model_comparison_v2.png'\n"
         "display(Image(filename=str(_fig_path)))\n"
     ),
-    # --- Seccion 4 ------------------------------------------------------
+    # --- Section 4 ------------------------------------------------------
     _md(
         "## 4. Modelo ganador\n"
         "\n"
@@ -198,7 +198,7 @@ CELLS: list[nbf.NotebookNode] = [
         "    f\"(F1-weighted = `{_winner['f1_weighted']:.4f}`, mIoU = `{_winner['miou']:.4f}`).\"\n"
         "))\n"
     ),
-    # --- Seccion 5 ------------------------------------------------------
+    # --- Section 5 ------------------------------------------------------
     _md(
         "## 5. Trazabilidad en MLflow\n"
         "\n"
@@ -232,7 +232,7 @@ CELLS: list[nbf.NotebookNode] = [
         "])\n"
         "display(df_mlflow)\n"
     ),
-    # --- Seccion 6 ------------------------------------------------------
+    # --- Section 6 ------------------------------------------------------
     _md(
         "## 6. Conclusiones\n"
         "\n"

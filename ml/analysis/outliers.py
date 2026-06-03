@@ -131,7 +131,7 @@ def detect_outliers_isoforest(
     preds = iso.fit_predict(arr)
     is_out = preds == -1
 
-    # Atribuir outliers por banda: pct píxeles fuera del p1/p99 por banda
+    # Attribute outliers per band: pct of pixels outside p1/p99 per band
     rows = []
     for i, band in enumerate(band_cols):
         col_vals = arr[:, i]
@@ -149,7 +149,7 @@ def detect_outliers_isoforest(
                 "contamination_target": contamination * 100.0,
             }
         )
-    # Ajustar n_outliers por banda como aporte (no por banda real)
+    # Adjust n_outliers per band as a contribution (not per actual band)
     total_out = int(is_out.sum())
     for r in rows:
         r["n_outliers"] = total_out

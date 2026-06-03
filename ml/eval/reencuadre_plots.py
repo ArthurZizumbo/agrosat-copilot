@@ -52,7 +52,7 @@ __all__ = [
 
 
 # ---------------------------------------------------------------------------
-# 1. Ablation de features (F1-macro por conjunto, mismo modelo).
+# 1. Feature ablation (F1-macro per set, same model).
 # ---------------------------------------------------------------------------
 
 
@@ -85,7 +85,7 @@ def plot_ablation_bars(
     if metric not in {"f1_macro", "f1_weighted", "miou"}:
         raise ValueError(f"metric={metric!r} no soportada.")
 
-    # Agrupa por modelo manteniendo el orden estable de aparicion.
+    # Group by model keeping the stable order of appearance.
     by_model: dict[str, list[tuple[str, float]]] = {}
     for r in results:
         by_model.setdefault(r.model_kind, []).append(
@@ -95,9 +95,9 @@ def plot_ablation_bars(
     fig, ax = plt.subplots(figsize=figsize, dpi=110)
 
     if len(by_model) == 1:
-        # Un solo modelo: barras horizontales simples.
+        # A single model: simple horizontal bars.
         model_kind, items = next(iter(by_model.items()))
-        # Filtra NaN (entrenamientos que fallaron por cobertura nula del set).
+        # Filter NaN (trainings that failed due to null coverage of the set).
         items_clean = [(fs, v) for fs, v in items if v == v]
         items_sorted = sorted(items_clean, key=lambda kv: kv[1], reverse=False)
         labels = [s for s, _ in items_sorted]
@@ -131,7 +131,7 @@ def plot_ablation_bars(
             title or f"{metric.replace('_', '-')} por conjunto de features ({model_kind})"
         )
     else:
-        # Varios modelos: barras agrupadas verticalmente.
+        # Several models: bars grouped vertically.
         feature_sets: list[str] = []
         for items in by_model.values():
             for fs, _ in items:
@@ -179,8 +179,8 @@ def plot_ablation_bars(
 
 
 # ---------------------------------------------------------------------------
-# 2. Comparativa de modelos (XGBoost vs TempCNN vs InceptionTime sobre el
-#    mismo conjunto de features).
+# 2. Model comparison (XGBoost vs TempCNN vs InceptionTime over the
+#    same feature set).
 # ---------------------------------------------------------------------------
 
 
@@ -246,7 +246,7 @@ def plot_model_comparison_bars(
 
 
 # ---------------------------------------------------------------------------
-# 3. Soporte por clase (desbalance ~31x).
+# 3. Per-class support (imbalance ~31x).
 # ---------------------------------------------------------------------------
 
 
@@ -302,7 +302,7 @@ def plot_class_support_bars(
 
 
 # ---------------------------------------------------------------------------
-# 4. F1 por clase del mejor modelo (highlight de clases debiles).
+# 4. Per-class F1 of the best model (highlight weak classes).
 # ---------------------------------------------------------------------------
 
 
@@ -376,8 +376,8 @@ def plot_per_class_f1(
 
 
 # ---------------------------------------------------------------------------
-# 5. UMAP 2D coloreado por cluster KMeans (no por class_id, para validar
-#    estructura sin coordenadas).
+# 5. 2D UMAP colored by KMeans cluster (not by class_id, to validate
+#    structure without coordinates).
 # ---------------------------------------------------------------------------
 
 
@@ -435,7 +435,7 @@ def plot_umap_clusters(
 
 
 # ---------------------------------------------------------------------------
-# 6. Curva NDVI sintetica media por cluster (interpretabilidad agronomica).
+# 6. Mean synthetic NDVI curve per cluster (agronomic interpretability).
 # ---------------------------------------------------------------------------
 
 
@@ -484,8 +484,8 @@ def plot_cluster_ndvi_curves(
     phase_cols = [c for c in fft_cols if "_fft_phase_" in c]
 
     if not amp_cols or not phase_cols:
-        # Fallback: sin FFT, grafica vacia con mensaje (notebook seguira
-        # sin romperse en CI con dataset reducido).
+        # Fallback: without FFT, empty plot with a message (the notebook will keep
+        # running without breaking in CI with a reduced dataset).
         fig, ax = plt.subplots(figsize=figsize, dpi=110)
         ax.text(
             0.5,
@@ -512,7 +512,7 @@ def plot_cluster_ndvi_curves(
     phases = np.where(np.isfinite(phases), phases, 0.0)
 
     t = np.linspace(0.0, 1.0, sequence_length, endpoint=False)
-    # Reconstruye: y(t) = sum_k amp_k * cos(2*pi*k*t + phase_k); k = 1..K.
+    # Reconstruct: y(t) = sum_k amp_k * cos(2*pi*k*t + phase_k); k = 1..K.
     k_indices = np.arange(1, n_harmonics + 1).reshape(1, -1)
     # series shape (N, T)
     series = np.zeros((df.height, sequence_length), dtype=np.float64)
@@ -548,7 +548,7 @@ def plot_cluster_ndvi_curves(
 
 
 # ---------------------------------------------------------------------------
-# 7. Leakage geografico: comparativa explicita full vs no_geom + geom_only.
+# 7. Geographic leakage: explicit comparison full vs no_geom + geom_only.
 # ---------------------------------------------------------------------------
 
 
@@ -632,7 +632,7 @@ def plot_geom_leakage_comparison(
 
 
 # ---------------------------------------------------------------------------
-# 8. Bloques opcionales: with_farslip / with_pheno_text / with_spectral_signature.
+# 8. Optional blocks: with_farslip / with_pheno_text / with_spectral_signature.
 # ---------------------------------------------------------------------------
 
 
@@ -714,7 +714,7 @@ def plot_optional_blocks_ablation(
 
 
 # ---------------------------------------------------------------------------
-# 9. Matriz de confusion (heatmap).
+# 9. Confusion matrix (heatmap).
 # ---------------------------------------------------------------------------
 
 
@@ -801,8 +801,8 @@ def plot_confusion_matrix_heatmap(
 
 
 # ---------------------------------------------------------------------------
-# 10. Comparativa modelos v2 (XGB + LGBM + RF + TempCNN + InceptionTime) con
-#     overlay opcional del baseline v1 (US-022).
+# 10. Model comparison v2 (XGB + LGBM + RF + TempCNN + InceptionTime) with
+#     optional overlay of the v1 baseline (US-022).
 # ---------------------------------------------------------------------------
 
 

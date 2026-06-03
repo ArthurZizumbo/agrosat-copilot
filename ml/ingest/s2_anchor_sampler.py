@@ -75,9 +75,9 @@ al menos una imagen disponible incluso con descarte por nubes.
 DEFAULT_CACHE_DIR: Path = Path("data/cache/gee")
 DEFAULT_OUTPUT_PATH: Path = Path("data/features/s2_anchors_pastis.parquet")
 
-#: Estimacion conservadora del costo GEE por parcela en USD (free tier oculta
-#: el costo real; este numero sirve para reportar al MLflow log un orden de
-#: magnitud). Asume 3 anclas x 5 bandas x 1 reduceRegions ~ 0.0003 USD.
+#: Conservative estimate of the GEE cost per parcel in USD (free tier hides
+#: the real cost; this number serves to report an order of magnitude to the
+#: MLflow log). Assumes 3 anchors x 5 bands x 1 reduceRegions ~ 0.0003 USD.
 COST_PER_PARCEL_USD: float = 0.0003
 
 
@@ -145,7 +145,7 @@ def _resolve_anchors_table(
     needed = {"sog_doy", "peak_doy", "senescence_doy"}
     pcols = set(parcels.columns)
     if needed.issubset(pcols):
-        # Convertir geopandas -> polars seleccionando solo cols necesarias.
+        # Convert geopandas -> polars selecting only the necessary cols.
         rows = [
             {
                 "parcel_id": str(r["parcel_id"]),
@@ -226,8 +226,8 @@ def _sample_anchor_batch(
     consulta GEE falla, devuelve filas con ``None`` para todas las bandas.
     """
     rows: list[dict[str, Any]] = []
-    # Group parcelas del chunk por DOY del ancla (parcelas con mismo DOY
-    # comparten una sola consulta server-side).
+    # Group the chunk's parcels by anchor DOY (parcels with the same DOY
+    # share a single server-side query).
     anchors_chunk = anchors_table.filter(
         pl.col("parcel_id").is_in(parcels_chunk["parcel_id"].astype(str).tolist())
     )
@@ -238,7 +238,7 @@ def _sample_anchor_batch(
         r["parcel_id"]: int(r[doy_col]) for r in anchors_chunk.iter_rows(named=True)
     }
 
-    # Agrupa parcelas por DOY identico — una consulta por DOY unico.
+    # Group parcels by identical DOY — one query per unique DOY.
     by_doy: dict[int, list[Any]] = {}
     for _, row in parcels_chunk.iterrows():
         pid = str(row["parcel_id"])
@@ -281,7 +281,7 @@ def _sample_anchor_batch(
                 n=len(items),
                 error=str(exc),
             )
-            # Filas con None para esta DOY group.
+            # Rows with None for this DOY group.
             for pid, _ in items:
                 row_out: dict[str, Any] = {"parcel_id": pid}
                 for band in bands:
@@ -329,7 +329,7 @@ def _merge_anchor_rows(
     by_pid: dict[str, dict[str, Any]] = {
         pid: {"parcel_id": pid, "year": int(year)} for pid in parcel_ids
     }
-    # Inicializa todas las cols a None.
+    # Initialize all cols to None.
     for pid in parcel_ids:
         for anchor in anchors:
             for band in bands:
@@ -429,8 +429,8 @@ def sample_s2_anchors_for_parcels(
         df_cached.write_parquet(output_path)
         return output_path.resolve()
 
-    # Lazy import de earthengine-api: solo dentro del path "real" para evitar
-    # romper tests sin EE instalado.
+    # Lazy import of earthengine-api: only inside the "real" path to avoid
+    # breaking tests without EE installed.
     from ml.ingest.gee_sampler import init_ee
 
     try:

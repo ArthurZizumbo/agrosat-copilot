@@ -63,7 +63,7 @@ def _patch_to_dataarray(s2_patch: np.ndarray, dates: list[int]) -> xr.DataArray:
     Promedia espacialmente el patch para obtener una serie temporal por banda;
     el caller anade los indices espectrales como bandas adicionales.
     """
-    # Mean espacial sobre H, W -> (T, 10).
+    # Spatial mean over H, W -> (T, 10).
     spatial_mean = s2_patch.mean(axis=(2, 3)).astype(np.float32) / 10_000.0
     times = np.array(
         [np.datetime64(f"{str(d)[:4]}-{str(d)[4:6]}-{str(d)[6:8]}", "ns") for d in dates],
@@ -86,15 +86,15 @@ def _enrich_with_indices(s2_da: xr.DataArray, indices: tuple[str, ...]) -> xr.Da
     Returns:
         DataArray ``(time, band)`` con bandas originales + indices apilados.
     """
-    # Reshape a (time, band, y, x) requerido por compute_index (necesita
-    # dims espaciales aunque sean 1x1).
+    # Reshape to (time, band, y, x) required by compute_index (it needs
+    # spatial dims even if they are 1x1).
     arr = s2_da.expand_dims(y=1, x=1)
     new_bands: list[np.ndarray] = []
     new_names: list[str] = []
     for idx in indices:
         try:
             result = compute_index(arr, idx)
-            # result shape (time, 1, 1) -> squeeze a (time,)
+            # result shape (time, 1, 1) -> squeeze to (time,)
             vals = np.asarray(result.values).reshape(-1)
             new_bands.append(vals)
             new_names.append(idx)
@@ -158,8 +158,8 @@ def main(
 
     rng = np.random.default_rng(seed)
 
-    # Muestreo amplio inicial: cogemos patches al azar y filtramos hasta
-    # llenar cuota por clase.
+    # Broad initial sampling: we take random patches and filter until
+    # filling the per-class quota.
     patch_ids = index_df.get_column("patch_id").to_list()
     fold_map = dict(
         zip(

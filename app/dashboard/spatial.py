@@ -33,7 +33,7 @@ except ImportError:  # pragma: no cover - import guard
     gpd = None  # type: ignore[assignment]
     _HAS_GEOPANDAS = False
 
-# Cap defensivo de tiles en el mapa folium (top-N por area dissolved).
+# Defensive cap of tiles on the folium map (top-N by dissolved area).
 _FOLIUM_TOP_TILES = 10
 
 
@@ -154,6 +154,6 @@ def render_spatial_tab(rois_yaml: Path, pastis_metadata: Path) -> None:
         st.info("Mapa no disponible - folium no inicializo.")
         return
 
-    # ``key`` unico por render evita colisiones de IDs en el DOM cuando
-    # Streamlit re-renderiza el componente.
+    # A unique ``key`` per render avoids ID collisions in the DOM when
+    # Streamlit re-renders the component.
     st_folium(fmap, width=None, height=560, returned_objects=[], key="eda_spatial_map")

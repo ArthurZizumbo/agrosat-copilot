@@ -65,14 +65,14 @@ logger = structlog.get_logger(__name__)
 
 __all__ = ["build_objective", "build_objective_utae", "run_study"]
 
-#: Modelos soportados. tsvit/tsvit-pheno (us-025) reusan el loop principal;
-#: utae (Isaac) usa su propio dataset+loop (forward con batch_positions).
+#: Supported models. tsvit/tsvit-pheno (us-025) reuse the main loop;
+#: utae (Isaac) uses its own dataset+loop (forward with batch_positions).
 _TSVIT_MODELS = ("tsvit", "tsvit-pheno")
 _SUPPORTED = (*_TSVIT_MODELS, "utae")
 
-#: Espacio de busqueda (mismo set que el tuning de AnySat de Aaron: lr +
-#: weight_decay + batch_size), acotado para fine-tuning desde un modelo bueno:
-#: lr bajo (no destruir los pesos), weight_decay y batch discretos.
+#: Search space (same set as Aaron's AnySat tuning: lr +
+#: weight_decay + batch_size), bounded for fine-tuning from a good model:
+#: low lr (do not destroy the weights), discrete weight_decay and batch.
 _LR_RANGE = (1e-5, 5e-4)
 _WD_RANGE = (1e-6, 1e-2)
 _BATCH_CHOICES = (4, 8, 16)
@@ -171,7 +171,7 @@ def build_objective(
     model = model.to(dev)
     if prototypes is not None:
         prototypes = prototypes.to(dev)
-    # Snapshot de los pesos base en CPU para recargar por trial sin re-leer disco.
+    # Snapshot of the base weights on CPU to reload per trial without re-reading disk.
     base_metrics = _load_init_weights(model, init_ckpt, dev)
     base_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
 
@@ -183,7 +183,7 @@ def build_objective(
         weight_decay = trial.suggest_float("weight_decay", *_WD_RANGE, log=True)
         batch_size = trial.suggest_categorical("batch_size", list(_BATCH_CHOICES))
 
-        # Warm-start: recargar los pesos base (cada trial parte del mismo punto).
+        # Warm-start: reload the base weights (each trial starts from the same point).
         model.load_state_dict(base_state)
         optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
         scaler = torch.cuda.amp.GradScaler(enabled=amp_enabled) if amp_enabled else None
@@ -239,13 +239,13 @@ def build_objective(
 
 
 # ---------------------------------------------------------------------------
-# U-TAE (Isaac): dataset multi-temporal con day-of-year + objective propio.
-# El forward de U-TAE es `model(imgs, batch_positions)` con imgs (B,T,C,H,W) y
-# positions (B,T); difiere del loop principal (model(x)), por eso tiene su
-# propio dataset y mini-loop, replica fiel de notebooks/segmentation/04j.
+# U-TAE (Isaac): multi-temporal dataset with day-of-year + its own objective.
+# U-TAE's forward is `model(imgs, batch_positions)` with imgs (B,T,C,H,W) and
+# positions (B,T); it differs from the main loop (model(x)), which is why it has
+# its own dataset and mini-loop, a faithful replica of notebooks/segmentation/04j.
 # ---------------------------------------------------------------------------
 
-#: Normalizacion S2 por banda usada por Isaac (PASTIS escala ~0-10000).
+#: Per-band S2 normalization used by Isaac (PASTIS scales ~0-10000).
 _UTAE_S2_MEAN = (1158.0, 1244.7, 1416.3, 1374.8, 1619.0, 2075.1, 2263.1, 2311.0, 2108.6, 817.4)
 _UTAE_S2_STD = (671.7, 698.1, 761.3, 830.8, 795.3, 907.5, 981.1, 993.7, 882.0, 504.2)
 
@@ -324,10 +324,10 @@ class PASTISMultiTempDataset(Dataset):
         return t_imgs, t_mask.squeeze(0)
 
     def _augment(self, imgs: torch.Tensor, mask: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        if random.random() > 0.5:  # noqa: S311 - data augmentation, no criptografia
+        if random.random() > 0.5:  # noqa: S311 - data augmentation, not cryptography
             imgs = torch.flip(imgs, dims=[-1])
             mask = torch.flip(mask.unsqueeze(0), dims=[-1]).squeeze(0)
-        if random.random() > 0.5:  # noqa: S311 - data augmentation, no criptografia
+        if random.random() > 0.5:  # noqa: S311 - data augmentation, not cryptography
             imgs = torch.flip(imgs, dims=[-2])
             mask = torch.flip(mask.unsqueeze(0), dims=[-2]).squeeze(0)
         angle = random.choice([0, 90, 180, 270])  # noqa: S311 - augmentation

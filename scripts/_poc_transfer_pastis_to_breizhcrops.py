@@ -87,10 +87,10 @@ _PASTIS_SUBSET = (
 _OUTPUT = _REPO_ROOT / "reports" / "transfer" / "pastis_to_breizhcrops.parquet"
 
 # ---------------------------------------------------------------------------
-# Mapeo explicito a las 7 clases comunes (ver docstring).
+# Explicit mapping to the 7 common classes (see docstring).
 # ---------------------------------------------------------------------------
 
-#: Las 7 clases comunes en orden canonico estable.
+#: The 7 common classes in stable canonical order.
 COMMON_CLASSES: tuple[str, ...] = (
     "wheat",
     "barley",
@@ -101,8 +101,8 @@ COMMON_CLASSES: tuple[str, ...] = (
     "orchard",
 )
 
-#: PASTIS-R class_id -> clase comun. Los class_id ausentes (8 Grapevine,
-#: 9 Beet, etc.) se descartan: no tienen contraparte en BreizhCrops.
+#: PASTIS-R class_id -> common class. The absent class_id values (8 Grapevine,
+#: 9 Beet, etc.) are discarded: they have no counterpart in BreizhCrops.
 PASTIS_ID_TO_COMMON: dict[int, str] = {
     2: "wheat",  # Soft winter wheat
     11: "wheat",  # Winter durum wheat
@@ -115,8 +115,8 @@ PASTIS_ID_TO_COMMON: dict[int, str] = {
     16: "orchard",  # Orchard
 }
 
-#: BreizhCrops class_name -> clase comun. Las clases sin contraparte en
-#: PASTIS (nuts) se descartan.
+#: BreizhCrops class_name -> common class. The classes without a counterpart in
+#: PASTIS (nuts) are discarded.
 BREIZ_NAME_TO_COMMON: dict[str, str] = {
     "wheat": "wheat",
     "barley": "barley",
@@ -130,7 +130,7 @@ BREIZ_NAME_TO_COMMON: dict[str, str] = {
 
 
 # ---------------------------------------------------------------------------
-# Carga + preparacion de PASTIS-R (train).
+# Load + preparation of PASTIS-R (train).
 # ---------------------------------------------------------------------------
 
 
@@ -186,7 +186,7 @@ def _feature_columns(df: pl.DataFrame) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Carga + extraccion de features de BreizhCrops (test).
+# Load + feature extraction of BreizhCrops (test).
 # ---------------------------------------------------------------------------
 
 
@@ -227,7 +227,7 @@ def _sample_breizhcrops_parcels(
         .alias("common_class")
     )
 
-    # Muestreo estratificado: cuota uniforme por clase comun, hasta agotar.
+    # Stratified sampling: uniform quota per common class, until exhausted.
     n_classes = index.get_column("common_class").n_unique()
     per_class = max(1, n_target // n_classes)
     sampled: list[pl.DataFrame] = []
@@ -275,8 +275,8 @@ def _extract_breizhcrops_features(
             region=region_name,
             n_parcels=len(wanted_ids),
         )
-        # Extrae SOLO las parcelas muestreadas (lectura eficiente del H5, sin
-        # expandir cientos de miles de parcelas de la region completa).
+        # Extract ONLY the sampled parcels (efficient H5 read, without
+        # expanding hundreds of thousands of parcels of the full region).
         series = breizhcrops_pixel_series(
             region=str(region_name),
             year=2017,
@@ -301,7 +301,7 @@ def _extract_breizhcrops_features(
 
 
 # ---------------------------------------------------------------------------
-# Transfer directo.
+# Direct transfer.
 # ---------------------------------------------------------------------------
 
 
@@ -364,7 +364,7 @@ def run_direct_transfer(
         "random_state": 42,
     }
     model = build_estimator("xgb", params)
-    # sample_weight inverso a frecuencia (clases muy desbalanceadas en PASTIS).
+    # sample_weight inverse to frequency (highly imbalanced classes in PASTIS).
     classes, counts = np.unique(y_train, return_counts=True)
     w_per_class = {
         int(c): y_train.size / (classes.size * cnt)
@@ -383,8 +383,8 @@ def run_direct_transfer(
     f1_macro = float(f1_score(y_test, y_pred, labels=labels, average="macro", zero_division=0))
     accuracy = float((y_pred == y_test).mean())
 
-    # F1-macro sin sunflower (casi inexistente en BreizhCrops): metrica mas
-    # representativa de la senal real de transfer.
+    # F1-macro without sunflower (almost nonexistent in BreizhCrops): a metric more
+    # representative of the real transfer signal.
     no_sf = [c for c in COMMON_CLASSES if c != "sunflower"]
     no_sf_idx = encoder.transform(no_sf)
     f1_macro_no_sf = float(
@@ -412,7 +412,7 @@ def run_direct_transfer(
 
 
 # ---------------------------------------------------------------------------
-# Persistencia.
+# Persistence.
 # ---------------------------------------------------------------------------
 
 

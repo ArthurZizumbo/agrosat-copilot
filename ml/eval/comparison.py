@@ -50,21 +50,21 @@ __all__ = [
     "export_comparison_latex",
 ]
 
-# Orden canonico de los escenarios (etiqueta corta -> nombre legible).
+# Canonical order of the scenarios (short label -> human-readable name).
 _SCENARIO_LABELS: dict[str, str] = {
     "alphaearth": "AlphaEarth 64-dim",
     "s2_raw": "Sentinel-2 crudo (10 bandas)",
     "combined": "Vector combinado (187 feat)",
 }
 
-# Modelos de la comparativa, en orden de la tabla. Se evaluan los tres
-# baselines tabulares para captar diferencias entre familias (bagging vs
-# boosting clasico vs boosting histogram-based).
+# Models of the comparison, in table order. The three tabular baselines
+# are evaluated to capture differences between families (bagging vs
+# classic boosting vs histogram-based boosting).
 _MODEL_KINDS: tuple[str, ...] = ("rf", "xgb", "lgbm")
 
-# Columnas de metadata que NO son features (se excluyen al contar
-# `n_features`). Espejo de `ml.train.baseline._META_COLS` mas las columnas
-# extra que arrastran los parquets de escenario.
+# Metadata columns that are NOT features (excluded when counting
+# `n_features`). Mirror of `ml.train.baseline._META_COLS` plus the extra
+# columns the scenario parquets carry along.
 _META_COLS: frozenset[str] = frozenset(
     {
         "parcel_id",
@@ -80,12 +80,12 @@ _META_COLS: frozenset[str] = frozenset(
     }
 )
 
-# Sufijos de columnas que jamas son features (defensa en profundidad sobre
-# `_META_COLS`: el bug US-023-preview-v2 entraba con `patch_id_right` cuando
-# `load_features_dataset_with_meta` hacia un left join sin filtrar overlaps).
+# Column suffixes that are never features (defense in depth over
+# `_META_COLS`: the US-023-preview-v2 bug slipped in with `patch_id_right` when
+# `load_features_dataset_with_meta` did a left join without filtering overlaps).
 _META_SUFFIXES: tuple[str, ...] = ("_right", "_left", "_x", "_y")
 
-# Orden de columnas de la tabla comparativa final.
+# Column order of the final comparison table.
 _TABLE_COLUMNS: tuple[str, ...] = (
     "scenario",
     "model",
@@ -98,7 +98,7 @@ _TABLE_COLUMNS: tuple[str, ...] = (
 
 
 # ---------------------------------------------------------------------------
-# Dataclass de salida.
+# Output dataclass.
 # ---------------------------------------------------------------------------
 
 
@@ -128,7 +128,7 @@ class ComparisonResult:
 
 
 # ---------------------------------------------------------------------------
-# API publica.
+# Public API.
 # ---------------------------------------------------------------------------
 
 
@@ -268,7 +268,7 @@ def export_comparison_latex(
     out_path = Path(path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Unico uso de pandas del modulo (D7): conversion de presentacion.
+    # Only pandas use in the module (D7): presentation conversion.
     pandas_df = result.table.to_pandas()
     body = pandas_df.to_latex(
         index=False,
@@ -290,7 +290,7 @@ def export_comparison_latex(
 
 
 # ---------------------------------------------------------------------------
-# Helpers privados — carga y alineacion.
+# Private helpers — loading and alignment.
 # ---------------------------------------------------------------------------
 
 
@@ -358,8 +358,8 @@ def _align_scenarios_by_parcel(
     aligned: dict[str, pl.DataFrame] = {}
     for key, df in scenarios.items():
         normalized = df.with_columns(pl.col("parcel_id").cast(pl.Utf8))
-        # Inner join contra el conjunto comun + orden determinista: los tres
-        # frames quedan con las mismas filas en el mismo orden.
+        # Inner join against the common set + deterministic order: the three
+        # frames end up with the same rows in the same order.
         joined = (
             keep.join(normalized, on="parcel_id", how="inner")
             .unique(subset="parcel_id", keep="first")
@@ -418,7 +418,7 @@ def _subsample_aligned(
 
 
 # ---------------------------------------------------------------------------
-# Helpers privados — entrenamiento y metricas.
+# Private helpers — training and metrics.
 # ---------------------------------------------------------------------------
 
 
@@ -447,7 +447,7 @@ def _train_scenario_model(
         Tupla ``(metrics, train_time_s)`` con las metricas out-of-fold del
         baseline y el wall-clock del ``fit`` final (decision D4).
     """
-    # Import diferido: rompe el ciclo `baseline -> eval.metrics` /
+    # Deferred import: breaks the cycle `baseline -> eval.metrics` /
     # `eval.__init__ -> comparison`.
     from ml.train.baseline import train_one_model
 

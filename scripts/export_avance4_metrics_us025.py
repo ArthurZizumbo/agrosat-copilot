@@ -27,14 +27,14 @@ from pathlib import Path
 
 import polars as pl
 
-# Esquema espejo de run_training (Aaron): columnas que consume la consolidacion.
-# Las metricas *_grouped solo aplican a deeplabv3plus (variante HCAT-6); para los
-# temporales quedan en None (la convencion de la tabla las deja vacias).
+# Mirror schema of run_training (Aaron): columns consumed by the consolidation.
+# The *_grouped metrics only apply to deeplabv3plus (HCAT-6 variant); for the
+# temporal ones they stay None (the table convention leaves them empty).
 #
-# ``train_time_s`` es el wall-clock real del run de entrenamiento medido en el
-# servidor MLflow local (Docker Postgres :5010, experimento 7
-# ``agrosat-segmentation``): ``end_time - start_time`` del run FINISHED.
-#   - deeplabv3plus (mobilenet, 18 clases, run 1c1e4f6f): 44676.4 s (~12.4 h).
+# ``train_time_s`` is the real wall-clock of the training run measured on the
+# local MLflow server (Docker Postgres :5010, experiment 7
+# ``agrosat-segmentation``): ``end_time - start_time`` of the FINISHED run.
+#   - deeplabv3plus (mobilenet, 18 classes, run 1c1e4f6f): 44676.4 s (~12.4 h).
 #   - tsvit          (run 24f70756, batch 16, 30 epochs):  1894.4 s (~31.6 min, RTX 4070).
 #   - tsvit-pheno    (run 0eef8a60, batch 16, 30 epochs):  1915.4 s (~31.9 min, RTX 4070).
 _ROWS = [
@@ -67,8 +67,8 @@ _ROWS = [
     },
 ]
 
-# Schema explicito: evita que Polars infiera Null en las columnas con solo None
-# (rompería el vertical_relaxed de la consolidacion contra parquets con floats).
+# Explicit schema: prevents Polars from inferring Null on columns with only None
+# (would break the vertical_relaxed of the consolidation against parquets with floats).
 _SCHEMA = {
     "model": pl.Utf8,
     "miou": pl.Float64, "f1_macro": pl.Float64, "pixel_accuracy": pl.Float64,
@@ -87,8 +87,8 @@ def main() -> int:
 
     df = pl.DataFrame(_ROWS, schema=_SCHEMA)
 
-    # deeplabv3plus -> su parquet; tsvit + tsvit-pheno -> el parquet de tsvit
-    # (la consolidacion los separa por la columna `model`).
+    # deeplabv3plus -> its parquet; tsvit + tsvit-pheno -> the tsvit parquet
+    # (the consolidation separates them by the `model` column).
     deeplab = df.filter(pl.col("model") == "deeplabv3plus")
     tsvit = df.filter(pl.col("model").is_in(["tsvit", "tsvit-pheno"]))
 

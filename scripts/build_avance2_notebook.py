@@ -40,10 +40,32 @@ from typing import Any
 
 import typer
 
+from ml.report.notebook_conclusions import A2_CONCLUSIONS
+from ml.report.notebook_cover import build_cover_markdown, build_team_conclusions_markdown
+
 
 def _new_id() -> str:
     """ID estable para cada celda (nbformat >= 4.5 lo exige)."""
     return uuid.uuid4().hex[:12]
+
+
+def _visual_cover_cell() -> dict[str, Any]:
+    """Portada visual homologada (badges + header) antes del resumen ejecutivo."""
+    return _md_cell(
+        build_cover_markdown(
+            "Avance 2",
+            "Ingenieria de Caracteristicas",
+            "Construccion, seleccion y normalizacion de caracteristicas sobre "
+            "Sentinel-2, PASTIS-R y AlphaEarth, con fusion multisensor a nivel "
+            "de parcela y validacion cross-region.",
+            "2026-05-17",
+        )
+    )
+
+
+def _team_conclusions_cell() -> dict[str, Any]:
+    """Celda de conclusiones individuales por integrante."""
+    return _md_cell(build_team_conclusions_markdown(A2_CONCLUSIONS))
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -60,7 +82,7 @@ app = typer.Typer(add_completion=False)
 
 
 # ---------------------------------------------------------------------------
-# Helpers para construir celdas Jupyter nbformat v4
+# Helpers to build Jupyter nbformat v4 cells
 # ---------------------------------------------------------------------------
 
 
@@ -113,7 +135,7 @@ def _image_output(png_path: Path) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Construccion de las distintas secciones del notebook
+# Construction of the different sections of the notebook
 # ---------------------------------------------------------------------------
 
 
@@ -353,6 +375,7 @@ def _attributions_cell() -> dict[str, Any]:
 def build_notebook() -> dict[str, Any]:
     """Construye el dict del notebook listo para escribir a JSON."""
     cells: list[dict[str, Any]] = [
+        _visual_cover_cell(),
         _cover_cell(),
         _parameters_cell(),
         _bootstrap_cell(),
@@ -367,6 +390,7 @@ def build_notebook() -> dict[str, Any]:
         cells.extend(_figure_cells(card))
         cells.extend(_conclusions_cells(card))
 
+    cells.append(_team_conclusions_cell())
     cells.append(_attributions_cell())
 
     return {

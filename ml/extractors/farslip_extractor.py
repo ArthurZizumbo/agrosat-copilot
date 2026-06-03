@@ -71,17 +71,17 @@ class FarSLIPExtractor:
         self.teacher_model_id = teacher_model_id
         self.expected_sha1 = expected_sha1
 
-        # Modelo base (vision + text projection). Cargamos CLIPModel completo
-        # para tener acceso a visual_projection y text_projection (512-dim).
+        # Base model (vision + text projection). We load the full CLIPModel
+        # to have access to visual_projection and text_projection (512-dim).
         base = CLIPModel.from_pretrained(teacher_model_id)
         base.eval()
-        # Adaptar vision_model.embeddings.patch_embedding a n_in_channels.
+        # Adapt vision_model.embeddings.patch_embedding to n_in_channels.
         adapt_patch_embed_to_n_channels(base.vision_model, n_in_channels)
         self.model = base.to(self.device)  # type: ignore[arg-type]
 
         self.tokenizer = CLIPTokenizer.from_pretrained(teacher_model_id)
 
-        # Cargar pesos student si disponibles.
+        # Load student weights if available.
         weights_local = self._resolve_weights_local()
         if weights_local is not None:
             self._load_student_weights(weights_local)
@@ -103,12 +103,12 @@ class FarSLIPExtractor:
         return torch.device(device)
 
     def _resolve_weights_local(self) -> Path | None:
-        """Resuelve a ruta local. Descarga de GCS si necesario; cache local fallback."""
+        """Resolves to a local path. Downloads from GCS if needed; local cache fallback."""
         if self.weights_uri is None:
             return None
         uri = str(self.weights_uri)
 
-        # Si es path local directo (file://, ruta absoluta o relativa existente)
+        # If it is a direct local path (file://, absolute or existing relative path)
         local_candidate = Path(uri)
         if local_candidate.is_file():
             return local_candidate
@@ -121,7 +121,7 @@ class FarSLIPExtractor:
         if uri.startswith("gs://"):
             cached = self._maybe_use_cache(uri)
             if cached is not None:
-                # Antes de descargar, intentar usar cache valido.
+                # Before downloading, try to use a valid cache.
                 if self._validate_checksum(cached):
                     _log.info("usando cache local valido (sin GCS)", path=str(cached))
                     return cached
@@ -138,10 +138,10 @@ class FarSLIPExtractor:
                     return cached
                 return None
             except Exception as exc:
-                # google.api_core / google.auth: 403, 401, NotFound, creds
-                # ausentes. Degradar a cache local o modo teacher en lugar
-                # de propagar y romper el constructor. Cualquier otro error
-                # (AttributeError, KeyError, ValueError reales) burbujea.
+                # google.api_core / google.auth: 403, 401, NotFound, missing
+                # creds. Degrade to local cache or teacher mode instead
+                # of propagating and breaking the constructor. Any other error
+                # (real AttributeError, KeyError, ValueError) bubbles up.
                 if is_gcs_auth_error(exc):
                     _log.warning(
                         "GCS auth/permiso denegado; intentando cache local",
@@ -156,7 +156,7 @@ class FarSLIPExtractor:
         return None
 
     def _cache_path_for(self, uri: str) -> Path:
-        # sha1 sin usebsecurity flag: solo deduplicacion de cache, no cripto.
+        # sha1 without usedforsecurity flag: cache deduplication only, not crypto.
         h = hashlib.sha1(uri.encode("utf-8"), usedforsecurity=False).hexdigest()[:12]
         return self.cache_dir / f"{h}_student.safetensors"
 
@@ -176,11 +176,11 @@ class FarSLIPExtractor:
         except OSError:  # pragma: no cover
             return False
 
-    #: Retries para auto-download en caso de checksum invalido tras wait.
+    #: Retries for auto-download in case of invalid checksum after wait.
     _DOWNLOAD_MAX_ATTEMPTS = 3
-    #: Segundos de espera por iteracion del polling cuando otro proceso descarga.
+    #: Seconds to wait per polling iteration when another process is downloading.
     _DOWNLOAD_WAIT_INTERVAL_S = 0.5
-    #: Iteraciones maximas de polling (= 30 s con interval 0.5 s).
+    #: Maximum polling iterations (= 30 s with interval 0.5 s).
     _DOWNLOAD_WAIT_MAX_ITERATIONS = 60
 
     def _is_complete_download(self, path: Path) -> bool:
@@ -209,7 +209,7 @@ class FarSLIPExtractor:
         parts = without_scheme.split("/", 1)
         bucket_name = parts[0]
         blob_path = parts[1] if len(parts) > 1 else ""
-        # Si apunta a una carpeta, agrega student.safetensors.
+        # If it points to a folder, append student.safetensors.
         if blob_path.endswith("/") or not blob_path.endswith(".safetensors"):
             blob_path = blob_path.rstrip("/") + "/student.safetensors"
 
@@ -227,22 +227,22 @@ class FarSLIPExtractor:
                     try:
                         blob.download_to_filename(str(dest))
                     except BaseException:
-                        # MT-3 fix: si download_to_filename revienta (403,
-                        # NotFound, network drop) puede haber creado el archivo
-                        # destino vacio o parcial. Limpiar antes de propagar
-                        # para que la proxima invocacion no vea ese basura como
-                        # cache valido (sin expected_sha1 _validate_checksum
-                        # devuelve True y load_file revienta con
+                        # MT-3 fix: if download_to_filename blows up (403,
+                        # NotFound, network drop) it may have created the
+                        # destination file empty or partial. Clean up before propagating
+                        # so the next invocation does not see that garbage as
+                        # a valid cache (without expected_sha1 _validate_checksum
+                        # returns True and load_file blows up with
                         # SafetensorError: header too small).
                         with suppress(OSError):
                             dest.unlink()
                         raise
             except FileExistsError:
-                # Otra ejecucion ya esta descargando. Polling al archivo final.
+                # Another execution is already downloading. Poll the final file.
                 for _ in range(self._DOWNLOAD_WAIT_MAX_ITERATIONS):
                     if dest.exists():
-                        # Esperar a que el otro proceso libere el lock antes
-                        # de validar (evita leer durante el flush final).
+                        # Wait for the other process to release the lock before
+                        # validating (avoids reading during the final flush).
                         if not lock_path.exists():
                             break
                     _time.sleep(self._DOWNLOAD_WAIT_INTERVAL_S)
@@ -250,7 +250,7 @@ class FarSLIPExtractor:
                 with suppress(OSError):
                     lock_path.unlink()
 
-            # Validacion post-wait/post-download (Q7): size>0 + checksum.
+            # Post-wait/post-download validation (Q7): size>0 + checksum.
             if self._is_complete_download(dest):
                 return dest
 
@@ -270,8 +270,8 @@ class FarSLIPExtractor:
         from safetensors.torch import load_file
 
         state = load_file(str(path), device=str(self.device))
-        # Los pesos vienen de CLIPVisionModel (state del student). Cargamos al
-        # vision_model interno; ignoramos missing/unexpected keys (text encoder).
+        # The weights come from CLIPVisionModel (student state). We load into the
+        # internal vision_model; we ignore missing/unexpected keys (text encoder).
         missing, unexpected = self.model.vision_model.load_state_dict(
             state, strict=False
         )
@@ -305,7 +305,7 @@ class FarSLIPExtractor:
         """Extrae patch features (sin CLS) ``(B, 196, 768)`` para SegFormer US-025."""
         crops = self._prep_crops(crops)
         vision_out = self.model.vision_model(pixel_values=crops)
-        # last_hidden_state: (B, 1+P, 768). Quitamos CLS.
+        # last_hidden_state: (B, 1+P, 768). Remove CLS.
         hidden: torch.Tensor = vision_out.last_hidden_state
         return hidden[:, 1:, :].float()
 
@@ -352,8 +352,8 @@ class FarSLIPExtractor:
                 )
             arrays.append(arr)
 
-        # Stack (B, C, H, W). Cast a int32 para preservar uint16 sin overflow
-        # en torch (torch no tiene uint16 nativo).
+        # Stack (B, C, H, W). Cast to int32 to preserve uint16 without overflow
+        # in torch (torch has no native uint16).
         import numpy as np
 
         batch = np.stack(arrays, axis=0).astype(np.int32)

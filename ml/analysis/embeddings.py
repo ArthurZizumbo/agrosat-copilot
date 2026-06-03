@@ -75,7 +75,7 @@ def correlation_matrix(
         )
     arr = df.select(selected).to_numpy()
     if method == "pearson":
-        # numpy es Polars-friendly y mucho mas rapido que pandas.corr
+        # numpy is Polars-friendly and much faster than pandas.corr
         valid = ~np.isnan(arr).any(axis=1)
         arr_v = arr[valid]
         if arr_v.shape[0] < 2:
@@ -83,7 +83,7 @@ def correlation_matrix(
         else:
             corr = np.corrcoef(arr_v, rowvar=False)
     else:
-        # Spearman: ranks por columna + Pearson de los ranks
+        # Spearman: ranks per column + Pearson of the ranks
         valid = ~np.isnan(arr).any(axis=1)
         arr_v = arr[valid]
         if arr_v.shape[0] < 2:
@@ -163,7 +163,7 @@ def qq_test_dims(
                 }
             )
             continue
-        # Shapiro-Wilk satura a 5000 muestras (scipy doc): submuestreamos si excede
+        # Shapiro-Wilk saturates at 5000 samples (scipy doc): we subsample if it exceeds
         if vals.size > 5000:
             rng = np.random.default_rng(42)
             sample = rng.choice(vals, size=5000, replace=False)
@@ -212,9 +212,9 @@ def tsne_2d(
     from sklearn.manifold import TSNE
 
     arr = df.select(selected).to_numpy()
-    # Filtrar filas con NaN: sklearn rechaza missing values. `valid_idx` son
-    # indices contra el df original, asi que el caller puede mapear labels con
-    # `df[col].to_numpy()[idx]` sin desalineamiento.
+    # Filter rows with NaN: sklearn rejects missing values. `valid_idx` are
+    # indices against the original df, so the caller can map labels with
+    # `df[col].to_numpy()[idx]` without misalignment.
     valid_mask = ~np.isnan(arr).any(axis=1)
     valid_idx = np.flatnonzero(valid_mask)
     n_dropped = int(arr.shape[0] - valid_idx.size)
@@ -342,14 +342,14 @@ def rf_feature_importance(
 
     arr = X.select(selected).to_numpy()
     labels = y.to_numpy()
-    # Filtrar filas con NaN en X o labels nulos: RandomForestClassifier rechaza
-    # missing values y la senal de importance se contamina con clase 'unknown'.
+    # Filter rows with NaN in X or null labels: RandomForestClassifier rejects
+    # missing values and the importance signal gets contaminated with class 'unknown'.
     valid_mask = ~np.isnan(arr).any(axis=1)
-    # `labels` puede ser dtype object con None: tratar None como invalido.
+    # `labels` may be dtype object with None: treat None as invalid.
     if labels.dtype == object:
         label_mask = np.array([lbl is not None for lbl in labels])
     else:
-        label_mask = ~(labels != labels)  # NaN-aware sin asumir float
+        label_mask = ~(labels != labels)  # NaN-aware without assuming float
     valid_mask &= label_mask
     n_dropped = int(arr.shape[0] - valid_mask.sum())
     if n_dropped > 0:
@@ -438,7 +438,7 @@ def temporal_stability(
             continue
         arr_a = joined.select(selected).to_numpy()
         arr_b = joined.select([f"{c}_b" for c in selected]).to_numpy()
-        # cosine similarity por fila
+        # cosine similarity per row
         num = np.sum(arr_a * arr_b, axis=1)
         denom = np.linalg.norm(arr_a, axis=1) * np.linalg.norm(arr_b, axis=1)
         denom = np.where(denom == 0, 1.0, denom)
@@ -449,7 +449,7 @@ def temporal_stability(
             entry = rows.setdefault(pid, {parcel_col: pid})
             entry[col_name] = float(val)
 
-    # class_col se reincorpora por mayoria
+    # class_col is reincorporated by majority
     if class_col and class_col in df.columns:
         class_lookup = (
             df.group_by(parcel_col)
@@ -524,13 +524,13 @@ def compare_alphaearth_vs_ndvi(
     dims3 = [d for d in top_dims[:3] if d in df_embeddings.columns]
     if len(dims3) == 3 and not df_embeddings.is_empty():
         vec = df_embeddings.select(dims3).to_numpy()
-        # Normalizamos cada canal por min/max para visualizar como pseudo-RGB
+        # We normalize each channel by min/max to visualize as pseudo-RGB
         norm = np.empty_like(vec, dtype=np.float32)
         for c in range(3):
             v = vec[:, c]
             lo, hi = float(np.min(v)), float(np.max(v))
             norm[:, c] = (v - lo) / max(hi - lo, 1e-6)
-        # Reshape a una tira horizontal si no hay info espacial
+        # Reshape to a horizontal strip if there is no spatial info
         h = int(np.ceil(np.sqrt(norm.shape[0])))
         w = int(np.ceil(norm.shape[0] / h))
         canvas = np.zeros((h, w, 3), dtype=np.float32)

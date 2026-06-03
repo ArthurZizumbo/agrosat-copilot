@@ -69,11 +69,11 @@ __all__ = [
 ]
 
 
-# Convencion compartida con :mod:`ml.features.selection`.
+# Convention shared with :mod:`ml.features.selection`.
 _DEFAULT_EXCLUDE: tuple[str, ...] = ("parcel_id", "year")
 
-# Mapping default para estaciones del hemisferio norte (mes -> estacion).
-# Sigue la convencion meteorologica: winter = DEC/JAN/FEB (mes 12, 1, 2).
+# Default mapping for northern hemisphere seasons (month -> season).
+# Follows the meteorological convention: winter = DEC/JAN/FEB (month 12, 1, 2).
 _SEASON_NORTH_BY_MONTH: dict[int, str] = {
     12: "winter",
     1: "winter",
@@ -89,7 +89,7 @@ _SEASON_NORTH_BY_MONTH: dict[int, str] = {
     11: "autumn",
 }
 
-# Hemisferio sur: estaciones invertidas (winter = JUN/JUL/AUG).
+# Southern hemisphere: inverted seasons (winter = JUN/JUL/AUG).
 _SEASON_SOUTH_BY_MONTH: dict[int, str] = {
     m: {
         "winter": "summer",
@@ -100,18 +100,18 @@ _SEASON_SOUTH_BY_MONTH: dict[int, str] = {
     for m, s in _SEASON_NORTH_BY_MONTH.items()
 }
 
-# Mapeo PASTIS-R (20 clases) -> grupo agronomico HCAT (Hierarchical Crop and
-# Agriculture Taxonomy de EuroCrops, Schneider et al. 2023). HCAT es la
-# taxonomia oficial armonizada de la Union Europea para tipos de cultivo;
-# usarla en lugar de un agrupamiento inventado da trazabilidad academica al
-# encoding categorico. Cada grupo apunta a un nodo HCAT3 real verificado
-# contra `data/reference/eurocrops/HCAT3.csv` (descargado de
-# github.com/maja601/EuroCrops). El codigo HCAT3 se documenta en
-# :data:`_HCAT_GROUP_CODES` para trazabilidad.
+# Mapping PASTIS-R (20 classes) -> HCAT agronomic group (Hierarchical Crop and
+# Agriculture Taxonomy of EuroCrops, Schneider et al. 2023). HCAT is the
+# official harmonized taxonomy of the European Union for crop types;
+# using it instead of an invented grouping gives academic traceability to the
+# categorical encoding. Each group points to a real HCAT3 node verified
+# against `data/reference/eurocrops/HCAT3.csv` (downloaded from
+# github.com/maja601/EuroCrops). The HCAT3 code is documented in
+# :data:`_HCAT_GROUP_CODES` for traceability.
 #
-# Referencia: M. Schneider, T. Schelte, F. Schmitz, M. Korner (2023).
+# Reference: M. Schneider, T. Schelte, F. Schmitz, M. Korner (2023).
 # "EuroCrops: A Pan-European Dataset for Time Series Crop Type Classification".
-# arXiv:2106.08151. Taxonomia HCAT: github.com/maja601/EuroCrops.
+# arXiv:2106.08151. HCAT taxonomy: github.com/maja601/EuroCrops.
 _DEFAULT_CROP_GROUP_MAP: dict[int, str] = {
     0: "background",
     1: "grassland",  # Meadow -> pasture_meadow_grassland_grass
@@ -135,12 +135,12 @@ _DEFAULT_CROP_GROUP_MAP: dict[int, str] = {
     19: "void",
 }
 
-# Codigo HCAT3 oficial por grupo agronomico, para trazabilidad academica.
-# Verificado contra data/reference/eurocrops/HCAT3.csv (EuroCrops v3).
+# Official HCAT3 code per agronomic group, for academic traceability.
+# Verified against data/reference/eurocrops/HCAT3.csv (EuroCrops v3).
 _HCAT_GROUP_CODES: dict[str, str] = {
     "cereal": "3301010000",  # cereal
     "legume": "3301020000",  # legumes_dried_pulses_protein_crops
-    "root_tuber": "3301290000",  # root_vegetables (incluye sugar_beet, potatoes)
+    "root_tuber": "3301290000",  # root_vegetables (includes sugar_beet, potatoes)
     "industrial_nonfood": "3301060000",  # industrial_nonfood_crops
     "vegetable": "3301070000",  # fresh_vegetables
     "grassland": "3302000000",  # pasture_meadow_grassland_grass
@@ -157,7 +157,7 @@ def _filter_exclude(columns: list[str], exclude_cols: tuple[str, ...]) -> list[s
 
 
 # ---------------------------------------------------------------------------
-# Helpers de derivacion (insumos tipicos del notebook WIP de Isaac)
+# Derivation helpers (typical inputs of Isaac's WIP notebook)
 # ---------------------------------------------------------------------------
 
 

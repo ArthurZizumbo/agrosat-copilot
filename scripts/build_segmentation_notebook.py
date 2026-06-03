@@ -37,8 +37,8 @@ _OUT_BY_MODEL = {
     "anysat": Path("notebooks/segmentation/04e_segmentation_anysat.ipynb"),
 }
 
-# Celda de setup (identica en ambos notebooks): monta Drive, clona el repo y
-# localiza el pyproject. Ajustar _branch si el codigo vive en otra rama.
+# Setup cell (identical in both notebooks): mounts Drive, clones the repo and
+# locates the pyproject. Adjust _branch if the code lives in another branch.
 _SETUP_CELL = (
     "# Setup del entorno. En Colab se monta Drive (donde vive el dataset) y se\n"
     "# instalan las dependencias que no vienen por defecto; en local no hace falta.\n"
@@ -720,5 +720,5 @@ def main(
     typer.echo(f"Notebook escrito: {out_path} ({len(nb['cells'])} celdas)")
 
 
-if __name__ == "__main__":  # pragma: no cover - punto de entrada CLI
+if __name__ == "__main__":  # pragma: no cover - CLI entry point
     app()

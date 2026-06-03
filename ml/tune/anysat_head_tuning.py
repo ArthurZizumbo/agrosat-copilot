@@ -32,15 +32,15 @@ from ml.ingest.pastis_dataset import (
     PASTISDataset,
 )
 
-if TYPE_CHECKING:  # pragma: no cover - solo para anotaciones de tipo
+if TYPE_CHECKING:  # pragma: no cover - only for type annotations
     from ml.models.anysat_wrapper import AnySatSegmenter
 
 logger = structlog.get_logger(__name__)
 
 __all__ = ["CachedFeatures", "cache_encoder_features", "train_head"]
 
-# Clase "no-cultivo" para las metricas agrupadas (fondo/void predichos sobre un
-# pixel de cultivo): nunca es objetivo, asi el macro promedia solo los 6 grupos.
+# "Non-crop" class for the grouped metrics (background/void predicted over a
+# crop pixel): never a target, so the macro averages only the 6 groups.
 _NON_CROP_GROUP = 6
 _GROUPED_CLASSES = 7
 
@@ -140,7 +140,7 @@ def _build_group_luts(device: torch.device) -> tuple[torch.Tensor, torch.Tensor]
     group_lut = hcat6_dense_lut()
     lut_target = torch.as_tensor(group_lut, device=device)
     pred_lut = group_lut.copy()
-    pred_lut[pred_lut == 255] = _NON_CROP_GROUP  # fondo/void predichos -> "no-cultivo"
+    pred_lut[pred_lut == 255] = _NON_CROP_GROUP  # background/void predicted -> "non-crop"
     lut_pred = torch.as_tensor(pred_lut, device=device)
     return lut_target, lut_pred
 

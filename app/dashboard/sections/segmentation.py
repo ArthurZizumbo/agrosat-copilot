@@ -26,7 +26,7 @@ from ml.report.avance4_content import (
 )
 from ml.report.figure_narratives import get_narrative
 
-# Sugerencia cuando faltan figuras de segmentacion en disco.
+# Hint shown when segmentation figures are missing on disk.
 _MISSING_HINT = "Artefacto pendiente - ejecuta el notebook Avance4.Equipo17.ipynb"
 
 

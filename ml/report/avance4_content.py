@@ -40,7 +40,7 @@ class SegmentationModel:
     note: str
 
 
-# Metricas reales extraidas de los parquet de
+# Real metrics extracted from the parquet files in
 # reports/segmentation/metrics/model_comparison_avance4_*.parquet.
 SEGMENTATION_MODELS: tuple[SegmentationModel, ...] = (
     SegmentationModel(
@@ -101,7 +101,7 @@ SEGMENTATION_MODELS: tuple[SegmentationModel, ...] = (
     ),
 )
 
-# Sufijos de figura disponibles por arquitectura en
+# Figure suffixes available per architecture in
 # reports/segmentation/figures/.
 SEGMENTATION_FIGURE_KINDS: tuple[tuple[str, str], ...] = (
     ("samples", "Predicciones sobre patches de validacion"),

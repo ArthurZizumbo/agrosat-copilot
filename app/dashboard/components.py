@@ -20,8 +20,8 @@ from app.dashboard.loaders import list_csvs, load_csv, load_parquet
 from ml.report.figure_narratives import FigureNarrative, get_narrative
 from ml.report.notebook_content import NotebookCard, list_figures
 
-# Cap defensivo de filas a renderizar en ``st.dataframe`` para no saturar al
-# cliente con tablas muy grandes.
+# Defensive cap on rows to render in ``st.dataframe`` to avoid saturating the
+# client with very large tables.
 DATAFRAME_HEAD_ROWS = 200
 
 

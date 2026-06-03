@@ -56,8 +56,8 @@ __all__ = [
     "set_llm_client",
 ]
 
-#: Variables de entorno que cuentan como "credenciales validas" para
-#: invocar Gemini 3.5 Flash (API publica o Vertex AI).
+#: Environment variables that count as "valid credentials" to
+#: invoke Gemini 3.5 Flash (public API or Vertex AI).
 _CREDENTIAL_ENV_VARS: tuple[str, ...] = (
     "GEMINI_API_KEY",
     "GOOGLE_API_KEY",
@@ -65,18 +65,18 @@ _CREDENTIAL_ENV_VARS: tuple[str, ...] = (
     "GOOGLE_CLOUD_PROJECT",
 )
 
-#: Costo estimado por descripcion fenologica generada con Gemini 3.5 Flash
-#: (~500 tokens entrada + ~100 tokens salida con pricing publico mayo 2026).
-#: Sirve solo para budget tracking informativo, no es exacto.
+#: Estimated cost per phenology description generated with Gemini 3.5 Flash
+#: (~500 input tokens + ~100 output tokens with public pricing May 2026).
+#: Used only for informative budget tracking, not exact.
 COST_PER_DESCRIPTION_USD: float = 0.0001
 
-#: Numero de dimensiones del vector denso producido por
-#: ``sentence-transformers/all-MiniLM-L6-v2`` (modelo default).
-#: La constante existe para que ``fusion.py`` valide el contrato.
+#: Number of dimensions of the dense vector produced by
+#: ``sentence-transformers/all-MiniLM-L6-v2`` (default model).
+#: The constant exists so that ``fusion.py`` validates the contract.
 DEFAULT_TEXT_ENCODER: str = "sentence-transformers/all-MiniLM-L6-v2"
 DEFAULT_TEXT_EMBED_DIM: int = 384
 
-#: Prompt completo de 3 bloques estilo Wen et al. 2025 Fig. 2.
+#: Complete 3-block prompt in the style of Wen et al. 2025 Fig. 2.
 PROMPT_TEMPLATE: str = """[BLOQUE 1 - GENERAL]
 Eres un agronomo experto en teledeteccion. Tu tarea es describir la
 fenologia de una parcela agricola a partir de su curva NDVI anual derivada
@@ -139,11 +139,11 @@ def default_cache_dir() -> Path:
 
 
 # ---------------------------------------------------------------------------
-# Cliente LLM (mockeable en tests).
+# LLM client (mockable in tests).
 # ---------------------------------------------------------------------------
 
 
-#: Firma del cliente LLM: ``(prompt, *, model, temperature) -> str``.
+#: LLM client signature: ``(prompt, *, model, temperature) -> str``.
 LlmClient = Callable[..., str]
 
 
@@ -183,7 +183,7 @@ def _default_litellm_client(
         temperature=temperature,
         max_tokens=512,
     )
-    # LiteLLM normaliza la respuesta a formato OpenAI.
+    # LiteLLM normalizes the response to OpenAI format.
     content = response["choices"][0]["message"]["content"]
     return str(content).strip()
 
@@ -250,21 +250,21 @@ def _default_google_genai_client(
             "mock con `set_llm_client(...)`."
         ) from exc
 
-    # `Client()` autodetecta Vertex AI vs API publica desde env vars.
+    # `Client()` auto-detects Vertex AI vs public API from env vars.
     client = genai.Client()
     config = types.GenerateContentConfig(
         temperature=temperature,
         max_output_tokens=512,
-        # `thinking_level="minimal"` reduce latencia para descripciones
-        # cortas; soportado por Gemini 3.x (incluido 3.5-flash). El
-        # parametro `thinking_budget` numerico fue deprecado segun la docu
-        # oficial de Gemini 3.5.
+        # `thinking_level="minimal"` reduces latency for short
+        # descriptions; supported by Gemini 3.x (including 3.5-flash). The
+        # numeric `thinking_budget` parameter was deprecated per the
+        # official Gemini 3.5 docs.
         thinking_config=types.ThinkingConfig(thinking_level="minimal"),
     )
 
-    # Retry con backoff exponencial (base 2s) para 429 / 503. Tres
-    # reintentos antes de propagar el error: protege batches largos sobre
-    # 85k parcelas de fallos transitorios sin saturar la API.
+    # Retry with exponential backoff (base 2s) for 429 / 503. Three
+    # retries before propagating the error: protects long batches over
+    # 85k parcels from transient failures without saturating the API.
     max_attempts = 3
     base_delay = 2.0
     last_exc: Exception | None = None
@@ -276,7 +276,7 @@ def _default_google_genai_client(
                 config=config,
             )
             return str(response.text or "").strip()
-        except Exception as exc:  # pragma: no cover - depende de la API.
+        except Exception as exc:  # pragma: no cover - depends on the API.
             message = str(exc)
             is_transient = (
                 "429" in message
@@ -296,7 +296,7 @@ def _default_google_genai_client(
                 error=message[:200],
             )
             time.sleep(delay)
-    # Solo alcanzable si el loop sale por agotamiento sin raise (no deberia).
+    # Only reachable if the loop exits due to exhaustion without raise (should not happen).
     raise RuntimeError(  # pragma: no cover
         f"Gemini agoto los {max_attempts} reintentos."
     ) from last_exc
@@ -322,8 +322,8 @@ def _get_client() -> LlmClient:
     if provider == "litellm":
         return _default_litellm_client
 
-    # Auto: preferir google-genai si esta disponible (mas rapido); LiteLLM
-    # como fallback transparente.
+    # Auto: prefer google-genai if available (faster); LiteLLM
+    # as a transparent fallback.
     try:
         import google.genai  # noqa: F401
 
@@ -396,7 +396,7 @@ def generate_phenology_description(
             f"`doy` shape {doy.shape} no coincide con `ndvi_curve` shape {ndvi_curve.shape}."
         )
 
-    # Imputa NaN con la media de los finitos (no rompe el prompt).
+    # Impute NaN with the mean of the finite values (does not break the prompt).
     clean_curve = ndvi_curve.copy()
     if np.isnan(clean_curve).any():
         finite_mean = float(np.nanmean(clean_curve)) if np.any(~np.isnan(clean_curve)) else 0.0
@@ -558,9 +558,9 @@ def build_phenology_text_block(
             el entorno (``GEMINI_API_KEY`` / ``GOOGLE_API_KEY`` /
             ``GOOGLE_GENAI_USE_VERTEXAI``).
     """
-    # Barrera dura: prohibe correr el LLM sin credenciales ni cliente
-    # mockeado. La regla `no mocks ni skips silenciosos` aplica desde
-    # US-023-preview v2 (notebooks entregables).
+    # Hard barrier: forbids running the LLM without credentials or a mocked
+    # client. The `no silent mocks or skips` rule applies since
+    # US-023-preview v2 (deliverable notebooks).
     if not skip_llm and _LLM_CLIENT is None and not _has_credentials():
         raise RuntimeError(
             "Gemini no esta configurado. Define GEMINI_API_KEY (o "
@@ -597,8 +597,8 @@ def build_phenology_text_block(
     curves = _extract_ndvi_curves(df, prefix=ndvi_col_prefix)
     descriptions: list[str] = []
     if skip_llm:
-        # Generamos descripciones placeholders deterministas para que el
-        # encoder produzca embeddings reproducibles en CI sin red.
+        # Generate deterministic placeholder descriptions so the
+        # encoder produces reproducible embeddings in CI without network.
         descriptions = [f"placeholder_pheno_{pid}" for pid in parcel_ids]
     else:
         n_total = len(parcel_ids)
@@ -637,8 +637,8 @@ def build_phenology_text_block(
                 )
 
     if skip_llm:
-        # En skip_llm devolvemos ceros para evitar descargar el modelo
-        # sentence-transformers (test sin red ni dependencias pesadas).
+        # In skip_llm we return zeros to avoid downloading the
+        # sentence-transformers model (test without network or heavy dependencies).
         embeddings = np.zeros((len(descriptions), DEFAULT_TEXT_EMBED_DIM), dtype=np.float32)
     else:
         embeddings = encode_descriptions(descriptions, encoder=encoder)
@@ -671,9 +671,9 @@ def _build_prompt(
     crop_type_hint: str | None,
 ) -> str:
     """Construye el prompt completo Wen Fig. 2 (3 bloques)."""
-    # Submuestreo del prompt: si la curva es muy larga, presentamos hasta
-    # 24 puntos uniformemente espaciados (suficiente para captar la
-    # estacionalidad y mantiene el token count razonable).
+    # Prompt subsampling: if the curve is very long, we present up to
+    # 24 uniformly spaced points (enough to capture the
+    # seasonality and keeps the token count reasonable).
     max_points = 24
     if ndvi_curve.size > max_points:
         idx = np.linspace(0, ndvi_curve.size - 1, max_points, dtype=np.int64)
@@ -731,7 +731,7 @@ def _extract_ndvi_curves(
         matrix = df.select(candidate_cols).fill_null(0.0).to_numpy().astype(np.float32)
         return [matrix[i] for i in range(matrix.shape[0])]
 
-    # Fallback: reconstruccion FFT.
+    # Fallback: FFT reconstruction.
     from ml.train.phenology_models import _reconstruct_curve as _rc
 
     matrix = _rc(df, index_name="NDVI", sequence_length=72)

@@ -60,7 +60,7 @@ def _build_dataarray(*, parcel_id: int, year: int, seed: int) -> xr.DataArray:
     """Construye el DataArray sintético determinista."""
     rng = np.random.default_rng(seed)
     n_steps = 30
-    # Timesteps regularmente espaciados (~12 días) durante el año.
+    # Timesteps regularly spaced (~12 days) during the year.
     start = np.datetime64(f"{year}-01-15", "ns")
     delta_days = 12
     times = np.array(
@@ -71,7 +71,7 @@ def _build_dataarray(*, parcel_id: int, year: int, seed: int) -> xr.DataArray:
     doys = np.array([(t - np.datetime64(f"{year}-01-01", "ns")) / np.timedelta64(1, "D") + 1
                      for t in times], dtype=np.float64)
 
-    # NDVI canónico: gaussiana DOY 180, peak 0.85, sigma 30 días + ruido.
+    # Canonical NDVI: gaussian DOY 180, peak 0.85, sigma 30 days + noise.
     ndvi = 0.85 * np.exp(-0.5 * ((doys - 180) / 30.0) ** 2)
     ndvi += rng.normal(0.0, 0.02, size=n_steps)
     ndvi = np.clip(ndvi, -1.0, 1.0)
@@ -81,7 +81,7 @@ def _build_dataarray(*, parcel_id: int, year: int, seed: int) -> xr.DataArray:
         if band == "NDVI":
             values[:, j] = ndvi
             continue
-        # Curvas plausibles derivadas de NDVI con ruido por banda.
+        # Plausible curves derived from NDVI with per-band noise.
         if band in {"EVI", "SAVI", "MSAVI2", "TSAVI", "RENDVI", "NDRE"}:
             base = 0.9 * ndvi + 0.05
         elif band in {"NDWI", "NDMI"}:
@@ -91,7 +91,7 @@ def _build_dataarray(*, parcel_id: int, year: int, seed: int) -> xr.DataArray:
         elif band in {"MCARI", "CCCI", "GCVI", "NDCI"}:
             base = 0.6 * ndvi + 0.1
         elif band == "PSRI":
-            # Senescencia: anti-correlacionada con vigor.
+            # Senescence: anti-correlated with vigor.
             base = -0.4 * ndvi + 0.2
         elif band == "FAPAR":
             base = 1.24 * ndvi - 0.168
@@ -137,13 +137,13 @@ def main(
 
     da = _build_dataarray(parcel_id=parcel_id, year=year, seed=seed)
     ds = da.to_dataset(name="parcel_indices")
-    # scipy backend (NetCDF3) no soporta strings de longitud variable en coords
-    # de tipo "band"; convertimos a array de objetos/string fijo vía to_netcdf
-    # con format NETCDF4 si está disponible, fallback NETCDF3_64BIT.
+    # The scipy backend (NetCDF3) does not support variable-length strings in
+    # "band"-type coords; we convert to a fixed object/string array via to_netcdf
+    # with format NETCDF4 if available, fallback NETCDF3_64BIT.
     try:
         ds.to_netcdf(output, format="NETCDF4")
     except (ValueError, RuntimeError):
-        # Convertir coord band a S1 fixed-length para NETCDF3.
+        # Convert the band coord to S1 fixed-length for NETCDF3.
         ds = ds.assign_coords(band=ds.coords["band"].astype("S16"))
         ds.to_netcdf(output, format="NETCDF3_64BIT", engine="scipy")
 
@@ -162,6 +162,6 @@ if __name__ == "__main__":
         app()
     except SystemExit:
         raise
-    except Exception as exc:  # pragma: no cover - defensivo
+    except Exception as exc:  # pragma: no cover - defensive
         logger.error("demo fixture generation failed", error=str(exc))
         sys.exit(1)

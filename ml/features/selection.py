@@ -79,10 +79,10 @@ __all__ = [
     "select_normalizer",
 ]
 
-# Convencion comun: columnas de indice nunca participan como features.
+# Common convention: index columns never participate as features.
 _DEFAULT_EXCLUDE: tuple[str, ...] = ("parcel_id", "year")
 
-# Heuristica de nombres para reglas de normalizacion (D10).
+# Name heuristic for normalization rules (D10).
 _LOG1P_FEATURE_PREFIXES: tuple[str, ...] = ("LAI", "biomass")
 _YEO_JOHNSON_FEATURE_PREFIXES: tuple[str, ...] = (
     "NDVI",
@@ -95,7 +95,7 @@ _SKEW_YEO_THRESHOLD: float = 1.0
 
 
 # ---------------------------------------------------------------------------
-# Helpers privados
+# Private helpers
 # ---------------------------------------------------------------------------
 
 
@@ -135,14 +135,14 @@ def _impute_with_column_mean(matrix: np.ndarray) -> np.ndarray:
     """
     if matrix.size == 0:
         return matrix
-    # inf -> NaN para que la imputacion los trate igual que los NaN.
+    # inf -> NaN so imputation treats them the same as NaN.
     if not np.isfinite(matrix).all():
         matrix = np.where(np.isinf(matrix), np.nan, matrix)
     col_means = np.nanmean(matrix, axis=0)
     col_means = np.where(np.isnan(col_means), 0.0, col_means)
     nan_mask = np.isnan(matrix)
     if nan_mask.any():
-        # Broadcast por columna
+        # Broadcast per column
         col_idx = np.where(nan_mask)[1]
         matrix = matrix.copy()
         matrix[nan_mask] = col_means[col_idx]
@@ -207,7 +207,7 @@ def _run_cv_baseline_rf(
         train_mask = ~test_mask
         if train_mask.sum() == 0 or test_mask.sum() == 0:
             continue
-        # Solo entrenamos sobre clases presentes en train para evitar errores.
+        # Train only on classes present in train to avoid errors.
         clf = RandomForestClassifier(
             n_estimators=n_estimators,
             random_state=random_state,
@@ -217,7 +217,7 @@ def _run_cv_baseline_rf(
         clf.fit(X_clean[train_mask], y[train_mask])
         y_pred = clf.predict(X_clean[test_mask])
         y_true = y[test_mask]
-        # Etiquetas conjuntas para metrica consistente.
+        # Joint labels for a consistent metric.
         labels = np.unique(np.concatenate([y_true, y_pred]))
         f1_scores.append(
             float(f1_score(y_true, y_pred, labels=labels, average="macro", zero_division=0))
@@ -317,7 +317,7 @@ def apply_variance_threshold(
 
     with np.errstate(invalid="ignore"):
         variances = np.nanvar(matrix, axis=0, ddof=0)
-    # NaN var (columna all-NaN) se trata como 0 -> removida.
+    # NaN var (all-NaN column) is treated as 0 -> removed.
     variances = np.where(np.isnan(variances), 0.0, variances)
 
     kept_mask = variances > threshold
@@ -377,7 +377,7 @@ def drop_correlated_features(
 
     if method == "pearson":
         corr = np.corrcoef(matrix_clean, rowvar=False)
-    else:  # spearman: usa scipy
+    else:  # spearman: use scipy
         rho, _ = scipy_stats.spearmanr(matrix_clean, axis=0)
         corr = np.atleast_2d(np.asarray(rho, dtype=np.float64))
     # Sanitiza NaN (varianza cero -> corr NaN). Treat as 0 (no asociacion).
@@ -470,7 +470,7 @@ def chi2_select(
                     matrix_clean[:, col],
                     np.linspace(0.0, 1.0, n_bins + 1)[1:-1],
                 )
-                # Bordes unicos: si todos iguales, fallback en 1 bin.
+                # Unique edges: if all equal, fall back to 1 bin.
                 quantiles = np.unique(quantiles)
                 if quantiles.size == 0:
                     binned[:, col] = 0.0
@@ -549,7 +549,7 @@ def anova_f_select(
 
 
 # ---------------------------------------------------------------------------
-# DISCRETIZACION / BINNING (US-018 extension — Construccion rubrica 30 pts)
+# DISCRETIZATION / BINNING (US-018 extension — Construction rubric 30 pts)
 # ---------------------------------------------------------------------------
 
 
@@ -667,7 +667,7 @@ def discretize_features(
             km = KMeans(n_clusters=k, random_state=random_state, n_init=10)
             km.fit(finite_vals)
             centers = np.sort(km.cluster_centers_.flatten())
-            # Re-asignamos bins por proximidad al centro (idempotente).
+            # Re-assign bins by proximity to the center (idempotent).
             full = np.zeros(values.shape[0], dtype=np.int64)
             if finite_vals.size > 0:
                 dists = np.abs(values.reshape(-1, 1) - centers.reshape(1, -1))
@@ -721,10 +721,10 @@ def _bin_uniform(values: np.ndarray, n_bins: int) -> tuple[np.ndarray, list[floa
     return bins, edges.tolist()
 
 
-# Umbrales agronomicos NDVI canonicos. Referencias:
-# - Tucker (1979) "Red and photographic infrared linear combinations" (NDVI < 0 = agua).
+# Canonical NDVI agronomic thresholds. References:
+# - Tucker (1979) "Red and photographic infrared linear combinations" (NDVI < 0 = water).
 # - Pettorelli et al. (2005) "Using the satellite-derived NDVI to assess
-#   ecological responses" (rangos 0-0.2 = bare soil, 0.2-0.4 = sparse, etc.).
+#   ecological responses" (ranges 0-0.2 = bare soil, 0.2-0.4 = sparse, etc.).
 _NDVI_PHENOLOGY_BINS: tuple[float, ...] = (-1.0, 0.0, 0.2, 0.4, 0.6, 1.0)
 _NDVI_PHENOLOGY_LABELS: tuple[str, ...] = ("water", "bare", "sparse", "moderate", "dense")
 
@@ -780,8 +780,8 @@ def discretize_ndvi_phenology_domain(
         labels_eff = list(labels[:expected_n_labels])
 
     series = df.get_column(ndvi_col).cast(pl.Float64)
-    # ``cut`` espera bordes internos (sin los extremos minimo/maximo), salvo
-    # los limites; truncamos los extremos para mantener compatibilidad.
+    # ``cut`` expects internal edges (without the min/max extremes), except for
+    # the limits; we truncate the extremes to keep compatibility.
     internal_breaks = bins_list[1:-1]
     binned = series.cut(breaks=internal_breaks, labels=labels_eff)
     out = df.with_columns(binned.alias(f"{ndvi_col}__pheno").cast(pl.Utf8))
@@ -888,8 +888,8 @@ def fit_factor_analysis(
 
     fa = FactorAnalysis(n_components=n_factors, random_state=random_state)
     fa.fit(matrix)
-    # Aproximacion de varianza explicada por factor: suma de cuadrados de los
-    # loadings (no normalizada, sirve solo para test "positive").
+    # Approximate explained variance per factor: sum of squares of the
+    # loadings (not normalized, only useful for the "positive" test).
     loadings = fa.components_.T  # shape (n_features, n_factors)
     explained_approx = (loadings ** 2).sum(axis=0)
 
@@ -933,8 +933,8 @@ def fit_umap_2d(
     Returns:
         Embedding ``np.ndarray`` shape ``(n_samples, 2)``.
     """
-    del y  # API simetrica con futuros modos supervisados.
-    # Import lazy: umap-learn carga numba JIT (~3s) en el primer import.
+    del y  # Symmetric API with future supervised modes.
+    # Lazy import: umap-learn loads numba JIT (~3s) on the first import.
     import umap  # type: ignore[import-untyped]
 
     matrix = _impute_with_column_mean(X_scaled)
@@ -957,7 +957,7 @@ def fit_umap_2d(
 
 
 # ---------------------------------------------------------------------------
-# COMPLEMENTO (feature importance)
+# COMPLEMENT (feature importance)
 # ---------------------------------------------------------------------------
 
 
@@ -1018,8 +1018,8 @@ def compute_feature_importance(
         clf.fit(matrix_clean, y_arr)
         importances = clf.feature_importances_
     else:
-        # Import lazy de xgboost (>2s en cold-start) + re-mapeo de clases a
-        # rango contiguo 0..N-1 (XGB requiere etiquetas densas).
+        # Lazy import of xgboost (>2s on cold-start) + remap of classes to a
+        # contiguous range 0..N-1 (XGB requires dense labels).
         import xgboost as xgb  # type: ignore[import-untyped]
 
         unique_labels = sorted(np.unique(y_arr).tolist())
@@ -1061,7 +1061,7 @@ def compute_feature_importance(
 
 
 # ---------------------------------------------------------------------------
-# COMPARATIVA (PASTIS folds 1-5)
+# COMPARISON (PASTIS folds 1-5)
 # ---------------------------------------------------------------------------
 
 
@@ -1159,7 +1159,7 @@ def compare_before_after(
 
 
 # ---------------------------------------------------------------------------
-# NORMALIZACION (decision D9 + D10)
+# NORMALIZATION (decision D9 + D10)
 # ---------------------------------------------------------------------------
 
 
@@ -1264,25 +1264,25 @@ def make_preprocessor(
         - Las categoricas se identifican por nombre + se excluyen del
           procesamiento numerico (se agregan a ``exclude_cols`` internamente).
     """
-    # El layout de columnas que vera el ColumnTransformer downstream es
-    # ``df.drop(exclude_cols).to_numpy()``: incluye las categoricas en su
-    # posicion original. Las indices numericos deben referirse a ese layout
-    # (no al matrix interno que excluye categoricas).
+    # The column layout the downstream ColumnTransformer will see is
+    # ``df.drop(exclude_cols).to_numpy()``: it includes the categoricals at
+    # their original position. The numeric indices must refer to that layout
+    # (not to the internal matrix that excludes categoricals).
     all_feature_cols = [c for c in df.columns if c not in exclude_cols]
     cat_set = set(categorical_cols)
     col_to_input_idx = {c: i for i, c in enumerate(all_feature_cols)}
 
-    # ``matrix_clean`` solo se usa para calcular skew (numericas), por eso
-    # excluimos las categoricas ahi.
+    # ``matrix_clean`` is only used to compute skew (numerics), so we
+    # exclude the categoricals there.
     numeric_exclude = tuple(set(exclude_cols) | cat_set)
     matrix, feature_cols = _to_numpy(df, exclude_cols=numeric_exclude)
     if matrix.shape[1] == 0 and not categorical_cols:
         return ColumnTransformer([], remainder="drop")
     matrix_clean = _impute_with_column_mean(matrix) if matrix.size else matrix
 
-    # Buckets por scaler para colapsar transformers. Los indices son
-    # posiciones en el matriz de entrada del ColumnTransformer (que incluye
-    # categoricas), por eso usamos ``col_to_input_idx[name]``.
+    # Buckets per scaler to collapse transformers. The indices are
+    # positions in the ColumnTransformer input matrix (which includes
+    # categoricals), so we use ``col_to_input_idx[name]``.
     buckets: dict[str, list[int]] = {
         "standard": [],
         "minmax": [],
@@ -1315,8 +1315,8 @@ def make_preprocessor(
             )
         )
     if buckets["log1p"]:
-        # log1p safe via PowerTransformer yeo-johnson + flag; alternativa
-        # robusta sin lambda externa.
+        # log1p safe via PowerTransformer yeo-johnson + flag; a robust
+        # alternative without an external lambda.
         transformers.append(
             (
                 "log1p_yeo",
@@ -1325,7 +1325,7 @@ def make_preprocessor(
             )
         )
 
-    # Bucket categorico (US-018 extension fase 5).
+    # Categorical bucket (US-018 extension phase 5).
     cat_indices = [col_to_input_idx[c] for c in categorical_cols if c in col_to_input_idx]
     if cat_indices:
         if categorical_encoder == "onehot":
@@ -1350,20 +1350,20 @@ def make_preprocessor(
 
 
 # ---------------------------------------------------------------------------
-# Convenience: tipos publicos
+# Convenience: public types
 # ---------------------------------------------------------------------------
 
-# Alias publico para callers (lectores del notebook 03 + tests).
+# Public alias for callers (notebook 03 readers + tests).
 Features = pl.DataFrame
 Target = pl.Series
 Folds = np.ndarray
-# Re-export silencioso de utilidades para tests / notebooks que quieran
-# acceder a la version interna que opera sobre numpy.
+# Silent re-export of utilities for tests / notebooks that want to
+# access the internal version operating on numpy.
 _PUBLIC_CONST: dict[str, object] = {
     "DEFAULT_EXCLUDE": _DEFAULT_EXCLUDE,
     "SKEW_YEO_THRESHOLD": _SKEW_YEO_THRESHOLD,
 }
 
-# Suprimimos warnings espurios solo cuando se usa como CLI/notebook; en tests
-# el filterwarnings del pyproject ya los oculta.
-_ = (Sequence, Iterable, cast)  # mantiene imports tipados sin marcar unused
+# Suppress spurious warnings only when used as CLI/notebook; in tests the
+# filterwarnings from pyproject already hides them.
+_ = (Sequence, Iterable, cast)  # keeps typed imports without flagging unused

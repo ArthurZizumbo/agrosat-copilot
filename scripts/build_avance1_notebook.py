@@ -55,7 +55,7 @@ app = typer.Typer(add_completion=False)
 
 
 # ---------------------------------------------------------------------------
-# Helpers para construir celdas Jupyter nbformat v4
+# Helpers to build Jupyter nbformat v4 cells
 # ---------------------------------------------------------------------------
 
 
@@ -108,7 +108,7 @@ def _image_output(png_path: Path) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Construcción de las distintas secciones del notebook
+# Construction of the notebook's various sections
 # ---------------------------------------------------------------------------
 
 
@@ -295,13 +295,13 @@ def _figure_cells(card: NotebookCard) -> list[dict[str, Any]]:
             ]
         cells.append(_md_cell("".join(md_lines)))
 
-        # Celda code que "renderizaría" la figura. Embebemos el PNG como
-        # output para que el notebook se vea con figuras pobladas sin
-        # re-ejecutar.
-        # Path relativo a paper/figures (sin el prefijo) — la celda lo
-        # resuelve contra `FIGURES` (variable definida en bootstrap),
-        # garantizando que funciona sin importar el CWD desde el que
-        # se abra el notebook (Jupyter typically usa el dir del notebook).
+        # Code cell that would "render" the figure. We embed the PNG as
+        # output so the notebook shows populated figures without
+        # re-executing.
+        # Path relative to paper/figures (without the prefix) — the cell
+        # resolves it against `FIGURES` (variable defined in bootstrap),
+        # ensuring it works regardless of the CWD from which
+        # the notebook is opened (Jupyter typically uses the notebook's dir).
         rel_to_figures = png.relative_to(FIGURES_ROOT).as_posix()
         code_src = f'display(Image(str(FIGURES / "{rel_to_figures}")))\n'
         cells.append(_code_cell(code_src, outputs=[_image_output(png)]))

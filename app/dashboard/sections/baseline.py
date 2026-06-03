@@ -28,7 +28,7 @@ from ml.report.avance3_content import (
     BaselineTab,
 )
 
-# Etiquetas y renderers derivados de A3_TABS para compatibilidad de tests.
+# Labels and renderers derived from A3_TABS for test compatibility.
 BASELINE_TAB_LABELS: tuple[str, ...] = tuple(tab.label for tab in A3_TABS)
 
 
@@ -67,8 +67,8 @@ def _render_baseline_tab(tab: BaselineTab, index: int, total: int) -> None:
     render_card_conclusions(tab.card)
 
 
-# Renderers por tab (closures sobre cada BaselineTab) para compatibilidad con
-# los tests que cuentan ``_BASELINE_TAB_RENDERERS``.
+# Per-tab renderers (closures over each BaselineTab) for compatibility with
+# the tests that count ``_BASELINE_TAB_RENDERERS``.
 def _make_tab_renderer(tab: BaselineTab, index: int, total: int):
     """Crea un renderer sin argumentos para un tab dado."""
 

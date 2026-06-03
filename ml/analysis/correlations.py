@@ -109,19 +109,19 @@ def compute_indices_subset(
         raise ValueError(f"Indices no soportados: {unknown}")
 
     if df_bands.is_empty():
-        # Apendear columnas Float64 vacias para preservar contrato downstream
+        # Append empty Float64 columns to preserve the downstream contract
         new_cols = [pl.lit(None, dtype=pl.Float64).alias(name) for name in requested]
         return df_bands.with_columns(new_cols) if new_cols else df_bands
 
     missing = [b for b in _DEFAULT_REQUIRED_BANDS if b not in df_bands.columns]
     if missing:
-        # No podemos computar; devolvemos el df original sin cambios.
+        # We cannot compute; return the original df unchanged.
         return df_bands
 
     df = df_bands
     if mask_invalid_band_range is not None:
         lo, hi = mask_invalid_band_range
-        # Escalamos las bandas para evaluar el rango en la misma unidad que `scale`
+        # Scale the bands to evaluate the range in the same unit as `scale`
         band_scaled = [
             (pl.col(b).cast(pl.Float64) * scale).alias(f"__scaled_{b}")
             for b in _DEFAULT_REQUIRED_BANDS
@@ -274,7 +274,7 @@ def vif_table(
 
     try:
         from statsmodels.stats.outliers_influence import variance_inflation_factor
-    except ImportError:  # pragma: no cover - statsmodels esta en grupo ml
+    except ImportError:  # pragma: no cover - statsmodels is in the ml group
         return pl.DataFrame(schema=schema)
 
     sub = df.select(cols).cast(pl.Float64, strict=False)
@@ -284,8 +284,8 @@ def vif_table(
     if arr.shape[0] < 2 or arr.shape[1] < 2:
         return pl.DataFrame(schema=schema)
 
-    # Pre-filtro de pares casi perfectamente correlacionados para evitar
-    # matrices singulares al invertir.
+    # Pre-filter of nearly perfectly correlated pairs to avoid
+    # singular matrices when inverting.
     corr_mat = np.corrcoef(arr, rowvar=False)
     n = arr.shape[1]
     to_drop: set[int] = set()
@@ -384,20 +384,20 @@ def phenology_peaks(
     if df.is_empty():
         return pl.DataFrame(schema=schema)
 
-    # Normaliza date a pl.Date sin importar el dtype original.
+    # Normalize date to pl.Date regardless of the original dtype.
     date_dtype = df.schema[date_col]
     if date_dtype == pl.Date:
         df = df.with_columns(pl.col(date_col).alias("_d"))
     elif date_dtype in (pl.Datetime, pl.Datetime("us"), pl.Datetime("ms"), pl.Datetime("ns")):
         df = df.with_columns(pl.col(date_col).cast(pl.Date).alias("_d"))
     elif date_dtype == pl.Utf8:
-        # Intento parsear formato ISO; si falla cae a YYYYMMDD
+        # Try parsing ISO format; if it fails fall back to YYYYMMDD
         try:
             df = df.with_columns(pl.col(date_col).str.to_date(strict=False).alias("_d"))
         except Exception:  # noqa: BLE001
             df = df.with_columns(pl.col(date_col).str.to_date("%Y%m%d", strict=False).alias("_d"))
     else:
-        # Asumimos entero YYYYMMDD (formato PASTIS dates-S2).
+        # Assume integer YYYYMMDD (PASTIS dates-S2 format).
         df = df.with_columns(
             pl.col(date_col).cast(pl.Utf8).str.to_date("%Y%m%d", strict=False).alias("_d")
         )
@@ -406,7 +406,7 @@ def phenology_peaks(
     if df.is_empty():
         return pl.DataFrame(schema=schema)
 
-    # Pico por parcela
+    # Peak per parcel
     idx_max = (
         df.group_by(parcel_col)
         .agg(pl.col(ndvi_col).arg_max().alias("__idx"))
@@ -527,7 +527,7 @@ def acf_pacf_per_parcel(
     if df.is_empty():
         return pl.DataFrame(schema=schema)
 
-    # Normaliza date a pl.Date para conversion limpia a numpy datetime64
+    # Normalize date to pl.Date for clean conversion to numpy datetime64
     date_dtype = df.schema[date_col]
     if date_dtype == pl.Date:
         df = df.with_columns(pl.col(date_col).alias("_d"))
@@ -558,13 +558,13 @@ def acf_pacf_per_parcel(
         _, monthly = _resample_monthly_pandas(parcel_id, dates, vals)
         if monthly.size < 3:
             continue
-        # Cap max_lag al tamano efectivo de la serie - 1
+        # Cap max_lag to the effective series size - 1
         eff_lag = max(1, min(max_lag, monthly.size - 1))
         try:
             acf_vals = acf(monthly, nlags=eff_lag, fft=False, missing="drop")
         except Exception:  # noqa: BLE001, S112
-            # statsmodels puede fallar con series degeneradas (varianza cero);
-            # saltamos la parcela sin registrarla.
+            # statsmodels may fail with degenerate series (zero variance);
+            # skip the parcel without registering it.
             continue
         try:
             pacf_vals = pacf(monthly, nlags=eff_lag, method="ywm")
@@ -574,7 +574,7 @@ def acf_pacf_per_parcel(
         for lag_i in range(eff_lag + 1):
             a = float(acf_vals[lag_i]) if lag_i < acf_vals.size else float("nan")
             p = float(pacf_vals[lag_i]) if lag_i < pacf_vals.size else float("nan")
-            # Clip a [-1, 1] por seguridad numerica
+            # Clip to [-1, 1] for numerical safety
             if np.isfinite(a):
                 a = float(max(-1.0, min(1.0, a)))
             if np.isfinite(p):
@@ -648,9 +648,9 @@ def dtw_cluster_temporal(
     except ImportError:  # pragma: no cover
         return empty, None
 
-    # Compat tslearn 0.6.3 + scikit-learn >= 1.6: sklearn renombro el kwarg
-    # `force_all_finite` a `ensure_all_finite`. tslearn aun lo invoca con el
-    # nombre viejo. El shim se aplica una sola vez por proceso.
+    # Compat tslearn 0.6.3 + scikit-learn >= 1.6: sklearn renamed the kwarg
+    # `force_all_finite` to `ensure_all_finite`. tslearn still calls it with
+    # the old name. The shim is applied only once per process.
     try:
         import inspect
 
@@ -666,7 +666,7 @@ def dtw_cluster_temporal(
                 return _orig_check_array(*args, **kwargs)
 
             _skv.check_array = _check_array_compat
-            try:  # tslearn.clustering.kmeans importa check_array por nombre
+            try:  # tslearn.clustering.kmeans imports check_array by name
                 import tslearn.clustering.kmeans as _tskm
 
                 _tskm.check_array = _check_array_compat
@@ -684,7 +684,7 @@ def dtw_cluster_temporal(
     if df.is_empty():
         return empty, None
 
-    # Normaliza date a pl.Date
+    # Normalize date to pl.Date
     date_dtype = df.schema[date_col]
     if date_dtype == pl.Date:
         df = df.with_columns(pl.col(date_col).alias("_d"))
@@ -717,7 +717,7 @@ def dtw_cluster_temporal(
         _, monthly = _resample_monthly_pandas(parcel_id, dates, vals)
         if monthly.size < 3:
             continue
-        # z-score por parcela
+        # z-score per parcel
         mean = float(np.mean(monthly))
         std = float(np.std(monthly))
         if std < _EPS:

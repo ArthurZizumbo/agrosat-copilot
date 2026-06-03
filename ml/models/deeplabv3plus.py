@@ -60,13 +60,13 @@ __all__ = [
 
 logger = structlog.get_logger(__name__)
 
-# Indice de ignorado por defecto: alineado con PASTISSegmentationDataset
-# (Background/Void mapeados a 255, fuera del rango [0..n_classes-1]).
+# Default ignore index: aligned with PASTISSegmentationDataset
+# (Background/Void mapped to 255, outside the range [0..n_classes-1]).
 _DEFAULT_IGNORE_INDEX = 255
 
-# Nombre del encoder en smp 0.5: prefijo timm-universal ``tu-`` porque
-# ``mobilenet_v3_large`` no esta en el registro nativo de smp. timm lo expone
-# como ``mobilenetv3_large_100``.
+# Encoder name in smp 0.5: timm-universal prefix ``tu-`` because
+# ``mobilenet_v3_large`` is not in the native smp registry. timm exposes it
+# as ``mobilenetv3_large_100``.
 _ENCODER_NAME = "tu-mobilenetv3_large_100"
 
 
@@ -114,7 +114,7 @@ def build_deeplabv3plus_mobilenet(
         )
     except (RuntimeError, ValueError, KeyError) as exc:
         if encoder_weights is None:
-            # No hay fallback posible: ya se pidio inicializacion aleatoria.
+            # No fallback possible: random initialization was already requested.
             raise
         logger.warning(
             "deeplabv3plus_imagenet_init_failed",
@@ -204,8 +204,8 @@ class DiceCrossEntropyLoss(nn.Module):
             from_logits=True,
             ignore_index=ignore_index,
         )
-        # ``weight`` se registra como buffer dentro de CrossEntropyLoss y se
-        # mueve con ``.to(device)`` junto al modulo padre.
+        # ``weight`` is registered as a buffer inside CrossEntropyLoss and
+        # moves with ``.to(device)`` along with the parent module.
         self.ce = nn.CrossEntropyLoss(
             weight=weight_tensor,
             ignore_index=ignore_index,
@@ -227,10 +227,10 @@ class DiceCrossEntropyLoss(nn.Module):
         target_long = target.long()
         dice_term = self.dice(logits, target_long)
         ce_term = self.ce(logits, target_long)
-        # Un lote/patch enteramente ``ignore_index`` (Background/Void) deja a
-        # CrossEntropyLoss promediando sobre cero pixeles validos -> NaN, que
-        # envenenaria el entrenamiento. Se neutraliza a cero preservando el
-        # grafo (``nan_to_num`` mantiene el gradiente de los caminos validos).
+        # A batch/patch entirely ``ignore_index`` (Background/Void) leaves
+        # CrossEntropyLoss averaging over zero valid pixels -> NaN, which would
+        # poison training. It is neutralized to zero while preserving the
+        # graph (``nan_to_num`` keeps the gradient of the valid paths).
         ce_term = torch.nan_to_num(ce_term, nan=0.0)
         return self.dice_weight * dice_term + self.ce_weight * ce_term
 

@@ -19,7 +19,7 @@ from typing import Literal
 
 from ml.report.notebook_content import KPI, NotebookCard
 
-# Sugerencia canonica cuando un artefacto Baseline aun no existe en disco.
+# Canonical hint when a Baseline artifact does not yet exist on disk.
 BASELINE_MISSING_HINT = (
     "Artefacto pendiente - ejecuta `make reencuadre-notebook-full && make baseline-v2-full`"
 )

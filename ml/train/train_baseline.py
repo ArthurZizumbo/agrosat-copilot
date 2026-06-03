@@ -47,9 +47,9 @@ from ml.utils.mlflow_utils import track_experiment
 logger = structlog.get_logger(__name__)
 app = typer.Typer(add_completion=False, help=__doc__)
 
-# MLflow 3.x escribe emojis (vistas de run/experimento) en stdout al cerrar
-# un run; la consola Windows usa cp1252 por defecto y eso provoca
-# UnicodeEncodeError. Forzamos UTF-8 en los streams (no-op en Linux/macOS).
+# MLflow 3.x writes emojis (run/experiment views) to stdout when closing
+# a run; the Windows console uses cp1252 by default and that triggers
+# UnicodeEncodeError. We force UTF-8 on the streams (no-op on Linux/macOS).
 for _stream in (sys.stdout, sys.stderr):
     _reconfigure = getattr(_stream, "reconfigure", None)
     if _reconfigure is not None:
@@ -148,9 +148,9 @@ def _log_baseline_run(
     joblib.dump(payload, joblib_path)
     mlflow.log_artifact(str(joblib_path))
 
-    # Resumen textual de metricas como artefacto inspeccionable. El reporte
-    # de clasificacion por clase y la matriz de confusion sobre las
-    # predicciones out-of-fold se generan en el notebook 04_baseline (§6).
+    # Textual metrics summary as an inspectable artifact. The per-class
+    # classification report and the confusion matrix over the out-of-fold
+    # predictions are generated in the notebook 04_baseline (§6).
     import tempfile
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -164,10 +164,10 @@ def _log_baseline_run(
         summary_path.write_text("\n".join(summary_lines), encoding="utf-8")
         mlflow.log_artifact(str(summary_path))
 
-    # Registro del modelo en el Model Registry. `await_registration_for=0`
-    # evita que el cliente bloquee esperando la transicion de estado de la
-    # version registrada (el sondeo sincrono puede colgarse contra el
-    # servidor Docker local).
+    # Register the model in the Model Registry. `await_registration_for=0`
+    # prevents the client from blocking while waiting for the state transition
+    # of the registered version (the synchronous polling can hang against the
+    # local Docker server).
     if model_kind == "rf":
         mlflow.sklearn.log_model(
             sk_model=result.model,
@@ -276,5 +276,5 @@ def main(
     logger.info("baseline_cli_done", models=models)
 
 
-if __name__ == "__main__":  # pragma: no cover - punto de entrada CLI
+if __name__ == "__main__":  # pragma: no cover - CLI entry point
     sys.exit(app())

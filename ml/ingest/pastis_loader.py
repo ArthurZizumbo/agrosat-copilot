@@ -53,7 +53,7 @@ def _load_class_mapping(path: Path = _CLASS_MAP_PATH) -> dict[int, str]:
         Diccionario `{class_id: nombre}` con las 20 clases (0..19).
     """
     if not path.exists():
-        # Mapeo fallback minimalista si el JSON no se encuentra (modo degradado)
+        # Minimal fallback mapping if the JSON is not found (degraded mode)
         return {0: "Background", 19: "Void label"}
     with path.open(encoding="utf-8") as fh:
         raw = json.load(fh)
@@ -305,12 +305,12 @@ def _multipolygon_centroid_2154(coordinates: list[Any]) -> tuple[float, float]:
             c = geom.centroid
             return float(c.x), float(c.y)
     except Exception:  # noqa: BLE001, S110
-        # Fallback silencioso intencional: ausencia de shapely o geometria
-        # invalida. Caemos al calculo manual con vertices del primer anillo
-        # (loop debajo). Sin signal de log porque shapely es opcional.
+        # Intentional silent fallback: shapely missing or invalid geometry.
+        # We fall back to the manual computation with the vertices of the first
+        # ring (loop below). No log signal because shapely is optional.
         pass
 
-    # Fallback: media aritmetica de todos los vertices del primer anillo
+    # Fallback: arithmetic mean of all vertices of the first ring
     xs: list[float] = []
     ys: list[float] = []
     for poly in coordinates:
@@ -378,7 +378,7 @@ def pastis_patch_coords(
         if transformer is not None:
             lon, lat = transformer.transform(cx, cy)
         else:
-            # Sin pyproj devolvemos coords sin reproyectar (modo degradado).
+            # Without pyproj we return coords without reprojecting (degraded mode).
             lon, lat = cx, cy
         pid_raw = feat.get("id") or props.get("ID_PATCH")
         pid = str(pid_raw) if pid_raw is not None else ""
@@ -487,7 +487,7 @@ def pastis_pixel_labels(
     target = np.load(tgt_path)
     semantic = target[0] if target.ndim == 3 else target
 
-    # Recuperar bbox 4326 desde metadata.geojson
+    # Recover the 4326 bbox from metadata.geojson
     lon_min = lat_min = lon_max = lat_max = None
     if metadata_path.exists():
         with metadata_path.open(encoding="utf-8") as fh:
@@ -527,13 +527,13 @@ def pastis_pixel_labels(
                 break
 
     if lon_min is None or lat_min is None or lon_max is None or lat_max is None:
-        # Fallback: bbox dummy centrado en (0,0) — solo permite que el shape
-        # sea correcto sin afirmar correctitud geografica.
+        # Fallback: dummy bbox centered at (0,0) — only ensures the shape
+        # is correct without asserting geographic correctness.
         lon_min, lat_min, lon_max, lat_max = 0.0, 0.0, 1.0, 1.0
 
     H, W = semantic.shape
     lon_axis = np.linspace(lon_min, lon_max, W)
-    lat_axis = np.linspace(lat_max, lat_min, H)  # filas top->bottom
+    lat_axis = np.linspace(lat_max, lat_min, H)  # rows top->bottom
     lon_grid, lat_grid = np.meshgrid(lon_axis, lat_axis)
 
     cls_flat = semantic.ravel().astype(np.int16)

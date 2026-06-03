@@ -20,7 +20,7 @@ from app.dashboard.sections.feature_engineering import FE_TAB_LABELS, render_fe_
 from app.dashboard.sections.segmentation import render_segmentation_section
 from app.dashboard.timeline import TIMELINE_TAB_LABELS, render_timeline_section
 
-# Etiquetas de los tabs del Avance 4 (una ficha consolidada por arquitectura).
+# Labels of the Avance 4 tabs (one consolidated sheet per architecture).
 _A4_TAB_LABELS: tuple[str, ...] = (
     "Comparativa",
     "TSViT-pheno",
@@ -29,7 +29,7 @@ _A4_TAB_LABELS: tuple[str, ...] = (
     "Optuna",
 )
 
-# Clave de st.session_state que preserva la seccion seleccionada.
+# st.session_state key that preserves the selected section.
 SECTION_STATE_KEY = "dashboard_section"
 
 
@@ -58,7 +58,7 @@ SECTIONS: tuple[Section, ...] = (
     Section("a4-seg", "Segmentacion (A4)", render_segmentation_section, _A4_TAB_LABELS),
 )
 
-# Constantes legacy de compatibilidad para tests que las referencian.
+# Legacy compatibility constants for tests that reference them.
 _SECTION_HISTORIA = SECTIONS[0].label
 _SECTION_EDA = SECTIONS[1].label
 _SECTION_FE = SECTIONS[2].label

@@ -62,7 +62,7 @@ __all__ = ["TSViT", "build_tsvit"]
 
 
 # ---------------------------------------------------------------------------
-# Bloques Transformer base (pre-norm, estilo ViT)
+# Base Transformer blocks (pre-norm, ViT style)
 # ---------------------------------------------------------------------------
 
 
@@ -118,7 +118,7 @@ class _Attention(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x: (batch_aplanado, n_tokens, dim)
+        # x: (flattened_batch, n_tokens, dim)
         qkv = self.to_qkv(x).chunk(3, dim=-1)
         q, k, v = (
             rearrange(t, "b n (h d) -> b h n d", h=self.heads) for t in qkv
@@ -276,12 +276,12 @@ class TSViT(nn.Module):
         self.semantic_dim = semantic_dim
         self.max_doy = max_doy
 
-        self.grid = img_size // patch_size  # tokens por lado
-        self.num_patches = self.grid * self.grid  # N tokens espaciales
+        self.grid = img_size // patch_size  # tokens per side
+        self.num_patches = self.grid * self.grid  # N spatial tokens
 
         mlp_dim = dim * mlp_ratio
 
-        # --- Tokenizacion 3D (t=1, p, p): Conv2d por imagen temporal --------
+        # --- 3D tokenization (t=1, p, p): Conv2d per temporal image ---------
         self.to_patch_embedding = nn.Conv2d(
             in_channels,
             dim,
@@ -289,45 +289,45 @@ class TSViT(nn.Module):
             stride=patch_size,
         )
 
-        # --- Positional encoding temporal por DOY (tabla aprendida) ---------
-        # Indexada por dia-del-anio real (1..max_doy). Fila 0 reservada.
+        # --- Temporal positional encoding by DOY (learned table) ------------
+        # Indexed by real day-of-year (1..max_doy). Row 0 reserved.
         self.temporal_pos_embedding = nn.Parameter(
             torch.randn(max_doy + 1, dim) * 0.02
         )
-        # PE temporal ordinal de respaldo cuando no se pasa doy.
+        # Fallback ordinal temporal PE when doy is not provided.
         self.temporal_pos_ordinal = nn.Parameter(
             torch.randn(1, n_timesteps, dim) * 0.02
         )
 
-        # --- K cls-tokens temporales separables (uno por clase) -------------
+        # --- K separable temporal cls-tokens (one per class) ----------------
         self.temporal_cls_tokens = nn.Parameter(
             torch.randn(1, num_classes, dim) * 0.02
         )
 
-        # --- Encoder temporal ----------------------------------------------
+        # --- Temporal encoder ----------------------------------------------
         self.temporal_transformer = _Transformer(
             dim, depth_temporal, heads, dim_head, mlp_dim, dropout
         )
 
-        # --- Positional encoding espacial aprendido -------------------------
+        # --- Learned spatial positional encoding ----------------------------
         self.spatial_pos_embedding = nn.Parameter(
             torch.randn(1, self.num_patches, dim) * 0.02
         )
 
-        # --- Encoder espacial ----------------------------------------------
+        # --- Spatial encoder -----------------------------------------------
         self.spatial_transformer = _Transformer(
             dim, depth_spatial, heads, dim_head, mlp_dim, dropout
         )
 
-        # --- Head de segmentacion densa ------------------------------------
-        # Cada token de parche se proyecta a p*p valores; el reorder reconstruye
-        # la resolucion plena. Una proyeccion por clase mantiene la separacion
-        # de los K cls-tokens.
+        # --- Dense segmentation head ---------------------------------------
+        # Each patch token is projected to p*p values; the reorder reconstructs
+        # full resolution. One projection per class keeps the separation
+        # of the K cls-tokens.
         self.to_seg = nn.Linear(dim, patch_size * patch_size)
 
-        # --- Rama visual contrastiva (proyeccion al espacio semantico) ------
-        # Proyecta la feature por (clase, parche) a semantic_dim; el reorder a
-        # pixel produce (B, semantic_dim, H, W).
+        # --- Contrastive visual branch (projection to semantic space) -------
+        # Projects the feature per (class, patch) to semantic_dim; the reorder
+        # to pixel produces (B, semantic_dim, H, W).
         self.to_visual_proj = nn.Sequential(
             nn.LayerNorm(dim),
             nn.Linear(dim, semantic_dim * patch_size * patch_size),
@@ -344,7 +344,7 @@ class TSViT(nn.Module):
             ``(B, T, N, dim)`` con ``N`` tokens espaciales por timestep.
         """
         b, t = x.shape[0], x.shape[1]
-        # Conv2d se aplica a cada imagen temporal de forma independiente.
+        # Conv2d is applied to each temporal image independently.
         x = rearrange(x, "b t c h w -> (b t) c h w")
         x = self.to_patch_embedding(x)  # (b*t, dim, grid, grid)
         x = rearrange(x, "(b t) d gh gw -> b t (gh gw) d", b=b, t=t)
@@ -397,28 +397,28 @@ class TSViT(nn.Module):
         n = tokens.shape[2]
         device = tokens.device
 
-        # --- PE temporal por DOY (sumado a cada token de cada posicion) -----
+        # --- Temporal PE by DOY (added to each token of each position) ------
         temp_pos = self._temporal_pos(doy, b, t, device)  # (B, T, dim)
-        tokens = tokens + temp_pos.unsqueeze(2)  # broadcast sobre N posiciones
+        tokens = tokens + temp_pos.unsqueeze(2)  # broadcast over N positions
 
-        # --- Encoder temporal por posicion espacial -------------------------
-        # Aplana (B, N) al eje batch para atender solo el eje temporal.
+        # --- Temporal encoder per spatial position --------------------------
+        # Flatten (B, N) into the batch axis to attend only over the temporal axis.
         seq = rearrange(tokens, "b t n d -> (b n) t d")
         cls = repeat(
             self.temporal_cls_tokens, "1 k d -> bn k d", bn=b * n
         )  # (B*N, K, dim)
         seq = torch.cat([cls, seq], dim=1)  # (B*N, K + T, dim)
         seq = self.temporal_transformer(seq)
-        # Conservar solo los K cls-tokens (resumen temporal por clase).
+        # Keep only the K cls-tokens (temporal summary per class).
         cls_out = seq[:, : self.num_classes, :]  # (B*N, K, dim)
 
-        # --- Encoder espacial por clase -------------------------------------
-        # Reordena a (B*K, N, dim): para cada clase, atiende el eje espacial.
+        # --- Spatial encoder per class --------------------------------------
+        # Reorder to (B*K, N, dim): for each class, attend over the spatial axis.
         spatial = rearrange(cls_out, "(b n) k d -> (b k) n d", b=b, n=n)
         spatial = spatial + self.spatial_pos_embedding  # (B*K, N, dim)
         spatial = self.spatial_transformer(spatial)  # (B*K, N, dim)
 
-        # --- Head de segmentacion: token de parche -> p*p pixeles -----------
+        # --- Segmentation head: patch token -> p*p pixels -------------------
         seg = self.to_seg(spatial)  # (B*K, N, p*p)
         logits = rearrange(
             seg,
@@ -434,11 +434,11 @@ class TSViT(nn.Module):
         if not return_visual_proj:
             return logits
 
-        # --- Rama visual: feature por (clase, parche) -> pixel semantico ----
-        # Se promedian las K ramas de clase para obtener una feature visual por
-        # posicion espacial, y se proyecta a semantic_dim por pixel.
+        # --- Visual branch: feature per (class, patch) -> semantic pixel ----
+        # The K class branches are averaged to obtain a visual feature per
+        # spatial position, and projected to semantic_dim per pixel.
         per_class = rearrange(spatial, "(b k) n d -> b k n d", b=b)
-        pooled = per_class.mean(dim=1)  # (B, N, dim) feature visual por parche
+        pooled = per_class.mean(dim=1)  # (B, N, dim) visual feature per patch
         proj = self.to_visual_proj(pooled)  # (B, N, semantic_dim*p*p)
         visual_proj = rearrange(
             proj,

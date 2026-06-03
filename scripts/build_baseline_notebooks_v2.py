@@ -88,7 +88,7 @@ def _write(path: Path, nb: dict[str, Any]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Bootstrap cell estándar (igual en todos los notebooks).
+# Standard bootstrap cell (same in all notebooks).
 # ---------------------------------------------------------------------------
 
 
@@ -126,7 +126,7 @@ display(Markdown(f"**cwd anclado al repo root**: `{env.repo}`"))
 
 
 # ---------------------------------------------------------------------------
-# 04b_baseline.ipynb — piloto, el mas simple.
+# 04b_baseline.ipynb — pilot, the simplest one.
 # ---------------------------------------------------------------------------
 
 
@@ -779,7 +779,7 @@ def build_04b_baseline() -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# 04_baseline.ipynb — 3 modelos sobre fused + gráficas.
+# 04_baseline.ipynb — 3 models over fused + plots.
 # ---------------------------------------------------------------------------
 
 
@@ -787,7 +787,7 @@ def build_04_baseline() -> dict[str, Any]:
     cells: list[dict[str, Any]] = []
 
     # -----------------------------------------------------------------------
-    # 0. Titulo y narrativa de entrada.
+    # 0. Title and opening narrative.
     # -----------------------------------------------------------------------
     cells.append(
         _md(
@@ -838,7 +838,7 @@ def build_04_baseline() -> dict[str, Any]:
     )
 
     # -----------------------------------------------------------------------
-    # Celda parametros papermill.
+    # Papermill parameters cell.
     # -----------------------------------------------------------------------
     cells.append(
         _code(
@@ -868,7 +868,7 @@ def build_04_baseline() -> dict[str, Any]:
     cells.append(_code(BOOTSTRAP_CELL))
 
     # -----------------------------------------------------------------------
-    # 0.1 Setup MLflow tracking.
+    # 0.1 MLflow tracking setup.
     # -----------------------------------------------------------------------
     cells.append(
         _md(
@@ -913,7 +913,7 @@ def build_04_baseline() -> dict[str, Any]:
     )
 
     # -----------------------------------------------------------------------
-    # 1. Carga del dataset.
+    # 1. Dataset loading.
     # -----------------------------------------------------------------------
     cells.append(
         _md(
@@ -994,7 +994,7 @@ def build_04_baseline() -> dict[str, Any]:
     )
 
     # -----------------------------------------------------------------------
-    # 2. Por que tres modelos de arboles.
+    # 2. Why three tree models.
     # -----------------------------------------------------------------------
     cells.append(
         _md(
@@ -1104,7 +1104,7 @@ def build_04_baseline() -> dict[str, Any]:
     )
 
     # -----------------------------------------------------------------------
-    # 4. Matriz de confusion y F1 por clase del ganador.
+    # 4. Confusion matrix and per-class F1 of the winner.
     # -----------------------------------------------------------------------
     cells.append(
         _md(
@@ -1195,7 +1195,7 @@ def build_04_baseline() -> dict[str, Any]:
     )
 
     # -----------------------------------------------------------------------
-    # 5. Importancia de caracteristicas + SHAP.
+    # 5. Feature importance + SHAP.
     # -----------------------------------------------------------------------
     cells.append(
         _md(
@@ -1363,7 +1363,7 @@ def build_04_baseline() -> dict[str, Any]:
     )
 
     # -----------------------------------------------------------------------
-    # 5.3 Dominancia AlphaEarth.
+    # 5.3 AlphaEarth dominance.
     # -----------------------------------------------------------------------
     cells.append(
         _md(
@@ -1403,7 +1403,7 @@ def build_04_baseline() -> dict[str, Any]:
     )
 
     # -----------------------------------------------------------------------
-    # 6. Curvas de aprendizaje y validacion.
+    # 6. Learning and validation curves.
     # -----------------------------------------------------------------------
     cells.append(
         _md(
@@ -1531,7 +1531,7 @@ def build_04_baseline() -> dict[str, Any]:
     )
 
     # -----------------------------------------------------------------------
-    # 7. Comparativa AlphaEarth vs S2 crudo vs Vector combinado.
+    # 7. Comparison AlphaEarth vs raw S2 vs combined vector.
     # -----------------------------------------------------------------------
     cells.append(
         _md(
@@ -1679,13 +1679,13 @@ def build_04_baseline() -> dict[str, Any]:
     )
 
     # -----------------------------------------------------------------------
-    # 8. Esquema de 18 clases vs 6 grupos HCAT Level-1 (helper compartido,
-    # full 85951 en 04_baseline).
+    # 8. Scheme of 18 classes vs 6 HCAT Level-1 groups (shared helper,
+    # full 85951 in 04_baseline).
     # -----------------------------------------------------------------------
     cells.extend(_hcat_grouping_cells(subset_size=None))
 
     # -----------------------------------------------------------------------
-    # 9. Conclusiones - respuesta a las 5 preguntas.
+    # 9. Conclusions - answer to the 5 questions.
     # -----------------------------------------------------------------------
     cells.append(
         _md(
@@ -1758,7 +1758,7 @@ def build_04_baseline() -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# 04c_baseline.ipynb — ablation con fix alphaearth_only.
+# 04c_baseline.ipynb — ablation with alphaearth_only fix.
 # ---------------------------------------------------------------------------
 
 
@@ -2044,7 +2044,7 @@ def build_04c_baseline() -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# 04_farslip_eval_pastis.ipynb — FarSLIP vs RemoteCLIP sobre PASTIS real.
+# 04_farslip_eval_pastis.ipynb — FarSLIP vs RemoteCLIP over real PASTIS.
 # ---------------------------------------------------------------------------
 
 
@@ -2080,8 +2080,8 @@ def build_04_farslip_eval_pastis() -> dict[str, Any]:
     cells.append(
         _code(
             'PASTIS_SUBSET_PATH = "data/test_fixtures/pastis_eval_subset.parquet"\n'
-            # ml.ingest.pastis_eval_subset usa output.with_suffix(output.suffix + ".imagery.parquet")
-            # que produce el nombre con doble sufijo .parquet.imagery.parquet.
+            # ml.ingest.pastis_eval_subset uses output.with_suffix(output.suffix + ".imagery.parquet")
+            # which produces the name with double suffix .parquet.imagery.parquet.
             'PASTIS_IMAGERY_PATH = "data/test_fixtures/pastis_eval_subset.parquet.imagery.parquet"\n'
             'FARSLIP_EMBEDDINGS_PATH = "data/farslip/embeddings_italy.parquet"\n'
             'REMOTECLIP_EMBEDDINGS_PATH = "data/farslip/remoteclip_embeddings_pastis.parquet"\n'
@@ -2452,7 +2452,7 @@ def build_04_farslip_eval_pastis() -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# 05_reencuadre_fenologico.ipynb — sin skips silenciosos.
+# 05_reencuadre_fenologico.ipynb — no silent skips.
 # ---------------------------------------------------------------------------
 
 
@@ -2873,7 +2873,7 @@ def build_05_reencuadre() -> dict[str, Any]:
     )
 
     # -----------------------------------------------------------------------
-    # 4. Comparativa 5 modelos sobre conjunto ganador.
+    # 4. Comparison of 5 models over the winning set.
     # -----------------------------------------------------------------------
     cells.append(
         _md(
@@ -3084,7 +3084,7 @@ def build_05_reencuadre() -> dict[str, Any]:
     )
 
     # -----------------------------------------------------------------------
-    # 5. Diagnostico por clase del mejor modelo temporal.
+    # 5. Per-class diagnosis of the best temporal model.
     # -----------------------------------------------------------------------
     cells.append(
         _md(
@@ -3199,7 +3199,7 @@ def build_05_reencuadre() -> dict[str, Any]:
     )
 
     # -----------------------------------------------------------------------
-    # 6. Clustering KMeans + UMAP sobre firma fenologica pura.
+    # 6. KMeans + UMAP clustering over pure phenological signature.
     # -----------------------------------------------------------------------
     cells.append(
         _md(
@@ -3300,7 +3300,7 @@ def build_05_reencuadre() -> dict[str, Any]:
     )
 
     # -----------------------------------------------------------------------
-    # 7. Estrategia para el desbalance.
+    # 7. Strategy for the imbalance.
     # -----------------------------------------------------------------------
     cells.append(
         _md(
@@ -3349,7 +3349,7 @@ def build_05_reencuadre() -> dict[str, Any]:
     )
 
     # -----------------------------------------------------------------------
-    # 8. Rama semantica fenologica con Gemini.
+    # 8. Phenological semantic branch with Gemini.
     # -----------------------------------------------------------------------
     cells.append(
         _md(
@@ -3425,7 +3425,7 @@ def build_05_reencuadre() -> dict[str, Any]:
     )
 
     # -----------------------------------------------------------------------
-    # 9. Conclusiones.
+    # 9. Conclusions.
     # -----------------------------------------------------------------------
     cells.append(
         _md(
@@ -3475,7 +3475,7 @@ def build_05_reencuadre() -> dict[str, Any]:
     )
 
     # -----------------------------------------------------------------------
-    # 10. Glosario.
+    # 10. Glossary.
     # -----------------------------------------------------------------------
     cells.append(
         _md(
@@ -3526,7 +3526,7 @@ def build_05_reencuadre() -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Avance3.Equipo17.ipynb — concentrador + select_winning_features.
+# Avance3.Equipo17.ipynb — concentrator + select_winning_features.
 # ---------------------------------------------------------------------------
 
 
@@ -3603,7 +3603,7 @@ def build_avance3() -> dict[str, Any]:
     cells.append(_code(BOOTSTRAP_CELL))
 
     # -----------------------------------------------------------------------
-    # 1. Las 5 preguntas oficiales del Avance 3 con mapeo a notebooks.
+    # 1. The 5 official questions of Avance 3 with mapping to notebooks.
     # -----------------------------------------------------------------------
     cells.append(
         _md(
@@ -3640,7 +3640,7 @@ def build_avance3() -> dict[str, Any]:
     )
 
     # -----------------------------------------------------------------------
-    # 2. P1 — Tabla consolidada de los 5 modelos.
+    # 2. P1 — Consolidated table of the 5 models.
     # -----------------------------------------------------------------------
     cells.append(
         _md(
@@ -3676,7 +3676,7 @@ def build_avance3() -> dict[str, Any]:
     )
 
     # -----------------------------------------------------------------------
-    # 3. P2 — Importancia de caracteristicas y bloques irrelevantes.
+    # 3. P2 — Feature importance and irrelevant blocks.
     # -----------------------------------------------------------------------
     cells.append(
         _md(
@@ -3724,7 +3724,7 @@ def build_avance3() -> dict[str, Any]:
     )
 
     # -----------------------------------------------------------------------
-    # 4. P3 — Sub/sobreajuste para los 5 modelos.
+    # 4. P3 — Under/overfitting for the 5 models.
     # -----------------------------------------------------------------------
     cells.append(
         _md(
@@ -3760,7 +3760,7 @@ def build_avance3() -> dict[str, Any]:
     )
 
     # -----------------------------------------------------------------------
-    # 5. P4 — Metrica adecuada.
+    # 5. P4 — Appropriate metric.
     # -----------------------------------------------------------------------
     cells.append(
         _md(
@@ -3790,7 +3790,7 @@ def build_avance3() -> dict[str, Any]:
     )
 
     # -----------------------------------------------------------------------
-    # 6. P5 — Desempeno minimo.
+    # 6. P5 — Minimum performance.
     # -----------------------------------------------------------------------
     cells.append(
         _md(
@@ -3835,7 +3835,7 @@ def build_avance3() -> dict[str, Any]:
     )
 
     # -----------------------------------------------------------------------
-    # 7. Escenarios AlphaEarth vs S2 crudo vs combinado.
+    # 7. Scenarios AlphaEarth vs raw S2 vs combined.
     # -----------------------------------------------------------------------
     cells.append(
         _md(
@@ -3895,7 +3895,7 @@ def build_avance3() -> dict[str, Any]:
     )
 
     # -----------------------------------------------------------------------
-    # 9. Clustering fenologico.
+    # 9. Phenological clustering.
     # -----------------------------------------------------------------------
     cells.append(
         _md(
@@ -3926,7 +3926,7 @@ def build_avance3() -> dict[str, Any]:
     )
 
     # -----------------------------------------------------------------------
-    # 10. Tabla H-1..H-4 con decisiones consolidadas.
+    # 10. Table H-1..H-4 with consolidated decisions.
     # -----------------------------------------------------------------------
     cells.append(
         _md(
@@ -3996,7 +3996,7 @@ def build_avance3() -> dict[str, Any]:
     )
 
     # -----------------------------------------------------------------------
-    # 11. Seleccion conjunto ganador (UNICA llamada).
+    # 11. Winning set selection (SINGLE call).
     # -----------------------------------------------------------------------
     cells.append(
         _md(
@@ -4076,7 +4076,7 @@ def build_avance3() -> dict[str, Any]:
     )
 
     # -----------------------------------------------------------------------
-    # 12. Trazabilidad MLflow consolidada.
+    # 12. Consolidated MLflow traceability.
     # -----------------------------------------------------------------------
     cells.append(
         _md(
@@ -4138,7 +4138,7 @@ def build_avance3() -> dict[str, Any]:
     )
 
     # -----------------------------------------------------------------------
-    # 13. Referencias.
+    # 13. References.
     # -----------------------------------------------------------------------
     cells.append(
         _md(
@@ -4206,10 +4206,10 @@ def build_avance3() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-# 04b_baseline.ipynb se excluye del dispatcher a proposito: ya esta ejecutado
-# end-to-end y validado en disco. No se regenera ni se mueve. La funcion
-# build_04b_baseline() se conserva (comparte _baseline_pilot_cells +
-# _hcat_grouping_cells con build_04_baseline) pero no se despacha.
+# 04b_baseline.ipynb is excluded from the dispatcher on purpose: it is already
+# executed end-to-end and validated on disk. It is neither regenerated nor moved.
+# The build_04b_baseline() function is kept (it shares _baseline_pilot_cells +
+# _hcat_grouping_cells with build_04_baseline) but is not dispatched.
 BUILDERS = {
     "04_baseline": (build_04_baseline, NOTEBOOK_DIR / "04_baseline.ipynb"),
     "04c_baseline": (build_04c_baseline, NOTEBOOK_DIR / "04c_baseline.ipynb"),

@@ -58,7 +58,7 @@ __all__ = [
 
 ModelKind = Literal["rf", "xgb", "lgbm"]
 
-# Columnas de metadata que NO son features (se excluyen de la matriz X).
+# Metadata columns that are NOT features (excluded from the X matrix).
 _META_COLS: tuple[str, ...] = (
     "parcel_id",
     "year",
@@ -72,12 +72,12 @@ _META_COLS: tuple[str, ...] = (
     "geometry",
 )
 
-# Sufijos de columnas que indican un join sin coalesce previo y nunca son
-# features. Defensa en profundidad sobre `_META_COLS`: el bug US-023-preview-v2
-# (patch_id_right importance=0.27 en XGB) entraba aqui via Polars left join.
+# Column suffixes that indicate a join without prior coalesce and are never
+# features. Defense in depth over `_META_COLS`: the US-023-preview-v2 bug
+# (patch_id_right importance=0.27 in XGB) entered here via a Polars left join.
 _META_SUFFIXES: tuple[str, ...] = ("_right", "_left", "_x", "_y")
 
-# Clases PASTIS-R no agronomicas a descartar (Background, Void label).
+# Non-agronomic PASTIS-R classes to discard (Background, Void label).
 _DROP_CLASS_IDS: tuple[int, ...] = (0, 19)
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -86,12 +86,12 @@ _DEFAULT_FEATURES_PATH = (
 )
 _PASTIS_METADATA_PATH = _REPO_ROOT / "data" / "PASTIS-R" / "metadata.geojson"
 
-# Hiperparametros base documentados (criterio AC-1).
-# `max_depth` y `min_samples_leaf` acotados (no None / no 1): un RF sin poda
-# sobre 85k parcelas crece hasta hojas puras -> modelo de ~700 MB inmanejable
-# para el Model Registry y con sobreajuste severo. La poda (depth 20,
-# min_samples_leaf 10, 150 arboles) deja el modelo en ~100-150 MB, logueable,
-# sin perder F1 material (desviacion justificada del plan US-019; ver handoff).
+# Documented base hyperparameters (criterion AC-1).
+# `max_depth` and `min_samples_leaf` bounded (not None / not 1): an unpruned RF
+# over 85k parcels grows down to pure leaves -> a ~700 MB model unmanageable
+# for the Model Registry and with severe overfitting. The pruning (depth 20,
+# min_samples_leaf 10, 150 trees) keeps the model at ~100-150 MB, loggable,
+# without losing material F1 (deviation justified from plan US-019; see handoff).
 _RF_BASE_PARAMS: dict[str, object] = {
     "n_estimators": 150,
     "max_depth": 20,
@@ -110,13 +110,13 @@ _XGB_BASE_PARAMS: dict[str, object] = {
     "objective": "multi:softprob",
     "random_state": 42,
 }
-# LightGBM (3er modelo del baseline tabular). Hiperparametros alineados con XGB
-# para una comparacion justa: misma profundidad efectiva (`num_leaves=63 ~ 2^6`
-# con `max_depth=-1`), mismo `learning_rate=0.05`, mismo subsample/colsample.
-# `class_weight="balanced"` reemplaza el `sample_weight` manual que XGB requiere
-# (LGBM si expone el parametro nativamente, decision D5). LGBM acepta NaN sin
-# imputacion previa pero seguimos el mismo `_impute_with` por consistencia.
-# Nota: la rueda PyPI de `lightgbm` no incluye build con CUDA; se queda en CPU.
+# LightGBM (3rd model of the tabular baseline). Hyperparameters aligned with XGB
+# for a fair comparison: same effective depth (`num_leaves=63 ~ 2^6`
+# with `max_depth=-1`), same `learning_rate=0.05`, same subsample/colsample.
+# `class_weight="balanced"` replaces the manual `sample_weight` that XGB requires
+# (LGBM does expose the parameter natively, decision D5). LGBM accepts NaN without
+# prior imputation but we keep the same `_impute_with` for consistency.
+# Note: the PyPI wheel for `lightgbm` does not include a CUDA build; it stays on CPU.
 _LGBM_BASE_PARAMS: dict[str, object] = {
     "n_estimators": 400,
     "learning_rate": 0.05,
@@ -151,7 +151,7 @@ def resolve_xgb_device() -> str:
     if nvidia_smi is None:
         return "cpu"
     try:
-        result = subprocess.run(  # noqa: S603 — ruta resuelta con shutil.which
+        result = subprocess.run(  # noqa: S603 — path resolved with shutil.which
             [nvidia_smi, "--query-gpu=name", "--format=csv,noheader"],
             capture_output=True,
             text=True,
@@ -165,9 +165,9 @@ def resolve_xgb_device() -> str:
         return "cuda"
     return "cpu"
 
-# Grids de tuning ligero (criterio AC-4): 8 combinaciones por modelo.
-# `max_depth` y `min_samples_leaf` acotados: evita el RF de ~700 MB y el
-# sobreajuste de arboles sin poda (ver _RF_BASE_PARAMS).
+# Light tuning grids (criterion AC-4): 8 combinations per model.
+# `max_depth` and `min_samples_leaf` bounded: avoids the ~700 MB RF and the
+# overfitting of unpruned trees (see _RF_BASE_PARAMS).
 _RF_PARAM_GRID: dict[str, list] = {
     "n_estimators": [100, 150],
     "max_depth": [15, 20],
@@ -178,8 +178,8 @@ _XGB_PARAM_GRID: dict[str, list] = {
     "max_depth": [6, 8],
     "learning_rate": [0.05, 0.1],
 }
-# LightGBM: 8 combinaciones (2 x 2 x 2). `num_leaves` acotado a [31, 63] para no
-# crecer arboles que dupliquen el modelo en memoria (mismo criterio que RF).
+# LightGBM: 8 combinations (2 x 2 x 2). `num_leaves` bounded to [31, 63] to avoid
+# growing trees that double the model in memory (same criterion as RF).
 _LGBM_PARAM_GRID: dict[str, list] = {
     "n_estimators": [300, 400],
     "num_leaves": [31, 63],
@@ -196,7 +196,7 @@ _METRIC_KEYS: tuple[str, ...] = (
 
 
 # ---------------------------------------------------------------------------
-# Dataclass de salida.
+# Output dataclass.
 # ---------------------------------------------------------------------------
 
 
@@ -233,7 +233,7 @@ class BaselineResult:
 
 
 # ---------------------------------------------------------------------------
-# Construccion de estimadores.
+# Estimator construction.
 # ---------------------------------------------------------------------------
 
 
@@ -255,21 +255,21 @@ def build_estimator(model: ModelKind, hyperparams: dict[str, object]) -> Classif
     if model == "rf":
         return RandomForestClassifier(**hyperparams)
     if model == "xgb":
-        # Inyecta el device (cuda/cpu) si el caller no lo fijo; permite
-        # acelerar en GPU local sin romper CI sin CUDA (decision D3).
+        # Inject the device (cuda/cpu) if the caller did not set it; allows
+        # acceleration on local GPU without breaking CI without CUDA (decision D3).
         xgb_params = dict(hyperparams)
         xgb_params.setdefault("device", resolve_xgb_device())
         return XGBClassifier(**xgb_params)
     if model == "lgbm":
-        # LGBM se queda en CPU: la rueda PyPI no trae build CUDA. Para GPU
-        # haria falta `pip install lightgbm --config-settings=cmake.define...`
-        # con `device_type="gpu"`, fuera del alcance del baseline.
+        # LGBM stays on CPU: the PyPI wheel does not ship a CUDA build. For GPU
+        # one would need `pip install lightgbm --config-settings=cmake.define...`
+        # with `device_type="gpu"`, out of scope for the baseline.
         return LGBMClassifier(**hyperparams)  # type: ignore[arg-type]
     raise ValueError(f"`model` debe ser 'rf', 'xgb' o 'lgbm'; recibido {model!r}.")
 
 
 # ---------------------------------------------------------------------------
-# API publica.
+# Public API.
 # ---------------------------------------------------------------------------
 
 
@@ -332,15 +332,15 @@ def train_one_model(
         labels=list(range(len(encoder.classes_))),
     )
 
-    # Ajuste final sobre el dataset completo (modelo de produccion). Los
-    # arboles (RF/XGB) son invariantes a escala monotona, asi que el modelo
-    # final opera sobre features imputadas crudas (sin StandardScaler); el
-    # CV si escala porque `fit_scaler_on_train` es el patron del repo.
+    # Final fit over the full dataset (production model). The trees
+    # (RF/XGB) are invariant to monotonic scaling, so the final model
+    # operates on raw imputed features (without StandardScaler); the
+    # CV does scale because `fit_scaler_on_train` is the repo pattern.
     matrix = _impute(_feature_matrix(clean_df, feature_cols))
     final_model = build_estimator(model, params)
-    # XGB no expone `class_weight`: inyectamos `sample_weight` inverso a
-    # frecuencia (decision D5). LGBM con `class_weight="balanced"` ya lo
-    # maneja nativamente; si el caller lo quita, caemos a sample_weight.
+    # XGB does not expose `class_weight`: we inject `sample_weight` inverse to
+    # frequency (decision D5). LGBM with `class_weight="balanced"` already
+    # handles it natively; if the caller removes it, we fall back to sample_weight.
     sample_weight: np.ndarray | None
     if model == "xgb":
         sample_weight = _sample_weights(y_encoded)
@@ -419,7 +419,7 @@ def tune_baseline(
     base_params = _base_params(model)
     if model == "xgb":
         base_params.setdefault("num_class", len(encoder.classes_))
-    # Quitamos del estimador base las claves que la grilla va a sobrescribir.
+    # Remove from the base estimator the keys that the grid will overwrite.
     for key in grid:
         base_params.pop(key, None)
     estimator = build_estimator(model, base_params)
@@ -427,10 +427,10 @@ def tune_baseline(
     n_combos = 1
     for values in grid.values():
         n_combos *= len(values)
-    # Con XGB en GPU el GridSearchCV usa n_jobs=1: una sola GPU no puede
-    # atender varios fits en paralelo y N workers compitiendo por ella
-    # causan thrashing (cada uno crea su contexto CUDA). El boosting de XGB
-    # ya paraleliza internamente en la GPU. RF (CPU) si usa todos los nucleos.
+    # With XGB on GPU, GridSearchCV uses n_jobs=1: a single GPU cannot
+    # serve several fits in parallel and N workers competing for it
+    # cause thrashing (each one creates its own CUDA context). XGB boosting
+    # already parallelizes internally on the GPU. RF (CPU) does use all cores.
     xgb_on_gpu = model == "xgb" and resolve_xgb_device() == "cuda"
     search_n_jobs = 1 if xgb_on_gpu else -1
     logger.info(
@@ -520,14 +520,14 @@ def evaluate_with_spatial_cv(
         scaler, scaler_cols = _fit_fold_scaler(
             df, feature_cols=feature_cols, train_idx=train_idx, fold_idx=fold_idx
         )
-        # `fit_scaler_on_train` puede descartar columnas all-NaN: alineamos la
-        # matriz a las columnas que el scaler conoce antes de `transform`.
+        # `fit_scaler_on_train` may drop all-NaN columns: we align the
+        # matrix to the columns the scaler knows before `transform`.
         col_idx = np.array(
             [feature_cols.index(c) for c in scaler_cols], dtype=np.int64
         )
         raw_train = matrix[np.ix_(train_idx, col_idx)]
         raw_test = matrix[np.ix_(test_idx, col_idx)]
-        # Imputacion anti-leakage: las medianas se calculan solo sobre train.
+        # Anti-leakage imputation: the medians are computed only over train.
         train_medians = _column_medians(raw_train)
         x_train = scaler.transform(_impute_with(raw_train, train_medians))
         x_test = scaler.transform(_impute_with(raw_test, train_medians))
@@ -538,8 +538,8 @@ def evaluate_with_spatial_cv(
         if _is_xgb(estimator):
             estimator.fit(x_train, y_train, sample_weight=_sample_weights(y_train))
         elif _is_lgbm(estimator) and getattr(estimator, "class_weight", None) is None:
-            # LGBM sin `class_weight="balanced"` recibe el sample_weight inverso
-            # a frecuencia para alineacion con XGB (decision D5).
+            # LGBM without `class_weight="balanced"` receives the sample_weight
+            # inverse to frequency for alignment with XGB (decision D5).
             estimator.fit(x_train, y_train, sample_weight=_sample_weights(y_train))
         else:
             estimator.fit(x_train, y_train)
@@ -568,7 +568,7 @@ def evaluate_with_spatial_cv(
 
 
 # ---------------------------------------------------------------------------
-# Helpers privados — carga y limpieza.
+# Private helpers — loading and cleaning.
 # ---------------------------------------------------------------------------
 
 
@@ -624,9 +624,9 @@ def _prepare_dataframe(df: pl.DataFrame) -> pl.DataFrame:
             "Tras descartar las clases no agronomicas el DataFrame quedo vacio."
         )
 
-    # El dataset real trae +/-inf en algunas pendientes/ratios espectrales;
-    # los normalizamos a null para que el scaler (que solo trata NaN) y la
-    # imputacion downstream los manejen de forma uniforme.
+    # The real dataset carries +/-inf in some spectral slopes/ratios;
+    # we normalize them to null so the scaler (which only handles NaN) and the
+    # downstream imputation manage them uniformly.
     float_cols = [c for c in clean.columns if clean.schema[c] in (pl.Float32, pl.Float64)]
     if float_cols:
         clean = clean.with_columns(
@@ -810,7 +810,7 @@ def _impute(matrix: np.ndarray) -> np.ndarray:
 
 
 # ---------------------------------------------------------------------------
-# Helpers privados — CV espacial.
+# Private helpers — spatial CV.
 # ---------------------------------------------------------------------------
 
 
@@ -925,15 +925,15 @@ def _build_cv_splits(
     n_rows = df.height
     all_idx = np.arange(n_rows, dtype=np.int64)
     for fold in folds:
-        # train_ids del FoldAssignment ya equivalen a indices posicionales
-        # porque el GeoDataFrame usa la posicion como `parcel_id` sintetico.
+        # train_ids of the FoldAssignment already equal positional indices
+        # because the GeoDataFrame uses the position as a synthetic `parcel_id`.
         train_pool = np.array(
             sorted(fold.train_ids) + sorted(fold.val_ids), dtype=np.int64
         )
         test_idx = np.array(sorted(fold.test_ids), dtype=np.int64)
         if train_pool.size == 0 or test_idx.size == 0:
             continue
-        # Filtramos por seguridad contra ids fuera de rango.
+        # We filter for safety against out-of-range ids.
         train_idx = train_pool[np.isin(train_pool, all_idx)]
         test_idx = test_idx[np.isin(test_idx, all_idx)]
         if train_idx.size == 0 or test_idx.size == 0:
@@ -982,8 +982,8 @@ def _build_parcels_geodataframe(df: pl.DataFrame):  # type: ignore[no-untyped-de
     else:
         coords = np.full((n_rows, 2), np.nan, dtype=np.float64)
 
-    # Fallback determinista: si falta la metadata o algun patch, distribuye
-    # los centroides en una rejilla pseudo-aleatoria estable por patch_id.
+    # Deterministic fallback: if the metadata or some patch is missing, distribute
+    # the centroids on a pseudo-random grid stable per patch_id.
     missing = np.isnan(coords).any(axis=1)
     if missing.any():
         logger.warning(
@@ -997,9 +997,9 @@ def _build_parcels_geodataframe(df: pl.DataFrame):  # type: ignore[no-untyped-de
             else positions
         )
         rng = np.random.default_rng(20240519)
-        # Centroides en una caja sobre Francia continental (PASTIS-R).
+        # Centroids in a box over continental France (PASTIS-R).
         grid = rng.uniform(low=[-1.0, 43.0], high=[7.0, 49.0], size=(n_rows, 2))
-        # Asegura que parcelas del mismo patch compartan centroide.
+        # Ensure that parcels from the same patch share a centroid.
         unique_keys, inverse = np.unique(key, return_inverse=True)
         per_key = rng.uniform(
             low=[-1.0, 43.0], high=[7.0, 49.0], size=(unique_keys.size, 2)
@@ -1028,9 +1028,9 @@ def _load_patch_centroids() -> dict[int, tuple[float, float]] | None:
         import geopandas as gpd
 
         meta = gpd.read_file(_PASTIS_METADATA_PATH)
-        # Centroide en CRS proyectado (3857) para evitar el UserWarning de
-        # geopandas sobre operaciones geometricas en CRS geografico; luego
-        # se reproyecta a 4326 (lat/lng) que es lo que espera el consumidor.
+        # Centroid in a projected CRS (3857) to avoid the geopandas UserWarning
+        # about geometric operations in a geographic CRS; then it is
+        # reprojected to 4326 (lat/lng), which is what the consumer expects.
         centroids = meta.geometry.to_crs("EPSG:3857").centroid.to_crs("EPSG:4326")
         id_col = "ID_PATCH" if "ID_PATCH" in meta.columns else meta.columns[0]
         return {
@@ -1067,8 +1067,8 @@ def _fit_fold_scaler(
     """
     import tempfile
 
-    # `fit_scaler_on_train` filtra por `parcel_id`; sustituimos esa columna
-    # por la posicion de fila para alinear con los `train_idx` posicionales.
+    # `fit_scaler_on_train` filters by `parcel_id`; we substitute that column
+    # with the row position to align with the positional `train_idx`.
     positional = (
         df.drop("parcel_id")
         .with_row_index(name="parcel_id")

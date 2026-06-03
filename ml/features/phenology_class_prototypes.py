@@ -48,21 +48,21 @@ _DEFAULT_OUTPUT = (
     _REPO_ROOT / "data" / "features" / "phenology_class_prototypes_pastis.parquet"
 )
 
-#: Indices de banda en los .npy PASTIS-R (orden estandar S2 de 10 bandas:
-#: B2,B3,B4,B5,B6,B7,B8,B8A,B11,B12). NDVI usa B4 (rojo) y B8 (NIR).
+#: Band indices in the PASTIS-R .npy files (standard 10-band S2 order:
+#: B2,B3,B4,B5,B6,B7,B8,B8A,B11,B12). NDVI uses B4 (red) and B8 (NIR).
 _BAND_B4 = 2
 _BAND_B8 = 6
 
-#: Numero de bins temporales regulares (DOY 1..365) sobre los que se
-#: promedia la curva. 37 coincide con la rejilla de 10 dias del paper Wen.
+#: Number of regular temporal bins (DOY 1..365) over which the curve is
+#: averaged. 37 matches the 10-day grid of the Wen paper.
 _N_TIME_BINS = 37
 
-#: Clases utiles: 1..18 (se excluye 0 Background y 19 Void). El prototipo se
-#: genera solo para los 18 cultivos del benchmark.
+#: Useful classes: 1..18 (excludes 0 Background and 19 Void). The prototype is
+#: generated only for the 18 benchmark crops.
 _CROP_CLASS_IDS: tuple[int, ...] = tuple(range(1, 19))
 
-#: Encoder de texto -> embedding 384-dim. Mismo modelo que el pheno_text
-#: por-parcela existente, para mantener coherencia del espacio semantico.
+#: Text encoder -> 384-dim embedding. Same model as the existing per-parcel
+#: pheno_text, to keep coherence of the semantic space.
 _SENTENCE_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 _EMB_DIM = 384
 
@@ -113,7 +113,7 @@ def _patch_dates_doy(metadata_path: Path) -> dict[int, np.ndarray]:
         dates_raw = props["dates-S2"]
         if isinstance(dates_raw, str):
             dates_raw = json.loads(dates_raw)
-        # Orden por indice del timestep (claves "0".."T-1").
+        # Order by timestep index (keys "0".."T-1").
         ymd = [int(dates_raw[str(i)]) for i in range(len(dates_raw))]
         doy = np.array([_ymd_to_doy(v) for v in ymd], dtype=np.int32)
         out[pid] = doy
@@ -157,7 +157,7 @@ def compute_class_mean_ndvi_curves(
     dates_by_patch = _patch_dates_doy(pastis_root / "metadata.geojson")
 
     bin_edges = np.linspace(1, 366, n_time_bins + 1)
-    # Acumuladores por clase: suma y conteo en cada bin temporal.
+    # Per-class accumulators: sum and count in each temporal bin.
     sums = {c: np.zeros(n_time_bins, dtype=np.float64) for c in _CROP_CLASS_IDS}
     counts = {c: np.zeros(n_time_bins, dtype=np.int64) for c in _CROP_CLASS_IDS}
 
@@ -171,22 +171,22 @@ def compute_class_mean_ndvi_curves(
         if doy is None:
             continue
         s2 = np.load(s2_path).astype(np.float32) / 10000.0  # (T,10,H,W)
-        target = np.load(ann_dir / f"TARGET_{pid}.npy")[0]  # (H,W) semantica
+        target = np.load(ann_dir / f"TARGET_{pid}.npy")[0]  # (H,W) semantic
         b4 = s2[:, _BAND_B4]  # (T,H,W)
         b8 = s2[:, _BAND_B8]
         denom = b8 + b4
         with np.errstate(divide="ignore", invalid="ignore"):
             ndvi = np.where(denom > 1e-6, (b8 - b4) / denom, np.nan)  # (T,H,W)
-        # NDVI valido en [-1, 1]; valores fuera de rango son artefactos de
-        # nubes/sombras o denominador casi-cero (no enmascarados en PASTIS).
+        # NDVI valid in [-1, 1]; out-of-range values are artifacts of
+        # clouds/shadows or a near-zero denominator (not masked in PASTIS).
         ndvi = np.where(np.abs(ndvi) <= 1.0, ndvi, np.nan)
         bin_idx = np.clip(np.digitize(doy, bin_edges) - 1, 0, n_time_bins - 1)
         for c in _CROP_CLASS_IDS:
             class_mask = target == c  # (H,W)
             if not class_mask.any():
                 continue
-            # NDVI medio de la clase en cada timestep -> (T,)
-            ndvi_class = ndvi[:, class_mask]  # (T, n_pix_clase)
+            # Mean NDVI of the class at each timestep -> (T,)
+            ndvi_class = ndvi[:, class_mask]  # (T, n_pix_class)
             per_t = np.nanmean(ndvi_class, axis=1)  # (T,)
             valid = np.isfinite(per_t)
             np.add.at(sums[c], bin_idx[valid], per_t[valid])
@@ -262,7 +262,7 @@ def generate_class_prototypes(
     curves = compute_class_mean_ndvi_curves(
         pastis_root, n_time_bins=n_time_bins, max_patches=max_patches
     )
-    # DOY representativo de cada bin (centro), para pasar al generador.
+    # Representative DOY of each bin (center), to pass to the generator.
     bin_edges = np.linspace(1, 366, n_time_bins + 1)
     bin_doy = ((bin_edges[:-1] + bin_edges[1:]) / 2).astype(np.int32)
 

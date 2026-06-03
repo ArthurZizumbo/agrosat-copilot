@@ -43,11 +43,11 @@ __all__ = [
     "samples_grid",
 ]
 
-#: Mapeo modelo del integrador -> run de MLflow (experimento 7) con su historial.
-#: Cada run loggea ``train_loss`` y ``val_miou`` por epoca (step = epoca).
+#: Integrator model mapping -> MLflow run (experiment 7) with its history.
+#: Each run logs ``train_loss`` and ``val_miou`` per epoch (step = epoch).
 _MLFLOW_RUNS = {
     "deeplabv3plus": "alt-deeplabv3plus-mobilenet-v1",
-    "tsvit": "alt-tsvit-pheno-v1",  # la variante fenologica es la candidata del top-2
+    "tsvit": "alt-tsvit-pheno-v1",  # the phenological variant is the top-2 candidate
 }
 
 
@@ -132,10 +132,10 @@ def curves_from_mlflow(
     h = _fetch_epoch_history(name, experiment=experiment, tracking_uri=tracking_uri)
     train_loss, val_miou, val_f1 = h["train_loss"], h["val_miou"], h["val_f1_macro"]
 
-    # Layout 1x3 (Loss | mIoU | F1-macro), homologado con el estilo del equipo.
-    # Nuestros runs us-025 loguearon train_loss + val_miou + val_f1_macro por
-    # epoca (no train_miou/val_loss), asi que cada panel traza la(s) serie(s)
-    # realmente registradas, sin inventar curvas.
+    # Layout 1x3 (Loss | mIoU | F1-macro), aligned with the team style.
+    # Our us-025 runs logged train_loss + val_miou + val_f1_macro per
+    # epoch (not train_miou/val_loss), so each panel plots the series
+    # actually recorded, without inventing curves.
     fig, axes = plt.subplots(1, 3, figsize=(15, 4))
 
     axes[0].plot(
@@ -255,7 +255,7 @@ def confusion_from_cm(
     ids = [i for i in range(cm.shape[0]) if keep[i]]
     labels = [(class_names.get(i, f"C{i}") if class_names else f"C{i}") for i in ids]
 
-    # Normalizacion por fila (recall por clase); filas sin soporte quedan en 0.
+    # Row-wise normalization (per-class recall); rows without support stay at 0.
     row_sum = cm_k.sum(axis=1, keepdims=True)
     cm_norm = np.divide(cm_k, row_sum, out=np.zeros_like(cm_k), where=row_sum > 0)
 
@@ -404,8 +404,8 @@ def regen_isaac_model(
         import torchvision.transforms.functional as TF
         from transformers import SegformerForSemanticSegmentation
 
-        # SegFormer de Isaac (notebook 04i): 3 bandas RGB (mediana temporal,
-        # primeras 3 bandas S2 normalizadas con S2_MEAN/STD), img 256px.
+        # Isaac's SegFormer (notebook 04i): 3 RGB bands (temporal median,
+        # first 3 S2 bands normalized with S2_MEAN/STD), img 256px.
         seg_mean = np.array([1158.0, 1244.7, 1416.3], dtype=np.float32)[:, None, None]
         seg_std = np.array([671.7, 698.1, 761.3], dtype=np.float32)[:, None, None]
         seg_size = 256
@@ -522,7 +522,7 @@ def optuna_convergence_figure(
         for px in pruned_x:
             ax.axvline(px, color="#cbd5e0", lw=0.6, alpha=0.6, zorder=1)
 
-        # best-so-far sobre los COMPLETE en orden de trial.
+        # best-so-far over the COMPLETE ones in trial order.
         if comp_y:
             order = np.argsort(comp_x)
             cx = np.asarray(comp_x)[order]
@@ -545,7 +545,7 @@ def optuna_convergence_figure(
         ax.set_ylabel("mIoU")
         ax.legend(fontsize=7, loc="lower right")
 
-    # Apaga los ejes sobrantes de la grilla.
+    # Turn off the leftover axes of the grid.
     for j in range(n, nrows * ncols):
         axes[j // ncols][j % ncols].axis("off")
 
@@ -616,7 +616,7 @@ def samples_grid(
         device=device,
     )
 
-    # Parches equiespaciados a lo largo del split (no los primeros 4 seguidos).
+    # Equispaced patches along the split (not the first 4 in a row).
     n = len(ds)  # type: ignore[arg-type]
     idxs = np.linspace(0, n - 1, num=min(n_examples, n), dtype=int).tolist()
 
@@ -642,7 +642,7 @@ def samples_grid(
         present.update(int(v) for v in np.unique(y.numpy()) if v != ignore_index)
         present.update(int(v) for v in np.unique(pred))
 
-    # Leyenda de clases presentes (pie de imagen).
+    # Legend of present classes (figure caption).
     handles = [
         Patch(color=cmap(norm(c)), label=f"{c}: {PASTIS_R_CLASSES.get(c, f'C{c}')}")
         for c in sorted(present)

@@ -55,7 +55,7 @@ def _params_code(source: str) -> nbf.NotebookNode:
 
 CELLS: list[nbf.NotebookNode] = [
     # --------------------------------------------------------------------
-    # Celda 1 - Titulo y descripcion
+    # Cell 1 - Title and description
     # --------------------------------------------------------------------
     _md(
         "# Reencuadre fenologico del baseline — descarte geografico, modelos temporales y rama semantica\n"
@@ -84,7 +84,7 @@ CELLS: list[nbf.NotebookNode] = [
         "CV, out-of-fold, F1-macro)."
     ),
     # --------------------------------------------------------------------
-    # Celda 2 - Parameters (tag papermill)
+    # Cell 2 - Parameters (papermill tag)
     # --------------------------------------------------------------------
     _params_code(
         "# Parametros papermill. Defaults pensados para corrida FULL en GPU local;\n"
@@ -110,7 +110,7 @@ CELLS: list[nbf.NotebookNode] = [
         "RUN_SEMANTIC_BRANCH = False  # rama semantica: requiere Gemini API + budget\n"
     ),
     # --------------------------------------------------------------------
-    # Celda 3 - Bootstrap repo + configuracion notebook
+    # Cell 3 - Repo bootstrap + notebook configuration
     # --------------------------------------------------------------------
     _code(
         "from __future__ import annotations\n"
@@ -181,7 +181,7 @@ CELLS: list[nbf.NotebookNode] = [
         "log(f'bootstrap completo · device={_effective_device}', level='ok')\n"
     ),
     # --------------------------------------------------------------------
-    # Seccion 2 - EDA del desbalance
+    # Section 2 - EDA of the imbalance
     # --------------------------------------------------------------------
     _md(
         "## 2. Carga del dataset y el desbalance entre clases\n"
@@ -284,7 +284,7 @@ CELLS: list[nbf.NotebookNode] = [
         "plt.show()\n"
     ),
     # --------------------------------------------------------------------
-    # Seccion 3 - Ablation de features (descarte geografico)
+    # Section 3 - Feature ablation (geographic discard)
     # --------------------------------------------------------------------
     _md(
         "## 3. Ablation de features — ¿aportan las columnas geograficas?\n"
@@ -393,7 +393,7 @@ CELLS: list[nbf.NotebookNode] = [
         "argumento del paper Wen et al. 2025."
     ),
     # ----------------------------------------------------------------------
-    # Seccion 3.2 - P3 leakage espacial cuantitativo (geom_only).
+    # Section 3.2 - P3 quantitative spatial leakage (geom_only).
     # ----------------------------------------------------------------------
     _md(
         "### 3.2 Por que descartar `geom_*` — test cuantitativo de leakage\n"
@@ -479,7 +479,7 @@ CELLS: list[nbf.NotebookNode] = [
         "log(f'figura P3 escrita: {_paper_path_geom.relative_to(REPO)}', level='ok')\n"
     ),
     # ----------------------------------------------------------------------
-    # Seccion 3.3 - P4 ablation pheno_text Gemini Flash 3.5 (real o skip).
+    # Section 3.3 - P4 pheno_text ablation Gemini Flash 3.5 (real or skip).
     # ----------------------------------------------------------------------
     _md(
         "### 3.3 Bloque opcional `pheno_text_*` (Gemini Flash 3.5)\n"
@@ -521,7 +521,7 @@ CELLS: list[nbf.NotebookNode] = [
         "log(f'P4 pheno_text: path_exists={_pheno_text_path.exists()} api_key={_gemini_key_present}', level='ok')\n"
     ),
     # ----------------------------------------------------------------------
-    # Seccion 3.4 - P5 firma espectral (REP Frampton 2013).
+    # Section 3.4 - P5 spectral signature (REP Frampton 2013).
     # ----------------------------------------------------------------------
     _md(
         "### 3.4 Bloque opcional `spectral_signature_*` (Red Edge Position, Frampton 2013)\n"
@@ -625,7 +625,7 @@ CELLS: list[nbf.NotebookNode] = [
         "log(f'figura P2+P4+P5 escrita: {_opt_path.relative_to(REPO)} (n_blocks={len(_optional_rows)})', level='ok')\n"
     ),
     # --------------------------------------------------------------------
-    # Seccion 4 - Comparativa de modelos sobre el set ganador
+    # Section 4 - Model comparison over the winning set
     # --------------------------------------------------------------------
     _md(
         "## 4. Comparativa de modelos — XGBoost vs TempCNN vs InceptionTime\n"
@@ -804,7 +804,7 @@ CELLS: list[nbf.NotebookNode] = [
         "se corre con dataset completo en GPU; este notebook sigue siendo la receta."
     ),
     # --------------------------------------------------------------------
-    # Seccion 5 - Diagnostico por clase del mejor modelo temporal
+    # Section 5 - Per-class diagnosis of the best temporal model
     # --------------------------------------------------------------------
     _md(
         "## 5. Diagnostico por clase del mejor modelo temporal\n"
@@ -896,7 +896,7 @@ CELLS: list[nbf.NotebookNode] = [
         "    log('Sin predicciones out-of-fold disponibles para el diagnostico por clase.', level='warn')\n"
     ),
     # --------------------------------------------------------------------
-    # Seccion 6 - Clustering sin coordenadas
+    # Section 6 - Clustering without coordinates
     # --------------------------------------------------------------------
     _md(
         "## 6. Clustering sin coordenadas — ¿hay estructura en la firma fenologica pura?\n"
@@ -1018,7 +1018,7 @@ CELLS: list[nbf.NotebookNode] = [
         "distinta), la fenologia ya los esta separando."
     ),
     # --------------------------------------------------------------------
-    # Seccion 7 - Estrategia de desbalance
+    # Section 7 - Imbalance strategy
     # --------------------------------------------------------------------
     _md(
         "## 7. Estrategia para el desbalance ~31x\n"
@@ -1050,7 +1050,7 @@ CELLS: list[nbf.NotebookNode] = [
         "))\n"
     ),
     # --------------------------------------------------------------------
-    # Seccion 8 - Rama semantica
+    # Section 8 - Semantic branch
     # --------------------------------------------------------------------
     _md(
         "## 8. Rama semantica fenologica — descripcion textual via LLM\n"
@@ -1099,7 +1099,7 @@ CELLS: list[nbf.NotebookNode] = [
         "    ))\n"
     ),
     # --------------------------------------------------------------------
-    # Seccion 9 - Conclusiones (NOTA: sin US-XXX, EPIC, AC-X, A4/A5, rubrica)
+    # Section 9 - Conclusions (NOTE: no US-XXX, EPIC, AC-X, A4/A5, rubric)
     # --------------------------------------------------------------------
     _md(
         "## 9. Conclusiones\n"
@@ -1171,7 +1171,7 @@ CELLS: list[nbf.NotebookNode] = [
         "))\n"
     ),
     # --------------------------------------------------------------------
-    # Seccion 10 - Glosario
+    # Section 10 - Glossary
     # --------------------------------------------------------------------
     _md(
         "## 10. Glosario\n"

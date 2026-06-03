@@ -56,18 +56,18 @@ logger = structlog.get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Constantes públicas (downstream las importa para validar shape).
+# Public constants (downstream imports them to validate shape).
 # ---------------------------------------------------------------------------
 
-#: Subconjunto de estadísticos temporales aplicados al bloque índices y al
-#: bloque Sentinel-1. Difiere del set de 9 stats de US-015 por economía.
+#: Subset of temporal statistics applied to the indices block and to the
+#: Sentinel-1 block. Differs from the 9-stat set of US-015 for economy.
 FUSION_STATS: Final[tuple[str, ...]] = ("mean", "std", "p25", "p50", "p95")
 
-#: Nombres canónicos de los 9 bloques del vector fusionado.
-#: El bloque ``phenology_text`` (US-022b-D) y ``spectral_signature``
-#: (US-023-preview P5) son opcionales y se incorporan vía ``LEFT JOIN``
-#: cuando ``include_phenology_text=True`` / ``include_spectral_signature=True``
-#: y los parquets correspondientes existen.
+#: Canonical names of the 9 blocks of the fused vector.
+#: The ``phenology_text`` block (US-022b-D) and ``spectral_signature``
+#: (US-023-preview P5) are optional and are incorporated via ``LEFT JOIN``
+#: when ``include_phenology_text=True`` / ``include_spectral_signature=True``
+#: and the corresponding parquets exist.
 BLOCK_NAMES: Final[tuple[str, ...]] = (
     "alphaearth",
     "indices_stats",
@@ -80,57 +80,57 @@ BLOCK_NAMES: Final[tuple[str, ...]] = (
     "spectral_signature",
 )
 
-#: Conteo esperado de columnas SIN el bloque FarSLIP (excluye `parcel_id`, `year`).
+#: Expected column count WITHOUT the FarSLIP block (excludes `parcel_id`, `year`).
 #: 64 (AE) + 85 (idx*stats) + 10 (S1) + 3 (SRTM) + 24 (ERA5) + 3 (geom) = 189.
 EXPECTED_COL_COUNT_NO_FARSLIP: Final[int] = 189
 
-#: Conteo esperado de columnas CON el bloque FarSLIP (excluye `parcel_id`, `year`).
+#: Expected column count WITH the FarSLIP block (excludes `parcel_id`, `year`).
 #: 189 + 512 (FarSLIP) = 701.
 EXPECTED_COL_COUNT_WITH_FARSLIP: Final[int] = EXPECTED_COL_COUNT_NO_FARSLIP + 512
 
-#: Dimensiones del bloque opcional ``pheno_text_*`` (US-022b-D). Coincide
-#: con el text-encoder default ``sentence-transformers/all-MiniLM-L6-v2``
-#: (ver :data:`ml.features.phenology_description.DEFAULT_TEXT_EMBED_DIM`).
+#: Dimensions of the optional ``pheno_text_*`` block (US-022b-D). Matches
+#: the default text-encoder ``sentence-transformers/all-MiniLM-L6-v2``
+#: (see :data:`ml.features.phenology_description.DEFAULT_TEXT_EMBED_DIM`).
 PHENOLOGY_TEXT_EMBED_DIM: Final[int] = 384
 
-#: Conteo esperado de columnas CON el bloque pheno_text (sin FarSLIP).
+#: Expected column count WITH the pheno_text block (without FarSLIP).
 #: 189 + 384 (pheno_text) = 573.
 EXPECTED_COL_COUNT_WITH_PHENO_TEXT: Final[int] = (
     EXPECTED_COL_COUNT_NO_FARSLIP + PHENOLOGY_TEXT_EMBED_DIM
 )
 
-#: Conteo esperado de columnas con AMBOS bloques opcionales.
+#: Expected column count with BOTH optional blocks.
 EXPECTED_COL_COUNT_WITH_FARSLIP_AND_PHENO_TEXT: Final[int] = (
     EXPECTED_COL_COUNT_WITH_FARSLIP + PHENOLOGY_TEXT_EMBED_DIM
 )
 
-#: Numero de features del bloque opcional ``spectral_signature_*`` (US-023-preview
-#: P5). Para el descriptor default ``rep`` con 3 anclas fenologicas se obtienen
-#: 3 columnas; si se cambia el descriptor o las anclas, este conteo varia.
-#: La constante se expone para que los downstream que asuman el descriptor
-#: default puedan pre-validar la shape esperada.
+#: Number of features of the optional ``spectral_signature_*`` block (US-023-preview
+#: P5). For the default ``rep`` descriptor with 3 phenological anchors you get
+#: 3 columns; if the descriptor or the anchors change, this count varies.
+#: The constant is exposed so that downstream consumers assuming the default
+#: descriptor can pre-validate the expected shape.
 DEFAULT_SPECTRAL_SIGNATURE_DIM: Final[int] = 3
 
-#: Conteo esperado con el bloque spectral_signature (sin FarSLIP ni pheno_text).
+#: Expected column count with the spectral_signature block (without FarSLIP or pheno_text).
 EXPECTED_COL_COUNT_WITH_SPECTRAL_SIGNATURE: Final[int] = (
     EXPECTED_COL_COUNT_NO_FARSLIP + DEFAULT_SPECTRAL_SIGNATURE_DIM
 )
 
-#: Polarizaciones Sentinel-1 canónicas del bloque (orden fijo).
+#: Canonical Sentinel-1 polarizations of the block (fixed order).
 _S1_POLARIZATIONS: Final[tuple[str, ...]] = ("vv", "vh")
 
-#: Nombres de columnas AlphaEarth (``ae_00 .. ae_63``).
+#: AlphaEarth column names (``ae_00 .. ae_63``).
 AE_COLS: Final[tuple[str, ...]] = tuple(f"ae_{i:02d}" for i in range(64))
 
-#: Default path para los embeddings FarSLIP (US-016b). Nomenclatura canonica
-#: ``_pastis`` (el contenido es PASTIS-R, no italiano); se resuelve via
-#: :func:`resolve_dataset_path` que cae al legacy ``_italy`` si aplica.
+#: Default path for the FarSLIP embeddings (US-016b). Canonical naming
+#: ``_pastis`` (the content is PASTIS-R, not Italian); resolved via
+#: :func:`resolve_dataset_path` which falls back to the legacy ``_italy`` if applicable.
 _DEFAULT_FARSLIP_PATH: Final[Path] = Path("data/farslip/embeddings_pastis.parquet")
 
-#: Default path para el bloque pheno_text materializado (US-022b-D).
+#: Default path for the materialized pheno_text block (US-022b-D).
 _DEFAULT_PHENO_TEXT_PATH: Final[Path] = Path("data/features/phenology_text_pastis.parquet")
 
-#: Default path para el bloque spectral_signature materializado (US-023-preview P5).
+#: Default path for the materialized spectral_signature block (US-023-preview P5).
 _DEFAULT_SPECTRAL_SIGNATURE_PATH: Final[Path] = Path(
     "data/features/spectral_signature_pastis.parquet"
 )
@@ -152,7 +152,7 @@ __all__ = [
 
 
 # ---------------------------------------------------------------------------
-# API pública.
+# Public API.
 # ---------------------------------------------------------------------------
 
 
@@ -253,10 +253,10 @@ def build_fused_features(
     selected_blocks = tuple(b for b in blocks if b in BLOCK_NAMES)
     block_frames: list[pl.LazyFrame] = []
 
-    # Esquema canonico: `parcel_id` siempre Utf8. Convertimos desde el
-    # GeoDataFrame con `.astype("string")` para preservar identidades como
-    # `"{patch_id}_{i}"` (baselines US-023-preview) y enteros heredados de
-    # PASTIS sin notacion cientifica.
+    # Canonical schema: `parcel_id` always Utf8. We convert from the
+    # GeoDataFrame with `.astype("string")` to preserve identities such as
+    # `"{patch_id}_{i}"` (baselines US-023-preview) and integers inherited from
+    # PASTIS without scientific notation.
     base = pl.from_pandas(
         parcels[["parcel_id", "year"]].astype({"parcel_id": "string", "year": "int16"})
     ).lazy()
@@ -301,14 +301,14 @@ def build_fused_features(
         joined = joined.join(block, on=["parcel_id", "year"], how="left")
 
     result = joined.collect(engine="streaming") if lazy else joined.collect()
-    # AC-12: orden estable por parcel_id para garantizar MD5 byte-exacto en
-    # re-ejecuciones. El motor streaming de Polars no preserva orden tras los
-    # joins lazy, por lo que el sort final es necesario para determinismo.
+    # AC-12: stable order by parcel_id to guarantee byte-exact MD5 across
+    # re-executions. The Polars streaming engine does not preserve order after
+    # lazy joins, so the final sort is necessary for determinism.
     return result.sort("parcel_id")
 
 
 # ---------------------------------------------------------------------------
-# Validadores internos.
+# Internal validators.
 # ---------------------------------------------------------------------------
 
 
@@ -346,7 +346,7 @@ def _validate_stats(stats: tuple[str, ...]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Helpers privados — un helper por bloque.
+# Private helpers — one helper per block.
 # ---------------------------------------------------------------------------
 
 
@@ -371,7 +371,7 @@ def _build_ae_block(
     actual_cols = set(df.columns)
     missing_ae = expected_cols - actual_cols
     if missing_ae:
-        # Inyección parcial: completamos con None preservando contrato.
+        # Partial injection: we fill with None preserving the contract.
         fill: dict[str, list[float | None]] = {
             c: [None] * df.height for c in sorted(missing_ae) if c in AE_COLS
         }
@@ -513,7 +513,7 @@ def _build_srtm_block(
         )
     df = canonical_parcel_id(df)
 
-    # SRTM puede llegar sin year (DEM estático): completamos con el año base.
+    # SRTM may arrive without year (static DEM): we fill with the base year.
     if "year" not in df.columns:
         df = df.with_columns(pl.lit(year_val, dtype=pl.Int16).alias("year"))
     missing = [c for c in expected_cols if c not in df.columns]
@@ -572,7 +572,7 @@ def _build_geom_block(parcels: gpd.GeoDataFrame) -> pl.LazyFrame:
     metric = parcels.to_crs("EPSG:3857")
     area_m2 = metric.geometry.area.astype("float64").to_numpy()
     perimeter_m = metric.geometry.length.astype("float64").to_numpy()
-    # Evitar división por cero en geometrías degeneradas.
+    # Avoid division by zero in degenerate geometries.
     safe_area = np.where(area_m2 > 0, area_m2, np.nan)
     elongation = (perimeter_m**2) / (4.0 * np.pi * safe_area)
     area_ha = area_m2 / 10_000.0
@@ -636,10 +636,10 @@ def _build_farslip_block(
     farslip_cols = tuple(f"farslip_{i:03d}" for i in range(512))
     missing = [c for c in farslip_cols if c not in df.columns]
     if missing:
-        # Patch defensivo US-023-preview P2 (decision D-1): acepta tambien
-        # el prefijo legacy ``farslip_emb_NNN`` (v1/v2 originales antes de
-        # la promocion al path canonico). Si detectamos las 512 cols con
-        # prefijo legacy, las renombramos in-memory sin tocar el parquet.
+        # Defensive patch US-023-preview P2 (decision D-1): also accepts
+        # the legacy prefix ``farslip_emb_NNN`` (original v1/v2 before
+        # the promotion to the canonical path). If we detect the 512 cols with
+        # the legacy prefix, we rename them in-memory without touching the parquet.
         legacy_cols = tuple(f"farslip_emb_{i:03d}" for i in range(512))
         if all(c in df.columns for c in legacy_cols):
             df = df.rename({lc: fc for lc, fc in zip(legacy_cols, farslip_cols, strict=True)})
@@ -653,7 +653,7 @@ def _build_farslip_block(
     if "parcel_id" not in df.columns:
         raise ValueError(f"FarSLIP parquet en {resolved} no contiene `parcel_id` para el join.")
 
-    # Si el frame FarSLIP no trae `year`, inferimos el año desde parcels.
+    # If the FarSLIP frame does not bring `year`, we infer the year from parcels.
     if "year" not in df.columns:
         year_val = int(parcels["year"].iloc[0]) if len(parcels) else 0
         df = df.with_columns(pl.lit(year_val, dtype=pl.Int16).alias("year"))

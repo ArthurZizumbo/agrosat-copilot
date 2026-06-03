@@ -219,7 +219,7 @@ def main() -> None:
         print("marcador ya presente — no se reinserta (idempotente)")
         return
 
-    # Renumerar la celda de conclusiones de ## 11 a ## 12.
+    # Renumber the conclusions cell from ## 11 to ## 12.
     concl_idx = None
     for i, c in enumerate(cells):
         if c.get("cell_type") == "markdown" and "".join(c["source"]).lstrip().startswith(

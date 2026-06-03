@@ -32,7 +32,7 @@ def _code(src: str) -> dict:
 nb = json.loads(NB.read_text(encoding="utf-8"))
 cells = nb["cells"]
 
-# 1. Anadir checkpoint_dir a la celda de parametros (celda 1).
+# 1. Add checkpoint_dir to the parameters cell (cell 1).
 param_src = "".join(cells[1]["source"])
 if "checkpoint_dir" not in param_src:
     param_src = param_src.replace(
@@ -43,7 +43,7 @@ if "checkpoint_dir" not in param_src:
     )
     cells[1]["source"] = param_src.splitlines(keepends=True)
 
-# 2. Construir la Seccion 5 (evaluacion de checkpoints reales).
+# 2. Build Section 5 (evaluation of real checkpoints).
 sec5_md = _md(
     """## Seccion 5 - Evaluacion de los modelos entrenados (30 epochs)
 
@@ -265,8 +265,8 @@ else:
     display(Markdown("> Sin checkpoint pheno; no se generan predicciones visuales."))'''
 )
 
-# 3. Insertar las celdas de la Seccion 5 antes de la celda de Conclusiones
-#    (ultima celda markdown que empieza con "## Conclusiones").
+# 3. Insert the Section 5 cells before the Conclusions cell
+#    (last markdown cell that starts with "## Conclusiones").
 concl_idx = next(
     i for i, c in enumerate(cells)
     if c["cell_type"] == "markdown" and "".join(c["source"]).startswith("## Conclusiones")
@@ -277,8 +277,8 @@ sec5_cells = [
     sec5_cm_md, sec5_cm,
     sec5_pred_md, sec5_pred,
 ]
-# Idempotencia robusta a la ortografia: se detecta por un identificador en
-# ingles (estable a tildes) presente en la celda de setup de la Seccion 5.
+# Spelling-robust idempotence: detected via an English identifier
+# (stable to accents) present in the Section 5 setup cell.
 already = any("ml.eval.segmentation_inference" in "".join(c["source"]) for c in cells)
 if not already:
     cells[concl_idx:concl_idx] = sec5_cells

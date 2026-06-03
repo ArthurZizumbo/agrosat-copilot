@@ -77,17 +77,17 @@ __all__ = [
 ]
 
 
-#: Anclajes fenologicos sobre los que se calcula la firma espectral. Cada
-#: anclaje se mapea a un set de columnas del DataFrame de entrada (ver
+#: Phenology anchors over which the spectral signature is computed. Each
+#: anchor maps to a set of columns of the input DataFrame (see
 #: :meth:`SpectralSignatureFeatures._extract_anchor_bands`).
 DEFAULT_PHENOLOGY_ANCHORS: Final[tuple[str, ...]] = ("sog", "peak", "senescence")
 
-#: Bandas red-edge de Sentinel-2 que dominan el calculo de la REP. Las
-#: longitudes de onda centrales (nm) provienen de la documentacion oficial
-#: ESA Sentinel-2 MSI: B05=703.9, B06=740.2, B07=782.5, B08=835.1.
+#: Sentinel-2 red-edge bands that dominate the REP computation. The
+#: central wavelengths (nm) come from the official
+#: ESA Sentinel-2 MSI documentation: B05=703.9, B06=740.2, B07=782.5, B08=835.1.
 DEFAULT_REDGE_BANDS: Final[tuple[str, ...]] = ("b05", "b06", "b07", "b08")
 
-#: Longitudes de onda centrales en nanometros (ESA S2 MSI specs).
+#: Central wavelengths in nanometers (ESA S2 MSI specs).
 _BAND_WAVELENGTHS_NM: Final[dict[str, float]] = {
     "b04": 664.6,
     "b05": 703.9,
@@ -97,7 +97,7 @@ _BAND_WAVELENGTHS_NM: Final[dict[str, float]] = {
     "b8a": 864.7,
 }
 
-#: Tipos de descriptor soportados.
+#: Supported descriptor types.
 Descriptor = Literal["rep", "sam", "redge_moments"]
 
 
@@ -146,7 +146,7 @@ def compute_rep(
     b07 = reflectance_b07.astype(np.float64, copy=False)
 
     denom = b06 - b05
-    # Evita division por cero produciendo NaN explicitos.
+    # Avoid division by zero by producing explicit NaN values.
     safe_denom = np.where(np.abs(denom) > 1e-12, denom, np.nan)
     numerator = (b04 + b07) / 2.0 - b05
     rep = 705.0 + 35.0 * (numerator / safe_denom)
@@ -371,7 +371,7 @@ class SpectralSignatureFeatures(BaseEstimator, TransformerMixin):
         else:
             centroid = self.centroid_
 
-        # Cosine similarity row-wise, robusto a NaN (los reemplaza por 0).
+        # Cosine similarity row-wise, robust to NaN (replaces them with 0).
         sig = np.where(np.isfinite(signatures), signatures, 0.0)
         cen = np.where(np.isfinite(centroid), centroid, 0.0)
         num = sig @ cen
@@ -389,7 +389,7 @@ class SpectralSignatureFeatures(BaseEstimator, TransformerMixin):
         out = np.full((n, 3 * len(self.phenology_anchors)), np.nan, dtype=np.float64)
         for j, anchor in enumerate(self.phenology_anchors):
             bands_matrix = self._extract_anchor_bands(X, anchor, self.bands)
-            # Imputa NaN dentro de cada fila con la media de la propia fila.
+            # Impute NaN within each row with the row's own mean.
             row_means = np.nanmean(bands_matrix, axis=1)
             imputed = bands_matrix.copy()
             for i in range(n):
@@ -398,7 +398,7 @@ class SpectralSignatureFeatures(BaseEstimator, TransformerMixin):
                     imputed[i] = np.where(np.isnan(imputed[i]), fill_value, imputed[i])
             mean_row = imputed.mean(axis=1)
             var_row = imputed.var(axis=1)
-            # Skewness clasica: m3 / m2^(3/2). Tolera distribuciones degeneradas.
+            # Classic skewness: m3 / m2^(3/2). Tolerates degenerate distributions.
             centred = imputed - mean_row[:, None]
             m2 = (centred**2).mean(axis=1)
             m3 = (centred**3).mean(axis=1)
@@ -449,9 +449,9 @@ class SpectralSignatureFeatures(BaseEstimator, TransformerMixin):
         majority_class = class_counts.row(0, named=True)[self.class_col]
         subset = X.filter(pl.col(self.class_col) == majority_class)
         signatures = self._stack_signatures(subset)
-        # Centroide = media columna a columna, ignorando NaN.
+        # Centroid = column-by-column mean, ignoring NaN.
         centroid = np.nanmean(signatures, axis=0)
-        # Si toda la columna era NaN, la rellenamos a 0 (no aporta angulo).
+        # If the whole column was NaN, fill it with 0 (contributes no angle).
         centroid = np.where(np.isfinite(centroid), centroid, 0.0)
         logger.info(
             "spectral_signature_centroid_fitted",

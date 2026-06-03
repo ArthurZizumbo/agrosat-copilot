@@ -11,14 +11,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-# app/dashboard/paths.py -> raiz del repo (tres niveles arriba).
+# app/dashboard/paths.py -> repo root (three levels up).
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 PAPER_FIGURES_ROOT = REPO_ROOT / "paper" / "figures"
 REPORTS_ROOT = REPO_ROOT / "reports"
 ROIS_YAML = REPO_ROOT / "config" / "rois.yaml"
 
-# Segmentacion (Avance 4): figuras y metricas en reports/segmentation/.
+# Segmentation (Avance 4): figures and metrics in reports/segmentation/.
 SEGMENTATION_FIGURES_ROOT = REPORTS_ROOT / "segmentation" / "figures"
 SEGMENTATION_METRICS_ROOT = REPORTS_ROOT / "segmentation" / "metrics"
 

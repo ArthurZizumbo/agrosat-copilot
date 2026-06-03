@@ -54,13 +54,13 @@ __all__ = [
     "pixel_series_to_index_dataarray",
 ]
 
-#: Factor para convertir DN Sentinel-2 (0-10000) a reflectancia [0, 1].
-#: Contrato de ``compute_index`` (ver EDA Avance 1, conclusiones globales).
+#: Factor to convert Sentinel-2 DN (0-10000) to reflectance [0, 1].
+#: Contract of ``compute_index`` (see EDA Avance 1, global conclusions).
 REFLECTANCE_SCALE: Final[float] = 10_000.0
 
-#: Banda cruda usada como hash de id entero estable cuando el ``parcel_id``
-#: de BreizhCrops no es convertible a int (no aplica aqui: los ids son
-#: numericos, pero se mantiene la defensa).
+#: Raw band used as a stable integer id hash when the ``parcel_id``
+#: from BreizhCrops is not convertible to int (does not apply here: the ids are
+#: numeric, but the defense is kept).
 _INT_PARCEL_FALLBACK: Final[int] = -1
 
 
@@ -97,7 +97,7 @@ def pixel_series_to_index_dataarray(
         nombres de los indices, o ``None`` si la parcela no tiene al menos
         2 pasos temporales validos (insuficiente para FFT / fenologia).
     """
-    # Pivot long -> wide (time x band_cruda). Una fila por t, una col por banda.
+    # Pivot long -> wide (time x raw_band). One row per t, one col per band.
     wide = (
         parcel_long.select("t", "date", "band", "value")
         .pivot(on="band", index=["t", "date"], values="value", aggregate_function="first")
@@ -108,7 +108,7 @@ def pixel_series_to_index_dataarray(
 
     missing = [b for b in bands if b not in wide.columns]
     if missing:
-        # Sin alguna banda cruda no podemos calcular el set completo de indices.
+        # Without some raw band we cannot compute the full set of indices.
         logger.warning(
             "breizhcrops_parcel_missing_bands",
             parcel_id=parcel_id_int,
@@ -116,11 +116,11 @@ def pixel_series_to_index_dataarray(
         )
         return None
 
-    # Matriz (time, band_cruda) escalada a reflectancia.
+    # Matrix (time, raw_band) scaled to reflectance.
     raw = wide.select(list(bands)).to_numpy().astype(np.float64)
     refl = raw / reflectance_scale
 
-    # Eje temporal datetime64[ns] desde el entero YYYYMMDD.
+    # Temporal axis datetime64[ns] from the YYYYMMDD integer.
     date_ints = wide.get_column("date").to_numpy().astype(np.int64)
     times = _yyyymmdd_to_datetime64(date_ints)
 
@@ -130,7 +130,7 @@ def pixel_series_to_index_dataarray(
         coords={"time": times, "band": list(bands)},
     )
 
-    # Calcula cada indice sobre la serie (time,) y los apila a (time, n_idx).
+    # Compute each index over the (time,) series and stack them to (time, n_idx).
     index_stack = np.empty((da_bands.sizes["time"], len(indices)), dtype=np.float32)
     for col, name in enumerate(indices):
         index_stack[:, col] = compute_index(da_bands, name).values
@@ -181,7 +181,7 @@ def build_breizhcrops_features(
             }
         )
 
-    # Mapa parcel_id (str) -> id entero estable y metadata de clase/anio.
+    # Map parcel_id (str) -> stable integer id and class/year metadata.
     parcel_meta = (
         pixel_series.select("parcel_id", "class_id", "class_name")
         .unique(subset=["parcel_id"], keep="first")
@@ -204,7 +204,7 @@ def build_breizhcrops_features(
     for str_pid in parcel_ids:
         pid_int, class_id, class_name = meta_map[str_pid]
         parcel_long = pixel_series.filter(pl.col("parcel_id") == str_pid)
-        # El anio se deriva de la primera fecha valida de la serie.
+        # The year is derived from the first valid date of the series.
         year = _year_from_first_date(parcel_long)
         da_idx = pixel_series_to_index_dataarray(
             parcel_long,
@@ -249,7 +249,7 @@ def build_breizhcrops_features(
 
 
 # ---------------------------------------------------------------------------
-# Helpers privados.
+# Private helpers.
 # ---------------------------------------------------------------------------
 
 
@@ -273,7 +273,7 @@ def _yyyymmdd_to_datetime64(date_ints: np.ndarray) -> np.ndarray:
         month = (d // 100) % 100
         day = d % 100
         out[i] = np.datetime64(f"{year:04d}-{month:02d}-{day:02d}", "ns")
-    # Sustituye NaT por el minimo valido (defensa; BreizhCrops no trae NaT).
+    # Replace NaT with the minimum valid value (defense; BreizhCrops has no NaT).
     if np.isnat(out).any():
         valid = out[~np.isnat(out)]
         fill = valid.min() if valid.size else np.datetime64("2017-01-01", "ns")

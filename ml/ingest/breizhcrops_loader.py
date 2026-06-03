@@ -39,10 +39,10 @@ from typing import Any
 import numpy as np
 import polars as pl
 
-# Bandas conservadas por el paquete breizhcrops en nivel L2A. El orden
-# replica SELECTED_BANDS["L2A"] de breizhcrops.datasets.breizhcrops: la
-# columna 0 de cada serie es `doa` (fecha como entero) y las 10 siguientes
-# son las bandas opticas; CLD/EDG/SAT (mascaras) se descartan en EDA.
+# Bands kept by the breizhcrops package at L2A level. The order
+# replicates SELECTED_BANDS["L2A"] from breizhcrops.datasets.breizhcrops: column
+# 0 of each series is `doa` (date as integer) and the next 10
+# are the optical bands; CLD/EDG/SAT (masks) are discarded in EDA.
 BREIZHCROPS_L2A_BANDS: list[str] = [
     "B02",
     "B03",
@@ -61,9 +61,9 @@ Mapeado a la nomenclatura del proyecto (B2->B02, etc.) para alinearse con
 ``PASTIS_S2_BANDS`` y permitir comparacion cross-dataset directa.
 """
 
-# Indice posicional de cada banda dentro del array crudo que devuelve
-# breizhcrops.BreizhCrops.load() para L2A: [doa, B2, B3, B4, B5, B6, B7,
-# B8, B8A, B11, B12, CLD, EDG, SAT]. El indice 0 (doa) NO es banda.
+# Positional index of each band within the raw array returned by
+# breizhcrops.BreizhCrops.load() for L2A: [doa, B2, B3, B4, B5, B6, B7,
+# B8, B8A, B11, B12, CLD, EDG, SAT]. Index 0 (doa) is NOT a band.
 _L2A_BAND_OFFSET: int = 1
 
 BREIZHCROPS_CLASSES: dict[int, str] = {
@@ -187,9 +187,9 @@ def _open_dataset(root: Path, region: str, year: int, level: str) -> Any | None:
             verbose=False,
         )
     except Exception:  # noqa: BLE001
-        # Construccion fallida (h5 corrupto, indice incompatible, etc.):
-        # degradamos a esquema vacio en vez de propagar. Sin log porque
-        # breizhcrops es opcional y el notebook documenta el modo.
+        # Construction failed (corrupt h5, incompatible index, etc.):
+        # we degrade to an empty schema instead of propagating. No log because
+        # breizhcrops is optional and the notebook documents the mode.
         return None
 
 
@@ -322,9 +322,9 @@ def breizhcrops_pixel_series(
 
     order = np.arange(n_parcels)
     if only_parcel_ids is not None:
-        # Filtra por posiciones cuyo `id` esta en el conjunto pedido. El
-        # indice de breizhcrops usa un RangeIndex posicional, asi que la
-        # posicion en `order` coincide con `ds.index.iloc[pos]`.
+        # Filter by positions whose `id` is in the requested set. The
+        # breizhcrops index uses a positional RangeIndex, so the
+        # position in `order` coincides with `ds.index.iloc[pos]`.
         wanted = {str(p) for p in only_parcel_ids}
         id_series = ds.index["id"].astype(str).to_numpy()
         order = np.where(np.isin(id_series, list(wanted)))[0]
@@ -338,8 +338,8 @@ def breizhcrops_pixel_series(
     n_bands = len(band_names)
     frames: list[pl.DataFrame] = []
 
-    # Abrimos el HDF5 UNA sola vez para toda la extraccion: reabrir el archivo
-    # por parcela domina el tiempo cuando `order` tiene cientos/miles de ids.
+    # We open the HDF5 ONCE for the entire extraction: reopening the file
+    # per parcel dominates the time when `order` has hundreds/thousands of ids.
     try:
         h5_ctx = _h5_open(ds)
     except Exception:  # noqa: BLE001
@@ -351,9 +351,9 @@ def breizhcrops_pixel_series(
                 row = ds.index.iloc[int(i)]
                 raw = np.asarray(h5[row.path], dtype=np.float64)
             except Exception:  # noqa: BLE001, S112
-                # Serie ilegible: la saltamos sin abortar la carga completa.
-                # Sin log porque breizhcrops es opcional y el notebook documenta
-                # el modo degradado (espejo de pastis_loader.py).
+                # Unreadable series: we skip it without aborting the full load.
+                # No log because breizhcrops is optional and the notebook documents
+                # the degraded mode (mirror of pastis_loader.py).
                 continue
             if raw.ndim != 2 or raw.shape[0] == 0:
                 continue

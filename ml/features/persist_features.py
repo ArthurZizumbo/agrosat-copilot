@@ -33,8 +33,8 @@ from sqlalchemy import Engine, text
 
 logger = structlog.get_logger(__name__)
 
-#: Columnas escalares mapeadas 1:1 con la tabla (excepto ``parcel_id`` y
-#: ``year`` que conforman la PK lógica).
+#: Scalar columns mapped 1:1 with the table (except ``parcel_id`` and
+#: ``year`` which make up the logical PK).
 _SCALAR_PHENOLOGY_COLS: Final[tuple[str, ...]] = (
     "sog_doy",
     "peak_doy",
@@ -119,7 +119,7 @@ def load_features_parcels(
 
 
 # ---------------------------------------------------------------------------
-# Helpers privados
+# Private helpers
 # ---------------------------------------------------------------------------
 
 
@@ -165,9 +165,9 @@ def _build_upsert_sql(*, on_conflict: Literal["update", "skip", "raise"]) -> str
     )
     col_list = ", ".join(cols)
     placeholder_list = ", ".join(f":{c}" for c in cols)
-    # S608: nombres de columna provienen de constantes internas
-    # (`_SCALAR_PHENOLOGY_COLS`), no de input externo. Los valores se enlazan
-    # vía parámetros named `:param`.
+    # S608: column names come from internal constants
+    # (`_SCALAR_PHENOLOGY_COLS`), not from external input. The values are bound
+    # via named `:param` parameters.
     base = f"INSERT INTO features_parcels ({col_list}, updated_at) VALUES ({placeholder_list}, now())"  # noqa: S608, E501
 
     if on_conflict == "raise":

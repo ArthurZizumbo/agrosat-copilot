@@ -56,17 +56,17 @@ __all__ = [
 
 
 # ---------------------------------------------------------------------------
-# Mapeo de las 18 clases PASTIS-R a los 6 grupos HCAT Level-1.
+# Mapping of the 18 PASTIS-R classes to the 6 HCAT Level-1 groups.
 # ---------------------------------------------------------------------------
 
-#: Mapa ``class_id PASTIS-R -> nombre del grupo HCAT Level-1``.
+#: Map ``class_id PASTIS-R -> HCAT Level-1 group name``.
 #:
-#: Las clases 0 (Background) y 19 (Void label) no son agronomicas y no
-#: aparecen aqui: el pipeline baseline ya las descarta en
+#: Classes 0 (Background) and 19 (Void label) are not agronomic and do not
+#: appear here: the baseline pipeline already discards them in
 #: ``ml.train.baseline._prepare_dataframe``.
 PASTIS_CLASS_TO_HCAT_L1: dict[int, str] = {
-    # CEREALS: ocho cereales de invierno y primavera. La confusion
-    # trigo-con-trigo / cereal-con-cereal es intra-grupo y desaparece aqui.
+    # CEREALS: eight winter and spring cereals. The wheat-with-wheat /
+    # cereal-with-cereal confusion is intra-group and disappears here.
     2: "CEREALS",   # Soft winter wheat
     11: "CEREALS",  # Winter durum wheat
     4: "CEREALS",   # Winter barley
@@ -75,26 +75,26 @@ PASTIS_CLASS_TO_HCAT_L1: dict[int, str] = {
     10: "CEREALS",  # Winter triticale
     17: "CEREALS",  # Mixed cereal
     18: "CEREALS",  # Sorghum
-    # OILSEEDS: oleaginosas.
+    # OILSEEDS: oilseed crops.
     5: "OILSEEDS",  # Winter rapeseed
     7: "OILSEEDS",  # Sunflower
-    # ROOT_CROPS: tuberculos y raices.
+    # ROOT_CROPS: tubers and roots.
     9: "ROOT_CROPS",   # Beet
     13: "ROOT_CROPS",  # Potatoes
-    # LEGUMES: leguminosas.
+    # LEGUMES: leguminous crops.
     14: "LEGUMES",  # Leguminous fodder
     15: "LEGUMES",  # Soybeans
-    # PERMANENT_WOODY: cultivos lenosos permanentes.
+    # PERMANENT_WOODY: permanent woody crops.
     8: "PERMANENT_WOODY",   # Grapevine
     16: "PERMANENT_WOODY",  # Orchard
-    # OTHER: pradera y mezcla de frutas/hortalizas/flores.
+    # OTHER: meadow and mix of fruits/vegetables/flowers.
     1: "OTHER",   # Meadow
     12: "OTHER",  # Fruits, vegetables, flowers
 }
 
-#: Codigo HCAT v3 representativo de cada grupo Level-1 (para defendibilidad
-#: del agrupamiento ante la rubrica del curso). Los codigos son los nodos
-#: de la taxonomia HCAT bajo los que caen las clases PASTIS fusionadas.
+#: Representative HCAT v3 code of each Level-1 group (for defensibility
+#: of the grouping against the course rubric). The codes are the HCAT
+#: taxonomy nodes under which the merged PASTIS classes fall.
 HCAT_L1_GROUP_CODES: dict[str, str] = {
     "CEREALS": "3301000000",          # HCAT cereals
     "OILSEEDS": "3303000000",         # HCAT oilseed crops
@@ -104,7 +104,7 @@ HCAT_L1_GROUP_CODES: dict[str, str] = {
     "OTHER": "3300000000",            # HCAT arable/other (grassland + mixed horticulture)
 }
 
-#: Orden canonico (estable) de los 6 grupos -> id contiguo ``[0, 6)``.
+#: Canonical (stable) order of the 6 groups -> contiguous id ``[0, 6)``.
 HCAT_L1_GROUP_ORDER: tuple[str, ...] = (
     "CEREALS",
     "LEGUMES",
@@ -114,8 +114,8 @@ HCAT_L1_GROUP_ORDER: tuple[str, ...] = (
     "ROOT_CROPS",
 )
 
-#: Alias publico legible (nombre de grupo -> lista de class_id PASTIS que
-#: lo componen), util para tablas y leyendas del notebook.
+#: Readable public alias (group name -> list of PASTIS class_id that
+#: compose it), useful for notebook tables and legends.
 HCAT_L1_GROUPS: dict[str, list[int]] = {
     group: sorted(cid for cid, g in PASTIS_CLASS_TO_HCAT_L1.items() if g == group)
     for group in HCAT_L1_GROUP_ORDER
@@ -254,7 +254,7 @@ def per_label_f1_table(
 
 
 # ---------------------------------------------------------------------------
-# Evaluador apples-to-apples: flat-18 vs grouped-6.
+# Apples-to-apples evaluator: flat-18 vs grouped-6.
 # ---------------------------------------------------------------------------
 
 
@@ -344,7 +344,7 @@ def evaluate_flat_vs_grouped(
     if "class_id" not in df.columns:
         raise ValueError("`df` debe contener `class_id`.")
 
-    # --- Esquema plano de 18 clases ---------------------------------------
+    # --- Flat 18-class scheme ---------------------------------------------
     flat_result = train_one_model(
         df,
         model=model,
@@ -367,11 +367,11 @@ def evaluate_flat_vs_grouped(
         flat_true, flat_pred, label_names=flat_label_names
     )
 
-    # --- Esquema agrupado de 6 grupos HCAT L1 -----------------------------
-    # Remapeamos `class_id` al id del grupo HCAT. El pipeline baseline trata
-    # `class_id` como el objetivo, asi que sobrescribirlo basta para que todo
-    # (folds, scaler, sample_weight, encoder) opere sobre los 6 grupos sin
-    # tocar las features. Conservamos solo las parcelas con grupo valido.
+    # --- Grouped 6-group HCAT L1 scheme -----------------------------------
+    # We remap `class_id` to the HCAT group id. The baseline pipeline treats
+    # `class_id` as the target, so overwriting it is enough for everything
+    # (folds, scaler, sample_weight, encoder) to operate over the 6 groups
+    # without touching the features. We keep only parcels with a valid group.
     grouped_df = add_hcat_l1_group(df)
     grouped_df = grouped_df.filter(pl.col("hcat6_group_id").is_not_null())
     grouped_df = grouped_df.drop("class_id").rename({"hcat6_group_id": "class_id"})

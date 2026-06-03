@@ -56,7 +56,7 @@ _StratifyBy = Literal["class", "tile", "fold"]
 
 
 # ---------------------------------------------------------------------------
-# Errores
+# Errors
 # ---------------------------------------------------------------------------
 
 
@@ -81,7 +81,7 @@ def _raise_missing_pastis(pastis_root: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Helpers internos
+# Internal helpers
 # ---------------------------------------------------------------------------
 
 
@@ -183,7 +183,7 @@ def _enumerate_parcels(
         for iid in inst_ids:
             iid_int = int(iid)
             if iid_int == 0:
-                # 0 = sin instancia (background)
+                # 0 = no instance (background)
                 continue
             mask = instance == iid
             n_pixels = int(np.count_nonzero(mask))
@@ -257,7 +257,7 @@ def _stratified_sample(
     selected_indices: list[int] = []
     parcels_with_idx = parcels.with_row_index(name="_row_idx")
 
-    # Pase 1: garantizar minimo por grupo
+    # Pass 1: guarantee a minimum per group
     for grp_val in groups[strat_col].to_list():
         sub = parcels_with_idx.filter(pl.col(strat_col) == grp_val)
         sub_idx = sub["_row_idx"].to_list()
@@ -265,7 +265,7 @@ def _stratified_sample(
         choice = rng.choice(len(sub_idx), size=target, replace=False)
         selected_indices.extend(int(sub_idx[i]) for i in choice)
 
-    # Pase 2: rellenar hasta n_samples con remainder distribuido proporcional
+    # Pass 2: fill up to n_samples with the remainder distributed proportionally
     remaining = n_samples - len(selected_indices)
     if remaining > 0:
         already = set(selected_indices)
@@ -276,13 +276,13 @@ def _stratified_sample(
             choice = rng.choice(len(pool_idx), size=extra, replace=False)
             selected_indices.extend(int(pool_idx[i]) for i in choice)
     elif remaining < 0:
-        # Caso edge: el pase 1 ya excedio n_samples (n_groups * class_min > n_samples).
-        # Truncamos manteniendo al menos 1 por grupo presente.
+        # Edge case: pass 1 already exceeded n_samples (n_groups * class_min > n_samples).
+        # We truncate keeping at least 1 per present group.
         kept: dict[Any, list[int]] = defaultdict(list)
         for idx in selected_indices:
             grp = parcels.row(idx, named=True)[strat_col]
             kept[grp].append(idx)
-        # Round-robin hasta llenar n_samples
+        # Round-robin until n_samples is filled
         new_selection: list[int] = []
         cursors = {k: 0 for k in kept}
         while len(new_selection) < n_samples:
@@ -388,7 +388,7 @@ def _md5_file(path: Path) -> str:
 
 
 # ---------------------------------------------------------------------------
-# API publica
+# Public API
 # ---------------------------------------------------------------------------
 
 
@@ -467,7 +467,7 @@ def build_pastis_eval_subset(
             f"No se encontraron instancias validas en {root / 'ANNOTATIONS'}."
         )
 
-    # Enriquecer con tile, fold, lon, lat
+    # Enrich with tile, fold, lon, lat
     parcels_enriched = parcels_raw.join(
         index_df.rename({"TILE": "tile", "Fold": "fold"}),
         on="patch_id",
@@ -489,7 +489,7 @@ def build_pastis_eval_subset(
         parcels_enriched, n_samples=n_samples, stratify_by=stratify_by, seed=seed
     )
 
-    # Construir parcel_id canonico Utf8 + class_name
+    # Build the canonical Utf8 parcel_id + class_name
     class_name_map = {int(k): v for k, v in PASTIS_R_CLASSES.items()}
     sampled = sampled.with_columns(
         (pl.col("patch_id").cast(pl.Utf8) + pl.lit("_") + pl.col("instance_id").cast(pl.Utf8))

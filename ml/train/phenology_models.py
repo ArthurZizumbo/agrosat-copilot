@@ -60,26 +60,26 @@ __all__ = [
 ]
 
 
-#: Modelos temporales soportados (ambos viven en :mod:`ml.models.temporal`).
+#: Supported temporal models (both live in :mod:`ml.models.temporal`).
 TemporalModelKind = Literal["tempcnn", "inceptiontime"]
 
-#: Indices canonicos usados como canales C de la serie temporal (mismos de
+#: Canonical indices used as C channels of the time series (same as
 #: :data:`ml.features.temporal_features.DEFAULT_FFT_INDICES`).
 DEFAULT_TEMPORAL_INDICES: tuple[str, ...] = ("NDVI", "NDWI", "EVI")
 
-#: Numero de armonicos FFT (4 amps + 4 phases por indice) presentes en el
-#: subset US-018. El tensor que entra a TempCNN/InceptionTime reconstruye una
-#: serie sintetica diaria a partir de la representacion FFT por inversa
-#: parcial; alternativamente acepta una curva diaria pre-materializada.
+#: Number of FFT harmonics (4 amps + 4 phases per index) present in the
+#: US-018 subset. The tensor fed to TempCNN/InceptionTime reconstructs a
+#: synthetic daily series from the FFT representation via partial inverse;
+#: alternatively it accepts a pre-materialized daily curve.
 DEFAULT_FFT_HARMONICS: int = 3
 
-#: Longitud temporal por defecto de la serie (un anio agronomico, T=72 ~5d
-#: cadence; balance entre coste y resolucion estacional).
+#: Default temporal length of the series (one agronomic year, T=72 ~5d
+#: cadence; balance between cost and seasonal resolution).
 DEFAULT_SEQUENCE_LENGTH: int = 72
 
 
 # ---------------------------------------------------------------------------
-# Dataclass de salida.
+# Output dataclass.
 # ---------------------------------------------------------------------------
 
 
@@ -115,7 +115,7 @@ class TemporalModelResult:
 
 
 # ---------------------------------------------------------------------------
-# Adaptador Polars -> tensor.
+# Polars -> tensor adapter.
 # ---------------------------------------------------------------------------
 
 
@@ -190,7 +190,7 @@ def build_temporal_tensor(
 
 
 # ---------------------------------------------------------------------------
-# API publica.
+# Public API.
 # ---------------------------------------------------------------------------
 
 
@@ -288,7 +288,7 @@ def train_temporal_model(
     label_encoder, y_encoded = _encode_labels(clean_df)
     n_classes = len(label_encoder)
 
-    # Construye el tensor (B, T, C) y los splits espaciales (cache compartida).
+    # Build the tensor (B, T, C) and the spatial splits (shared cache).
     X = build_temporal_tensor(clean_df, indices=indices, sequence_length=sequence_length)
     cv_splits = _build_cv_splits(clean_df, k_folds=k_folds, buffer_km=buffer_km, random_state=seed)
 
@@ -337,8 +337,8 @@ def train_temporal_model(
                 }
             )
 
-        # Class weights globales (mismas para todos los folds para
-        # consistencia; calculados sobre el conjunto completo).
+        # Global class weights (same for all folds for consistency;
+        # computed over the full dataset).
         class_weights_t: Any = None
         if use_class_weights:
             counts = np.bincount(y_encoded, minlength=n_classes).astype(np.float64)
@@ -357,9 +357,9 @@ def train_temporal_model(
                 logger.warning("temporal_cv_fold_skipped", fold=fold_idx)
                 continue
 
-            # Split intra-fold train -> (train_inner, val_inner) estratificado
-            # por clase para early stopping. Si una clase tiene solo 1 muestra
-            # va al train_inner (no se puede validar con ella).
+            # Intra-fold split train -> (train_inner, val_inner) stratified
+            # by class for early stopping. If a class has only 1 sample it
+            # goes to train_inner (it cannot be used for validation).
             rng = np.random.default_rng(seed + fold_idx)
             train_inner_idx, val_inner_idx = _stratified_inner_split(
                 y_encoded[train_idx],
@@ -395,8 +395,8 @@ def train_temporal_model(
             x_val_t = torch.from_numpy(x_val).to(resolved_device)
             x_test_t = torch.from_numpy(x_test).to(resolved_device)
 
-            # WeightedRandomSampler: probabilidad inversa a la frecuencia de
-            # cada clase. Cada batch ve proporcionalmente todas las clases.
+            # WeightedRandomSampler: probability inverse to each class
+            # frequency. Each batch sees all classes proportionally.
             n_train = x_train_t.shape[0]
             if use_weighted_sampler:
                 fold_counts = np.bincount(y_train, minlength=n_classes).astype(np.float64)
@@ -408,7 +408,7 @@ def train_temporal_model(
             else:
                 sample_weights_t = None
 
-            # LR scheduler: warmup linear + cosine annealing del resto.
+            # LR scheduler: linear warmup + cosine annealing for the rest.
             scheduler = None
             if use_lr_scheduler and n_epochs > warmup_epochs:
                 cosine_epochs = max(1, n_epochs - warmup_epochs)
@@ -421,7 +421,7 @@ def train_temporal_model(
             epochs_since_improve = 0
 
             for epoch in range(n_epochs):
-                # Warmup manual: LR sube linealmente de ~0 a learning_rate.
+                # Manual warmup: LR rises linearly from ~0 to learning_rate.
                 if use_lr_scheduler and epoch < warmup_epochs:
                     warm_lr = learning_rate * (epoch + 1) / max(1, warmup_epochs)
                     for pg in optimizer.param_groups:
@@ -430,10 +430,10 @@ def train_temporal_model(
                 model.train()
                 epoch_loss = 0.0
                 n_batches = 0
-                # Sample selection: o sampler ponderado o permutacion uniforme.
+                # Sample selection: either weighted sampler or uniform permutation.
                 if use_weighted_sampler and sample_weights_t is not None:
-                    # Tantas muestras como n_train (con reemplazo, por diseno
-                    # de WeightedRandomSampler).
+                    # As many samples as n_train (with replacement, by design
+                    # of WeightedRandomSampler).
                     indices_iter = torch.multinomial(sample_weights_t, n_train, replacement=True)
                 else:
                     indices_iter = torch.randperm(n_train, device=resolved_device)
@@ -451,12 +451,12 @@ def train_temporal_model(
                     n_batches += 1
                 avg_loss = epoch_loss / max(1, n_batches)
 
-                # Cosine annealing despues de warmup.
+                # Cosine annealing after warmup.
                 if scheduler is not None and epoch >= warmup_epochs:
                     scheduler.step()
                 current_lr = optimizer.param_groups[0]["lr"]
 
-                # Validacion intra-fold: F1-macro para early stopping.
+                # Intra-fold validation: F1-macro for early stopping.
                 model.eval()
                 with torch.no_grad():
                     val_logits = model(x_val_t)
@@ -471,7 +471,7 @@ def train_temporal_model(
                     run_ctx.log_metric(f"fold{fold_idx}_val_f1_macro", val_f1, step=epoch)
                     run_ctx.log_metric(f"fold{fold_idx}_lr", current_lr, step=epoch)
 
-                # Early stopping: guarda mejor state_dict por val F1-macro.
+                # Early stopping: keep the best state_dict by val F1-macro.
                 if val_f1 > best_val_f1 + 1e-6:
                     best_val_f1 = val_f1
                     best_state_dict = {k: v.detach().clone() for k, v in model.state_dict().items()}
@@ -488,7 +488,7 @@ def train_temporal_model(
                     )
                     break
 
-            # Carga el mejor checkpoint del fold antes de evaluar en test.
+            # Load the best fold checkpoint before evaluating on test.
             if best_state_dict is not None:
                 model.load_state_dict(best_state_dict)
 
@@ -531,16 +531,16 @@ def train_temporal_model(
             run_ctx.log_metric("oof_miou", oof_metrics["miou"])
             run_ctx.log_metric("oof_cohen_kappa", oof_metrics["cohen_kappa"])
             run_ctx.log_metric("train_time_s", train_time_s)
-            # Persiste el state_dict del modelo del ultimo fold como artifact.
-            # Permite reload posterior con torch.load(...) para inferencia.
+            # Persist the last fold model's state_dict as an artifact.
+            # Allows later reload with torch.load(...) for inference.
             if hasattr(run_ctx, "log_state_dict"):
                 try:
                     run_ctx.log_state_dict(model, name=f"{model_kind}_last_fold.pt")
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("mlflow_state_dict_save_failed", error=str(exc))
 
-    # Persistencia en disco del state_dict (independiente de MLflow).
-    # Permite recargar el modelo con torch.load(...) sin reentrenar.
+    # On-disk persistence of the state_dict (independent of MLflow).
+    # Allows reloading the model with torch.load(...) without retraining.
     checkpoint_path: Path | None = None
     if checkpoint_dir is not None:
         try:
@@ -608,7 +608,7 @@ def train_temporal_model(
 
 
 # ---------------------------------------------------------------------------
-# Helpers privados.
+# Private helpers.
 # ---------------------------------------------------------------------------
 
 
@@ -658,7 +658,7 @@ def _stratified_inner_split(
         cls_idx = np.where(y == cls)[0]
         rng.shuffle(cls_idx)
         n_val = round(len(cls_idx) * val_fraction)
-        # Garantiza >= 1 en val si hay >= 2 muestras de la clase.
+        # Guarantee >= 1 in val if there are >= 2 samples of the class.
         if len(cls_idx) >= 2 and n_val == 0:
             n_val = 1
         val_idx.extend(cls_idx[:n_val].tolist())
@@ -749,38 +749,38 @@ def _reconstruct_curve(
     n = df.height
     T = sequence_length
 
-    # 1) curvas pre-materializadas.
+    # 1) pre-materialized curves.
     cols_t = [f"{index_name}_t_{i:02d}" for i in range(T)]
     if all(c in df.columns for c in cols_t):
         matrix = df.select(cols_t).fill_null(0.0).to_numpy().astype(np.float32)
         return matrix
 
-    # 2) reconstruccion inversa FFT.
+    # 2) FFT inverse reconstruction.
     amp_cols = [f"{index_name}_fft_amp_{k}" for k in range(DEFAULT_FFT_HARMONICS + 1)]
     phase_cols = [f"{index_name}_fft_phase_{k}" for k in range(DEFAULT_FFT_HARMONICS + 1)]
     if all(c in df.columns for c in amp_cols) and all(c in df.columns for c in phase_cols):
         amps = df.select(amp_cols).fill_null(0.0).to_numpy().astype(np.float64)
         phases = df.select(phase_cols).fill_null(0.0).to_numpy().astype(np.float64)
-        # Frecuencias por armonico (1 ciclo por anio para k=1, 2 para k=2, ...).
+        # Frequencies per harmonic (1 cycle per year for k=1, 2 for k=2, ...).
         t_axis = np.arange(T, dtype=np.float64)
         curve = np.zeros((n, T), dtype=np.float32)
-        # k=0 (DC): senal constante = amplitude DC.
+        # k=0 (DC): constant signal = DC amplitude.
         curve += amps[:, 0:1].astype(np.float32)
         for k in range(1, DEFAULT_FFT_HARMONICS + 1):
             freq = 2.0 * np.pi * k * t_axis / T  # shape (T,)
-            # amplitude * cos(freq + phase). Single-sided (consistente con FFT).
+            # amplitude * cos(freq + phase). Single-sided (consistent with FFT).
             phase_k = phases[:, k : k + 1]  # (N, 1)
             amp_k = amps[:, k : k + 1]  # (N, 1)
             curve += (amp_k * np.cos(freq[None, :] + phase_k)).astype(np.float32)
         return curve
 
-    # 3) Fallback plano: repite la media.
+    # 3) Flat fallback: repeat the mean.
     mean_col = f"{index_name}_mean"
     if mean_col in df.columns:
         means = df.get_column(mean_col).fill_null(0.0).to_numpy().astype(np.float32)
         return np.broadcast_to(means[:, None], (n, T)).copy()
 
-    # Caso degenerado: serie 0.0 (los tests deben evitarlo).
+    # Degenerate case: 0.0 series (tests should avoid it).
     return np.zeros((n, T), dtype=np.float32)
 
 
@@ -841,7 +841,7 @@ class _MlflowRun:
             self._mlflow.log_params(params)
 
     def log_metric(self, key: str, value: float, *, step: int | None = None) -> None:
-        if self._mlflow is not None and value == value:  # filtra NaN
+        if self._mlflow is not None and value == value:  # filter out NaN
             self._mlflow.log_metric(key, value, step=step)
 
     def log_artifact(self, path: str | Path, artifact_path: str | None = None) -> None:
@@ -889,7 +889,7 @@ def _resolve_data_version() -> str:
             for line in content.splitlines():
                 if "md5:" in line:
                     return line.split("md5:")[-1].strip()[:12]
-        # Fallback: git rev de la carpeta data/.
+        # Fallback: git rev of the data/ folder.
         result = subprocess.run(
             ["git", "log", "-1", "--format=%h", "--", "data/"],  # noqa: S607
             capture_output=True,
@@ -920,7 +920,7 @@ def _resolve_code_version() -> str:
         return "unknown"
 
 
-# Sentinel-free helper para sobreescribir importes en tests.
+# Sentinel-free helper to override imports in tests.
 _TEMPORAL_BUILDER = _build_temporal_model_native
 
 

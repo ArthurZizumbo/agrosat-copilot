@@ -55,10 +55,10 @@ from ml.report.avance3_content import (
     BASELINE_MISSING_HINT as _BASELINE_MISSING_HINT,  # noqa: F401  (reexport)
 )
 
-# Alias historico de la clave de estado para tests legacy.
+# Historical alias of the state key for legacy tests.
 _SECTION_STATE_KEY = SECTION_STATE_KEY
 
-# Alias historico del tab espacial (firma legacy de los tests).
+# Historical alias of the spatial tab (legacy signature of the tests).
 render_tab_spatial = render_spatial_tab
 
 
@@ -75,5 +75,5 @@ def main() -> None:
     render_footer()
 
 
-if __name__ == "__main__":  # pragma: no cover - streamlit entry
+if __name__ == "__main__":  # pragma: no cover - streamlit entry point
     main()

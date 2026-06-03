@@ -14,7 +14,7 @@ from app.dashboard.paths import PAPER_FIGURES_ROOT, PASTIS_METADATA, ROIS_YAML
 from app.dashboard.spatial import render_spatial_tab
 from ml.report.notebook_content import EDA_DISPLAY_CARDS
 
-# Fichas EDA en orden de presentacion (las 7 fichas; el mapa es un tab aparte).
+# EDA cards in presentation order (the 7 cards; the map is a separate tab).
 _EDA_CARDS = EDA_DISPLAY_CARDS
 
 EDA_TAB_LABELS: tuple[str, ...] = (

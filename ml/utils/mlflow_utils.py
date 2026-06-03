@@ -29,7 +29,7 @@ import structlog
 
 from ml.utils.git_meta import dvc_data_version, git_sha
 
-if TYPE_CHECKING:  # pragma: no cover - solo para anotaciones de tipo
+if TYPE_CHECKING:  # pragma: no cover - only for type annotations
     from mlflow import ActiveRun
 
 logger = structlog.get_logger(__name__)
@@ -58,13 +58,13 @@ def server_is_reachable(server_url: str, *, timeout: float = _HEALTH_TIMEOUT_S) 
     """
     health_url = f"{server_url.rstrip('/')}/health"
     try:
-        with urllib.request.urlopen(health_url, timeout=timeout) as response:  # noqa: S310 - URL local de dev
+        with urllib.request.urlopen(health_url, timeout=timeout) as response:  # noqa: S310 - local dev URL
             return 200 <= response.status < 300
     except (urllib.error.URLError, OSError, ValueError):
         return False
 
 
-# Alias retro-compatible (modulos internos lo usan).
+# Backward-compatible alias (internal modules use it).
 _server_is_reachable = server_is_reachable
 
 
@@ -147,9 +147,9 @@ def track_experiment(
         y artefactos dentro del bloque ``with``.
     """
     resolved_uri = resolve_tracking_uri(tracking_uri, probe_server=probe_server)
-    # MLflow 3.x pone el file store (file:./mlruns) en "maintenance mode" y lanza
-    # excepcion salvo que se habilite explicitamente. Para el flujo local/Colab del
-    # proyecto el file store es suficiente, asi que lo permitimos.
+    # MLflow 3.x puts the file store (file:./mlruns) in "maintenance mode" and raises
+    # an exception unless it is explicitly enabled. For the project's local/Colab flow
+    # the file store is sufficient, so we allow it.
     if resolved_uri.startswith("file:"):
         os.environ.setdefault("MLFLOW_ALLOW_FILE_STORE", "true")
     mlflow.set_tracking_uri(resolved_uri)

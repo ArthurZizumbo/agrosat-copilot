@@ -38,7 +38,7 @@ def _code(source: str) -> nbf.NotebookNode:
 
 
 # ---------------------------------------------------------------------------
-# Celdas del notebook integrador del Avance 3.
+# Cells of the Avance 3 integrator notebook.
 # ---------------------------------------------------------------------------
 
 CELLS: list[nbf.NotebookNode] = [
@@ -120,7 +120,7 @@ CELLS: list[nbf.NotebookNode] = [
         "REPO = find_repo_root()\n"
         "display(Markdown(f'**Repo bootstrap OK** -> `{REPO.name}`'))\n"
     ),
-    # --- Seccion 1 ------------------------------------------------------
+    # --- Section 1 ------------------------------------------------------
     _md(
         '<a id="sec1"></a>\n'
         "## 1. Baseline original — Random Forest y XGBoost\n"
@@ -157,7 +157,7 @@ CELLS: list[nbf.NotebookNode] = [
         "else:\n"
         "    display(Markdown('Tabla historica no disponible en disco.'))\n"
     ),
-    # --- Seccion 2 ------------------------------------------------------
+    # --- Section 2 ------------------------------------------------------
     _md(
         '<a id="sec2"></a>\n'
         "## 2. Ablation post-A3 y bloques opcionales\n"
@@ -221,7 +221,7 @@ CELLS: list[nbf.NotebookNode] = [
         "else:\n"
         "    display(Markdown('Figura `ablation_geom_comparison.png` no disponible en disco.'))\n"
     ),
-    # --- Seccion 3 ------------------------------------------------------
+    # --- Section 3 ------------------------------------------------------
     _md(
         '<a id="sec3"></a>\n'
         "## 3. Baseline v2 — 3 modelos sobre el conjunto ganador\n"
@@ -256,7 +256,7 @@ CELLS: list[nbf.NotebookNode] = [
         "else:\n"
         "    display(Markdown('Figura `model_comparison_v2.png` no disponible en disco.'))\n"
     ),
-    # --- Seccion 4 ------------------------------------------------------
+    # --- Section 4 ------------------------------------------------------
     _md(
         '<a id="sec4"></a>\n'
         "## 4. Conclusiones consolidadas\n"

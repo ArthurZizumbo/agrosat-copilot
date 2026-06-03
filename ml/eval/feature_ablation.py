@@ -41,13 +41,13 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
-#: Patron canonico para detectar columnas AlphaEarth / DINOv3-derived. Acepta
+#: Canonical pattern to detect AlphaEarth / DINOv3-derived columns. Accepts
 #: ``ae_NN``, ``ae_NNN``, ``emb_NN``, ``emb_NNN``, ``alphaearth_NN[N]``,
-#: ``dim_NN[N]`` y las variantes con anio embebido en el prefijo
-#: (``ae18_NN``, ``ae19_NN``) que produce ``load_base_plus_alphaearth_2018_2019``.
-#: Generalizado en US-023-preview v2: el patron estrecho anterior (len exacto
-#: 5 o 6) descartaba ``emb_00`` (FarSLIP-style), ``ae_063`` (3 digitos) y los
-#: dos anios AlphaEarth (``ae18_``/``ae19_``) del escenario ganador del 04.
+#: ``dim_NN[N]`` and the variants with the year embedded in the prefix
+#: (``ae18_NN``, ``ae19_NN``) produced by ``load_base_plus_alphaearth_2018_2019``.
+#: Generalized in US-023-preview v2: the previous narrow pattern (exact len
+#: 5 or 6) discarded ``emb_00`` (FarSLIP-style), ``ae_063`` (3 digits) and the
+#: two AlphaEarth years (``ae18_``/``ae19_``) of the winning scenario of 04.
 _AE_COL_PATTERN: Final[re.Pattern[str]] = re.compile(
     r"^(?:ae|emb|alphaearth|dim)\d{0,4}_\d{2,3}$"
 )
@@ -59,12 +59,12 @@ __all__ = [
     "run_feature_ablation",
 ]
 
-#: Modelos soportados por la ablation (los temporales pasan por
-#: :mod:`ml.train.phenology_models`; aqui solo se aceptan los tabulares
-#: rapidos para que la matriz N x M corra en CPU sin GPU).
+#: Models supported by the ablation (the temporal ones go through
+#: :mod:`ml.train.phenology_models`; here only the fast tabular ones are
+#: accepted so the N x M matrix runs on CPU without GPU).
 SupportedModel = Literal["rf", "xgb", "lgbm", "tempcnn", "inceptiontime"]
 
-#: Columnas de metadata que jamas son features.
+#: Metadata columns that are never features.
 _META_COLS: frozenset[str] = frozenset(
     {
         "parcel_id",
@@ -110,7 +110,7 @@ class FeatureAblationResult:
 
 
 # ---------------------------------------------------------------------------
-# Conjuntos de features por defecto (cuando el caller no aporta los suyos).
+# Default feature sets (when the caller does not provide their own).
 # ---------------------------------------------------------------------------
 
 
@@ -152,10 +152,10 @@ def build_default_feature_sets(
     no_geom_no_era5_srtm = tuple(
         c for c in no_geom if not c.startswith("era5_") and not c.startswith("srtm_")
     )
-    # Detectar columnas AlphaEarth con patron generalizado: acepta `ae_NN`,
-    # `ae_NNN`, `emb_NN`, `emb_NNN`, `alphaearth_NN[N]` y `dim_NN[N]`. El
-    # patron anterior (len exacto 5 o 6) descartaba `emb_00` (US-023-preview
-    # P4) y bloqueaba columnas con 3 digitos para encoders > 100 dims.
+    # Detect AlphaEarth columns with generalized pattern: accepts `ae_NN`,
+    # `ae_NNN`, `emb_NN`, `emb_NNN`, `alphaearth_NN[N]` and `dim_NN[N]`. The
+    # previous pattern (exact len 5 or 6) discarded `emb_00` (US-023-preview
+    # P4) and blocked columns with 3 digits for encoders > 100 dims.
     ae_cols = tuple(c for c in cols if _AE_COL_PATTERN.match(c))
     if not ae_cols:
         logger.warning(
@@ -178,10 +178,10 @@ def build_default_feature_sets(
     }
     fft_cols = tuple(c for c in cols if "_fft_amp_" in c or "_fft_phase_" in c)
     pheno_cols = tuple(c for c in cols if c in pheno_cols_known) + fft_cols
-    # Bloques opcionales (US-017 FarSLIP, US-022b-D rama semantica fenologica,
-    # US-023-preview P5 firma espectral). El filtro de FarSLIP usa el patron
-    # canonico `farslip_NNN` (3 digitos) y descarta `farslip_emb_NNN` para
-    # evitar colisiones cuando ambos prefijos coexisten transitoriamente.
+    # Optional blocks (US-017 FarSLIP, US-022b-D phenological semantic branch,
+    # US-023-preview P5 spectral signature). The FarSLIP filter uses the
+    # canonical pattern `farslip_NNN` (3 digits) and discards `farslip_emb_NNN` to
+    # avoid collisions when both prefixes coexist transiently.
     farslip_cols = tuple(
         c for c in cols
         if c.startswith("farslip_") and not c.startswith("farslip_emb_")
@@ -199,8 +199,8 @@ def build_default_feature_sets(
         "alphaearth_only": ae_cols,
         "phenology_only": pheno_cols,
     }
-    # Solo agrega los conjuntos with_* / *_only si las columnas correspondientes
-    # estan materializadas en el DataFrame (graceful degradation).
+    # Only adds the with_* / *_only sets if the corresponding columns
+    # are materialized in the DataFrame (graceful degradation).
     if farslip_cols:
         sets["with_farslip"] = pheno_cols + farslip_cols
         sets["farslip_only"] = farslip_cols
@@ -210,16 +210,16 @@ def build_default_feature_sets(
     if spectral_signature_cols:
         sets["with_spectral_signature"] = pheno_cols + spectral_signature_cols
         sets["spectral_signature_only"] = spectral_signature_cols
-    # `geom_only` se agrega cuando hay cols `geom_*`: test cuantitativo de
-    # leakage espacial. La hipotesis nula es F1-macro(`geom_only`) < 0.10
-    # (geometria pura no aporta senal de clase).
+    # `geom_only` is added when there are `geom_*` cols: quantitative test of
+    # spatial leakage. The null hypothesis is F1-macro(`geom_only`) < 0.10
+    # (pure geometry provides no class signal).
     if geom_cols:
         sets["geom_only"] = geom_cols
     return sets
 
 
 # ---------------------------------------------------------------------------
-# API publica.
+# Public API.
 # ---------------------------------------------------------------------------
 
 
@@ -318,9 +318,9 @@ def run_feature_ablation(
             continue
 
         meta_cols = [c for c in ("parcel_id", "year", "patch_id", "class_id") if c in df.columns]
-        # Mantenemos solo metadata + las columnas pedidas. _META_COLS extra
-        # como `fold`, `instance_id` se conservan si existen (train_one_model
-        # las ignora porque no son numericas o estan en su lista negra).
+        # We keep only metadata + the requested columns. Extra _META_COLS
+        # like `fold`, `instance_id` are preserved if they exist (train_one_model
+        # ignores them because they are not numeric or are in its blacklist).
         keep = meta_cols + [c for c in present_cols if c not in meta_cols]
         subset_df = df.select(keep)
 
@@ -350,7 +350,7 @@ def run_feature_ablation(
                     f1_weighted=f1_weighted,
                     miou=miou,
                     n_features=n_feats,
-                    delta_vs_full=float("nan"),  # se rellena en el segundo pass
+                    delta_vs_full=float("nan"),  # filled in the second pass
                 )
             )
             logger.info(
@@ -361,7 +361,7 @@ def run_feature_ablation(
                 n_features=n_feats,
             )
 
-    # Segundo pass: rellena delta_vs_full por modelo.
+    # Second pass: fill delta_vs_full per model.
     f1_full_by_model: dict[str, float] = {}
     for r in raw_results:
         if r.feature_set == "full":
@@ -445,7 +445,7 @@ def export_ablation_table(
 
 
 # ---------------------------------------------------------------------------
-# Helpers privados.
+# Private helpers.
 # ---------------------------------------------------------------------------
 
 

@@ -40,11 +40,11 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger(__name__)
 
-#: Mapa de status del file store (entero) al status string de MLflow.
+#: Map from file store status (integer) to the MLflow status string.
 _STATUS_MAP = {"1": "RUNNING", "2": "SCHEDULED", "3": "FINISHED", "4": "FAILED", "5": "KILLED"}
 
-#: Tags que NO se copian: ``mlflow.runName`` lo inyecta ``create_run`` via
-#: ``run_name=`` (copiarlo de nuevo lo duplicaria).
+#: Tags that are NOT copied: ``mlflow.runName`` is injected by ``create_run`` via
+#: ``run_name=`` (copying it again would duplicate it).
 _SKIP_TAGS = frozenset({"mlflow.runName"})
 
 
@@ -104,7 +104,7 @@ def _read_run_dir(run_dir: Path) -> dict:
                 continue
             points: list[tuple[float, int, int]] = []
             for line in m.read_text(encoding="utf-8").splitlines():
-                if not line.strip():  # blinda lineas vacias / CRLF en Windows
+                if not line.strip():  # guards against empty lines / CRLF on Windows
                     continue
                 ts, val, step = line.split()
                 points.append((float(val), int(ts), int(step)))
@@ -177,7 +177,7 @@ def import_run(
         client.delete_run(existing_id)
         logger.info("import_run_deleted_for_recreate", run_name=run_name, deleted=existing_id[:12])
 
-    # Tags a copiar (excluye mlflow.runName, que pone create_run via run_name=).
+    # Tags to copy (excludes mlflow.runName, which create_run sets via run_name=).
     run_tags = {k: v for k, v in parsed["tags"].items() if k not in _SKIP_TAGS}
 
     with _silence_mlflow_url():
@@ -189,14 +189,14 @@ def import_run(
         )
     run_id = str(run.info.run_id)
     try:
-        # Params en un solo batch.
+        # Params in a single batch.
         params = [Param(k, str(v)) for k, v in parsed["params"].items()]
-        # Metricas: todas las series por epoch, preservando timestamp y step.
+        # Metrics: all the per-epoch series, preserving timestamp and step.
         metric_entities: list[Metric] = []
         for name, points in parsed["metrics"].items():
             for value, ts, step in points:
                 metric_entities.append(Metric(name, value, ts, step))
-        # log_batch admite <1000 metricas / <100 params por llamada.
+        # log_batch accepts <1000 metrics / <100 params per call.
         client.log_batch(run_id, metrics=metric_entities, params=params, tags=[])
 
         if upload_artifacts:
@@ -210,7 +210,7 @@ def import_run(
         with _silence_mlflow_url():
             client.set_terminated(run_id, status=status, end_time=int(meta["end_time"]))
     except Exception:
-        # No dejar un run RUNNING incompleto: borrarlo para mantener idempotencia.
+        # Do not leave an incomplete RUNNING run: delete it to keep idempotency.
         client.delete_run(run_id)
         logger.error("import_run_failed_rolled_back", run_name=run_name, run_id=run_id[:12])
         raise
