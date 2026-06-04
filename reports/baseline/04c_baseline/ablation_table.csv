@@ -1,6 +1,6 @@
 feature_set,model,n_features,f1_macro,f1_weighted,miou,delta_vs_full
-full,xgb,313,NaN,NaN,NaN,
-no_geom,xgb,313,NaN,NaN,NaN,
-no_geom_no_era5_srtm,xgb,313,NaN,NaN,NaN,
-alphaearth_only,xgb,128,NaN,NaN,NaN,
-phenology_only,xgb,32,NaN,NaN,NaN,
+full,xgb,313,0.435241,0.712632,0.327782,NaN
+no_geom,xgb,313,0.435241,0.712632,0.327782,0.0
+no_geom_no_era5_srtm,xgb,313,0.435241,0.712632,0.327782,0.0
+alphaearth_only,xgb,128,0.358351,0.655336,0.262715,-0.07689
+phenology_only,xgb,32,0.285587,0.572341,0.196328,-0.149653
