@@ -3,9 +3,9 @@
 Materializes three versionable artifacts of the feature engineering pipeline:
 
 1. ``parcel_features_fused`` → ``data/features/features_fused_v1.parquet``
-   tabular matrix (N, 2 + 189) with AlphaEarth blocks (64), indices×stats (85),
+   tabular matrix (N, 2 + 189) with AlphaEarth blocks (64), indices x stats (85),
    Sentinel-1 (10), SRTM (3), monthly ERA5 (24) and geometry (3). Optional
-   FarSLIP block (512) if ``data/farslip/embeddings_italy.parquet`` exists.
+   FarSLIP block (512) if ``data/farslip/embeddings_pastis.parquet`` exists.
 
 2. ``parcel_splits_spatial_kfold`` → ``data/splits/spatial_kfold_v1/fold_{0..4}/``
    K=5 non-contiguous spatial folds generated with H3 res 5 tessellation +
@@ -59,7 +59,7 @@ ARTIFACTS_DIR = Path("artifacts")
 DEFAULT_FUSED_PATH = DATA_FEATURES_DIR / "features_fused_v1.parquet"
 DEFAULT_SCALER_PATH = ARTIFACTS_DIR / "scaler_v1.pkl"
 DEFAULT_PARCELS_FIXTURE = Path("data/test_fixtures/parcels_demo_3regions.parquet")
-DEFAULT_FARSLIP_PATH = Path("data/farslip/embeddings_italy.parquet")
+DEFAULT_FARSLIP_PATH = Path("data/farslip/embeddings_pastis.parquet")
 
 # Active blocks for the default materialization (without FarSLIP).
 DEFAULT_BLOCKS: tuple[str, ...] = (
@@ -124,7 +124,7 @@ def _load_parcels_geodataframe(parcels_path: Path):
     group_name="feature_engineering",
     description=(
         "Vector tabular fusionado por (parcel_id, year) con 6 bloques "
-        "heterogéneos alineados (AE 64 + idx×stats 85 + S1 10 + SRTM 3 + "
+        "heterogéneos alineados (AE 64 + idx x stats 85 + S1 10 + SRTM 3 + "
         "ERA5 24 + geom 3 = 189 cols). Bloque opcional FarSLIP (+512)."
     ),
 )
@@ -162,7 +162,7 @@ def parcel_features_fused(context: AssetExecutionContext) -> MaterializeResult:
             farslip_path=str(DEFAULT_FARSLIP_PATH),
         )
         context.log.warning(
-            "FarSLIP block omitido: no existe data/farslip/embeddings_italy.parquet"
+            "FarSLIP block omitido: no existe data/farslip/embeddings_pastis.parquet"
         )
 
     df = build_fused_features(

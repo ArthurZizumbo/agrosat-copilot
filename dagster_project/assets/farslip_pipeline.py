@@ -13,12 +13,12 @@ artifacts of the FarSLIP paper (arXiv:2511.14901) with end-to-end lineage:
                                                                          │
                                                                          ▼
                                                        farslip_embeddings_consolidated
-                                                       (data/farslip/embeddings_italy.parquet)
+                                                       (data/farslip/embeddings_pastis.parquet)
 
 Mapping to the acceptance criteria (docs/us-planning/us-022b.md §3.2):
 
 - **B-4**: ``farslip_embeddings_consolidated`` produces
-  ``data/farslip/embeddings_italy.parquet`` consumed by
+  ``data/farslip/embeddings_pastis.parquet`` consumed by
   ``ml.features.fusion._DEFAULT_FARSLIP_PATH``.
 - **B-5**: tags ``farslip-pairs-italy-v1`` (in ``farslip_pairs_italy``),
   ``farslip-embeddings-italy-v1`` (in ``farslip_embeddings_consolidated``),
@@ -78,7 +78,7 @@ from ml.utils.git_meta import git_sha
 
 #: Canonical path of the consolidated parquet consumed by ``fusion.py``.
 #: Synchronized with ``ml.features.fusion._DEFAULT_FARSLIP_PATH``.
-DATA_FARSLIP_CONSOLIDATED_PATH = Path("data/farslip/embeddings_italy.parquet")
+DATA_FARSLIP_CONSOLIDATED_PATH = Path("data/farslip/embeddings_pastis.parquet")
 
 #: DVC + MLflow Registry tags defined in US-022b §3.2 B-5.
 PAIRS_TAG = PAIRS_DATA_VERSION_TAG  # farslip-pairs-italy-v1
@@ -159,7 +159,7 @@ def _resolve_consolidated_path() -> Path:
     """Resolves the consolidated path relative to the cwd.
 
     Returns:
-        Absolute ``Path`` of ``data/farslip/embeddings_italy.parquet`` ready for
+        Absolute ``Path`` of ``data/farslip/embeddings_pastis.parquet`` ready for
         ``parent.mkdir(parents=True, exist_ok=True)``.
     """
     return DATA_FARSLIP_CONSOLIDATED_PATH
@@ -206,7 +206,7 @@ def _iter_partition_parquets(
     required_resource_keys={"mlflow"},
     description=(
         "Consolida los embeddings FarSLIP 512-dim de las 3 ROIs italianas en "
-        "un unico parquet ``data/farslip/embeddings_italy.parquet`` (B-4 del "
+        "un unico parquet ``data/farslip/embeddings_pastis.parquet`` (B-4 del "
         "plan US-022b). Anade columna ``region`` y persiste con schema "
         "compatible con ``ml/features/fusion.py``. Registra metrics + tags en "
         "MLflow (data_version, code_version, n_embeddings, embedding_dim). "
@@ -216,7 +216,7 @@ def _iter_partition_parquets(
 def farslip_embeddings_consolidated(
     context: AssetExecutionContext,
 ) -> MaterializeResult:
-    """Consolidates embeddings per (roi, year) into ``data/farslip/embeddings_italy.parquet``.
+    """Consolidates embeddings per (roi, year) into ``data/farslip/embeddings_pastis.parquet``.
 
     Reads the parquets written by the partitions of ``farslip_embeddings_italy``
     (``data/farslip_embeddings/{roi}/{year}/``), concatenates them with Polars

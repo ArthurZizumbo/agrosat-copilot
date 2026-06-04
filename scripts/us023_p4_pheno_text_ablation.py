@@ -3,7 +3,7 @@
 Production run (not smoke). Builds a stratified subset of >=1000 parcels
 balanced by class, generates descriptions with Gemini Flash 3.5
 (temperature=0, per-parcel cache), encodes them with sentence-transformers
-all-MiniLM-L6-v2 (384 dim) and persists to data/features/phenology_text_italy.parquet.
+all-MiniLM-L6-v2 (384 dim) and persists to data/features/phenology_text_pastis.parquet.
 
 Then it runs the ablation with XGBoost spatial CV 5-fold over 3 sets:
 - full (185 base features without geom_*)
@@ -47,7 +47,7 @@ from ml.train.phenology_models import _reconstruct_curve  # noqa: E402
 # ---------------------------------------------------------------------------
 
 FEATURES_PATH = REPO / "data/test_fixtures/feature_selection_parcels_subset.parquet"
-OUT_PARQUET = REPO / "data/features/phenology_text_italy.parquet"
+OUT_PARQUET = REPO / "data/features/phenology_text_pastis.parquet"
 ABLATION_OUT = REPO / "reports/baseline/feature_ablation/ablation_table_pheno_text_v2.parquet"
 CACHE_DIR = REPO / "data/cache/phenology_descriptions"
 SEED = 42

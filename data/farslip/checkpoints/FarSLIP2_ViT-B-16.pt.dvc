@@ -1,0 +1,5 @@
+outs:
+- md5: bb1984424c5b20062b92f29be9c1d081
+  size: 1797386062
+  hash: md5
+  path: FarSLIP2_ViT-B-16.pt

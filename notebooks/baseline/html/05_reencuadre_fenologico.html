@@ -7857,20 +7857,20 @@ a.anchor-link {
 <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
 </div>
 <div class="jp-InputArea jp-Cell-inputArea">
-<div class="jp-InputPrompt jp-InputArea-prompt">In [1]:</div>
+<div class="jp-InputPrompt jp-InputArea-prompt">In [ ]:</div>
 <div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type="inline">
 <div class="cm-editor cm-s-jupyter">
 <div class="highlight hl-ipython3"><pre><span></span><span class="n">FEATURES_PATH</span> <span class="o">=</span> <span class="s2">"data/test_fixtures/feature_selection_parcels_subset.parquet"</span>
 <span class="n">PARCELS_GEOPARQUET</span> <span class="o">=</span> <span class="s2">"data/processed/pastis_parcels_full.geoparquet"</span>
-<span class="n">FUSED_PATH</span> <span class="o">=</span> <span class="s2">"data/features/features_fused_italy.parquet"</span>
-<span class="n">PHENO_TEXT_PATH</span> <span class="o">=</span> <span class="s2">"data/features/phenology_text_italy.parquet"</span>
-<span class="c1"># Output paths renombrados a _pastis_2019 en US-023-preview v2: los</span>
-<span class="c1"># parquets viejos (_italy) eran cache vacio (NaN al 100%) por el</span>
-<span class="c1"># bug B04 vs B4 en GEE y fallback DOY estatico. Los nuevos usan</span>
-<span class="c1"># bandas correctas + anclas calendario por parcela.</span>
+<span class="n">FUSED_PATH</span> <span class="o">=</span> <span class="s2">"data/features/features_fused_pastis.parquet"</span>
+<span class="n">PHENO_TEXT_PATH</span> <span class="o">=</span> <span class="s2">"data/features/phenology_text_pastis.parquet"</span>
+<span class="c1"># Output paths renamed to _pastis_2019 in US-023-preview v2: the</span>
+<span class="c1"># old parquets (_italy) were empty cache (100% NaN) due to the</span>
+<span class="c1"># B04 vs B4 bug in GEE and a static DOY fallback. The new ones use</span>
+<span class="c1"># correct bands + calendar anchors per parcel.</span>
 <span class="n">S2_ANCHORS_PATH</span> <span class="o">=</span> <span class="s2">"data/features/s2_anchors_pastis_2019.parquet"</span>
 <span class="n">SPECTRAL_SIGNATURE_PATH</span> <span class="o">=</span> <span class="s2">"data/features/spectral_signature_pastis_2019.parquet"</span>
-<span class="n">FARSLIP_PATH</span> <span class="o">=</span> <span class="s2">"data/farslip/embeddings_italy.parquet"</span>
+<span class="n">FARSLIP_PATH</span> <span class="o">=</span> <span class="s2">"data/farslip/embeddings_pastis.parquet"</span>
 <span class="n">ALPHAEARTH_ENRICHED_PATH</span> <span class="o">=</span> <span class="s2">"data/cache/gee/alphaearth_pastis_parcels_2019_85951_enriched.parquet"</span>
 <span class="n">PASTIS_METADATA_GEOJSON</span> <span class="o">=</span> <span class="s2">"data/PASTIS-R/metadata.geojson"</span>
 <span class="n">PHENOLOGY_ANCHORS_PATH</span> <span class="o">=</span> <span class="s2">"data/features/pastis_phenology_anchors_2019.parquet"</span>
@@ -7882,18 +7882,18 @@ a.anchor-link {
 <span class="n">BUFFER_KM</span> <span class="o">=</span> <span class="mf">1.0</span>
 <span class="n">MAX_SAMPLES</span> <span class="o">=</span> <span class="kc">None</span>
 <span class="n">RANDOM_STATE</span> <span class="o">=</span> <span class="mi">42</span>
-<span class="c1"># FarSLIP embeddings_italy.parquet contiene parcelas italianas extra-PASTIS</span>
-<span class="c1"># (overlap parcel_id con PASTIS = 0). Integrar FarSLIP a PASTIS requiere</span>
-<span class="c1"># distillar el student (US-017) y adaptar vocabulary CAP a cultivos</span>
-<span class="c1"># franceses. Por ahora se excluye del fused PASTIS; su evaluacion honesta</span>
-<span class="c1"># vive en 04_farslip_eval_pastis.ipynb sobre el subset adecuado.</span>
+<span class="c1"># FarSLIP embeddings_pastis.parquet contains extra-PASTIS Italian parcels</span>
+<span class="c1"># (parcel_id overlap with PASTIS = 0). Integrating FarSLIP into PASTIS requires</span>
+<span class="c1"># distilling the student (US-017) and adapting the CAP vocabulary to French</span>
+<span class="c1"># crops. For now it is excluded from the fused PASTIS; its honest evaluation</span>
+<span class="c1"># lives in 04_farslip_eval_pastis.ipynb over the appropriate subset.</span>
 <span class="n">ENABLE_FARSLIP</span> <span class="o">=</span> <span class="kc">False</span>
 <span class="n">ENABLE_PHENO_TEXT</span> <span class="o">=</span> <span class="kc">True</span>
 <span class="n">ENABLE_SPECTRAL_SIGNATURE</span> <span class="o">=</span> <span class="kc">True</span>
 <span class="n">ENABLE_ALPHAEARTH</span> <span class="o">=</span> <span class="kc">True</span>  <span class="c1"># Anexa data/cache/gee/alphaearth_*_enriched.parquet (64 dim_NN)</span>
 <span class="n">ENABLE_TEMPORAL_MODELS</span> <span class="o">=</span> <span class="kc">True</span>
-<span class="c1"># Si True, reusa los runs MLflow ya finalizados de tempcnn/inceptiontime</span>
-<span class="c1"># en el experimento baseline-05-reencuadre y evita re-entrenarlos (~6h GPU).</span>
+<span class="c1"># If True, reuse the already finished MLflow runs of tempcnn/inceptiontime</span>
+<span class="c1"># in the baseline-05-reencuadre experiment and skip retraining them (~6h GPU).</span>
 <span class="n">REUSE_TEMPORAL_FROM_MLFLOW</span> <span class="o">=</span> <span class="kc">True</span>
 <span class="n">ENABLE_CLUSTERING</span> <span class="o">=</span> <span class="kc">True</span>
 <span class="n">ENABLE_LLM_BRANCH</span> <span class="o">=</span> <span class="kc">True</span>
@@ -7903,7 +7903,7 @@ a.anchor-link {
 <span class="n">TEMPORAL_DEVICE</span> <span class="o">=</span> <span class="s1">'auto'</span>  <span class="c1"># auto = cuda si disponible</span>
 <span class="n">N_CLUSTERS</span> <span class="o">=</span> <span class="mi">8</span>
 <span class="n">LLM_SUBSET_SIZE</span> <span class="o">=</span> <span class="mi">1080</span>  <span class="c1"># 60 parcelas balanceadas x 18 clases</span>
-<span class="n">WEAK_CLASS_THRESHOLD</span> <span class="o">=</span> <span class="mi">1000</span>  <span class="c1"># parcelas, para listar clases debiles</span>
+<span class="n">WEAK_CLASS_THRESHOLD</span> <span class="o">=</span> <span class="mi">1000</span>  <span class="c1"># parcels, to list the weak classes</span>
 <span class="n">MLFLOW_EXPERIMENT</span> <span class="o">=</span> <span class="s2">"baseline-05-reencuadre"</span>
 </pre></div>
 </div>
@@ -7924,7 +7924,7 @@ a.anchor-link {
 <span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
 
-<span class="c1"># Bootstrap: localizar el repo root buscando pyproject.toml</span>
+<span class="c1"># Bootstrap: locate the repo root by searching for pyproject.toml</span>
 <span class="n">_HERE</span> <span class="o">=</span> <span class="n">Path</span><span class="o">.</span><span class="n">cwd</span><span class="p">()</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span>
 <span class="k">for</span> <span class="n">_candidate</span> <span class="ow">in</span> <span class="p">(</span><span class="n">_HERE</span><span class="p">,</span> <span class="o">*</span><span class="n">_HERE</span><span class="o">.</span><span class="n">parents</span><span class="p">):</span>
     <span class="k">if</span> <span class="p">(</span><span class="n">_candidate</span> <span class="o">/</span> <span class="s2">"pyproject.toml"</span><span class="p">)</span><span class="o">.</span><span class="n">is_file</span><span class="p">():</span>
@@ -7941,11 +7941,11 @@ a.anchor-link {
 <span class="p">)</span>
 <span class="n">display</span><span class="p">(</span><span class="n">Markdown</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">summary_markdown</span><span class="p">()))</span>
 
-<span class="c1"># Chdir al repo root para que las rutas relativas de la celda `parameters`</span>
-<span class="c1"># (FEATURES_PATH = "data/...", etc.) resuelvan igual sin importar desde donde</span>
-<span class="c1"># se haya lanzado el kernel (VS Code abre con cwd = carpeta del notebook).</span>
-<span class="c1"># Esto preserva el contrato papermill (parametros como strings relativas) y</span>
-<span class="c1"># elimina FileNotFoundError causado por cwd != repo root.</span>
+<span class="c1"># Chdir to the repo root so the relative paths in the `parameters` cell</span>
+<span class="c1"># (FEATURES_PATH = "data/...", etc.) resolve the same regardless of where</span>
+<span class="c1"># the kernel was launched (VS Code opens with cwd = notebook folder).</span>
+<span class="c1"># This preserves the papermill contract (parameters as relative strings) and</span>
+<span class="c1"># avoids FileNotFoundError caused by cwd != repo root.</span>
 <span class="n">os</span><span class="o">.</span><span class="n">chdir</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">repo</span><span class="p">)</span>
 <span class="n">display</span><span class="p">(</span><span class="n">Markdown</span><span class="p">(</span><span class="sa">f</span><span class="s2">"**cwd anclado al repo root**: `</span><span class="si">{</span><span class="n">env</span><span class="o">.</span><span class="n">repo</span><span class="si">}</span><span class="s2">`"</span><span class="p">))</span>
 </pre></div>
@@ -8029,9 +8029,9 @@ a.anchor-link {
     <span class="n">server_is_reachable</span><span class="p">,</span>
 <span class="p">)</span>
 
-<span class="c1"># Resolucion robusta del tracking URI: si MLFLOW_TRACKING_URI esta en</span>
-<span class="c1"># `.env.local` pero el server no responde (Docker apagado, contenedor</span>
-<span class="c1"># detenido), caemos a `file:./mlruns` para no detener el notebook.</span>
+<span class="c1"># Robust tracking URI resolution: if MLFLOW_TRACKING_URI is set in</span>
+<span class="c1"># `.env.local` but the server does not respond (Docker off, container</span>
+<span class="c1"># stopped), we fall back to `file:./mlruns` so the notebook keeps running.</span>
 <span class="n">_candidate_uri</span> <span class="o">=</span> <span class="n">resolve_tracking_uri</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">probe_server</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 <span class="k">if</span> <span class="n">_candidate_uri</span><span class="o">.</span><span class="n">startswith</span><span class="p">((</span><span class="s1">'http://'</span><span class="p">,</span> <span class="s1">'https://'</span><span class="p">))</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">server_is_reachable</span><span class="p">(</span><span class="n">_candidate_uri</span><span class="p">):</span>
     <span class="n">mlflow_uri</span> <span class="o">=</span> <span class="s1">'file:./mlruns'</span>
@@ -8184,14 +8184,14 @@ a.anchor-link {
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>2026-05-31 02:01:56 [<span class="ansi-green-intense-fg ansi-bold">info     </span>] <span class="ansi-bold">phenology_text_cache_hit      </span> <span class="ansi-cyan-fg">n_parcels</span>=<span class="ansi-magenta-fg">1080</span> <span class="ansi-cyan-fg">output_path</span>=<span class="ansi-magenta-fg">data/features/phenology_text_italy.parquet</span>
+<pre>2026-05-31 02:01:56 [<span class="ansi-green-intense-fg ansi-bold">info     </span>] <span class="ansi-bold">phenology_text_cache_hit      </span> <span class="ansi-cyan-fg">n_parcels</span>=<span class="ansi-magenta-fg">1080</span> <span class="ansi-cyan-fg">output_path</span>=<span class="ansi-magenta-fg">data/features/phenology_text_pastis.parquet</span>
 </pre>
 </div>
 </div>
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
 <div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-OutputArea-output" data-mime-type="text/markdown" tabindex="0">
-<p><strong>pheno_text</strong>: <code>(1080, 386)</code> en <code>data/features/phenology_text_italy.parquet</code></p>
+<p><strong>pheno_text</strong>: <code>(1080, 386)</code> en <code>data/features/phenology_text_pastis.parquet</code></p>
 </div>
 </div>
 </div>
@@ -8224,9 +8224,9 @@ a.anchor-link {
             <span class="s1">'en `.env.local` o ejecuta `earthengine authenticate`. '</span>
             <span class="s1">'El muestreo S2 anchors fallara sin esto.'</span>
         <span class="p">))</span>
-    <span class="c1"># Anclas fenologicas por parcela en DOY calendario 2019.</span>
-    <span class="c1"># Si el parquet existe usa cache; si no, lo construye desde</span>
-    <span class="c1"># `metadata.geojson` PASTIS-R + DOY relativos del subset US-016.</span>
+    <span class="c1"># Phenology anchors per parcel in calendar DOY 2019.</span>
+    <span class="c1"># If the parquet exists use cache; otherwise build it from</span>
+    <span class="c1"># `metadata.geojson` PASTIS-R + relative DOY from the US-016 subset.</span>
     <span class="n">phen_anchors_path</span> <span class="o">=</span> <span class="n">build_pastis_phenology_anchors</span><span class="p">(</span>
         <span class="n">metadata_geojson_path</span><span class="o">=</span><span class="n">PASTIS_METADATA_GEOJSON</span><span class="p">,</span>
         <span class="n">features_subset_path</span><span class="o">=</span><span class="n">FEATURES_PATH</span><span class="p">,</span>
@@ -8321,7 +8321,7 @@ a.anchor-link {
     <span class="k">if</span> <span class="ow">not</span> <span class="n">farslip_path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
         <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span>
             <span class="sa">f</span><span class="s1">'FarSLIP parquet no encontrado en </span><span class="si">{</span><span class="n">farslip_path</span><span class="si">}</span><span class="s1">. '</span>
-            <span class="s1">'Ejecuta `dvc pull data/farslip/embeddings_italy.parquet.dvc` '</span>
+            <span class="s1">'Ejecuta `dvc pull data/farslip/embeddings_pastis.parquet.dvc` '</span>
             <span class="s1">'antes de re-ejecutar.'</span>
         <span class="p">)</span>
     <span class="n">farslip_df</span> <span class="o">=</span> <span class="n">canonical_parcel_id</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">read_parquet</span><span class="p">(</span><span class="n">farslip_path</span><span class="p">))</span>
@@ -8407,7 +8407,7 @@ a.anchor-link {
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="Fusi%C3%B3n-de-bloques:-base-+-AlphaEarth-+-pheno_text-+-spectral_signature">Fusión de bloques: base + AlphaEarth + pheno_text + spectral_signature<a class="anchor-link" href="#Fusi%C3%B3n-de-bloques:-base-+-AlphaEarth-+-pheno_text-+-spectral_signature">¶</a></h2><p>Aplicamos un LEFT JOIN secuencial sobre <code>parcel_id</code> (todos en Utf8 tras <code>canonical_parcel_id</code>). AlphaEarth tiene overlap 100% con el subset PASTIS (mismo dataset GEE 2019, 85951 parcelas). Los bloques <code>pheno_text</code> y <code>spectral_signature</code> cubren un subset menor — las parcelas sin coincidencia quedan con NaN; XGBoost y LightGBM los toleran nativamente y RandomForest los imputa por mediana. <strong>FarSLIP</strong> se excluye del fused PASTIS porque <code>embeddings_italy.parquet</code> contiene parcelas italianas extra-PASTIS (overlap=0); su evaluación honesta vive en <code>04_farslip_eval_pastis.ipynb</code>.</p>
+<h2 id="Fusi%C3%B3n-de-bloques:-base-+-AlphaEarth-+-pheno_text-+-spectral_signature">Fusión de bloques: base + AlphaEarth + pheno_text + spectral_signature<a class="anchor-link" href="#Fusi%C3%B3n-de-bloques:-base-+-AlphaEarth-+-pheno_text-+-spectral_signature">¶</a></h2><p>Aplicamos un LEFT JOIN secuencial sobre <code>parcel_id</code> (todos en Utf8 tras <code>canonical_parcel_id</code>). AlphaEarth tiene overlap 100% con el subset PASTIS (mismo dataset GEE 2019, 85951 parcelas). Los bloques <code>pheno_text</code> y <code>spectral_signature</code> cubren un subset menor — las parcelas sin coincidencia quedan con NaN; XGBoost y LightGBM los toleran nativamente y RandomForest los imputa por mediana. <strong>FarSLIP</strong> se excluye del fused PASTIS porque <code>embeddings_pastis.parquet</code> contiene parcelas italianas extra-PASTIS (overlap=0); su evaluación honesta vive en <code>04_farslip_eval_pastis.ipynb</code>.</p>
 </div>
 </div>
 </div>
@@ -8493,7 +8493,7 @@ a.anchor-link {
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
 <div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-OutputArea-output" data-mime-type="text/markdown" tabindex="0">
-<p><strong>Fused persistido</strong>: <code>data/features/features_fused_italy.parquet</code> con shape <code>(85951, 645)</code>. Lo consume <code>Avance3.Equipo17.ipynb</code> via <code>select_winning_features</code>.</p>
+<p><strong>Fused persistido</strong>: <code>data/features/features_fused_pastis.parquet</code> con shape <code>(85951, 645)</code>. Lo consume <code>Avance3.Equipo17.ipynb</code> via <code>select_winning_features</code>.</p>
 </div>
 </div>
 </div>
@@ -8528,7 +8528,7 @@ a.anchor-link {
 <span class="n">display</span><span class="p">(</span><span class="n">Markdown</span><span class="p">(</span><span class="sa">f</span><span class="s1">'**Tabla de ablación**: `</span><span class="si">{</span><span class="n">parquet_path</span><span class="o">.</span><span class="n">relative_to</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">repo</span><span class="p">)</span><span class="si">}</span><span class="s1">`'</span><span class="p">))</span>
 <span class="n">display</span><span class="p">(</span><span class="n">ablation_table</span><span class="p">)</span>
 
-<span class="c1"># MLflow: un run por feature_set evaluado en la ablacion opcional.</span>
+<span class="c1"># MLflow: one run per feature_set evaluated in the optional ablation.</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
 <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">ablation_table</span><span class="o">.</span><span class="n">iter_rows</span><span class="p">(</span><span class="n">named</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
     <span class="n">fs</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="s1">'feature_set'</span><span class="p">]</span>
@@ -10349,9 +10349,9 @@ This warning will only be shown once.
 <span class="n">display</span><span class="p">(</span><span class="n">fig_abl</span><span class="p">)</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">close</span><span class="p">(</span><span class="n">fig_abl</span><span class="p">)</span>
 
-<span class="c1"># Nota: el plot `geom_leakage` se genera SOLO en 04c (donde vive la</span>
-<span class="c1"># ablacion base con geom_only). Aqui mostramos solo el aporte de los</span>
-<span class="c1"># bloques opcionales para no duplicar contenido entre notebooks.</span>
+<span class="c1"># Note: the `geom_leakage` plot is generated ONLY in 04c (where the</span>
+<span class="c1"># base ablation with geom_only lives). Here we show only the contribution of</span>
+<span class="c1"># the optional blocks to avoid duplicating content across notebooks.</span>
 <span class="n">fig_opt</span> <span class="o">=</span> <span class="n">plot_optional_blocks_ablation</span><span class="p">(</span><span class="n">results</span><span class="p">)</span>
 <span class="n">fig_opt</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">figures_dir</span> <span class="o">/</span> <span class="s1">'optional_blocks.png'</span><span class="p">,</span> <span class="n">bbox_inches</span><span class="o">=</span><span class="s1">'tight'</span><span class="p">)</span>
 <span class="n">display</span><span class="p">(</span><span class="n">fig_opt</span><span class="p">)</span>
@@ -10405,7 +10405,7 @@ This warning will only be shown once.
 <div class="highlight hl-ipython3"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">ml.train.baseline</span><span class="w"> </span><span class="kn">import</span> <span class="n">train_one_model</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">ml.train.phenology_models</span><span class="w"> </span><span class="kn">import</span> <span class="n">train_temporal_model</span>
 
-<span class="c1"># Lee el conjunto ganador BASE de 04c. Si no existe, fallback no_geom.</span>
+<span class="c1"># Read the winning BASE set from 04c. If it does not exist, fall back to no_geom.</span>
 <span class="n">base_ablation_path</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">repo</span> <span class="o">/</span> <span class="n">BASE_ABLATION_PATH</span>
 <span class="k">if</span> <span class="n">base_ablation_path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
     <span class="n">base_table</span> <span class="o">=</span> <span class="n">pl</span><span class="o">.</span><span class="n">read_parquet</span><span class="p">(</span><span class="n">base_ablation_path</span><span class="p">)</span>
@@ -10419,7 +10419,7 @@ This warning will only be shown once.
         <span class="s1">'Fallback documentado: `no_geom` (descarta las 3 columnas `geom_*` por leakage).'</span>
     <span class="p">))</span>
 
-<span class="c1"># Aplicar el filtro al fused (descartar geom_* si winner_base == 'no_geom').</span>
+<span class="c1"># Apply the filter to the fused set (drop geom_* if winner_base == 'no_geom').</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">_apply_winner</span><span class="p">(</span><span class="n">df_in</span><span class="p">,</span> <span class="n">winner_set</span><span class="p">):</span>
     <span class="k">if</span> <span class="n">winner_set</span> <span class="o">==</span> <span class="s1">'no_geom'</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">df_in</span><span class="o">.</span><span class="n">drop</span><span class="p">([</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">df_in</span><span class="o">.</span><span class="n">columns</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">'geom_'</span><span class="p">)])</span>
@@ -11186,7 +11186,7 @@ This warning will only be shown once.
                     <span class="sa">f</span><span class="s1">'&gt; Cache MLflow no disponible para `</span><span class="si">{</span><span class="n">kind</span><span class="si">}</span><span class="s1">`: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s1">. Entreno desde cero.'</span>
                 <span class="p">))</span>
         <span class="k">if</span> <span class="n">res</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="c1"># train_temporal_model abre su propio run MLflow.</span>
+            <span class="c1"># train_temporal_model opens its own MLflow run.</span>
             <span class="n">res</span> <span class="o">=</span> <span class="n">train_temporal_model</span><span class="p">(</span>
                 <span class="n">df</span><span class="o">=</span><span class="n">fused_winner</span><span class="p">,</span>
                 <span class="n">model_kind</span><span class="o">=</span><span class="n">kind</span><span class="p">,</span>
@@ -11288,7 +11288,7 @@ This warning will only be shown once.
 <span class="n">display</span><span class="p">(</span><span class="n">Markdown</span><span class="p">(</span><span class="sa">f</span><span class="s1">'**Tabla guardada**: `</span><span class="si">{</span><span class="n">comparison_5_path</span><span class="o">.</span><span class="n">relative_to</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">repo</span><span class="p">)</span><span class="si">}</span><span class="s1">`'</span><span class="p">))</span>
 <span class="n">display</span><span class="p">(</span><span class="n">comparison_5</span><span class="p">)</span>
 
-<span class="c1"># Barplot con palette distinta para tabular vs temporal.</span>
+<span class="c1"># Barplot with a distinct palette for tabular vs temporal.</span>
 <span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">9</span><span class="p">,</span> <span class="mi">5</span><span class="p">),</span> <span class="n">dpi</span><span class="o">=</span><span class="mi">110</span><span class="p">)</span>
 <span class="n">palette</span> <span class="o">=</span> <span class="p">{</span><span class="s1">'tabular'</span><span class="p">:</span> <span class="s1">'#4C72B0'</span><span class="p">,</span> <span class="s1">'temporal'</span><span class="p">:</span> <span class="s1">'#DD8452'</span><span class="p">}</span>
 <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">row</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">comparison_5</span><span class="o">.</span><span class="n">iter_rows</span><span class="p">(</span><span class="n">named</span><span class="o">=</span><span class="kc">True</span><span class="p">)):</span>
@@ -11384,7 +11384,7 @@ This warning will only be shown once.
         <span class="sa">f</span><span class="s1">'`</span><span class="si">{</span><span class="n">best_temporal</span><span class="o">.</span><span class="n">n_parcels</span><span class="si">:</span><span class="s1">,</span><span class="si">}</span><span class="s1">` parcelas y `</span><span class="si">{</span><span class="n">best_temporal</span><span class="o">.</span><span class="n">n_classes</span><span class="si">}</span><span class="s1">` clases.'</span>
     <span class="p">))</span>
     <span class="k">if</span> <span class="n">best_temporal</span><span class="o">.</span><span class="n">y_true_oof</span><span class="o">.</span><span class="n">size</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
-        <span class="c1"># Persistimos OOF.</span>
+        <span class="c1"># Persist OOF.</span>
         <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
         <span class="n">oof_path</span> <span class="o">=</span> <span class="n">env</span><span class="o">.</span><span class="n">reports_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s1">'oof_predictions_</span><span class="si">{</span><span class="n">best_temporal</span><span class="o">.</span><span class="n">model_kind</span><span class="si">}</span><span class="s1">.npz'</span>
         <span class="n">np</span><span class="o">.</span><span class="n">savez_compressed</span><span class="p">(</span>
@@ -11396,7 +11396,7 @@ This warning will only be shown once.
             <span class="sa">f</span><span class="s1">'**OOF guardado**: `</span><span class="si">{</span><span class="n">oof_path</span><span class="o">.</span><span class="n">relative_to</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">repo</span><span class="p">)</span><span class="si">}</span><span class="s1">` '</span>
             <span class="sa">f</span><span class="s1">'(</span><span class="si">{</span><span class="n">best_temporal</span><span class="o">.</span><span class="n">y_true_oof</span><span class="o">.</span><span class="n">size</span><span class="si">:</span><span class="s1">,</span><span class="si">}</span><span class="s1"> predicciones).'</span>
         <span class="p">))</span>
-        <span class="c1"># F1 por clase.</span>
+        <span class="c1"># F1 per class.</span>
         <span class="n">class_names</span> <span class="o">=</span> <span class="p">{</span>
             <span class="nb">int</span><span class="p">(</span><span class="n">c</span><span class="p">):</span> <span class="n">PASTIS_R_CLASSES</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">c</span><span class="p">),</span> <span class="sa">f</span><span class="s1">'c</span><span class="si">{</span><span class="nb">int</span><span class="p">(</span><span class="n">c</span><span class="p">)</span><span class="si">}</span><span class="s1">'</span><span class="p">)</span>
             <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">np</span><span class="o">.</span><span class="n">unique</span><span class="p">(</span><span class="n">best_temporal</span><span class="o">.</span><span class="n">y_true_oof</span><span class="p">)</span>
@@ -11412,7 +11412,7 @@ This warning will only be shown once.
         <span class="n">fig_f1</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">figures_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s1">'per_class_f1_</span><span class="si">{</span><span class="n">best_temporal</span><span class="o">.</span><span class="n">model_kind</span><span class="si">}</span><span class="s1">.png'</span><span class="p">,</span> <span class="n">bbox_inches</span><span class="o">=</span><span class="s1">'tight'</span><span class="p">)</span>
         <span class="n">display</span><span class="p">(</span><span class="n">fig_f1</span><span class="p">)</span>
         <span class="n">plt</span><span class="o">.</span><span class="n">close</span><span class="p">(</span><span class="n">fig_f1</span><span class="p">)</span>
-        <span class="c1"># Matriz de confusion.</span>
+        <span class="c1"># Confusion matrix.</span>
         <span class="n">fig_cm</span> <span class="o">=</span> <span class="n">confusion_matrix_figure</span><span class="p">(</span>
             <span class="n">best_temporal</span><span class="o">.</span><span class="n">y_true_oof</span><span class="p">,</span>
             <span class="n">best_temporal</span><span class="o">.</span><span class="n">y_pred_oof</span><span class="p">,</span>
@@ -11559,7 +11559,7 @@ This warning will only be shown once.
     <span class="n">pheno_only_cols</span> <span class="o">=</span> <span class="n">feature_sets_for_cluster</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">'phenology_only'</span><span class="p">,</span> <span class="p">())</span>
     <span class="k">if</span> <span class="n">pheno_only_cols</span><span class="p">:</span>
         <span class="n">X_pheno</span> <span class="o">=</span> <span class="n">fused</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">pheno_only_cols</span><span class="p">))</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">)</span>
-        <span class="c1"># Imputacion por media de columna para tolerar NaN.</span>
+        <span class="c1"># Column-mean imputation to tolerate NaN.</span>
         <span class="n">col_means</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nanmean</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">X_pheno</span><span class="p">),</span> <span class="n">X_pheno</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
         <span class="n">col_means</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">isnan</span><span class="p">(</span><span class="n">col_means</span><span class="p">),</span> <span class="mf">0.0</span><span class="p">,</span> <span class="n">col_means</span><span class="p">)</span>
         <span class="n">X_clean</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">isfinite</span><span class="p">(</span><span class="n">X_pheno</span><span class="p">),</span> <span class="n">X_pheno</span><span class="p">,</span> <span class="n">col_means</span><span class="p">)</span>
@@ -11581,7 +11581,7 @@ This warning will only be shown once.
         <span class="n">fig_umap</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">figures_dir</span> <span class="o">/</span> <span class="s1">'umap_clusters.png'</span><span class="p">,</span> <span class="n">bbox_inches</span><span class="o">=</span><span class="s1">'tight'</span><span class="p">)</span>
         <span class="n">display</span><span class="p">(</span><span class="n">fig_umap</span><span class="p">)</span>
         <span class="n">plt</span><span class="o">.</span><span class="n">close</span><span class="p">(</span><span class="n">fig_umap</span><span class="p">)</span>
-        <span class="c1"># Curva NDVI media por cluster.</span>
+        <span class="c1"># Mean NDVI curve per cluster.</span>
         <span class="n">fig_curves</span> <span class="o">=</span> <span class="n">plot_cluster_ndvi_curves</span><span class="p">(</span>
             <span class="n">fused</span><span class="p">,</span> <span class="n">cluster_labels</span><span class="p">,</span> <span class="n">sequence_length</span><span class="o">=</span><span class="mi">72</span><span class="p">,</span>
             <span class="n">title</span><span class="o">=</span><span class="s1">'Curva NDVI media reconstruida por cluster (sin coordenadas)'</span><span class="p">,</span>
@@ -11589,7 +11589,7 @@ This warning will only be shown once.
         <span class="n">fig_curves</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="n">env</span><span class="o">.</span><span class="n">figures_dir</span> <span class="o">/</span> <span class="s1">'cluster_ndvi_curves.png'</span><span class="p">,</span> <span class="n">bbox_inches</span><span class="o">=</span><span class="s1">'tight'</span><span class="p">)</span>
         <span class="n">display</span><span class="p">(</span><span class="n">fig_curves</span><span class="p">)</span>
         <span class="n">plt</span><span class="o">.</span><span class="n">close</span><span class="p">(</span><span class="n">fig_curves</span><span class="p">)</span>
-        <span class="c1"># Composicion top-3 cultivos por cluster.</span>
+        <span class="c1"># Top-3 crop composition per cluster.</span>
         <span class="n">df_with_clusters</span> <span class="o">=</span> <span class="n">fused</span><span class="o">.</span><span class="n">with_columns</span><span class="p">(</span>
             <span class="n">pl</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="s1">'pheno_cluster'</span><span class="p">,</span> <span class="n">cluster_labels</span><span class="p">)</span><span class="o">.</span><span class="n">cast</span><span class="p">(</span><span class="n">pl</span><span class="o">.</span><span class="n">Int64</span><span class="p">)</span>
         <span class="p">)</span>
@@ -11769,7 +11769,7 @@ This warning will only be shown once.
 <div class="highlight hl-ipython3"><pre><span></span><span class="k">if</span> <span class="n">ENABLE_LLM_BRANCH</span> <span class="ow">and</span> <span class="n">env</span><span class="o">.</span><span class="n">has_gemini_api_key</span><span class="p">:</span>
     <span class="kn">from</span><span class="w"> </span><span class="nn">ml.features.phenology_description</span><span class="w"> </span><span class="kn">import</span> <span class="n">build_phenology_text_block</span>
 
-    <span class="c1"># Subset balanceado: 60 parcelas por clase.</span>
+    <span class="c1"># Balanced subset: 60 parcels per class.</span>
     <span class="n">per_class</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">LLM_SUBSET_SIZE</span> <span class="o">//</span> <span class="n">fused</span><span class="p">[</span><span class="s1">'class_id'</span><span class="p">]</span><span class="o">.</span><span class="n">n_unique</span><span class="p">())</span>
     <span class="n">rng_seed</span> <span class="o">=</span> <span class="n">RANDOM_STATE</span>
     <span class="n">balanced</span> <span class="o">=</span> <span class="p">(</span>
@@ -19482,9 +19482,9 @@ This warning will only be shown once.
 </div>
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jupyter-widgets jp-OutputArea-output" id="7186b047-9fa8-43d6-8fce-ceab5b6f96b8" tabindex="0">
+<div class="jupyter-widgets jp-OutputArea-output" id="618c690f-ca1f-441e-8f15-a009ce57424a" tabindex="0">
 <script type="text/javascript">
-var element = document.getElementById('7186b047-9fa8-43d6-8fce-ceab5b6f96b8');
+var element = document.getElementById('618c690f-ca1f-441e-8f15-a009ce57424a');
 </script>
 <script type="application/vnd.jupyter.widget-view+json">
 {"model_id": "5aced4c202bc4eadbac9d991afb1c586", "version_major": 2, "version_minor": 0}
@@ -19500,9 +19500,9 @@ var element = document.getElementById('7186b047-9fa8-43d6-8fce-ceab5b6f96b8');
 </div>
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jupyter-widgets jp-OutputArea-output" id="81b8464f-c992-4e00-8ac3-649def7c2f70" tabindex="0">
+<div class="jupyter-widgets jp-OutputArea-output" id="23781bb4-6cb7-4bed-a3b1-b5a5b712a1d3" tabindex="0">
 <script type="text/javascript">
-var element = document.getElementById('81b8464f-c992-4e00-8ac3-649def7c2f70');
+var element = document.getElementById('23781bb4-6cb7-4bed-a3b1-b5a5b712a1d3');
 </script>
 <script type="application/vnd.jupyter.widget-view+json">
 {"model_id": "353399f9bf0f450ab6f568b2940a62b9", "version_major": 2, "version_minor": 0}
@@ -19511,9 +19511,9 @@ var element = document.getElementById('81b8464f-c992-4e00-8ac3-649def7c2f70');
 </div>
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jupyter-widgets jp-OutputArea-output" id="d580b515-16f2-4996-bacb-3dbac4af2c17" tabindex="0">
+<div class="jupyter-widgets jp-OutputArea-output" id="c7f07110-6ce6-4b32-9318-8bb18aab2704" tabindex="0">
 <script type="text/javascript">
-var element = document.getElementById('d580b515-16f2-4996-bacb-3dbac4af2c17');
+var element = document.getElementById('c7f07110-6ce6-4b32-9318-8bb18aab2704');
 </script>
 <script type="application/vnd.jupyter.widget-view+json">
 {"model_id": "00cb5e2706fa461d9205cadb6d6ad30b", "version_major": 2, "version_minor": 0}
@@ -19522,9 +19522,9 @@ var element = document.getElementById('d580b515-16f2-4996-bacb-3dbac4af2c17');
 </div>
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jupyter-widgets jp-OutputArea-output" id="0217f95b-a928-438f-8cee-ae9852539152" tabindex="0">
+<div class="jupyter-widgets jp-OutputArea-output" id="477a0170-1818-49a9-978c-c49e14833ffc" tabindex="0">
 <script type="text/javascript">
-var element = document.getElementById('0217f95b-a928-438f-8cee-ae9852539152');
+var element = document.getElementById('477a0170-1818-49a9-978c-c49e14833ffc');
 </script>
 <script type="application/vnd.jupyter.widget-view+json">
 {"model_id": "5890928b0a9a44fe8300c026bc9e65a2", "version_major": 2, "version_minor": 0}
@@ -19533,9 +19533,9 @@ var element = document.getElementById('0217f95b-a928-438f-8cee-ae9852539152');
 </div>
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jupyter-widgets jp-OutputArea-output" id="dd0664a6-e08b-41dd-aabc-7879fa63e4df" tabindex="0">
+<div class="jupyter-widgets jp-OutputArea-output" id="7620925c-d850-4fc8-be3a-39f01c8b8d09" tabindex="0">
 <script type="text/javascript">
-var element = document.getElementById('dd0664a6-e08b-41dd-aabc-7879fa63e4df');
+var element = document.getElementById('7620925c-d850-4fc8-be3a-39f01c8b8d09');
 </script>
 <script type="application/vnd.jupyter.widget-view+json">
 {"model_id": "381096a9fb5e464186ce01c0f28c5635", "version_major": 2, "version_minor": 0}
@@ -19544,9 +19544,9 @@ var element = document.getElementById('dd0664a6-e08b-41dd-aabc-7879fa63e4df');
 </div>
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jupyter-widgets jp-OutputArea-output" id="efee2b15-de92-4c32-94ce-ceef323ea60d" tabindex="0">
+<div class="jupyter-widgets jp-OutputArea-output" id="ebe447b4-f9e6-4393-95d6-8700bdca512f" tabindex="0">
 <script type="text/javascript">
-var element = document.getElementById('efee2b15-de92-4c32-94ce-ceef323ea60d');
+var element = document.getElementById('ebe447b4-f9e6-4393-95d6-8700bdca512f');
 </script>
 <script type="application/vnd.jupyter.widget-view+json">
 {"model_id": "88936942f11a42638a5335fb2040266b", "version_major": 2, "version_minor": 0}
@@ -19555,9 +19555,9 @@ var element = document.getElementById('efee2b15-de92-4c32-94ce-ceef323ea60d');
 </div>
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jupyter-widgets jp-OutputArea-output" id="0ce19b60-5ab3-47a3-8bc3-9aeee8bf6056" tabindex="0">
+<div class="jupyter-widgets jp-OutputArea-output" id="db6c98b6-418e-4a51-8dbb-d59df005479e" tabindex="0">
 <script type="text/javascript">
-var element = document.getElementById('0ce19b60-5ab3-47a3-8bc3-9aeee8bf6056');
+var element = document.getElementById('db6c98b6-418e-4a51-8dbb-d59df005479e');
 </script>
 <script type="application/vnd.jupyter.widget-view+json">
 {"model_id": "d42cb38e46424b45989ea76ee5d8f0e7", "version_major": 2, "version_minor": 0}
@@ -19566,9 +19566,9 @@ var element = document.getElementById('0ce19b60-5ab3-47a3-8bc3-9aeee8bf6056');
 </div>
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jupyter-widgets jp-OutputArea-output" id="5627a211-ff6f-4b57-8b4c-9be66edb98b3" tabindex="0">
+<div class="jupyter-widgets jp-OutputArea-output" id="01e32cfa-806f-48bf-bf9f-f39b5b505092" tabindex="0">
 <script type="text/javascript">
-var element = document.getElementById('5627a211-ff6f-4b57-8b4c-9be66edb98b3');
+var element = document.getElementById('01e32cfa-806f-48bf-bf9f-f39b5b505092');
 </script>
 <script type="application/vnd.jupyter.widget-view+json">
 {"model_id": "82d49b7bd51d4b6981e5ae3b31e6b1ee", "version_major": 2, "version_minor": 0}
@@ -19577,9 +19577,9 @@ var element = document.getElementById('5627a211-ff6f-4b57-8b4c-9be66edb98b3');
 </div>
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jupyter-widgets jp-OutputArea-output" id="eb56e65d-f8ad-48b5-802e-2a83652fd5f6" tabindex="0">
+<div class="jupyter-widgets jp-OutputArea-output" id="13f78926-c38d-4345-9b40-8f1aa86dd8ad" tabindex="0">
 <script type="text/javascript">
-var element = document.getElementById('eb56e65d-f8ad-48b5-802e-2a83652fd5f6');
+var element = document.getElementById('13f78926-c38d-4345-9b40-8f1aa86dd8ad');
 </script>
 <script type="application/vnd.jupyter.widget-view+json">
 {"model_id": "4b361a916078445d81d8d20b61a22c6f", "version_major": 2, "version_minor": 0}
@@ -19588,9 +19588,9 @@ var element = document.getElementById('eb56e65d-f8ad-48b5-802e-2a83652fd5f6');
 </div>
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jupyter-widgets jp-OutputArea-output" id="058ed0b6-4017-42aa-ae6b-5a01b7b54123" tabindex="0">
+<div class="jupyter-widgets jp-OutputArea-output" id="058d9ed9-5d34-43f4-9c3c-b239fee3ee2e" tabindex="0">
 <script type="text/javascript">
-var element = document.getElementById('058ed0b6-4017-42aa-ae6b-5a01b7b54123');
+var element = document.getElementById('058d9ed9-5d34-43f4-9c3c-b239fee3ee2e');
 </script>
 <script type="application/vnd.jupyter.widget-view+json">
 {"model_id": "d38c9c1768f74a30a07a67222f9817b0", "version_major": 2, "version_minor": 0}
@@ -19599,9 +19599,9 @@ var element = document.getElementById('058ed0b6-4017-42aa-ae6b-5a01b7b54123');
 </div>
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jupyter-widgets jp-OutputArea-output" id="fa29a084-e7ab-4656-b753-b191b035db60" tabindex="0">
+<div class="jupyter-widgets jp-OutputArea-output" id="c7e713e0-3359-4a33-a3ae-989f1dfac957" tabindex="0">
 <script type="text/javascript">
-var element = document.getElementById('fa29a084-e7ab-4656-b753-b191b035db60');
+var element = document.getElementById('c7e713e0-3359-4a33-a3ae-989f1dfac957');
 </script>
 <script type="application/vnd.jupyter.widget-view+json">
 {"model_id": "9967b757203849f7a1ae2dce34cbf7ec", "version_major": 2, "version_minor": 0}
@@ -19610,9 +19610,9 @@ var element = document.getElementById('fa29a084-e7ab-4656-b753-b191b035db60');
 </div>
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jupyter-widgets jp-OutputArea-output" id="4839a930-256e-44f1-b3e6-98daacc35b31" tabindex="0">
+<div class="jupyter-widgets jp-OutputArea-output" id="91e46e78-1622-4ea7-ba9b-6f7bc673fcaf" tabindex="0">
 <script type="text/javascript">
-var element = document.getElementById('4839a930-256e-44f1-b3e6-98daacc35b31');
+var element = document.getElementById('91e46e78-1622-4ea7-ba9b-6f7bc673fcaf');
 </script>
 <script type="application/vnd.jupyter.widget-view+json">
 {"model_id": "a3eb58b7f7de43b4977e0b59e19589fb", "version_major": 2, "version_minor": 0}

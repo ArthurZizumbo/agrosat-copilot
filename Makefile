@@ -431,7 +431,7 @@ farslip-extract-embeddings:  ## US-022-c P1 B-4 — extrae embeddings FarSLIP (8
 	  --student-checkpoint mlflow://Models/farslip-clip-italy-v1@Production \
 	  --parcels-parquet data/features/features_fused_v1.parquet \
 	  --rois italy \
-	  --output data/farslip/embeddings_italy.parquet \
+	  --output data/farslip/embeddings_pastis.parquet \
 	  --batch-size 256 \
 	  --device auto \
 	  --seed 42

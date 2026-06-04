@@ -2,4 +2,4 @@ outs:
 - md5: 7fbeefa418842311f61ffe1b9f26bb03
   size: 1630827
   hash: md5
-  path: phenology_text_italy.parquet
+  path: phenology_text_pastis.parquet

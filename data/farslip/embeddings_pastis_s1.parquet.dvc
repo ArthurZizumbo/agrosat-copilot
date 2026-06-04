@@ -1,0 +1,5 @@
+outs:
+- md5: 05ff4b973adfced8d2e2a86b8ce70efb
+  size: 150974684
+  hash: md5
+  path: embeddings_pastis_s1.parquet

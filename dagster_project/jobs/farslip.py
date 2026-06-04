@@ -6,7 +6,7 @@ Selects the assets of the end-to-end flow:
 
     sentinel2_crops_256 (3 ROIs)
       -> farslip_embeddings_italy (3 ROIs, depends on MLflow model)
-      -> farslip_embeddings_consolidated (data/farslip/embeddings_italy.parquet)
+      -> farslip_embeddings_consolidated (data/farslip/embeddings_pastis.parquet)
 
 The external asset ``farslip_clip_italy_v1`` (model in the MLflow Registry) is
 NOT included in the job — it is trained outside Dagster via ``make train-l4``

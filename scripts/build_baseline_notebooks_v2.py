@@ -2083,7 +2083,7 @@ def build_04_farslip_eval_pastis() -> dict[str, Any]:
             # ml.ingest.pastis_eval_subset uses output.with_suffix(output.suffix + ".imagery.parquet")
             # which produces the name with double suffix .parquet.imagery.parquet.
             'PASTIS_IMAGERY_PATH = "data/test_fixtures/pastis_eval_subset.parquet.imagery.parquet"\n'
-            'FARSLIP_EMBEDDINGS_PATH = "data/farslip/embeddings_italy.parquet"\n'
+            'FARSLIP_EMBEDDINGS_PATH = "data/farslip/embeddings_pastis.parquet"\n'
             'REMOTECLIP_EMBEDDINGS_PATH = "data/farslip/remoteclip_embeddings_pastis.parquet"\n'
             'FIGURES_SUBDIR = "us-023-preview/04_farslip_eval_pastis"\n'
             'REPORTS_SUBDIR = "baseline/04_farslip_eval_pastis"\n'
@@ -2187,7 +2187,7 @@ def build_04_farslip_eval_pastis() -> dict[str, Any]:
             "if not farslip_path.exists():\n"
             "    raise FileNotFoundError(\n"
             "        f'FarSLIP no encontrado en {farslip_path}. Ejecuta '\n"
-            "        '`dvc pull data/farslip/embeddings_italy.parquet.dvc` antes de re-ejecutar.'\n"
+            "        '`dvc pull data/farslip/embeddings_pastis.parquet.dvc` antes de re-ejecutar.'\n"
             "    )\n"
             "farslip = pl.read_parquet(farslip_path)\n"
             "from ml.utils.parcel_id import canonical_parcel_id\n"
@@ -2501,15 +2501,15 @@ def build_05_reencuadre() -> dict[str, Any]:
         _code(
             'FEATURES_PATH = "data/test_fixtures/feature_selection_parcels_subset.parquet"\n'
             'PARCELS_GEOPARQUET = "data/processed/pastis_parcels_full.geoparquet"\n'
-            'FUSED_PATH = "data/features/features_fused_italy.parquet"\n'
-            'PHENO_TEXT_PATH = "data/features/phenology_text_italy.parquet"\n'
+            'FUSED_PATH = "data/features/features_fused_pastis.parquet"\n'
+            'PHENO_TEXT_PATH = "data/features/phenology_text_pastis.parquet"\n'
             '# Output paths renombrados a _pastis_2019 en US-023-preview v2: los\n'
             '# parquets viejos (_italy) eran cache vacio (NaN al 100%) por el\n'
             '# bug B04 vs B4 en GEE y fallback DOY estatico. Los nuevos usan\n'
             '# bandas correctas + anclas calendario por parcela.\n'
             'S2_ANCHORS_PATH = "data/features/s2_anchors_pastis_2019.parquet"\n'
             'SPECTRAL_SIGNATURE_PATH = "data/features/spectral_signature_pastis_2019.parquet"\n'
-            'FARSLIP_PATH = "data/farslip/embeddings_italy.parquet"\n'
+            'FARSLIP_PATH = "data/farslip/embeddings_pastis.parquet"\n'
             'ALPHAEARTH_ENRICHED_PATH = "data/cache/gee/alphaearth_pastis_parcels_2019_85951_enriched.parquet"\n'
             'PASTIS_METADATA_GEOJSON = "data/PASTIS-R/metadata.geojson"\n'
             'PHENOLOGY_ANCHORS_PATH = "data/features/pastis_phenology_anchors_2019.parquet"\n'
@@ -2521,7 +2521,7 @@ def build_05_reencuadre() -> dict[str, Any]:
             "BUFFER_KM = 1.0\n"
             "MAX_SAMPLES = None\n"
             "RANDOM_STATE = 42\n"
-            "# FarSLIP embeddings_italy.parquet contiene parcelas italianas extra-PASTIS\n"
+            "# FarSLIP embeddings_pastis.parquet contiene parcelas italianas extra-PASTIS\n"
             "# (overlap parcel_id con PASTIS = 0). Integrar FarSLIP a PASTIS requiere\n"
             "# distillar el student (US-017) y adaptar vocabulary CAP a cultivos\n"
             "# franceses. Por ahora se excluye del fused PASTIS; su evaluacion honesta\n"
@@ -2703,7 +2703,7 @@ def build_05_reencuadre() -> dict[str, Any]:
             "    if not farslip_path.exists():\n"
             "        raise FileNotFoundError(\n"
             "            f'FarSLIP parquet no encontrado en {farslip_path}. '\n"
-            "            'Ejecuta `dvc pull data/farslip/embeddings_italy.parquet.dvc` '\n"
+            "            'Ejecuta `dvc pull data/farslip/embeddings_pastis.parquet.dvc` '\n"
             "            'antes de re-ejecutar.'\n"
             "        )\n"
             "    farslip_df = canonical_parcel_id(pl.read_parquet(farslip_path))\n"
@@ -2747,7 +2747,7 @@ def build_05_reencuadre() -> dict[str, Any]:
             "menor — las parcelas sin coincidencia quedan con NaN; XGBoost y "
             "LightGBM los toleran nativamente y RandomForest los imputa por "
             "mediana. **FarSLIP** se excluye del fused PASTIS porque "
-            "`embeddings_italy.parquet` contiene parcelas italianas extra-"
+            "`embeddings_pastis.parquet` contiene parcelas italianas extra-"
             "PASTIS (overlap=0); su evaluación honesta vive en "
             "`04_farslip_eval_pastis.ipynb`."
         )
@@ -3590,8 +3590,8 @@ def build_avance3() -> dict[str, Any]:
             'ABLATION_OPTIONAL_PATH_05 = "reports/baseline/05_reencuadre/ablation_table.parquet"\n'
             'COMPARISON_TEMPORAL_PATH = "reports/baseline/05_reencuadre/model_comparison_temporal.parquet"\n'
             'COMPARISON_SCENARIOS_PATH = "reports/baseline/04_baseline/comparison_alphaearth_vs_s2.csv"\n'
-            'FUSED_PATH = "data/features/features_fused_italy.parquet"\n'
-            'WINNING_OUTPUT = "data/features/features_fused_winning_italy.parquet"\n'
+            'FUSED_PATH = "data/features/features_fused_pastis.parquet"\n'
+            'WINNING_OUTPUT = "data/features/features_fused_winning_pastis.parquet"\n'
             'FIGURES_SUBDIR = "us-023-preview/Avance3"\n'
             'REPORTS_SUBDIR = "baseline/Avance3"\n'
             "PROMOTE_THRESHOLD = 0.005\n"
@@ -4005,9 +4005,9 @@ def build_avance3() -> dict[str, Any]:
             "el proyecto**. Recibe la `ablation_table` de `05_reencuadre`, "
             "promueve bloques con `delta >= +0.005`, descarta `geom_*` "
             "siempre, y persiste:\n\n"
-            "- `data/features/features_fused_winning_italy.parquet` — "
+            "- `data/features/features_fused_winning_pastis.parquet` — "
             "dataset filtrado a las columnas ganadoras.\n"
-            "- `data/features/features_fused_winning_italy.manifest.json` — "
+            "- `data/features/features_fused_winning_pastis.manifest.json` — "
             "lista nominal exacta de columnas (para que los modelos "
             "densos del Avance 4 y los ensambles del Avance 5 lean "
             "exactamente las mismas)."
@@ -4182,13 +4182,13 @@ def build_avance3() -> dict[str, Any]:
             "- **Las 5 preguntas oficiales** del Avance 3 respondidas con "
             "cifras concretas y figuras de los cuadernos previos.\n"
             "- **Conjunto de características ganador** nombrado y "
-            "persistido en `features_fused_winning_italy.parquet` + "
+            "persistido en `features_fused_winning_pastis.parquet` + "
             "manifest JSON.\n"
             "- **Cuatro hipótesis H-1..H-4** cerradas con decisión "
             "cuantitativa (promover, diferir, descartar).\n\n"
             "**Lo que sigue (Avances 4 y 5)**:\n\n"
             "- `notebooks/avance4_modelos.ipynb` consumirá el mismo "
-            "`features_fused_winning_italy.parquet` y entrenará las 6 "
+            "`features_fused_winning_pastis.parquet` y entrenará las 6 "
             "arquitecturas densas obligatorias: U-Net, DeepLabv3+, "
             "SegFormer-B2, U-TAE, TSViT (Paper 1), Swin-UNETR.\n"
             "- `notebooks/avance5_ensambles.ipynb` construirá los 4 "

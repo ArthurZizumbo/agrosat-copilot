@@ -104,7 +104,7 @@ CELLS: list[nbf.NotebookNode] = [
         "ARTIFACTS_DIR = 'reports/baseline/reencuadre_fenologico'  # datos crudos de las graficas\n"
         "CHECKPOINTS_DIR = 'models/checkpoints/phenology'  # .pt de los modelos entrenados\n"
         "MLFLOW_TRACKING_URI = ''     # vacio = sin MLflow; valor = URI persistente\n"
-        "FARSLIP_PARQUET_PATH = 'data/farslip/embeddings_italy.parquet'\n"
+        "FARSLIP_PARQUET_PATH = 'data/farslip/embeddings_pastis.parquet'\n"
         "RUN_TEMPORAL = True          # entrena TempCNN/InceptionTime\n"
         "RUN_SEMANTIC_BRANCH = False  # rama semantica: requiere Gemini API + budget\n"
     ),
@@ -211,7 +211,7 @@ CELLS: list[nbf.NotebookNode] = [
     ),
     _code(
         "# Intenta inyectar el bloque FarSLIP (512-dim) si el parquet existe.\n"
-        "# US-023-preview P2: el parquet canonico vive en data/farslip/embeddings_italy.parquet\n"
+        "# US-023-preview P2: el parquet canonico vive en data/farslip/embeddings_pastis.parquet\n"
         "# (shape 30173 x 514) tras la promocion de v2. Si los `parcel_id` no son compatibles\n"
         "# con los del dataset baseline (string compuesto vs int64 hash), el join falla y\n"
         "# documentamos el skip honesto sin romper la corrida (R1 conocido).\n"
@@ -496,7 +496,7 @@ CELLS: list[nbf.NotebookNode] = [
     ),
     _code(
         "import os as _os\n"
-        "_pheno_text_path = REPO / 'data/features/phenology_text_italy.parquet'\n"
+        "_pheno_text_path = REPO / 'data/features/phenology_text_pastis.parquet'\n"
         "_gemini_key_present = bool(_os.environ.get('GEMINI_API_KEY') or _os.environ.get('GOOGLE_API_KEY'))\n"
         "if _pheno_text_path.exists():\n"
         "    _pt_df = pl.read_parquet(_pheno_text_path)\n"

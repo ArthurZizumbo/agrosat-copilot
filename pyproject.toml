@@ -127,6 +127,8 @@ breizhcrops = "^0.0.4.1"
 # en Python <3.14 — compatible con el resto del stack.
 shap = "^0.50.0"
 einops = "^0.8.2"
+open-clip-torch = "^3.3.0"
+ftfy = "^6.3.1"
 
 [tool.poetry.group.ml-gpu]
 optional = true

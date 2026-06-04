@@ -1,5 +1,0 @@
-outs:
-- md5: a38579528bd9c3acb055d30e70ddce8a
-  size: 51393903
-  hash: md5
-  path: embeddings_italy_PLACEHOLDER.parquet

@@ -432,7 +432,7 @@ def test_farslip_block_optional_left_join(
 
     US-023-preview P2 promovio FarSLIP al path canonico, asi que para validar
     el branch ``default_path_not_found`` cambiamos el cwd a un tmp_path donde
-    el path relativo ``data/farslip/embeddings_italy.parquet`` no existe.
+    el path relativo ``data/farslip/embeddings_pastis.parquet`` no existe.
     """
     parcels = parcels_fixture_3regions
     n = len(parcels)
@@ -446,7 +446,7 @@ def test_farslip_block_optional_left_join(
         },
         schema=schema,
     )
-    far_path = tmp_path / "embeddings_italy.parquet"
+    far_path = tmp_path / "embeddings_pastis.parquet"
     far_df.write_parquet(far_path)
 
     injected = _build_default_injection(parcels, synthetic_ae=synthetic_alphaearth_64d)
@@ -830,7 +830,7 @@ def test_pheno_text_default_path_missing_emits_warning_and_omits(
     """Sin parquet en el default path: warning + no se incluye (no falla).
 
     Cambiamos el cwd a tmp_path porque el repo real puede contener un
-    ``data/features/phenology_text_italy.parquet`` materializado por
+    ``data/features/phenology_text_pastis.parquet`` materializado por
     US-022-c P5 (216 parcelas) — esa presencia haria que el branch
     `default_path_not_found` no se ejecutara.
     """
