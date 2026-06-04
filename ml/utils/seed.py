@@ -1,9 +1,9 @@
-"""Helper unico de propagacion de seed para training reproducible (US-017+).
+"""Single seed-propagation helper for reproducible training (US-017+).
 
-Reemplaza las copias duplicadas en `ml/farslip/distill.py` y
-`ml/farslip/train.py`. Activa ``torch.use_deterministic_algorithms`` con
-``warn_only=True`` para no romper kernels que carecen de implementacion
-deterministica, y setea ``CUBLAS_WORKSPACE_CONFIG`` para CUDA >= 10.2.
+Replaces the duplicated copies in `ml/farslip/distill.py` and
+`ml/farslip/train.py`. Enables ``torch.use_deterministic_algorithms`` with
+``warn_only=True`` so as not to break kernels that lack a deterministic
+implementation, and sets ``CUBLAS_WORKSPACE_CONFIG`` for CUDA >= 10.2.
 """
 
 from __future__ import annotations
@@ -19,20 +19,20 @@ _log = structlog.get_logger(__name__)
 
 
 def propagate_seed(seed: int, *, deterministic: bool = True) -> None:
-    """Propaga ``seed`` a ``random``, ``numpy``, ``torch`` (CPU + CUDA).
+    """Propagate ``seed`` to ``random``, ``numpy``, ``torch`` (CPU + CUDA).
 
     Args:
-        seed: entero usado como semilla en los 4 RNGs.
-        deterministic: si ``True``, activa
-            ``torch.use_deterministic_algorithms(True, warn_only=True)`` y
-            setea ``CUBLAS_WORKSPACE_CONFIG=":4096:8"`` (requerido por
-            CUDA >= 10.2 para algoritmos cuBLAS deterministicos).
+        seed: integer used as the seed for the 4 RNGs.
+        deterministic: if ``True``, enables
+            ``torch.use_deterministic_algorithms(True, warn_only=True)`` and
+            sets ``CUBLAS_WORKSPACE_CONFIG=":4096:8"`` (required by
+            CUDA >= 10.2 for deterministic cuBLAS algorithms).
 
-    Notas:
-        - ``warn_only=True`` permite que operaciones sin implementacion
-          deterministica caigan a la version no-determinista emitiendo solo
-          warning, en lugar de lanzar excepcion. Necesario para suites de
-          tests que ejercitan modelos completos.
+    Notes:
+        - ``warn_only=True`` lets operations without a deterministic
+          implementation fall back to the non-deterministic version emitting
+          only a warning, instead of raising an exception. Needed for test
+          suites that exercise full models.
     """
     random.seed(seed)
     np.random.seed(seed)

@@ -1,14 +1,14 @@
-"""Punto de entrada de la API AgroSatCopilot.
+"""Entry point of the AgroSatCopilot API.
 
-Arranque: ``poetry run uvicorn backend.app.main:app --reload --port 8000``.
+Startup: ``poetry run uvicorn backend.app.main:app --reload --port 8000``.
 
-Routers se montan progresivamente conforme cierran las US:
-- /healthz, /readyz             — operativos desde el bootstrap
+Routers are mounted progressively as the US are closed:
+- /healthz, /readyz             — operational from the bootstrap
 - /chat (SSE)                   — EPIC 7 (Google ADK agent)
-- /aois, /timeseries            — EPIC 2 (datos satelitales)
-- /stac/search, /tiles          — EPIC 2 (catálogo + TiTiler)
-- /llm/switch                   — EPIC 7 (switch A/B Gemini ↔ Qwen3.5)
-- /jobs                         — EPIC 8 (inferencia asíncrona vía Pub/Sub)
+- /aois, /timeseries            — EPIC 2 (satellite data)
+- /stac/search, /tiles          — EPIC 2 (catalog + TiTiler)
+- /llm/switch                   — EPIC 7 (A/B switch Gemini <-> Qwen3.5)
+- /jobs                         — EPIC 8 (asynchronous inference via Pub/Sub)
 """
 
 from collections.abc import AsyncIterator
@@ -25,7 +25,7 @@ from backend.app.core.logging import configure_logging
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Ciclo de vida de la aplicación: setup de conexiones y cleanup."""
+    """Application lifecycle: connection setup and cleanup."""
     settings = get_settings()
     configure_logging(env=settings.env, log_level=settings.log_level)
     logger = structlog.get_logger()
@@ -35,7 +35,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app() -> FastAPI:
-    """Factory de la aplicación FastAPI."""
+    """FastAPI application factory."""
     settings = get_settings()
     app = FastAPI(
         title="AgroSatCopilot API",
@@ -43,9 +43,9 @@ def create_app() -> FastAPI:
         description="SaaS conversacional agrícola con Foundation Models satelitales.",
         lifespan=lifespan,
     )
-    # CORS con allow_headers explicito (SEC hardening): combinar allow_credentials=True
-    # con allow_headers=["*"] expone la API a abuso. Whitelist los headers minimos
-    # que el frontend Nuxt + cliente SSE realmente envia.
+    # CORS with explicit allow_headers (SEC hardening): combining allow_credentials=True
+    # with allow_headers=["*"] exposes the API to abuse. Whitelist the minimum headers
+    # that the Nuxt frontend + SSE client actually send.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_allow_origins,

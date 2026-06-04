@@ -1,42 +1,39 @@
-"""Constructor programatico de ``notebooks/04_baseline.ipynb`` (EPIC 4, US-019).
+"""Programmatic builder of ``notebooks/04_baseline.ipynb`` (EPIC 4, US-019).
 
-Genera el notebook del baseline RF/XGB celda a celda con ``nbformat.v4``,
-ejecutable end-to-end con papermill y reproducible byte-a-byte. El notebook
-es el entregable visual del Avance 3.
+Generates the RF/XGB baseline notebook cell by cell with ``nbformat.v4``,
+executable end-to-end with papermill and byte-by-byte reproducible. The notebook
+is the visual deliverable of Avance 3.
 
-Secciones que produce US-019:
-  - 1: Setup y carga del vector de features del EPIC 3.
-  - 2: Justificacion del algoritmo (criterio "Algoritmo", 40 pts).
-  - 6: Desempeno minimo vs umbral F1-macro >= 0.60 (criterio 10 pts).
+Sections produced by US-019:
+  - 1: Setup and load of the EPIC 3 feature vector.
+  - 2: Algorithm justification ("Algorithm" criterion, 40 pts).
+  - 6: Minimum performance vs F1-macro threshold >= 0.60 (criterion 10 pts).
 
-Secciones que produce US-020 (criterio "Caracteristicas importantes", 20 pts):
-  - 3: Importancia de features nativa (RF Gini / XGB gain, barplot top-20).
-  - 4: Analisis SHAP (summary + dependence top-5 + waterfall + dominancia
-    AlphaEarth).
-  - 5: Conclusiones de feature engineering (cruce con el FE de US-018).
+Sections produced by US-020 ("Important features" criterion, 20 pts):
+  - 3: Native feature importance (RF Gini / XGB gain, top-20 barplot).
+  - 4: SHAP analysis (summary + top-5 dependence + waterfall + AlphaEarth
+    dominance).
+  - 5: Feature engineering conclusions (cross-check with the US-018 FE).
 
-Seccion que produce US-021 (criterio "Sub/sobreajuste", 10 pts):
-  - 5b: Curvas de aprendizaje (RF+XGB) + 3 curvas de validacion +
-    diagnostico textual de sub/sobreajuste (`diagnose_fit`) + criterio de
-    validacion cruzada espacial.
+Section produced by US-021 ("Under/overfitting" criterion, 10 pts):
+  - 5b: Learning curves (RF+XGB) + 3 validation curves + textual under/overfit
+    diagnosis (`diagnose_fit`) + spatial cross-validation criterion.
 
-Secciones que produce US-022 (criterio "Metrica", 20 pts; ultimo extend):
-  - 7: Comparativa de los 3 escenarios de features (AlphaEarth puro vs
-    Sentinel-2 crudo vs vector combinado) con `build_comparison_table` +
-    barplot + export LaTeX.
-  - 8: Discusion del valor incremental de AlphaEarth + conclusiones para
-    el EPIC 5 + cierre de la fase Modeling de CRISP-ML(Q).
+Sections produced by US-022 ("Metric" criterion, 20 pts; last extend):
+  - 7: Comparison of the 3 feature scenarios (pure AlphaEarth vs raw Sentinel-2
+    vs combined vector) with `build_comparison_table` + barplot + LaTeX export.
+  - 8: Discussion of the incremental value of AlphaEarth + conclusions for
+    EPIC 5 + closing of the CRISP-ML(Q) Modeling phase.
 
-Patron: ``scripts/build_us018_notebook.py``.
+Pattern: ``scripts/build_us018_notebook.py``.
 
-Uso:
+Usage:
     poetry run python scripts/build_baseline_notebook.py --out notebooks/baseline/04_baseline.ipynb
 
-Notas US-023-preview:
-- El path canonico se movio a ``notebooks/baseline/`` (decision D-6).
-- P8 agrega celdas v2 que reentrenan los 3 modelos del A3 (XGBoost +
-  TempCNN + InceptionTime) sobre el conjunto de features ganador post
-  ablation P2/P3/P4/P5.
+US-023-preview notes:
+- The canonical path moved to ``notebooks/baseline/`` (decision D-6).
+- P8 adds v2 cells that retrain the 3 A3 models (XGBoost + TempCNN +
+  InceptionTime) on the winning feature set after the P2/P3/P4/P5 ablation.
 """
 
 from __future__ import annotations
@@ -50,17 +47,17 @@ app = typer.Typer(add_completion=False, help=__doc__)
 
 
 def _md(source: str) -> nbf.NotebookNode:
-    """Crea una celda markdown."""
+    """Create a markdown cell."""
     return nbf.v4.new_markdown_cell(source)
 
 
 def _code(source: str) -> nbf.NotebookNode:
-    """Crea una celda de codigo."""
+    """Create a code cell."""
     return nbf.v4.new_code_cell(source)
 
 
 def _params_code(source: str) -> nbf.NotebookNode:
-    """Crea la celda de parametros (tag ``parameters`` para papermill)."""
+    """Create the parameters cell (``parameters`` tag for papermill)."""
     cell = nbf.v4.new_code_cell(source)
     cell.metadata["tags"] = ["parameters"]
     return cell
@@ -902,10 +899,10 @@ _REMOVED_V2_PARAMS_DROPPED = (
 
 
 def build_notebook(out_path: Path) -> None:
-    """Construye el notebook del baseline y lo escribe en ``out_path``.
+    """Build the baseline notebook and write it to ``out_path``.
 
     Args:
-        out_path: Ruta destino del fichero ``.ipynb``.
+        out_path: Destination path of the ``.ipynb`` file.
     """
     nb = nbf.v4.new_notebook()
     nb.cells = CELLS
@@ -930,7 +927,7 @@ def main(
         help="Ruta destino del notebook .ipynb.",
     ),
 ) -> None:
-    """Reconstruye ``notebooks/04_baseline.ipynb`` desde cero."""
+    """Rebuild ``notebooks/04_baseline.ipynb`` from scratch."""
     build_notebook(out)
     typer.echo(f"Notebook escrito en {out}")
 

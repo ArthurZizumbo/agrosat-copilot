@@ -1,15 +1,15 @@
-"""Contenido estructurado del Avance 4 (segmentacion semantica densa).
+"""Structured content of Avance 4 (dense semantic segmentation).
 
-Provee la metadata editorial (KPIs, conclusiones e indice de arquitecturas)
-del Avance 4, donde se entrenan y comparan seis arquitecturas de segmentacion
-sobre PASTIS-R: U-Net, DeepLabv3+, SegFormer-B2, U-TAE, TSViT (Paper 1) y
-Swin-UNETR/AnySAT. Las cifras provienen de los parquet reales de
-``reports/segmentation/metrics/model_comparison_avance4_*.parquet``; no se
-inventan: el mejor modelo (TSViT-pheno) alcanza mIoU 0.625 y F1-macro 0.75.
+Provides the editorial metadata (KPIs, conclusions and architecture index) of
+Avance 4, where six segmentation architectures are trained and compared on
+PASTIS-R: U-Net, DeepLabv3+, SegFormer-B2, U-TAE, TSViT (Paper 1) and
+Swin-UNETR/AnySAT. The figures come from the real parquet files in
+``reports/segmentation/metrics/model_comparison_avance4_*.parquet``; they are
+not invented: the best model (TSViT-pheno) reaches mIoU 0.625 and F1-macro 0.75.
 
-El texto vive aqui en lugar de embebido en el dashboard para que se renderice
-identico en los distintos canales y sea testeable sin levantar Streamlit.
-Reutiliza ``KPI`` y ``NotebookCard`` (mismo patron que el Avance 1 y 2).
+The text lives here instead of embedded in the dashboard so that it renders
+identically across the different channels and is testable without launching
+Streamlit. Reuses ``KPI`` and ``NotebookCard`` (same pattern as Avance 1 and 2).
 """
 
 from __future__ import annotations
@@ -21,15 +21,15 @@ from ml.report.notebook_content import KPI, NotebookCard
 
 @dataclass(frozen=True)
 class SegmentationModel:
-    """Resumen de una arquitectura de segmentacion del Avance 4.
+    """Summary of an Avance 4 segmentation architecture.
 
     Attributes:
-        slug: Identificador del archivo de figura (e.g. ``"tsvit"``).
-        name: Nombre legible de la arquitectura.
-        miou: mIoU flat (18 clases) sobre el conjunto de validacion.
-        f1_macro: F1-macro flat sobre el conjunto de validacion.
-        pixel_accuracy: Exactitud por pixel (o ``None`` si no se reporto).
-        note: Nota corta sobre la corrida (rol, particularidad o limitacion).
+        slug: Identifier of the figure file (e.g. ``"tsvit"``).
+        name: Readable name of the architecture.
+        miou: Flat mIoU (18 classes) over the validation set.
+        f1_macro: Flat F1-macro over the validation set.
+        pixel_accuracy: Per-pixel accuracy (or ``None`` if not reported).
+        note: Short note about the run (role, particularity or limitation).
     """
 
     slug: str

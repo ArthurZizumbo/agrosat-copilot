@@ -1,8 +1,8 @@
-"""Configuración de logging estructurado con structlog.
+"""Structured logging configuration with structlog.
 
-Regla §10 de CLAUDE.md: nunca usar ``print()`` en producción — siempre
-``structlog.get_logger()``. Esta configuración produce JSON en staging/prod
-y consola legible en dev.
+CLAUDE.md rule §10: never use ``print()`` in production — always
+``structlog.get_logger()``. This configuration produces JSON in staging/prod and
+a readable console in dev.
 """
 
 import logging
@@ -12,11 +12,11 @@ import structlog
 
 
 def configure_logging(env: str, log_level: str) -> None:
-    """Configura structlog según el entorno.
+    """Configure structlog according to the environment.
 
     Args:
-        env: ``dev``, ``staging`` o ``prod``.
-        log_level: Nivel raíz, p. ej. ``INFO``, ``DEBUG``.
+        env: ``dev``, ``staging`` or ``prod``.
+        log_level: Root level, e.g. ``INFO``, ``DEBUG``.
     """
     level = getattr(logging, log_level.upper(), logging.INFO)
     logging.basicConfig(format="%(message)s", stream=sys.stdout, level=level)

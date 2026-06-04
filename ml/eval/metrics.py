@@ -1,22 +1,22 @@
-"""Metricas del baseline de clasificacion de cultivos (US-019, EPIC 4) y de
-segmentacion densa pixel-level (US-025, EPIC 5).
+"""Metrics for the crop classification baseline (US-019, EPIC 4) and for
+pixel-level dense segmentation (US-025, EPIC 5).
 
-Modulo reutilizable consumido por el baseline tabular (RF/XGB) y por las
-arquitecturas de segmentacion del EPIC 5/6. Expone:
+Reusable module consumed by the tabular baseline (RF/XGB) and by the
+segmentation architectures of EPIC 5/6. Exposes:
 
-* Nivel parcela (AC-3 US-019): ``compute_baseline_metrics`` con las cinco
-  metricas exactas mas dos artefactos (matriz de confusion y reporte).
-* Nivel pixel (US-025): ``dense_miou``, ``dense_f1_macro``,
-  ``dense_pixel_accuracy`` y ``segmentation_metrics_report``, que aceptan
-  tensores ``torch`` o ``numpy``, soportan logits ``(B, C, H, W)`` o
-  etiquetas ``(B, H, W)`` e ignoran un ``ignore_index`` (Background/Void).
+* Parcel level (AC-3 US-019): ``compute_baseline_metrics`` with the five
+  exact metrics plus two artifacts (confusion matrix and report).
+* Pixel level (US-025): ``dense_miou``, ``dense_f1_macro``,
+  ``dense_pixel_accuracy`` and ``segmentation_metrics_report``, which accept
+  ``torch`` or ``numpy`` tensors, support logits ``(B, C, H, W)`` or
+  labels ``(B, H, W)`` and ignore an ``ignore_index`` (Background/Void).
 
-Decision D6 (plan US-019 2.1): la ``mIoU`` del baseline tabular se calcula
-como ``jaccard_score(average="macro")`` a nivel parcela. Es un *proxy* de la
-mIoU de segmentacion densa pixel-level del EPIC 5; se documenta como tal para
-mantener comparabilidad de tablas entre epicas. Las funciones ``dense_*`` de
-este modulo son la mIoU densa real (Jaccard por clase agregado sobre todos
-los pixeles validos del lote).
+Decision D6 (plan US-019 2.1): the ``mIoU`` of the tabular baseline is computed
+as ``jaccard_score(average="macro")`` at parcel level. It is a *proxy* of the
+pixel-level dense segmentation mIoU of EPIC 5; it is documented as such to
+keep table comparability across epics. The ``dense_*`` functions of this
+module are the real dense mIoU (per-class Jaccard aggregated over all the
+valid pixels of the batch).
 """
 
 from __future__ import annotations
@@ -60,36 +60,36 @@ def compute_baseline_metrics(
     *,
     labels: list[int] | None = None,
 ) -> dict[str, float]:
-    """Calcula las cinco metricas del baseline (criterio AC-3).
+    """Computes the five baseline metrics (criterion AC-3).
 
     Args:
-        y_true: Etiquetas verdaderas, vector ``(n_samples,)`` de enteros.
-        y_pred: Etiquetas predichas, vector ``(n_samples,)`` de enteros del
-            mismo largo que ``y_true``.
-        labels: Conjunto explicito de etiquetas a considerar. Si es
-            ``None`` se infiere de la union de clases presentes en
-            ``y_true`` e ``y_pred`` (orden ascendente). Pasar el universo
-            completo de clases garantiza metricas estables entre folds.
+        y_true: True labels, integer vector ``(n_samples,)``.
+        y_pred: Predicted labels, integer vector ``(n_samples,)`` of the
+            same length as ``y_true``.
+        labels: Explicit set of labels to consider. If
+            ``None`` it is inferred from the union of classes present in
+            ``y_true`` and ``y_pred`` (ascending order). Passing the full
+            class universe guarantees stable metrics across folds.
 
     Returns:
-        Diccionario con las claves exactas ``f1_macro``, ``f1_weighted``,
-        ``miou``, ``accuracy`` y ``cohen_kappa``, todas ``float``. Las
-        cuatro primeras viven en ``[0, 1]``; ``cohen_kappa`` puede ser
-        negativo (acuerdo peor que el azar).
+        Dictionary with the exact keys ``f1_macro``, ``f1_weighted``,
+        ``miou``, ``accuracy`` and ``cohen_kappa``, all ``float``. The
+        first four live in ``[0, 1]``; ``cohen_kappa`` can be
+        negative (agreement worse than chance).
 
     Raises:
-        ValueError: si ``y_true`` e ``y_pred`` difieren en longitud o si
-            ambos vectores estan vacios.
+        ValueError: if ``y_true`` and ``y_pred`` differ in length or if
+            both vectors are empty.
     """
     y_true = np.asarray(y_true).ravel()
     y_pred = np.asarray(y_pred).ravel()
     if y_true.shape != y_pred.shape:
         raise ValueError(
-            f"`y_true` y `y_pred` deben tener la misma forma; "
-            f"recibido {y_true.shape} vs {y_pred.shape}."
+            f"`y_true` and `y_pred` must have the same shape; "
+            f"got {y_true.shape} vs {y_pred.shape}."
         )
     if y_true.size == 0:
-        raise ValueError("`y_true` e `y_pred` no pueden estar vacios.")
+        raise ValueError("`y_true` and `y_pred` cannot be empty.")
 
     if labels is None:
         resolved_labels: list[int] = sorted(
@@ -138,25 +138,25 @@ def confusion_matrix_figure(
     class_names: dict[int, str] | None = None,
     normalize: bool = True,
 ) -> Figure:
-    """Construye la matriz de confusion como :class:`matplotlib.figure.Figure`.
+    """Builds the confusion matrix as a :class:`matplotlib.figure.Figure`.
 
-    Usa el backend ``Agg`` de matplotlib (no interactivo) para que la
-    figura sea serializable a PNG en CI y en notebooks ejecutados con
+    Uses matplotlib's ``Agg`` backend (non-interactive) so that the
+    figure is serializable to PNG in CI and in notebooks executed with
     papermill.
 
     Args:
-        y_true: Etiquetas verdaderas, vector ``(n_samples,)``.
-        y_pred: Etiquetas predichas, vector ``(n_samples,)``.
-        class_names: Mapa ``{class_id: nombre}`` para rotular ejes. Si es
-            ``None`` se usan los enteros de clase como etiqueta.
-        normalize: Si ``True`` (default) normaliza cada fila para que
-            sume 1.0 (recall por clase); si ``False`` muestra conteos.
+        y_true: True labels, vector ``(n_samples,)``.
+        y_pred: Predicted labels, vector ``(n_samples,)``.
+        class_names: Map ``{class_id: name}`` to label axes. If
+            ``None`` the class integers are used as labels.
+        normalize: If ``True`` (default) normalizes each row so it
+            sums to 1.0 (per-class recall); if ``False`` shows counts.
 
     Returns:
-        Figura matplotlib lista para ``fig.savefig(...)`` o ``display``.
+        matplotlib figure ready for ``fig.savefig(...)`` or ``display``.
 
     Raises:
-        ValueError: si ``y_true`` e ``y_pred`` difieren en longitud.
+        ValueError: if ``y_true`` and ``y_pred`` differ in length.
     """
     import matplotlib
 
@@ -167,8 +167,8 @@ def confusion_matrix_figure(
     y_pred = np.asarray(y_pred).ravel()
     if y_true.shape != y_pred.shape:
         raise ValueError(
-            f"`y_true` y `y_pred` deben tener la misma forma; "
-            f"recibido {y_true.shape} vs {y_pred.shape}."
+            f"`y_true` and `y_pred` must have the same shape; "
+            f"got {y_true.shape} vs {y_pred.shape}."
         )
 
     labels = sorted(int(c) for c in np.union1d(y_true, y_pred))
@@ -221,28 +221,28 @@ def classification_report_text(
     *,
     class_names: dict[int, str] | None = None,
 ) -> str:
-    """Devuelve el reporte de clasificacion de sklearn como texto.
+    """Returns the sklearn classification report as text.
 
     Args:
-        y_true: Etiquetas verdaderas, vector ``(n_samples,)``.
-        y_pred: Etiquetas predichas, vector ``(n_samples,)``.
-        class_names: Mapa ``{class_id: nombre}`` para usar nombres de
-            clase legibles en lugar de enteros.
+        y_true: True labels, vector ``(n_samples,)``.
+        y_pred: Predicted labels, vector ``(n_samples,)``.
+        class_names: Map ``{class_id: name}`` to use readable class
+            names instead of integers.
 
     Returns:
-        Cadena multilinea con precision, recall, F1 y soporte por clase
-        mas los promedios macro y weighted, lista para ``log_artifact`` o
-        para imprimir en el notebook.
+        Multiline string with precision, recall, F1 and support per class
+        plus the macro and weighted averages, ready for ``log_artifact`` or
+        for printing in the notebook.
 
     Raises:
-        ValueError: si ``y_true`` e ``y_pred`` difieren en longitud.
+        ValueError: if ``y_true`` and ``y_pred`` differ in length.
     """
     y_true = np.asarray(y_true).ravel()
     y_pred = np.asarray(y_pred).ravel()
     if y_true.shape != y_pred.shape:
         raise ValueError(
-            f"`y_true` y `y_pred` deben tener la misma forma; "
-            f"recibido {y_true.shape} vs {y_pred.shape}."
+            f"`y_true` and `y_pred` must have the same shape; "
+            f"got {y_true.shape} vs {y_pred.shape}."
         )
 
     labels = sorted(int(c) for c in np.union1d(y_true, y_pred))
@@ -260,20 +260,20 @@ def classification_report_text(
 
 
 # ---------------------------------------------------------------------------
-# Segmentacion densa pixel-level (US-025, EPIC 5)
+# Dense pixel-level segmentation (US-025, EPIC 5)
 # ---------------------------------------------------------------------------
 
 
 def _to_numpy(arr: DenseArray) -> np.ndarray:
-    """Convierte un tensor ``torch`` o array ``numpy`` a ``numpy`` sin copia gratis.
+    """Converts a ``torch`` tensor or ``numpy`` array to ``numpy`` without a free copy.
 
     Args:
-        arr: Tensor de ``torch`` (en cualquier device) o ``numpy.ndarray``.
+        arr: ``torch`` tensor (on any device) or ``numpy.ndarray``.
 
     Returns:
-        El contenido como ``numpy.ndarray`` en CPU. Si ``arr`` ya es
-        ``numpy`` se devuelve tal cual (``np.asarray`` no copia si el dtype
-        y la contiguidad ya coinciden).
+        The content as ``numpy.ndarray`` on CPU. If ``arr`` is already
+        ``numpy`` it is returned as is (``np.asarray`` does not copy if the dtype
+        and contiguity already match).
     """
     if hasattr(arr, "detach"):  # torch.Tensor (avoids hard import of torch)
         return arr.detach().cpu().numpy()
@@ -281,23 +281,23 @@ def _to_numpy(arr: DenseArray) -> np.ndarray:
 
 
 def _to_label_array(arr: DenseArray, *, n_classes: int) -> np.ndarray:
-    """Normaliza la entrada a etiquetas enteras ``(N,)`` aplanadas.
+    """Normalizes the input to flattened integer labels ``(N,)``.
 
-    Acepta tanto logits/probabilidades ``(B, C, H, W)`` (se aplica
-    ``argmax`` sobre el eje de canal ``C``) como etiquetas duras de
-    cualquier forma ``(B, H, W)``, ``(H, W)`` o ya aplanadas.
+    Accepts both logits/probabilities ``(B, C, H, W)`` (``argmax`` is
+    applied over the ``C`` channel axis) and hard labels of
+    any shape ``(B, H, W)``, ``(H, W)`` or already flattened.
 
-    La heuristica para detectar logits es: array de punto flotante con un
-    eje cuyo tamano coincide con ``n_classes`` en la posicion de canal
-    (eje 1 para ``(B, C, H, W)``). Las etiquetas enteras se tratan siempre
-    como etiquetas, nunca como logits.
+    The heuristic to detect logits is: floating-point array with an
+    axis whose size matches ``n_classes`` at the channel position
+    (axis 1 for ``(B, C, H, W)``). Integer labels are always treated
+    as labels, never as logits.
 
     Args:
-        arr: Logits ``(B, C, H, W)`` o etiquetas de forma arbitraria.
-        n_classes: Numero de clases ``C`` esperado para reconocer logits.
+        arr: Logits ``(B, C, H, W)`` or labels of arbitrary shape.
+        n_classes: Number of classes ``C`` expected to recognize logits.
 
     Returns:
-        Vector ``numpy`` 1-D de etiquetas enteras (``int64``).
+        1-D ``numpy`` vector of integer labels (``int64``).
     """
     data = _to_numpy(arr)
     is_float = np.issubdtype(data.dtype, np.floating)
@@ -316,34 +316,34 @@ def dense_confusion_matrix(
     n_classes: int = 18,
     ignore_index: int = 255,
 ) -> np.ndarray:
-    """Construye la matriz de confusion densa ``(n_classes, n_classes)``.
+    """Builds the dense confusion matrix ``(n_classes, n_classes)``.
 
-    Agrega sobre todos los pixeles validos del lote. Los pixeles cuyo
-    *ground truth* es ``ignore_index`` (Background/Void) se excluyen por
-    completo, igual que los pixeles cuya etiqueta verdadera cae fuera de
-    ``[0, n_classes)`` (defensa frente a targets mal mapeados).
+    Aggregates over all valid pixels of the batch. Pixels whose
+    *ground truth* is ``ignore_index`` (Background/Void) are excluded
+    entirely, as are pixels whose true label falls outside
+    ``[0, n_classes)`` (defense against mis-mapped targets).
 
     Args:
-        y_pred: Logits ``(B, C, H, W)`` o etiquetas predichas ``(B, H, W)``.
-        y_true: Etiquetas verdaderas (``numpy`` o ``torch``) de la misma
-            cantidad de pixeles que ``y_pred`` tras aplanar.
-        n_classes: Numero de clases ``C`` (18 para PASTIS-R semantico).
-        ignore_index: Valor de etiqueta a ignorar (Background/Void).
+        y_pred: Logits ``(B, C, H, W)`` or predicted labels ``(B, H, W)``.
+        y_true: True labels (``numpy`` or ``torch``) with the same
+            number of pixels as ``y_pred`` after flattening.
+        n_classes: Number of classes ``C`` (18 for semantic PASTIS-R).
+        ignore_index: Label value to ignore (Background/Void).
 
     Returns:
-        Matriz ``numpy`` ``int64`` de forma ``(n_classes, n_classes)`` con
-        ``cm[i, j]`` = pixeles de clase verdadera ``i`` predichos como ``j``.
+        ``int64`` ``numpy`` matrix of shape ``(n_classes, n_classes)`` with
+        ``cm[i, j]`` = pixels of true class ``i`` predicted as ``j``.
 
     Raises:
-        ValueError: si ``y_pred`` e ``y_true`` no tienen el mismo numero de
-            pixeles tras aplanar.
+        ValueError: if ``y_pred`` and ``y_true`` do not have the same number
+            of pixels after flattening.
     """
     pred = _to_label_array(y_pred, n_classes=n_classes)
     true = _to_label_array(y_true, n_classes=n_classes)
     if pred.shape != true.shape:
         raise ValueError(
-            f"`y_pred` e `y_true` deben tener el mismo numero de pixeles; "
-            f"recibido {pred.shape} vs {true.shape}."
+            f"`y_pred` and `y_true` must have the same number of pixels; "
+            f"got {pred.shape} vs {true.shape}."
         )
 
     valid = (true != ignore_index) & (true >= 0) & (true < n_classes)
@@ -359,15 +359,15 @@ def dense_confusion_matrix(
 
 
 def _per_class_iou_from_cm(cm: np.ndarray) -> np.ndarray:
-    """IoU (Jaccard) por clase a partir de una matriz de confusion.
+    """Per-class IoU (Jaccard) from a confusion matrix.
 
     Args:
-        cm: Matriz de confusion ``(n_classes, n_classes)`` densa.
+        cm: Dense ``(n_classes, n_classes)`` confusion matrix.
 
     Returns:
-        Vector ``(n_classes,)`` con el IoU por clase. Las clases ausentes
-        del *ground truth* y de las predicciones (union vacia) reciben
-        ``nan`` para excluirse del promedio macro.
+        ``(n_classes,)`` vector with the per-class IoU. Classes absent
+        from both the *ground truth* and the predictions (empty union) receive
+        ``nan`` to be excluded from the macro average.
     """
     cm = cm.astype(np.float64)
     intersection = np.diag(cm)
@@ -384,23 +384,23 @@ def dense_miou(
     n_classes: int = 18,
     ignore_index: int = 255,
 ) -> float:
-    """Calcula la mIoU (mean Jaccard) densa pixel-level.
+    """Computes the pixel-level dense mIoU (mean Jaccard).
 
-    Promedio macro del IoU por clase sobre las clases presentes en la
-    union (ground truth o prediccion). Las clases totalmente ausentes se
-    excluyen del promedio (no penalizan con cero), siguiendo la convencion
-    de PASTIS/U-TAE para folds donde no aparecen todas las clases.
+    Macro average of the per-class IoU over the classes present in the
+    union (ground truth or prediction). Fully absent classes are
+    excluded from the average (they do not penalize with zero), following the
+    PASTIS/U-TAE convention for folds where not all classes appear.
 
     Args:
-        y_pred: Logits ``(B, C, H, W)`` o etiquetas ``(B, H, W)`` (``torch``
-            o ``numpy``).
-        y_true: Etiquetas verdaderas (``torch`` o ``numpy``).
-        n_classes: Numero de clases (18 para PASTIS-R semantico).
-        ignore_index: Etiqueta a ignorar (Background/Void).
+        y_pred: Logits ``(B, C, H, W)`` or labels ``(B, H, W)`` (``torch``
+            or ``numpy``).
+        y_true: True labels (``torch`` or ``numpy``).
+        n_classes: Number of classes (18 for semantic PASTIS-R).
+        ignore_index: Label to ignore (Background/Void).
 
     Returns:
-        mIoU en ``[0, 1]``. Devuelve ``0.0`` si no hay ninguna clase valida
-        (todos los pixeles eran ``ignore_index``).
+        mIoU in ``[0, 1]``. Returns ``0.0`` if there is no valid class
+        (all pixels were ``ignore_index``).
     """
     cm = dense_confusion_matrix(
         y_pred, y_true, n_classes=n_classes, ignore_index=ignore_index
@@ -418,20 +418,20 @@ def dense_f1_macro(
     n_classes: int = 18,
     ignore_index: int = 255,
 ) -> float:
-    """Calcula el F1-macro denso pixel-level (Dice por clase promediado).
+    """Computes the pixel-level dense F1-macro (averaged per-class Dice).
 
-    Equivale al promedio macro del F1 por clase sobre los pixeles validos.
-    Las clases ausentes de la union (sin GT ni prediccion) se excluyen del
-    promedio, en linea con ``dense_miou``.
+    Equivalent to the macro average of the per-class F1 over the valid pixels.
+    Classes absent from the union (with neither GT nor prediction) are excluded
+    from the average, in line with ``dense_miou``.
 
     Args:
-        y_pred: Logits ``(B, C, H, W)`` o etiquetas ``(B, H, W)``.
-        y_true: Etiquetas verdaderas.
-        n_classes: Numero de clases.
-        ignore_index: Etiqueta a ignorar.
+        y_pred: Logits ``(B, C, H, W)`` or labels ``(B, H, W)``.
+        y_true: True labels.
+        n_classes: Number of classes.
+        ignore_index: Label to ignore.
 
     Returns:
-        F1-macro en ``[0, 1]``. Devuelve ``0.0`` si no hay clases validas.
+        F1-macro in ``[0, 1]``. Returns ``0.0`` if there are no valid classes.
     """
     cm = dense_confusion_matrix(
         y_pred, y_true, n_classes=n_classes, ignore_index=ignore_index
@@ -455,16 +455,16 @@ def dense_pixel_accuracy(
     n_classes: int = 18,
     ignore_index: int = 255,
 ) -> float:
-    """Calcula la exactitud global a nivel pixel (pixeles correctos / validos).
+    """Computes the global pixel-level accuracy (correct / valid pixels).
 
     Args:
-        y_pred: Logits ``(B, C, H, W)`` o etiquetas ``(B, H, W)``.
-        y_true: Etiquetas verdaderas.
-        n_classes: Numero de clases (define el rango valido del target).
-        ignore_index: Etiqueta a ignorar (Background/Void).
+        y_pred: Logits ``(B, C, H, W)`` or labels ``(B, H, W)``.
+        y_true: True labels.
+        n_classes: Number of classes (defines the valid target range).
+        ignore_index: Label to ignore (Background/Void).
 
     Returns:
-        Exactitud en ``[0, 1]``. Devuelve ``0.0`` si no hay pixeles validos.
+        Accuracy in ``[0, 1]``. Returns ``0.0`` if there are no valid pixels.
     """
     cm = dense_confusion_matrix(
         y_pred, y_true, n_classes=n_classes, ignore_index=ignore_index
@@ -482,27 +482,27 @@ def segmentation_metrics_report(
     n_classes: int = 18,
     ignore_index: int = 255,
 ) -> dict[str, Any]:
-    """Reporte completo de metricas de segmentacion densa en una pasada.
+    """Complete dense segmentation metrics report in a single pass.
 
-    Construye la matriz de confusion una sola vez y deriva todas las
-    metricas, evitando recomputos (DRY/eficiencia). Util para registrar en
-    MLflow al cierre de cada epoch/eval del EPIC 5.
+    Builds the confusion matrix once and derives all the
+    metrics, avoiding recomputations (DRY/efficiency). Useful for logging to
+    MLflow at the close of each epoch/eval of EPIC 5.
 
     Args:
-        y_pred: Logits ``(B, C, H, W)`` o etiquetas ``(B, H, W)`` (``torch``
-            o ``numpy``).
-        y_true: Etiquetas verdaderas (``torch`` o ``numpy``).
-        n_classes: Numero de clases (18 PASTIS-R semantico, 6 HCAT L1).
-        ignore_index: Etiqueta a ignorar (Background/Void).
+        y_pred: Logits ``(B, C, H, W)`` or labels ``(B, H, W)`` (``torch``
+            or ``numpy``).
+        y_true: True labels (``torch`` or ``numpy``).
+        n_classes: Number of classes (18 semantic PASTIS-R, 6 HCAT L1).
+        ignore_index: Label to ignore (Background/Void).
 
     Returns:
-        Diccionario con las claves:
+        Dictionary with the keys:
 
-        * ``miou`` (``float``): mean IoU macro sobre clases presentes.
-        * ``f1_macro`` (``float``): F1-macro denso.
-        * ``pixel_acc`` (``float``): exactitud global pixel-level.
-        * ``per_class_iou`` (``list[float | None]``): IoU por clase de ``0``
-          a ``n_classes - 1``; ``None`` para clases ausentes de la union.
+        * ``miou`` (``float``): macro mean IoU over present classes.
+        * ``f1_macro`` (``float``): dense F1-macro.
+        * ``pixel_acc`` (``float``): global pixel-level accuracy.
+        * ``per_class_iou`` (``list[float | None]``): per-class IoU from ``0``
+          to ``n_classes - 1``; ``None`` for classes absent from the union.
     """
     cm = dense_confusion_matrix(
         y_pred, y_true, n_classes=n_classes, ignore_index=ignore_index
@@ -537,26 +537,26 @@ def segmentation_metrics_report(
 
 
 def dense_metrics_from_cm(cm: np.ndarray) -> dict[str, Any]:
-    """Extrae todas las metricas de segmentacion de una matriz de confusion.
+    """Extracts all segmentation metrics from a confusion matrix.
 
-    Calcula el reporte completo a partir de una ``cm`` ya acumulada (de todo
-    el split), sin recomputar predicciones. Incluye macro, per-class y dos
-    metricas robustas al desbalance (PASTIS tiene clases con ~50x diferencia
-    de frecuencia): Cohen kappa y balanced accuracy (recall promedio).
+    Computes the complete report from an already-accumulated ``cm`` (over the
+    whole split), without recomputing predictions. Includes macro, per-class and
+    two metrics robust to imbalance (PASTIS has classes with ~50x frequency
+    difference): Cohen kappa and balanced accuracy (average recall).
 
     Args:
-        cm: Matriz de confusion ``(n_classes, n_classes)`` densa (filas =
-            ground truth, columnas = prediccion).
+        cm: Dense ``(n_classes, n_classes)`` confusion matrix (rows =
+            ground truth, columns = prediction).
 
     Returns:
-        Diccionario con:
-        - ``miou``: mean IoU macro (clases ausentes excluidas).
-        - ``f1_macro``: F1 macro sobre clases presentes.
-        - ``pixel_acc``: accuracy global (overall accuracy).
-        - ``balanced_acc``: media de los recalls por clase presente.
-        - ``cohen_kappa``: acuerdo corregido por azar.
-        - ``per_class_iou`` / ``per_class_f1``: listas ``(n_classes,)`` con
-          ``None`` para las clases ausentes del split.
+        Dictionary with:
+        - ``miou``: macro mean IoU (absent classes excluded).
+        - ``f1_macro``: macro F1 over present classes.
+        - ``pixel_acc``: global accuracy (overall accuracy).
+        - ``balanced_acc``: mean of the per-present-class recalls.
+        - ``cohen_kappa``: chance-corrected agreement.
+        - ``per_class_iou`` / ``per_class_f1``: ``(n_classes,)`` lists with
+          ``None`` for the classes absent from the split.
     """
     cm_f = cm.astype(np.float64)
     n_classes = cm.shape[0]

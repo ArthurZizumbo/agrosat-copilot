@@ -1,29 +1,29 @@
-"""Helpers DRY para los notebooks `notebooks/baseline/*.ipynb`.
+"""DRY helpers for the `notebooks/baseline/*.ipynb` notebooks.
 
-Centraliza los patrones que se repiten en los 6 notebooks de baseline
+Centralizes the patterns repeated across the 6 baseline notebooks
 (04_baseline, 04b_baseline, 04c_baseline, 04_farslip_eval_pastis,
-05_reencuadre_fenologico, Avance3.Equipo17) para que cada notebook quede
-como una composicion de llamadas + markdown + display, sin codigo inline.
+05_reencuadre_fenologico, Avance3.Equipo17) so each notebook is left as a
+composition of calls + markdown + display, without inline code.
 
-Cubre:
+Covers:
 
-- :func:`load_or_build_fused_features` — carga features fused con auto-build.
-  Si `data/features/features_fused_pastis.parquet` no existe (ni su variante
-  legacy `_italy`), construye desde
-  `data/processed/pastis_parcels_full.geoparquet` con
+- :func:`load_or_build_fused_features` — loads fused features with auto-build.
+  If `data/features/features_fused_pastis.parquet` does not exist (nor its
+  legacy variant `_italy`), it builds from
+  `data/processed/pastis_parcels_full.geoparquet` with
   :func:`ml.features.fusion.build_fused_features`.
-- :func:`load_features_dataset_with_meta` — alias seguro del subset US-018.
+- :func:`load_features_dataset_with_meta` — safe alias of the US-018 subset.
 - :func:`load_base_plus_alphaearth_2018_2019` — base + AlphaEarth 2018
-  (`ae18_NN`) + AlphaEarth 2019 (`ae19_NN`), el escenario ganador de la
-  ablacion (`base_plus_ae18_ae19`).
-- :func:`train_baseline_three_models` — entrena RF + XGB + LGBM con spatial CV.
-- :func:`build_model_comparison_table` — DataFrame Polars con 5 metricas x N modelos.
-- :func:`materialize_phenology_text_if_missing` — auto-genera bloque pheno_text.
-- :func:`materialize_s2_anchors_if_missing` — auto-genera bloque S2 anchors.
-- :func:`materialize_spectral_signature_if_missing` — auto-genera firma espectral.
-- :func:`materialize_pastis_eval_subset_if_missing` — auto-genera PASTIS subset.
-- :func:`materialize_remoteclip_if_missing` — auto-genera RemoteCLIP embeddings.
-- :func:`run_ablation_and_persist` — ejecuta feature_ablation + persiste tabla.
+  (`ae18_NN`) + AlphaEarth 2019 (`ae19_NN`), the winning scenario of the
+  ablation (`base_plus_ae18_ae19`).
+- :func:`train_baseline_three_models` — trains RF + XGB + LGBM with spatial CV.
+- :func:`build_model_comparison_table` — Polars DataFrame with 5 metrics x N models.
+- :func:`materialize_phenology_text_if_missing` — auto-generates pheno_text block.
+- :func:`materialize_s2_anchors_if_missing` — auto-generates S2 anchors block.
+- :func:`materialize_spectral_signature_if_missing` — auto-generates spectral signature.
+- :func:`materialize_pastis_eval_subset_if_missing` — auto-generates PASTIS subset.
+- :func:`materialize_remoteclip_if_missing` — auto-generates RemoteCLIP embeddings.
+- :func:`run_ablation_and_persist` — runs feature_ablation + persists table.
 """
 
 from __future__ import annotations
@@ -77,36 +77,36 @@ def load_features_dataset_with_meta(
     *,
     parcels_geoparquet: Path | str = _DEFAULT_PARCELS_PATH,
 ) -> pl.DataFrame:
-    """Carga el subset de features US-018 y le adjunta metadata real.
+    """Load the US-018 features subset and attach real metadata.
 
-    El subset original (`feature_selection_parcels_subset.parquet`) trae
-    `parcel_id`, `year`, `class_id` y features espectrales/fenologicas,
-    pero NO trae `patch_id` ni `class_name`. Esta funcion hace un LEFT JOIN
-    con `pastis_parcels_full.geoparquet` para anexar esas columnas
-    necesarias para el spatial CV y los reportes.
+    The original subset (`feature_selection_parcels_subset.parquet`) carries
+    `parcel_id`, `year`, `class_id` and spectral/phenology features, but does NOT
+    carry `patch_id` nor `class_name`. This function does a LEFT JOIN with
+    `pastis_parcels_full.geoparquet` to append those columns needed for the
+    spatial CV and the reports.
 
     Args:
-        path: Ruta al parquet de features (default subset US-018).
-        parcels_geoparquet: Ruta al geoparquet de parcelas PASTIS-R full.
+        path: Path to the features parquet (default US-018 subset).
+        parcels_geoparquet: Path to the full PASTIS-R parcels geoparquet.
 
     Returns:
-        DataFrame Polars con `parcel_id` Utf8, `year`, `class_id`,
-        `class_name`, `patch_id`, `fold`, mas todas las columnas de features.
+        Polars DataFrame with `parcel_id` Utf8, `year`, `class_id`,
+        `class_name`, `patch_id`, `fold`, plus all the feature columns.
 
     Raises:
-        FileNotFoundError: si alguno de los dos archivos no existe.
+        FileNotFoundError: if either of the two files does not exist.
     """
     features_path = Path(path)
     parcels_path = Path(parcels_geoparquet)
     if not features_path.exists():
         raise FileNotFoundError(
-            f"Features parquet no encontrado en {features_path}. "
-            "Ejecuta los pipelines de EPIC 3 (US-013..US-018) primero."
+            f"Features parquet not found at {features_path}. "
+            "Run the EPIC 3 pipelines (US-013..US-018) first."
         )
     if not parcels_path.exists():
         raise FileNotFoundError(
-            f"Parcelas geoparquet no encontrado en {parcels_path}. "
-            "Ejecuta `make build-parcels-geoparquet`."
+            f"Parcels geoparquet not found at {parcels_path}. "
+            "Run `make build-parcels-geoparquet`."
         )
 
     import geopandas as gpd
@@ -148,32 +148,32 @@ def load_base_plus_alphaearth_2018_2019(
     alphaearth_2018_path: Path | str = _DEFAULT_AE18_PATH,
     alphaearth_2019_path: Path | str = _DEFAULT_AE19_PATH,
 ) -> pl.DataFrame:
-    """Carga el escenario ganador: base + AlphaEarth 2018 + AlphaEarth 2019.
+    """Load the winning scenario: base + AlphaEarth 2018 + AlphaEarth 2019.
 
-    Parte del subset US-018 con metadata real (185 features base) y le anexa
-    los dos embeddings AlphaEarth anuales de 64 dimensiones cada uno: 2018
-    (columnas ``ae18_00..ae18_63``) y 2019 (columnas ``ae19_00..ae19_63``),
-    uniendo por ``parcel_id`` (join 1:1, mismo universo de 85951 parcelas).
-    El resultado es el escenario ``base_plus_ae18_ae19`` que maximizo el
-    F1-macro en la ablacion de escenarios.
+    Starts from the US-018 subset with real metadata (185 base features) and
+    appends the two annual AlphaEarth embeddings of 64 dimensions each: 2018
+    (columns ``ae18_00..ae18_63``) and 2019 (columns ``ae19_00..ae19_63``),
+    joining by ``parcel_id`` (1:1 join, same universe of 85951 parcels). The
+    result is the ``base_plus_ae18_ae19`` scenario that maximized the F1-macro
+    in the scenario ablation.
 
-    Los parquets de AlphaEarth traen las dimensiones como ``dim_00..dim_63``;
-    se renombran a ``ae18_NN`` / ``ae19_NN`` para que ambos anios coexistan en
-    la misma matriz de features sin colision de nombres.
+    The AlphaEarth parquets carry the dimensions as ``dim_00..dim_63``; they are
+    renamed to ``ae18_NN`` / ``ae19_NN`` so both years coexist in the same
+    features matrix without name collision.
 
     Args:
-        features_path: Ruta al parquet de features base (subset US-018).
-        parcels_geoparquet: Geoparquet de parcelas PASTIS-R full (metadata).
-        alphaearth_2018_path: Parquet AlphaEarth 2018 con ``dim_NN``.
-        alphaearth_2019_path: Parquet AlphaEarth 2019 con ``dim_NN``.
+        features_path: Path to the base features parquet (US-018 subset).
+        parcels_geoparquet: Full PASTIS-R parcels geoparquet (metadata).
+        alphaearth_2018_path: AlphaEarth 2018 parquet with ``dim_NN``.
+        alphaearth_2019_path: AlphaEarth 2019 parquet with ``dim_NN``.
 
     Returns:
-        DataFrame Polars con las features base + 64 columnas ``ae18_NN`` + 64
-        columnas ``ae19_NN``, mas la metadata (``parcel_id``, ``class_id``,
+        Polars DataFrame with the base features + 64 ``ae18_NN`` columns + 64
+        ``ae19_NN`` columns, plus the metadata (``parcel_id``, ``class_id``,
         ``patch_id``, ``class_name``, ``fold``).
 
     Raises:
-        FileNotFoundError: si falta alguno de los parquets de AlphaEarth.
+        FileNotFoundError: if any of the AlphaEarth parquets is missing.
     """
     base = load_features_dataset_with_meta(
         path=features_path, parcels_geoparquet=parcels_geoparquet
@@ -184,8 +184,8 @@ def load_base_plus_alphaearth_2018_2019(
         ae_path = Path(path)
         if not ae_path.exists():
             raise FileNotFoundError(
-                f"AlphaEarth parquet no encontrado en {ae_path}. "
-                "Ejecuta el pipeline GEE (US-012) o `dvc pull` del cache."
+                f"AlphaEarth parquet not found at {ae_path}. "
+                "Run the GEE pipeline (US-012) or `dvc pull` the cache."
             )
         ae = canonical_parcel_id(pl.read_parquet(ae_path))
         dim_cols = [c for c in ae.columns if c.startswith("dim_")]
@@ -224,30 +224,30 @@ def load_or_build_fused_features(
     include_phenology_text: bool = False,
     include_spectral_signature: bool = False,
 ) -> pl.DataFrame:
-    """Carga el parquet de features fused; lo construye si no existe.
+    """Load the fused features parquet; build it if it does not exist.
 
-    Si `output_path` existe y `overwrite=False`, lo lee y devuelve. En caso
-    contrario invoca :func:`ml.features.fusion.build_fused_features` sobre
-    las parcelas full y persiste el resultado.
+    If `output_path` exists and `overwrite=False`, it reads and returns it.
+    Otherwise it invokes :func:`ml.features.fusion.build_fused_features` over the
+    full parcels and persists the result.
 
     Args:
-        output_path: Ruta al parquet fused (default canonico
-            `data/features/features_fused_pastis.parquet`; al usar el default
-            se resuelve via :func:`resolve_dataset_path`, que cae al legacy
-            `_italy` si ya esta materializado en disco). El contenido es
-            PASTIS-R frances, no italiano.
-        parcels_geoparquet: Geoparquet de parcelas PASTIS-R full.
-        year: Anio de referencia para los muestreos GEE.
-        overwrite: Si True regenera el parquet aunque exista.
-        include_farslip: Si True incluye el bloque FarSLIP.
-        include_phenology_text: Si True incluye el bloque pheno_text.
-        include_spectral_signature: Si True incluye la firma espectral.
+        output_path: Path to the fused parquet (canonical default
+            `data/features/features_fused_pastis.parquet`; when using the default
+            it is resolved via :func:`resolve_dataset_path`, which falls back to
+            the legacy `_italy` if it is already materialized on disk). The
+            content is French PASTIS-R, not Italian.
+        parcels_geoparquet: Full PASTIS-R parcels geoparquet.
+        year: Reference year for the GEE samplings.
+        overwrite: If True regenerates the parquet even if it exists.
+        include_farslip: If True includes the FarSLIP block.
+        include_phenology_text: If True includes the pheno_text block.
+        include_spectral_signature: If True includes the spectral signature.
 
     Returns:
-        DataFrame Polars con todas las columnas de features.
+        Polars DataFrame with all the feature columns.
 
     Raises:
-        FileNotFoundError: si el geoparquet de parcelas no existe.
+        FileNotFoundError: if the parcels geoparquet does not exist.
     """
     # Read: if the canonical default was used, resolve to the existing
     # variant (`_pastis` or legacy `_italy`). If the caller passed an explicit
@@ -263,7 +263,7 @@ def load_or_build_fused_features(
     parcels_path = Path(parcels_geoparquet)
     if not parcels_path.exists():
         raise FileNotFoundError(
-            f"Parcelas geoparquet no encontrado en {parcels_path}."
+            f"Parcels geoparquet not found at {parcels_path}."
         )
 
     import geopandas as gpd
@@ -303,7 +303,7 @@ def load_or_build_fused_features(
 
 @dataclass(frozen=True)
 class ModelComparisonRow:
-    """Una fila de la tabla comparativa de modelos."""
+    """One row of the model comparison table."""
 
     model: str
     f1_macro: float
@@ -324,17 +324,17 @@ def train_baseline_three_models(
     buffer_km: float = 1.0,
     random_state: int = 42,
 ) -> list[ModelComparisonRow]:
-    """Entrena los 3 modelos baseline tabulares con spatial CV y devuelve metricas.
+    """Train the 3 tabular baseline models with spatial CV and return metrics.
 
     Args:
-        df: DataFrame con features + `parcel_id`, `class_id`, `patch_id`.
-        models: Tupla de modelos a entrenar. Soporta `"rf"`, `"xgb"`, `"lgbm"`.
-        k_folds: Folds del CV espacial.
-        buffer_km: Buffer anti-leakage en km.
-        random_state: Semilla.
+        df: DataFrame with features + `parcel_id`, `class_id`, `patch_id`.
+        models: Tuple of models to train. Supports `"rf"`, `"xgb"`, `"lgbm"`.
+        k_folds: Folds of the spatial CV.
+        buffer_km: Anti-leakage buffer in km.
+        random_state: Seed.
 
     Returns:
-        Lista de :class:`ModelComparisonRow` con metricas + train_time.
+        List of :class:`ModelComparisonRow` with metrics + train_time.
     """
     import time
 
@@ -378,14 +378,14 @@ def build_model_comparison_table(
     *,
     output_path: Path | str | None = None,
 ) -> pl.DataFrame:
-    """Convierte filas de comparacion en DataFrame Polars y opcionalmente persiste.
+    """Convert comparison rows into a Polars DataFrame and optionally persist it.
 
     Args:
-        rows: Lista de :class:`ModelComparisonRow`.
-        output_path: Si no es None, persiste como parquet en esa ruta.
+        rows: List of :class:`ModelComparisonRow`.
+        output_path: If not None, persists as parquet at that path.
 
     Returns:
-        DataFrame Polars ordenado por `f1_macro` descendente.
+        Polars DataFrame sorted by `f1_macro` descending.
     """
     table = pl.DataFrame(
         [
@@ -418,25 +418,26 @@ def load_temporal_result_from_mlflow(
     experiment_name: str = "baseline-05-reencuadre",
     tracking_uri: str = "http://localhost:5010",
 ):
-    """Reconstruye un TemporalModelResult desde un MLflow run ya finalizado.
+    """Reconstruct a TemporalModelResult from an already-finished MLflow run.
 
-    Evita re-entrenar TempCNN/InceptionTime cuando ya hay una corrida con
-    metricas registradas. Lee la run mas reciente con `params.model_kind`
-    igual a `model_kind` y `status=FINISHED`, y reconstruye el dataclass
-    de salida usando las metricas `oof_*` y `params.n_classes`.
+    Avoids re-training TempCNN/InceptionTime when there is already a run with
+    recorded metrics. Reads the most recent run with `params.model_kind` equal to
+    `model_kind` and `status=FINISHED`, and reconstructs the output dataclass
+    using the `oof_*` metrics and `params.n_classes`.
 
     Args:
-        model_kind: ``"tempcnn"`` o ``"inceptiontime"``.
-        experiment_name: Nombre del experimento MLflow.
-        tracking_uri: URI del tracking server.
+        model_kind: ``"tempcnn"`` or ``"inceptiontime"``.
+        experiment_name: Name of the MLflow experiment.
+        tracking_uri: URI of the tracking server.
 
     Returns:
-        :class:`ml.train.phenology_models.TemporalModelResult` con las metricas
-        out-of-fold reconstruidas, ``y_true_oof`` y ``y_pred_oof`` vacios y
-        ``checkpoint_path`` apuntando al artifact si esta disponible.
+        :class:`ml.train.phenology_models.TemporalModelResult` with the
+        reconstructed out-of-fold metrics, empty ``y_true_oof`` and
+        ``y_pred_oof`` and ``checkpoint_path`` pointing to the artifact if
+        available.
 
     Raises:
-        ValueError: si no hay run FINISHED del kind solicitado.
+        ValueError: if there is no FINISHED run of the requested kind.
     """
     import mlflow
 
@@ -446,7 +447,7 @@ def load_temporal_result_from_mlflow(
     client = mlflow.tracking.MlflowClient()
     exp = client.get_experiment_by_name(experiment_name)
     if exp is None:
-        raise ValueError(f"experimento `{experiment_name}` no existe en {tracking_uri}.")
+        raise ValueError(f"experiment `{experiment_name}` does not exist at {tracking_uri}.")
 
     runs = client.search_runs(
         [exp.experiment_id],
@@ -456,8 +457,8 @@ def load_temporal_result_from_mlflow(
     )
     if not runs:
         raise ValueError(
-            f"no hay runs FINISHED con model_kind=`{model_kind}` en `{experiment_name}`. "
-            "Re-entrena con train_temporal_model o ajusta la consulta."
+            f"no FINISHED runs with model_kind=`{model_kind}` in `{experiment_name}`. "
+            "Re-train with train_temporal_model or adjust the query."
         )
     run = runs[0]
     metrics = run.data.metrics
@@ -499,20 +500,20 @@ def materialize_phenology_text_if_missing(
     enforce_api_key: bool = True,
     max_parcels: int | None = None,
 ) -> Path:
-    """Materializa el bloque `pheno_text_*` si el parquet no existe.
+    """Materialize the `pheno_text_*` block if the parquet does not exist.
 
-    Wrapper sobre :func:`ml.utils.phenology_text.materialize_phenology_text`.
-    Idempotente: si `output_path` existe, no llama Gemini.
+    Wrapper over :func:`ml.utils.phenology_text.materialize_phenology_text`.
+    Idempotent: if `output_path` exists, it does not call Gemini.
 
     Args:
-        parcels_features_path: Ruta al parquet de features con `parcel_id`,
-            `class_id` y columnas NDVI temporales.
-        output_path: Path destino del bloque (parquet).
-        enforce_api_key: Si True (default) raise RuntimeError sin Gemini.
-        max_parcels: Limita el numero de parcelas (None = todas).
+        parcels_features_path: Path to the features parquet with `parcel_id`,
+            `class_id` and temporal NDVI columns.
+        output_path: Destination path of the block (parquet).
+        enforce_api_key: If True (default) raise RuntimeError without Gemini.
+        max_parcels: Limits the number of parcels (None = all).
 
     Returns:
-        Path del parquet generado o existente.
+        Path of the generated or existing parquet.
     """
     from ml.utils.phenology_text import materialize_phenology_text
 
@@ -532,23 +533,23 @@ def materialize_s2_anchors_if_missing(
     year: int = 2023,
     phenology_anchors_path: Path | str | None = None,
 ) -> Path:
-    """Materializa el bloque `{anchor}_b04..b08` si el parquet no existe.
+    """Materialize the `{anchor}_b04..b08` block if the parquet does not exist.
 
-    Wrapper sobre :func:`ml.ingest.s2_anchor_sampler.sample_s2_anchors_for_parcels`.
+    Wrapper over :func:`ml.ingest.s2_anchor_sampler.sample_s2_anchors_for_parcels`.
 
     Args:
-        parcels_geoparquet: Geoparquet de parcelas PASTIS-R full.
-        output_path: Path destino del bloque S2 anchors.
-        year: Anio para el muestreo GEE.
-        phenology_anchors_path: Parquet opcional con anclas calendario por
-            parcela (schema: ``parcel_id, sog_doy, peak_doy, senescence_doy``).
-            Si se provee, el sampler usa DOY especifico por parcela y evita
-            el warning ``phenology_anchors_fallback_static``. Generar con
+        parcels_geoparquet: Full PASTIS-R parcels geoparquet.
+        output_path: Destination path of the S2 anchors block.
+        year: Year for the GEE sampling.
+        phenology_anchors_path: Optional parquet with per-parcel calendar anchors
+            (schema: ``parcel_id, sog_doy, peak_doy, senescence_doy``). If
+            provided, the sampler uses per-parcel specific DOY and avoids the
+            ``phenology_anchors_fallback_static`` warning. Generate with
             :func:`ml.ingest.pastis_phenology_anchors.build_pastis_phenology_anchors`
-            para PASTIS-R.
+            for PASTIS-R.
 
     Returns:
-        Path del parquet generado o existente.
+        Path of the generated or existing parquet.
     """
     output = Path(output_path)
     if output.exists():
@@ -582,19 +583,19 @@ def materialize_spectral_signature_if_missing(
     output_path: Path | str = Path("data/features/spectral_signature_pastis.parquet"),
     descriptor: Literal["rep", "sam", "redge_moments"] = "rep",
 ) -> Path:
-    """Materializa la firma espectral si no existe, desde anclas S2 ya muestreadas.
+    """Materialize the spectral signature if it does not exist, from already-sampled S2 anchors.
 
     Args:
-        s2_anchors_path: Path al parquet de anclas S2 (debe existir; si no,
-            invocar `materialize_s2_anchors_if_missing` primero).
-        output_path: Path destino del bloque `spectral_signature_*`.
-        descriptor: Tipo de descriptor (default `"rep"`, Frampton 2013).
+        s2_anchors_path: Path to the S2 anchors parquet (must exist; if not,
+            invoke `materialize_s2_anchors_if_missing` first).
+        output_path: Destination path of the `spectral_signature_*` block.
+        descriptor: Descriptor type (default `"rep"`, Frampton 2013).
 
     Returns:
-        Path del parquet generado o existente.
+        Path of the generated or existing parquet.
 
     Raises:
-        FileNotFoundError: si las anclas S2 no estan en disco.
+        FileNotFoundError: if the S2 anchors are not on disk.
     """
     output = Path(output_path)
     if output.exists():
@@ -607,8 +608,8 @@ def materialize_spectral_signature_if_missing(
     anchors_path = resolve_dataset_path(s2_anchors_path)
     if not anchors_path.exists():
         raise FileNotFoundError(
-            f"S2 anchors no encontrado en {anchors_path}. Ejecuta "
-            "materialize_s2_anchors_if_missing antes."
+            f"S2 anchors not found at {anchors_path}. Run "
+            "materialize_s2_anchors_if_missing first."
         )
 
     from ml.features.spectral_signature import SpectralSignatureFeatures
@@ -634,9 +635,9 @@ def materialize_pastis_eval_subset_if_missing(
     output_path: Path | str = Path("data/test_fixtures/pastis_eval_subset.parquet"),
     n_samples: int = 1024,
 ) -> Path:
-    """Materializa el subset PASTIS-R real si no existe.
+    """Materialize the real PASTIS-R subset if it does not exist.
 
-    Wrapper sobre :func:`ml.ingest.pastis_eval_subset.build_pastis_eval_subset`.
+    Wrapper over :func:`ml.ingest.pastis_eval_subset.build_pastis_eval_subset`.
     """
     output = Path(output_path)
     if output.exists():
@@ -663,7 +664,7 @@ def materialize_remoteclip_if_missing(
     ),
     output_path: Path | str = Path("data/farslip/remoteclip_embeddings_pastis.parquet"),
 ) -> Path:
-    """Materializa embeddings RemoteCLIP sobre el subset PASTIS si no existen."""
+    """Materialize RemoteCLIP embeddings over the PASTIS subset if they do not exist."""
     output = Path(output_path)
     if output.exists():
         logger.info("remoteclip_cache_hit", path=str(output))
@@ -692,18 +693,18 @@ def run_ablation_and_persist(
     buffer_km: float = 1.0,
     max_samples: int | None = None,
 ) -> tuple[pl.DataFrame, Path]:
-    """Ejecuta feature_ablation + persiste tabla parquet/csv/md.
+    """Run feature_ablation + persist the parquet/csv/md table.
 
     Args:
-        df: DataFrame fused (debe incluir las columnas que se ablacionaran).
-        output_dir: Carpeta destino.
-        models: Modelos a ablacionar.
-        k_folds: Folds del CV.
-        buffer_km: Buffer anti-leakage.
-        max_samples: Subsample uniforme para CI/dev. None = todos.
+        df: Fused DataFrame (must include the columns to be ablated).
+        output_dir: Destination folder.
+        models: Models to ablate.
+        k_folds: Folds of the CV.
+        buffer_km: Anti-leakage buffer.
+        max_samples: Uniform subsample for CI/dev. None = all.
 
     Returns:
-        Tupla `(tabla_polars, ruta_parquet)`.
+        Tuple `(polars_table, parquet_path)`.
     """
     from ml.eval.feature_ablation import (
         build_default_feature_sets,

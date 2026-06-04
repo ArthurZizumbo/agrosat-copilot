@@ -1,13 +1,13 @@
-"""Builder de pares imagen-texto FarSLIP + Dataset PyTorch (US-017 / US-016b).
+"""FarSLIP image-text pair builder + PyTorch Dataset (US-017 / US-016b).
 
-Genera ``data/farslip_pairs/{roi}/crops/*.tif`` (256x256 px, 4 bandas
-B02/B03/B04/B08) + ``manifest.parquet`` Polars con plantillas it/es/en por
-parcela CAP. Reusa la maquinaria de QA mask Cloud Score+ de
-:mod:`ml.ingest.gee_sampler` (US-007) y las constantes BOA de
-:mod:`ml.features.spectral_indices` (US-014); no duplica logica.
+Generates ``data/farslip_pairs/{roi}/crops/*.tif`` (256x256 px, 4 bands
+B02/B03/B04/B08) + a Polars ``manifest.parquet`` with it/es/en templates per
+CAP parcel. Reuses the Cloud Score+ QA mask machinery of
+:mod:`ml.ingest.gee_sampler` (US-007) and the BOA constants of
+:mod:`ml.features.spectral_indices` (US-014); does not duplicate logic.
 
-Idempotencia: el builder mantiene un set de ``crop_id`` ya escritos y filtra
-duplicados al hacer append al manifest.
+Idempotency: the builder keeps a set of ``crop_id`` already written and filters
+duplicates when appending to the manifest.
 """
 
 from __future__ import annotations
@@ -54,7 +54,7 @@ PHENOLOGY_BY_DOY: tuple[tuple[int, int, str], ...] = (
 
 
 def _doy_to_phenology(doy: int) -> str:
-    """Map DOY a fenofase canonica del YAML default."""
+    """Map DOY to the canonical phenophase of the default YAML."""
     for lo, hi, label in PHENOLOGY_BY_DOY:
         if lo <= doy <= hi:
             return label
@@ -62,7 +62,7 @@ def _doy_to_phenology(doy: int) -> str:
 
 
 def _region_to_display(region_slug: str) -> str:
-    """Map slug ROI a nombre display italiano del YAML."""
+    """Map ROI slug to the Italian display name of the YAML."""
     mapping = {
         "pianura_padana": "Pianura Padana",
         "toscana": "Toscana",
@@ -72,7 +72,7 @@ def _region_to_display(region_slug: str) -> str:
 
 
 def _load_vocabulary(path: Path) -> dict[str, Any]:
-    """Carga el YAML CAP. Valida que las 32 clases existan."""
+    """Load the CAP YAML. Validate that the 32 classes exist."""
     with path.open("r", encoding="utf-8") as f:
         raw: dict[str, Any] = yaml.safe_load(f)
     if "classes" not in raw:
@@ -83,7 +83,7 @@ def _load_vocabulary(path: Path) -> dict[str, Any]:
 def _render_template(
     template: str, *, phenology: str, region: str
 ) -> str:
-    """Formatea template con marcadores {phenology}/{region}; ignora extras."""
+    """Format a template with {phenology}/{region} markers; ignores extras."""
     return template.format(phenology=phenology, region=region)
 
 
@@ -94,7 +94,7 @@ def _build_text_triplet(
     doy: int,
     region_slug: str,
 ) -> tuple[str, str, str]:
-    """Devuelve textos (it, es, en) para la combinacion dada."""
+    """Return texts (it, es, en) for the given combination."""
     classes = vocab["classes"]
     if cap_class not in classes:
         cap_class = "altro"
@@ -112,7 +112,7 @@ def _build_text_triplet(
 def _compute_crop_id(
     *, region: str, lat: float, lon: float, year: int, doy: int, cap_class: str
 ) -> str:
-    """Hash determinista para idempotencia (UNIQUE key). No cripto."""
+    """Deterministic hash for idempotency (UNIQUE key). Non-crypto."""
     h = hashlib.sha1(
         f"{region}|{lat:.6f}|{lon:.6f}|{year}|{doy}|{cap_class}".encode(),
         usedforsecurity=False,
@@ -123,7 +123,7 @@ def _compute_crop_id(
 def _synthetic_crop_uint16(
     rng: np.random.Generator, *, crop_size_px: int, n_bands: int = 4
 ) -> np.ndarray:
-    """Genera crop sintetico ``(n_bands, H, W)`` uint16 — usado en tests/dataset_audit dryrun."""
+    """Generate a synthetic crop ``(n_bands, H, W)`` uint16 — used in tests/dataset_audit dryrun."""
     return rng.integers(
         low=200, high=3000, size=(n_bands, crop_size_px, crop_size_px), dtype=np.uint16
     )
@@ -143,24 +143,24 @@ def build_farslip_pairs(
     seed: int = 42,
     parcel_records: pl.DataFrame | None = None,
 ) -> pl.DataFrame:
-    """Construye dataset de pares imagen-texto FarSLIP por ROI italiana.
+    """Build a FarSLIP image-text pair dataset per Italian ROI.
 
     Args:
-        rois: tuplas ROI italianas (slug). Default 3 ROIs.
-        n_per_roi: muestras a generar por ROI.
-        crop_size_px: lado del crop (default 256).
-        qa_cloud_threshold: umbral cloud_prob para filtrar parcelas nubladas.
-        output_root: ruta destino ``data/farslip_pairs/``.
-        vocabulary_path: ruta al ``cap_vocabulary.yaml``.
-        seed: semilla reproducibilidad.
-        parcel_records: opcional ``DataFrame`` con columnas
-            ``[region, lat, lon, year, doy, cap_class, cloud_prob]`` para
-            inyectar parcelas reales. Si None, se generan sinteticas (uso
+        rois: Italian ROI tuples (slug). Default 3 ROIs.
+        n_per_roi: samples to generate per ROI.
+        crop_size_px: crop side (default 256).
+        qa_cloud_threshold: cloud_prob threshold to filter cloudy parcels.
+        output_root: destination path ``data/farslip_pairs/``.
+        vocabulary_path: path to ``cap_vocabulary.yaml``.
+        seed: reproducibility seed.
+        parcel_records: optional ``DataFrame`` with columns
+            ``[region, lat, lon, year, doy, cap_class, cloud_prob]`` to
+            inject real parcels. If None, synthetic ones are generated (used in
             tests/dryrun).
 
     Returns:
-        ``DataFrame`` agregado con ``MANIFEST_SCHEMA``. Side effect: crea TIFFs
-        + ``manifest.parquet`` por ROI. Idempotente (UNIQUE crop_id).
+        Aggregated ``DataFrame`` with ``MANIFEST_SCHEMA``. Side effect: creates
+        TIFFs + ``manifest.parquet`` per ROI. Idempotent (UNIQUE crop_id).
     """
     rng = np.random.default_rng(seed)
     # Non-crypto random: only decides the CAP template index for lexical diversity.
@@ -256,7 +256,7 @@ def build_farslip_pairs(
 def _generate_synthetic_parcels(
     *, roi: str, n: int, rng: np.random.Generator, cap_classes: list[str]
 ) -> pl.DataFrame:
-    """Genera registros sinteticos de parcelas para tests/dryrun."""
+    """Generate synthetic parcel records for tests/dryrun."""
     # Approximate bounding boxes per ROI (lat, lon ranges)
     bbox = {
         "pianura_padana": (44.5, 45.7, 8.5, 12.0),
@@ -283,25 +283,25 @@ def _generate_synthetic_parcels(
 
 
 class FarSLIPDataset(Dataset):
-    """Dataset PyTorch para training FarSLIP.
+    """PyTorch Dataset for FarSLIP training.
 
-    Cada item devuelve dict con:
+    Each item returns a dict with:
 
-    - ``image``: tensor ``(C, 224, 224)`` float32 normalizado [0,1]
-    - ``input_ids``: tokens del idioma seleccionado (``(77,)`` long)
+    - ``image``: tensor ``(C, 224, 224)`` float32 normalized to [0,1]
+    - ``input_ids``: tokens of the selected language (``(77,)`` long)
     - ``attention_mask``: ``(77,)`` long
-    - ``region_id``: tensor 0-d long
-    - ``category_id``: tensor 0-d long
-    - ``cap_class``: str (para debug)
+    - ``region_id``: 0-d long tensor
+    - ``category_id``: 0-d long tensor
+    - ``cap_class``: str (for debug)
 
     Args:
-        manifest_path: ruta a ``manifest.parquet``.
-        tokenizer: HF ``CLIPTokenizer`` o ``None`` (en cuyo caso input_ids es zeros).
-        lang_strategy: ``"uniform"``, ``"it_only"`` o ``"round_robin"``.
-        crop_resize_to: lado destino (default 224 para CLIP).
-        transform: callable opcional aplicado al tensor ``(C, H, W)`` float.
-        cap_classes: lista canonica de clases para mapear ``cap_class`` -> ``category_id``.
-        regions: lista canonica de ROIs para mapear ``region`` -> ``region_id``.
+        manifest_path: path to ``manifest.parquet``.
+        tokenizer: HF ``CLIPTokenizer`` or ``None`` (in which case input_ids is zeros).
+        lang_strategy: ``"uniform"``, ``"it_only"`` or ``"round_robin"``.
+        crop_resize_to: target side (default 224 for CLIP).
+        transform: optional callable applied to the float ``(C, H, W)`` tensor.
+        cap_classes: canonical list of classes to map ``cap_class`` -> ``category_id``.
+        regions: canonical list of ROIs to map ``region`` -> ``region_id``.
     """
 
     def __init__(
@@ -383,15 +383,15 @@ class FarSLIPDataset(Dataset):
         return self._langs[idx % 3]
 
     def _resolve_crop_path(self, raw: str) -> Path:
-        """Resuelve la ruta del crop tolerante a manifests cross-platform.
+        """Resolve the crop path tolerant to cross-platform manifests.
 
-        Los manifests fueron generados en Windows con paths absolutos
-        (`C:\\Users\\...\\data\\farslip_pairs\\{roi}\\crops\\{file}.tif`). En la
-        VM Linux el path absoluto Windows no existe. Estrategia (fallback):
+        The manifests were generated on Windows with absolute paths
+        (`C:\\Users\\...\\data\\farslip_pairs\\{roi}\\crops\\{file}.tif`). On the
+        Linux VM the Windows absolute path does not exist. Strategy (fallback):
 
-        1. Si la ruta absoluta original existe → usarla.
-        2. Extraer basename y resolverlo contra `manifest_path.parent / "crops"`.
-        3. Si todavia falla, dejar que `_load_crop` reporte FileNotFoundError.
+        1. If the original absolute path exists -> use it.
+        2. Extract the basename and resolve it against `manifest_path.parent / "crops"`.
+        3. If it still fails, let `_load_crop` report FileNotFoundError.
         """
         p = Path(raw)
         if p.exists():
@@ -407,7 +407,7 @@ class FarSLIPDataset(Dataset):
         return self.manifest_path.parent / tail
 
     def _load_crop(self, path: Path) -> torch.Tensor:
-        """Carga TIFF o NPY y devuelve tensor ``(C, H, W)`` float32 en [0,1]."""
+        """Load TIFF or NPY and return a ``(C, H, W)`` float32 tensor in [0,1]."""
         npy_path = path.with_suffix(".npy")
         arr: np.ndarray | None = None
         if path.exists():

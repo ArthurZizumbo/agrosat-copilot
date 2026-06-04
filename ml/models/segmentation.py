@@ -1,15 +1,15 @@
-"""Arquitecturas de segmentacion semantica densa 2D (EPIC 5, Avance 4).
+"""2D dense semantic segmentation architectures (EPIC 5, Avance 4).
 
-Factory para los modelos de segmentacion basados en composites temporales 2D
-(``image (B, 10, H, W) -> logits (B, num_classes, H, W)``). El modelo #1 del
-reparto del equipo, **U-Net ResNet-50**, se construye directo desde
-``segmentation_models_pytorch`` (encoder ImageNet preentrenado, adaptado a 10
-canales Sentinel-2). El factory ``build_segmentation_model`` queda registrable
-para que el resto del equipo enganche #2 (DeepLabv3+) y #3 (SegFormer) sobre el
-mismo pipeline denso (:mod:`ml.ingest.pastis_dataset`).
+Factory for segmentation models based on 2D temporal composites
+(``image (B, 10, H, W) -> logits (B, num_classes, H, W)``). The team's
+assigned model #1, **U-Net ResNet-50**, is built directly from
+``segmentation_models_pytorch`` (ImageNet-pretrained encoder, adapted to 10
+Sentinel-2 channels). The ``build_segmentation_model`` factory is registrable
+so the rest of the team can hook in #2 (DeepLabv3+) and #3 (SegFormer) on the
+same dense pipeline (:mod:`ml.ingest.pastis_dataset`).
 
-Los modelos temporales (#4 U-TAE, #5 TSViT, #6 AnySat) consumen la serie
-completa y viven en wrappers dedicados (ver :mod:`ml.models.anysat_wrapper`).
+The temporal models (#4 U-TAE, #5 TSViT, #6 AnySat) consume the full series
+and live in dedicated wrappers (see :mod:`ml.models.anysat_wrapper`).
 """
 
 from __future__ import annotations
@@ -36,20 +36,20 @@ def build_unet(
     encoder_name: str = "resnet50",
     encoder_weights: str | None = "imagenet",
 ) -> nn.Module:
-    """Construye U-Net con encoder ResNet-50 preentrenado en ImageNet (#1).
+    """Build U-Net with a ResNet-50 encoder pretrained on ImageNet (#1).
 
-    El primer conv del encoder se adapta automaticamente de 3 a ``in_channels``
-    canales (smp replica/promedia los pesos RGB). Salida sin activacion (logits)
-    para usar ``CrossEntropyLoss`` con ``ignore_index``.
+    The encoder's first conv is automatically adapted from 3 to ``in_channels``
+    channels (smp replicates/averages the RGB weights). Output without
+    activation (logits) to use ``CrossEntropyLoss`` with ``ignore_index``.
 
     Args:
-        num_classes: Numero de clases de salida (20 en PASTIS-R).
-        in_channels: Canales de entrada (10 bandas Sentinel-2).
-        encoder_name: Backbone smp (default ``resnet50``).
-        encoder_weights: Pesos del encoder (``imagenet`` o ``None``).
+        num_classes: Number of output classes (20 in PASTIS-R).
+        in_channels: Input channels (10 Sentinel-2 bands).
+        encoder_name: smp backbone (default ``resnet50``).
+        encoder_weights: Encoder weights (``imagenet`` or ``None``).
 
     Returns:
-        ``nn.Module`` que mapea ``(B, in_channels, H, W) -> (B, num_classes, H, W)``.
+        ``nn.Module`` mapping ``(B, in_channels, H, W) -> (B, num_classes, H, W)``.
     """
     return smp.Unet(
         encoder_name=encoder_name,
@@ -67,20 +67,21 @@ def build_deeplabv3plus(
     encoder_name: str = "mobilenet_v2",
     encoder_weights: str | None = "imagenet",
 ) -> nn.Module:
-    """Construye DeepLabv3+ ligero (#2) sobre el mismo pipeline denso.
+    """Build a lightweight DeepLabv3+ (#2) on the same dense pipeline.
 
-    Provisto para que el integrante a cargo de #2 reutilice el factory sin
-    duplicar el pipeline. ``mobilenet_v2`` es el encoder ligero (smp no expone
-    ``mobilenet_v3`` para DeepLabv3+; v2 es el equivalente eficiente disponible).
+    Provided so the member in charge of #2 reuses the factory without
+    duplicating the pipeline. ``mobilenet_v2`` is the lightweight encoder (smp
+    does not expose ``mobilenet_v3`` for DeepLabv3+; v2 is the available
+    efficient equivalent).
 
     Args:
-        num_classes: Numero de clases de salida.
-        in_channels: Canales de entrada.
-        encoder_name: Backbone smp.
-        encoder_weights: Pesos del encoder.
+        num_classes: Number of output classes.
+        in_channels: Input channels.
+        encoder_name: smp backbone.
+        encoder_weights: Encoder weights.
 
     Returns:
-        ``nn.Module`` de segmentacion densa.
+        Dense segmentation ``nn.Module``.
     """
     return smp.DeepLabV3Plus(
         encoder_name=encoder_name,
@@ -95,25 +96,25 @@ SEGMENTATION_BUILDERS: dict[str, Callable[..., nn.Module]] = {
     "unet": build_unet,
     "deeplabv3plus": build_deeplabv3plus,
 }
-"""Registro ``nombre -> builder`` de modelos 2D. El equipo agrega entradas aqui."""
+"""``name -> builder`` registry of 2D models. The team adds entries here."""
 
 
 def build_segmentation_model(kind: str, num_classes: int, **kwargs: object) -> nn.Module:
-    """Construye un modelo de segmentacion 2D por nombre registrado.
+    """Build a 2D segmentation model by registered name.
 
     Args:
-        kind: Clave en :data:`SEGMENTATION_BUILDERS` (``unet``, ``deeplabv3plus``).
-        num_classes: Numero de clases de salida.
-        **kwargs: Overrides pasados al builder concreto (``encoder_name``, etc.).
+        kind: Key in :data:`SEGMENTATION_BUILDERS` (``unet``, ``deeplabv3plus``).
+        num_classes: Number of output classes.
+        **kwargs: Overrides passed to the concrete builder (``encoder_name``, etc.).
 
     Returns:
-        El ``nn.Module`` construido.
+        The built ``nn.Module``.
 
     Raises:
-        ValueError: si ``kind`` no esta registrado.
+        ValueError: if ``kind`` is not registered.
     """
     builder = SEGMENTATION_BUILDERS.get(kind)
     if builder is None:
         valid = ", ".join(sorted(SEGMENTATION_BUILDERS))
-        raise ValueError(f"Modelo de segmentacion desconocido: {kind!r}. Validos: {valid}.")
+        raise ValueError(f"Unknown segmentation model: {kind!r}. Valid: {valid}.")
     return builder(num_classes, **kwargs)  # type: ignore[arg-type]

@@ -1,8 +1,8 @@
-"""Análisis de faltantes en Sentinel-2 vía la capa SCL.
+"""Missing-data analysis in Sentinel-2 via the SCL layer.
 
-Sentinel-2 L2A entrega la capa SCL (Scene Classification Layer) con 12
-clases que indican cobertura nubosa, sombra, saturación, etc. Estas son
-las "máscaras de faltantes" para análisis univariado de bandas reflectivas.
+Sentinel-2 L2A delivers the SCL (Scene Classification Layer) with 12 classes
+that indicate cloud cover, shadow, saturation, etc. These are the
+"missing-data masks" for univariate analysis of reflective bands.
 """
 
 from __future__ import annotations
@@ -23,10 +23,10 @@ SCL_CLASSES: dict[int, str] = {
     10: "thin_cirrus",
     11: "snow_ice",
 }
-"""Mapeo `scl_code -> nombre legible` de las 12 clases SCL Sentinel-2 L2A."""
+"""Mapping `scl_code -> readable name` of the 12 Sentinel-2 L2A SCL classes."""
 
 _INVALID_CODES: set[int] = {0, 1, 3, 8, 9, 10}
-"""Códigos que se consideran 'faltantes/inválidos' para reflectancia útil."""
+"""Codes considered 'missing/invalid' for usable reflectance."""
 
 
 def pct_missing_by_scl(
@@ -34,20 +34,20 @@ def pct_missing_by_scl(
     group_by: list[str] | None = None,
     scl_col: str = "scl",
 ) -> pl.DataFrame:
-    """Calcula porcentaje por clase SCL agrupando por ROI y temporada.
+    """Compute the percentage per SCL class grouping by ROI and season.
 
     Args:
-        df: DataFrame con columna `scl_col` (int) y columnas de agrupación.
-        group_by: Lista de columnas (default `["roi", "season"]`).
-        scl_col: Nombre de la columna SCL.
+        df: DataFrame with column `scl_col` (int) and grouping columns.
+        group_by: List of columns (default `["roi", "season"]`).
+        scl_col: Name of the SCL column.
 
     Returns:
-        DataFrame con columnas `group_by + [scl_class, scl_name, n, pct]`,
-        donde para cada grupo la suma de `pct` por todas las clases SCL es 100.
+        DataFrame with columns `group_by + [scl_class, scl_name, n, pct]`,
+        where for each group the sum of `pct` over all SCL classes is 100.
     """
     group_by = group_by or ["roi", "season"]
     if scl_col not in df.columns:
-        raise ValueError(f"Columna SCL `{scl_col}` no encontrada en df.")
+        raise ValueError(f"SCL column `{scl_col}` not found in df.")
 
     counts = df.group_by([*group_by, scl_col]).agg(pl.len().alias("n"))
     totals = df.group_by(group_by).agg(pl.len().alias("total"))
@@ -74,12 +74,12 @@ def pct_invalid_total(
     group_by: list[str] | None = None,
     scl_col: str = "scl",
 ) -> pl.DataFrame:
-    """Calcula pct agregado de píxeles "inválidos" (nubes/sombra/saturado).
+    """Compute the aggregate pct of "invalid" pixels (clouds/shadow/saturated).
 
     Args:
-        df: DataFrame con columna SCL.
-        group_by: Columnas de agrupación.
-        scl_col: Nombre columna SCL.
+        df: DataFrame with an SCL column.
+        group_by: Grouping columns.
+        scl_col: Name of the SCL column.
 
     Returns:
         DataFrame `group_by + [pct_invalid, pct_cloud, pct_shadow]`.

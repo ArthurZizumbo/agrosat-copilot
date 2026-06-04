@@ -1,1 +1,1 @@
-"""Modulo de generacion de reportes PDF del proyecto AgroSatCopilot."""
+"""PDF report generation module for the AgroSatCopilot project."""

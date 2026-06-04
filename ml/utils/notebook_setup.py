@@ -1,13 +1,13 @@
-"""Helpers reutilizables por los notebooks de EDA.
+"""Reusable helpers for the EDA notebooks.
 
-Centraliza tres patrones que de otra forma se duplicarian en cada `.ipynb`:
+Centralizes three patterns that would otherwise be duplicated in each `.ipynb`:
 
-- Resolucion robusta del repo root via `pyproject.toml` (independiente del CWD).
-- Carga de `.env.local` sin dependencia `python-dotenv`.
-- Configuracion de credenciales para Google Earth Engine (ADC vs service account).
+- Robust repo root resolution via `pyproject.toml` (independent of the CWD).
+- Loading `.env.local` without the `python-dotenv` dependency.
+- Configuration of credentials for Google Earth Engine (ADC vs service account).
 
-Las funciones son puras (input -> output, sin estado global) y siguen el estilo
-del resto de `ml/utils/`.
+The functions are pure (input -> output, no global state) and follow the style
+of the rest of `ml/utils/`.
 """
 
 from __future__ import annotations
@@ -17,19 +17,19 @@ from pathlib import Path
 
 
 def find_repo_root(start: Path | None = None) -> Path:
-    """Sube niveles desde `start` hasta encontrar `pyproject.toml`.
+    """Walk up levels from `start` until `pyproject.toml` is found.
 
-    Util para notebooks: funciona desde cualquier subdirectorio del repo
-    (`notebooks/`, `notebooks/eda/`, `scripts/`, etc.) sin asumir un nombre
-    de carpeta concreto.
+    Useful for notebooks: works from any subdirectory of the repo
+    (`notebooks/`, `notebooks/eda/`, `scripts/`, etc.) without assuming a
+    specific folder name.
 
     Args:
-        start: Punto de partida. Si None usa `Path.cwd()`.
+        start: Starting point. If None uses `Path.cwd()`.
 
     Returns:
-        Path absoluto al repo root. Si no se encuentra `pyproject.toml` en
-        ningun ancestro, retorna `start.resolve()` como fallback (modo
-        degradado para que el notebook no rompa).
+        Absolute path to the repo root. If `pyproject.toml` is not found in
+        any ancestor, returns `start.resolve()` as fallback (degraded mode
+        so the notebook does not break).
     """
     base = (start or Path.cwd()).resolve()
     for candidate in (base, *base.parents):
@@ -39,13 +39,13 @@ def find_repo_root(start: Path | None = None) -> Path:
 
 
 def load_env_local(repo_root: Path) -> None:
-    """Carga claves `KEY=VALUE` de `.env.local` en `os.environ`.
+    """Load `KEY=VALUE` pairs from `.env.local` into `os.environ`.
 
-    No sobreescribe variables ya presentes. Ignora lineas vacias y comentarios.
-    Sin dependencia de `python-dotenv`.
+    Does not overwrite variables already present. Ignores empty lines and
+    comments. No `python-dotenv` dependency.
 
     Args:
-        repo_root: Ruta absoluta al repo root (usar `find_repo_root()`).
+        repo_root: Absolute path to the repo root (use `find_repo_root()`).
     """
     env_file = repo_root / ".env.local"
     if not env_file.exists():
@@ -62,23 +62,23 @@ def load_env_local(repo_root: Path) -> None:
 
 
 def configure_ee_from_env(repo_root: Path) -> tuple[str | None, Path | None]:
-    """Lee `.env.local` y prepara credenciales para Earth Engine.
+    """Read `.env.local` and prepare credentials for Earth Engine.
 
-    Hace tres cosas:
+    Does three things:
 
-    1. Llama `load_env_local(repo_root)` para popular `os.environ`.
-    2. Si `GOOGLE_APPLICATION_CREDENTIALS` apunta a un archivo inexistente
-       (placeholder del template `.env.local`), lo remueve para que
-       `google-auth` caiga limpio al ADC del gcloud.
-    3. Retorna `(GEE_PROJECT_ID, service_account_path_or_None)` listo para
-       pasar a `init_ee(service_account_json=..., project=...)`.
+    1. Calls `load_env_local(repo_root)` to populate `os.environ`.
+    2. If `GOOGLE_APPLICATION_CREDENTIALS` points to a non-existent file
+       (placeholder from the `.env.local` template), removes it so
+       `google-auth` falls back cleanly to the gcloud ADC.
+    3. Returns `(GEE_PROJECT_ID, service_account_path_or_None)` ready to
+       pass to `init_ee(service_account_json=..., project=...)`.
 
     Args:
-        repo_root: Ruta al repo root.
+        repo_root: Path to the repo root.
 
     Returns:
-        Tupla `(gee_project, sa_json_path)`. Ambos pueden ser None si las
-        variables no estan seteadas o el archivo SA no existe.
+        Tuple `(gee_project, sa_json_path)`. Both may be None if the
+        variables are not set or the SA file does not exist.
     """
     load_env_local(repo_root)
 
@@ -94,16 +94,17 @@ def configure_ee_from_env(repo_root: Path) -> tuple[str | None, Path | None]:
 
 
 def show_saved_png(path: Path, caption: str | None = None) -> None:
-    """Muestra inline en Jupyter un PNG ya escrito en disco.
+    """Display inline in Jupyter a PNG already written to disk.
 
-    Util cuando una funcion plotter hace `fig.savefig(...) + plt.close(fig)`:
-    `display(fig)` ya no rinde porque el backend matplotlib cerro la figura,
-    pero el PNG existe. Esta funcion lo carga via `IPython.display.Image` y
-    muestra un caption en negrita opcional como Markdown previo.
+    Useful when a plotter function does `fig.savefig(...) + plt.close(fig)`:
+    `display(fig)` no longer renders because the matplotlib backend closed the
+    figure, but the PNG exists. This function loads it via
+    `IPython.display.Image` and shows an optional bold caption as preceding
+    Markdown.
 
     Args:
-        path: Ruta del PNG.
-        caption: Texto en negrita a mostrar antes de la imagen.
+        path: Path to the PNG.
+        caption: Bold text to show before the image.
     """
     from IPython.display import Image, Markdown, display
 

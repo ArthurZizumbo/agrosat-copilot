@@ -1,26 +1,27 @@
-"""Helpers DRY para los notebooks de segmentacion ``notebooks/segmentation/5*.ipynb``.
+"""DRY helpers for the segmentation notebooks ``notebooks/segmentation/5*.ipynb``.
 
-Centraliza los patrones que se repiten en ``5a_deeplabv3plus.ipynb`` y
-``5b_tsvit.ipynb`` para que cada celda quede como una composicion de llamadas +
-markdown + display, sin codigo inline. Espeja el patron de
+Centralizes the patterns repeated in ``5a_deeplabv3plus.ipynb`` and
+``5b_tsvit.ipynb`` so each cell becomes a composition of calls + markdown +
+display, with no inline code. Mirrors the pattern of
 :mod:`ml.utils.baseline_notebook_helpers`.
 
-Cubre:
+Covers:
 
-- :func:`run_training_or_load` — atajo skip-if-trained: si existe el ``best.pt``
-  entrenado, lee sus metricas en vez de re-entrenar; si no, lanza el CLI de
-  :mod:`ml.train.train_segmentation` por subprocess y parsea su log.
-- :func:`training_results_table` — DataFrame Polars de uno o varios resultados.
-- :func:`build_variant_comparison` — tabla base-vs-variante con delta (5b).
-- :func:`segmentation_eval_table` — tabla de metricas de evaluacion por checkpoint.
-- :func:`per_class_table` / :func:`per_class_comparison_table` — IoU/F1 por clase.
-- :func:`plot_confusion_matrix` — matriz de confusion normalizada por fila.
-- :func:`read_segmentation_lineage` — lectura robusta del lineage MLflow.
-- :func:`pastis_class_names` — mapa indice de entrenamiento ``[0..17]`` -> nombre.
-- Re-exports de :mod:`ml.eval.segmentation_inference`:
+- :func:`run_training_or_load` — skip-if-trained shortcut: if the trained
+  ``best.pt`` exists, reads its metrics instead of re-training; otherwise it
+  launches the :mod:`ml.train.train_segmentation` CLI via subprocess and
+  parses its log.
+- :func:`training_results_table` — Polars DataFrame of one or several results.
+- :func:`build_variant_comparison` — base-vs-variant table with delta (5b).
+- :func:`segmentation_eval_table` — table of evaluation metrics per checkpoint.
+- :func:`per_class_table` / :func:`per_class_comparison_table` — IoU/F1 per class.
+- :func:`plot_confusion_matrix` — row-normalized confusion matrix.
+- :func:`read_segmentation_lineage` — robust read of the MLflow lineage.
+- :func:`pastis_class_names` — training index map ``[0..17]`` -> name.
+- Re-exports from :mod:`ml.eval.segmentation_inference`:
   :func:`load_segmentation_model`, :func:`evaluate_checkpoint`,
-  :func:`predict_examples` (la logica vive alli; aqui solo se reexpone para que
-  el notebook importe todo desde un unico modulo).
+  :func:`predict_examples` (the logic lives there; here it is only re-exposed so
+  the notebook imports everything from a single module).
 """
 
 from __future__ import annotations
@@ -89,19 +90,19 @@ _TEMPORAL_KINDS = frozenset({"tsvit", "tsvit-pheno"})
 
 @dataclass(frozen=True)
 class TrainingResult:
-    """Resultado de :func:`run_training_or_load` para una variante.
+    """Result of :func:`run_training_or_load` for a variant.
 
     Attributes:
-        model: Arquitectura (``deeplabv3plus`` / ``tsvit`` / ``tsvit-pheno``).
-        miou: mIoU del mejor epoch, o ``None`` si la corrida fallo.
-        f1_macro: F1-macro del mejor epoch, o ``None``.
-        pixel_acc: Exactitud por pixel del mejor epoch, o ``None``.
-        returncode: Codigo de retorno del subprocess (``0`` si se reuso el
-            checkpoint), o ``None`` si ni siquiera se lanzo.
-        error: Mensaje de error en modo degradado, o ``None``.
-        from_checkpoint: ``True`` si se reuso ``best.pt`` sin re-entrenar.
-        best_epoch: Epoch del mejor checkpoint, o ``None``.
-        cli_command: Comando CLI documentado (para mostrar en el notebook).
+        model: Architecture (``deeplabv3plus`` / ``tsvit`` / ``tsvit-pheno``).
+        miou: mIoU of the best epoch, or ``None`` if the run failed.
+        f1_macro: F1-macro of the best epoch, or ``None``.
+        pixel_acc: Pixel accuracy of the best epoch, or ``None``.
+        returncode: Return code of the subprocess (``0`` if the checkpoint was
+            reused), or ``None`` if it was not even launched.
+        error: Error message in degraded mode, or ``None``.
+        from_checkpoint: ``True`` if ``best.pt`` was reused without re-training.
+        best_epoch: Epoch of the best checkpoint, or ``None``.
+        cli_command: Documented CLI command (to display in the notebook).
     """
 
     model: str
@@ -122,7 +123,7 @@ def _resolve_run_name(model_kind: str, run_name: str | None) -> str:
 def _documented_cli(
     model_kind: str, target: str, run_name: str, epochs: int, batch_size: int
 ) -> str:
-    """Construye el texto del comando CLI documentado (para display)."""
+    """Build the text of the documented CLI command (for display)."""
     cmd = (
         f"python -m ml.train.train_segmentation --model {model_kind} "
         f"--epochs {epochs} --batch-size {batch_size} --target {target} "
@@ -150,35 +151,35 @@ def run_training_or_load(
     python_executable: str | None = None,
     on_message: Callable[[str], None] | None = None,
 ) -> TrainingResult:
-    """Reusa el checkpoint entrenado o lanza el CLI de entrenamiento.
+    """Reuse the trained checkpoint or launch the training CLI.
 
-    Atajo skip-if-trained: si ``run_full`` es ``False`` y existe el ``best.pt``
-    de la variante (``checkpoint_dir/<sub>/best.pt``), carga sus ``best_metrics``
-    sin re-entrenar. En otro caso construye y ejecuta el comando CLI por
-    subprocess (la corrida queda en MLflow) y parsea su log structlog buscando la
-    ultima linea ``cli_done``. Modo degradado robusto: errores de subprocess,
-    ``returncode != 0`` o metricas no parseables devuelven un
-    :class:`TrainingResult` con campos ``None`` sin romper la ejecucion.
+    Skip-if-trained shortcut: if ``run_full`` is ``False`` and the variant's
+    ``best.pt`` exists (``checkpoint_dir/<sub>/best.pt``), loads its
+    ``best_metrics`` without re-training. Otherwise it builds and executes the
+    CLI command via subprocess (the run is recorded in MLflow) and parses its
+    structlog log looking for the last ``cli_done`` line. Robust degraded mode:
+    subprocess errors, ``returncode != 0`` or unparseable metrics return a
+    :class:`TrainingResult` with ``None`` fields without breaking execution.
 
     Args:
-        model_kind: Arquitectura a entrenar.
-        n_epochs: Epochs a entrenar si se re-entrena.
-        target: ``semantic18`` (18 clases) o ``hcat6`` (6 grupos HCAT).
-        run_name: Nombre del run MLflow; si ``None`` usa el default por kind.
-        checkpoint_dir: Raiz de checkpoints de segmentacion.
-        repo_root: Raiz del repo para ``cwd`` del subprocess (default: CWD).
-        batch_size: Tamano de batch del entrenamiento.
-        n_timesteps: Pasos temporales (solo arquitecturas temporales).
+        model_kind: Architecture to train.
+        n_epochs: Epochs to train if re-training.
+        target: ``semantic18`` (18 classes) or ``hcat6`` (6 HCAT groups).
+        run_name: MLflow run name; if ``None`` uses the default per kind.
+        checkpoint_dir: Root of segmentation checkpoints.
+        repo_root: Repo root for the subprocess ``cwd`` (default: CWD).
+        batch_size: Training batch size.
+        n_timesteps: Temporal steps (temporal architectures only).
         device: ``auto`` / ``cuda`` / ``cpu``.
-        run_full: Si ``True``, ignora el atajo y fuerza el entrenamiento.
-        documented_epochs: Epochs a mostrar en el comando documentado (default
-            ``n_epochs``); util para reflejar la corrida real (30/15).
-        documented_batch_size: Batch a mostrar en el comando documentado.
-        python_executable: Interprete a usar (default ``sys.executable``).
-        on_message: Callback que recibe el markdown a mostrar en el notebook.
+        run_full: If ``True``, ignores the shortcut and forces training.
+        documented_epochs: Epochs to show in the documented command (default
+            ``n_epochs``); useful to reflect the actual run (30/15).
+        documented_batch_size: Batch to show in the documented command.
+        python_executable: Interpreter to use (default ``sys.executable``).
+        on_message: Callback that receives the markdown to display in the notebook.
 
     Returns:
-        :class:`TrainingResult` con las metricas del mejor epoch.
+        :class:`TrainingResult` with the metrics of the best epoch.
     """
     run_name = _resolve_run_name(model_kind, run_name)
     repo = Path(repo_root) if repo_root is not None else Path.cwd()
@@ -286,16 +287,16 @@ def run_training_or_load(
 
 
 def _parse_cli_done(log: str) -> dict[str, float | None]:
-    """Extrae miou/f1_macro/pixel_acc de la ultima linea ``cli_done`` del log.
+    """Extract miou/f1_macro/pixel_acc from the last ``cli_done`` line of the log.
 
-    El CLI loguea con structlog (formato ``key=value``). Busca la ultima linea
-    que contenga ``cli_done`` y parsea los tres tokens de metrica.
+    The CLI logs with structlog (``key=value`` format). Looks for the last line
+    that contains ``cli_done`` and parses the three metric tokens.
 
     Args:
-        log: Texto combinado de stdout + stderr del subprocess.
+        log: Combined text of the subprocess stdout + stderr.
 
     Returns:
-        Dict con ``miou``, ``f1_macro``, ``pixel_acc`` (``None`` si no se hallan).
+        Dict with ``miou``, ``f1_macro``, ``pixel_acc`` (``None`` if not found).
     """
     result: dict[str, float | None] = {"miou": None, "f1_macro": None, "pixel_acc": None}
     for line in reversed(log.splitlines()):
@@ -316,13 +317,13 @@ def _parse_cli_done(log: str) -> dict[str, float | None]:
 def training_results_table(
     results: TrainingResult | Sequence[TrainingResult],
 ) -> pl.DataFrame:
-    """Convierte uno o varios :class:`TrainingResult` en un DataFrame Polars.
+    """Convert one or several :class:`TrainingResult` into a Polars DataFrame.
 
     Args:
-        results: Un resultado o secuencia de resultados.
+        results: A single result or a sequence of results.
 
     Returns:
-        DataFrame con columnas ``model, miou, f1_macro, pixel_acc, returncode``.
+        DataFrame with columns ``model, miou, f1_macro, pixel_acc, returncode``.
     """
     rows = [results] if isinstance(results, TrainingResult) else list(results)
     return pl.DataFrame(
@@ -353,17 +354,17 @@ def build_variant_comparison(
     variant_model: str = "tsvit-pheno",
     metrics: Sequence[str] = ("miou", "f1_macro", "pixel_acc"),
 ) -> pl.DataFrame | None:
-    """Tabla comparativa base-vs-variante con delta por metrica.
+    """Base-vs-variant comparison table with per-metric delta.
 
     Args:
-        results: Resultados de ambas variantes.
-        baseline_model: Nombre del modelo base.
-        variant_model: Nombre del modelo variante.
-        metrics: Metricas a comparar.
+        results: Results of both variants.
+        baseline_model: Name of the base model.
+        variant_model: Name of the variant model.
+        metrics: Metrics to compare.
 
     Returns:
-        DataFrame con columnas ``metrica, <baseline>, <variant>, delta``, o
-        ``None`` si falta alguno de los dos modelos o alguna metrica es ``None``.
+        DataFrame with columns ``metrica, <baseline>, <variant>, delta``, or
+        ``None`` if either of the two models is missing or any metric is ``None``.
     """
     by_model = {r.model: r for r in results}
     base = by_model.get(baseline_model)
@@ -392,15 +393,15 @@ def segmentation_eval_table(
     *,
     label_col: str = "variante",
 ) -> pl.DataFrame:
-    """Tabla de metricas de evaluacion de uno o varios checkpoints.
+    """Table of evaluation metrics for one or several checkpoints.
 
     Args:
-        results: ``{nombre: metrics_dict}`` (metrics de
+        results: ``{name: metrics_dict}`` (metrics from
             :func:`ml.eval.metrics.dense_metrics_from_cm`).
-        label_col: Nombre de la columna de etiqueta.
+        label_col: Name of the label column.
 
     Returns:
-        DataFrame con ``label_col, mIoU, F1_macro, pixel_acc, balanced_acc,
+        DataFrame with ``label_col, mIoU, F1_macro, pixel_acc, balanced_acc,
         cohen_kappa``.
     """
     def _f(m: dict[str, object], key: str) -> float:
@@ -433,16 +434,16 @@ def per_class_table(
     num_classes: int = 18,
     out_csv: Path | str | None = None,
 ) -> pl.DataFrame:
-    """Tabla IoU/F1 por clase de un solo checkpoint, ordenada por IoU desc.
+    """Per-class IoU/F1 table of a single checkpoint, sorted by IoU desc.
 
     Args:
-        metrics: metrics_dict con ``per_class_iou`` y ``per_class_f1``.
-        class_names: Mapa indice -> nombre (``None`` para ``grupo_c``).
-        num_classes: Numero de clases.
-        out_csv: Si se da, persiste la tabla.
+        metrics: metrics_dict with ``per_class_iou`` and ``per_class_f1``.
+        class_names: Index -> name map (``None`` for ``grupo_c``).
+        num_classes: Number of classes.
+        out_csv: If given, persists the table.
 
     Returns:
-        DataFrame con columnas ``clase, IoU, F1``.
+        DataFrame with columns ``clase, IoU, F1``.
     """
     rows = [
         {
@@ -466,17 +467,17 @@ def per_class_comparison_table(
     num_classes: int = 18,
     out_csv: Path | str | None = None,
 ) -> pl.DataFrame:
-    """Tabla IoU/F1 por clase de dos variantes lado a lado con delta de IoU.
+    """Per-class IoU/F1 table of two variants side by side with IoU delta.
 
     Args:
-        baseline_metrics: metrics_dict de la variante base.
-        variant_metrics: metrics_dict de la variante a comparar.
-        class_names: Mapa indice -> nombre (``None`` para ``grupo_c``).
-        num_classes: Numero de clases.
-        out_csv: Si se da, persiste la tabla.
+        baseline_metrics: metrics_dict of the base variant.
+        variant_metrics: metrics_dict of the variant to compare.
+        class_names: Index -> name map (``None`` for ``grupo_c``).
+        num_classes: Number of classes.
+        out_csv: If given, persists the table.
 
     Returns:
-        DataFrame ordenado por ``delta_IoU`` desc con columnas
+        DataFrame sorted by ``delta_IoU`` desc with columns
         ``clase, IoU_base, IoU_pheno, delta_IoU, F1_base, F1_pheno``.
     """
     rows = []
@@ -508,18 +509,18 @@ def plot_confusion_matrix(
     out_path: Path | str | None = None,
     cmap: str = "viridis",
 ) -> Figure:
-    """Dibuja la matriz de confusion normalizada por fila.
+    """Draw the row-normalized confusion matrix.
 
     Args:
-        cm: Matriz de confusion ``(C, C)`` sin normalizar.
-        class_names: Mapa indice -> nombre para los ticks (``None`` = sin labels).
-        title: Titulo de la figura.
-        num_classes: Numero de clases (default: ``cm.shape[0]``).
-        out_path: Si se da, guarda la figura.
+        cm: Unnormalized confusion matrix ``(C, C)``.
+        class_names: Index -> name map for the ticks (``None`` = no labels).
+        title: Title of the figure.
+        num_classes: Number of classes (default: ``cm.shape[0]``).
+        out_path: If given, saves the figure.
         cmap: Colormap.
 
     Returns:
-        La figura matplotlib (la celda hace ``display(fig)`` + ``plt.close(fig)``).
+        The matplotlib figure (the cell does ``display(fig)`` + ``plt.close(fig)``).
     """
     import matplotlib.pyplot as plt
     import numpy as np
@@ -553,24 +554,24 @@ def read_segmentation_lineage(
     tracking_uri: str | None = None,
     max_results: int = 50,
 ) -> pl.DataFrame | None:
-    """Lee el lineage MLflow de las corridas de segmentacion (modo degradado).
+    """Read the MLflow lineage of the segmentation runs (degraded mode).
 
-    Recupera los runs del experimento, filtra por ``run_names`` client-side
-    (evita la fragilidad del operador ``IN`` server-side sobre tags) y devuelve
-    un DataFrame con metricas best y tags de version. Devuelve ``None`` (no
-    lanza) ante cualquier fallo, para preservar la ejecucion end-to-end del
-    notebook en papermill/CI.
+    Retrieves the runs of the experiment, filters by ``run_names`` client-side
+    (avoids the fragility of the server-side ``IN`` operator over tags) and
+    returns a DataFrame with best metrics and version tags. Returns ``None``
+    (does not raise) on any failure, to preserve the end-to-end execution of
+    the notebook in papermill/CI.
 
     Args:
-        run_names: Nombre o lista de nombres de run a recuperar.
-        experiment_name: Experimento MLflow.
-        tracking_uri: URI del tracking; si ``None`` usa
+        run_names: Run name or list of run names to retrieve.
+        experiment_name: MLflow experiment.
+        tracking_uri: Tracking URI; if ``None`` uses
             :func:`ml.utils.mlflow_utils.resolve_tracking_uri`.
-        max_results: Maximo de runs a traer antes de filtrar.
+        max_results: Maximum runs to fetch before filtering.
 
     Returns:
-        DataFrame con ``run_name, miou, f1_macro, pixel_acc, code_version,
-        data_version`` (columnas presentes), o ``None`` en modo degradado.
+        DataFrame with ``run_name, miou, f1_macro, pixel_acc, code_version,
+        data_version`` (columns present), or ``None`` in degraded mode.
     """
     wanted = {run_names} if isinstance(run_names, str) else set(run_names)
     try:
@@ -614,26 +615,26 @@ def read_segmentation_lineage(
 
 
 def pastis_class_names(num_classes: int = 18) -> dict[int, str]:
-    """Mapa indice de entrenamiento ``[0..17]`` -> nombre de cultivo PASTIS.
+    """Training index map ``[0..17]`` -> PASTIS crop name.
 
-    El dataset remapea la clase original PASTIS ``cid`` (1..18) al indice de
-    entrenamiento ``cid-1`` (0..17); aqui se invierte ese offset para nombrar
-    cada indice del modelo. Solo cubre ``semantic18``: para ``hcat6`` el caller
-    debe pasar ``class_names=None`` a los helpers (genera ``grupo_c``).
+    The dataset remaps the original PASTIS class ``cid`` (1..18) to the training
+    index ``cid-1`` (0..17); here that offset is inverted to name each model
+    index. Only covers ``semantic18``: for ``hcat6`` the caller must pass
+    ``class_names=None`` to the helpers (generates ``grupo_c``).
 
     Args:
-        num_classes: Debe ser 18 (semantic18).
+        num_classes: Must be 18 (semantic18).
 
     Returns:
         Dict ``{0: 'Meadow', 1: 'Soft winter wheat', ...}``.
 
     Raises:
-        ValueError: si ``num_classes != 18`` (defensa contra mal uso en hcat6).
+        ValueError: if ``num_classes != 18`` (guard against misuse in hcat6).
     """
     if num_classes != 18:
         raise ValueError(
-            f"pastis_class_names solo cubre semantic18 (18 clases), recibido "
-            f"{num_classes}. Para hcat6 pasa class_names=None a los helpers."
+            f"pastis_class_names only covers semantic18 (18 classes), received "
+            f"{num_classes}. For hcat6 pass class_names=None to the helpers."
         )
     from ml.features.phenology_class_prototypes import load_class_names
 

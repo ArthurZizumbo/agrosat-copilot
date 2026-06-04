@@ -1,10 +1,10 @@
-"""Seccion Avance 3 - Baseline tabular y fenologico (data-driven).
+"""Avance 3 section - tabular and phenological baseline (data-driven).
 
-Recorre ``A3_TABS`` (definidos como datos en ``ml.report.avance3_content``) con
-un unico renderer generico: por cada tab muestra la ficha editorial y resuelve
-sus artefactos (figura o tabla parquet), probando rutas de fallback en orden y
-degradando con ``st.warning`` cuando ninguna existe. Agregar o cambiar un tab
-no implica escribir codigo de render nuevo.
+Iterates over ``A3_TABS`` (defined as data in ``ml.report.avance3_content``)
+with a single generic renderer: for each tab it shows the editorial card and
+resolves its artifacts (figure or parquet table), trying fallback paths in
+order and degrading with ``st.warning`` when none exists. Adding or changing a
+tab does not require writing new render code.
 """
 
 from __future__ import annotations
@@ -33,14 +33,14 @@ BASELINE_TAB_LABELS: tuple[str, ...] = tuple(tab.label for tab in A3_TABS)
 
 
 def _resolve_artifact_path(artifact: BaselineArtifact) -> Path:
-    """Devuelve la primera ruta existente entre relpath y fallbacks.
+    """Return the first existing path among relpath and fallbacks.
 
     Args:
-        artifact: Descriptor del artefacto con ruta principal y fallbacks.
+        artifact: Artifact descriptor with main path and fallbacks.
 
     Returns:
-        Path absoluto a la primera ruta existente; si ninguna existe,
-        devuelve el path principal (el renderer mostrara el warning).
+        Absolute Path to the first existing path; if none exists, returns the
+        main path (the renderer will show the warning).
     """
     for candidate in (artifact.relpath, *artifact.fallbacks):
         path = REPO_ROOT / candidate
@@ -50,7 +50,7 @@ def _resolve_artifact_path(artifact: BaselineArtifact) -> Path:
 
 
 def _render_artifact(artifact: BaselineArtifact) -> None:
-    """Renderiza un artefacto (figura o tabla) resolviendo su ruta."""
+    """Render an artifact (figure or table) resolving its path."""
     path = _resolve_artifact_path(artifact)
     if artifact.kind == "figure":
         render_optional_figure(path, artifact.caption, BASELINE_MISSING_HINT)
@@ -59,7 +59,7 @@ def _render_artifact(artifact: BaselineArtifact) -> None:
 
 
 def _render_baseline_tab(tab: BaselineTab, index: int, total: int) -> None:
-    """Renderiza un tab del Avance 3: divisor + ficha + artefactos."""
+    """Render an Avance 3 tab: divider + card + artifacts."""
     render_section_divider(tab.card.title, badge=f"Tab {index} de {total}")
     render_card_header(tab.card)
     for artifact in tab.artifacts:
@@ -70,7 +70,7 @@ def _render_baseline_tab(tab: BaselineTab, index: int, total: int) -> None:
 # Per-tab renderers (closures over each BaselineTab) for compatibility with
 # the tests that count ``_BASELINE_TAB_RENDERERS``.
 def _make_tab_renderer(tab: BaselineTab, index: int, total: int):
-    """Crea un renderer sin argumentos para un tab dado."""
+    """Create an argument-less renderer for a given tab."""
 
     def _renderer() -> None:
         _render_baseline_tab(tab, index, total)
@@ -84,7 +84,7 @@ BASELINE_TAB_RENDERERS: tuple = tuple(
 
 
 def render_baseline_section() -> None:
-    """Renderiza la seccion Baseline (A3) con sus tabs data-driven."""
+    """Render the Baseline (A3) section with its data-driven tabs."""
     st.markdown(
         '<h2 style="margin-top:0.5rem;color:#1E293B;font-weight:700;">'
         "Baseline saneado post-A3 (Avance 3)</h2>",

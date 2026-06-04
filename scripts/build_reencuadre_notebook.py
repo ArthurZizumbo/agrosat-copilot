@@ -1,30 +1,29 @@
-"""Constructor programatico de ``notebooks/baseline/05_reencuadre_fenologico.ipynb``.
+"""Programmatic builder of ``notebooks/baseline/05_reencuadre_fenologico.ipynb``.
 
-Genera el notebook entregable celda a celda. Sigue el patron de
-``scripts/build_baseline_notebook.py``: ejecutable end-to-end con papermill,
-commiteable con outputs poblados.
+Generates the deliverable notebook cell by cell. Follows the pattern of
+``scripts/build_baseline_notebook.py``: executable end-to-end with papermill,
+committable with populated outputs.
 
-US-023-preview (P1) movio la libreta desde ``notebooks/feature_engineering/`` a
-``notebooks/baseline/`` (decision D-6). Tambien se anaden las celdas de
-P2 (FarSLIP path canonico + ablation 7+ conjuntos), P3 (`geom_only`),
-P4 (`pheno_text` real Gemini Flash 3.5 o skip honesto), P5
-(`with_spectral_signature` con descriptor REP Frampton 2013) y P6 (QA
-contra ``notebooks/CLAUDE.md``).
+US-023-preview (P1) moved the notebook from ``notebooks/feature_engineering/`` to
+``notebooks/baseline/`` (decision D-6). It also adds the cells of P2 (FarSLIP
+canonical path + ablation 7+ sets), P3 (`geom_only`), P4 (`pheno_text` real
+Gemini Flash 3.5 or honest skip), P5 (`with_spectral_signature` with REP
+descriptor Frampton 2013) and P6 (QA against ``notebooks/CLAUDE.md``).
 
-Secciones del notebook:
-  1. Setup + glosario (Ablation, Spatial CV, OOF).
-  2. EDA del desbalance (grafica de soporte por clase).
-  3. Ablation de features XGBoost x 5 conjuntos (descarte geografico).
-  4. Comparativa de modelos sobre el conjunto ganador (XGBoost vs TempCNN
-     vs InceptionTime, todos contra la linea baseline).
-  5. F1 por clase + matriz de confusion del mejor modelo temporal.
-  6. Clustering sin coordenadas (KMeans + UMAP + curva NDVI por cluster).
-  7. Estrategia de desbalance.
-  8. Rama semantica fenologica (integracion, ejecucion real diferida).
-  9. Conclusiones.
-  10. Glosario tecnico.
+Notebook sections:
+  1. Setup + glossary (Ablation, Spatial CV, OOF).
+  2. EDA of the imbalance (per-class support chart).
+  3. XGBoost feature ablation x 5 sets (geographic discard).
+  4. Model comparison over the winning set (XGBoost vs TempCNN
+     vs InceptionTime, all against the baseline line).
+  5. Per-class F1 + confusion matrix of the best temporal model.
+  6. Clustering without coordinates (KMeans + UMAP + per-cluster NDVI curve).
+  7. Imbalance strategy.
+  8. Phenological semantic branch (integration, real execution deferred).
+  9. Conclusions.
+  10. Technical glossary.
 
-Uso:
+Usage:
     poetry run python scripts/build_reencuadre_notebook.py \
         --out notebooks/baseline/05_reencuadre_fenologico.ipynb
 """
@@ -1206,7 +1205,7 @@ CELLS: list[nbf.NotebookNode] = [
 
 
 def build_notebook(out_path: Path) -> None:
-    """Construye el notebook 05 y lo escribe en ``out_path``."""
+    """Build notebook 05 and write it to ``out_path``."""
     nb = nbf.v4.new_notebook()
     nb.cells = CELLS
     nb.metadata.update(
@@ -1230,7 +1229,7 @@ def main(
         help="Ruta destino del notebook .ipynb.",
     ),
 ) -> None:
-    """Reconstruye ``05_reencuadre_fenologico.ipynb`` desde cero."""
+    """Rebuild ``05_reencuadre_fenologico.ipynb`` from scratch."""
     build_notebook(out)
     typer.echo(f"Notebook escrito en {out}")
 

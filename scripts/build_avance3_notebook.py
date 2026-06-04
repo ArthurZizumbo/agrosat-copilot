@@ -1,17 +1,16 @@
-"""Genera el notebook integrador ``Avance3.Equipo17.ipynb`` (consolidado A3).
+"""Generate the ``Avance3.Equipo17.ipynb`` integrator notebook (A3 consolidated).
 
-El Avance 3 reune el trabajo del baseline (notebook `04_baseline.ipynb`),
-la ablation post-A3 con bloques opcionales (notebook
-`05_reencuadre_fenologico.ipynb`) y el baseline v2 reentrenado sobre el
-conjunto ganador (notebook `04b_baseline_v2.ipynb`). El notebook integrador
-**no reentrena** modelos: lee los artefactos persistidos en
-`reports/baseline/` y los presenta en un unico recorrido coherente con el
-mapeo 1:1 a la rubrica oficial del Avance 3.
+Avance 3 gathers the baseline work (notebook `04_baseline.ipynb`), the post-A3
+ablation with optional blocks (notebook `05_reencuadre_fenologico.ipynb`) and the
+baseline v2 retrained over the winning set (notebook `04b_baseline_v2.ipynb`).
+The integrator notebook does **not** retrain models: it reads the artifacts
+persisted in `reports/baseline/` and presents them in a single coherent walkthrough
+with a 1:1 mapping to the official Avance 3 rubric.
 
-Sigue el patron de ``scripts/build_avance2_notebook.py`` (builder programatico
-con celdas markdown + code para Polars / matplotlib / IPython.display.Image).
+Follows the pattern of ``scripts/build_avance2_notebook.py`` (programmatic builder
+with markdown + code cells for Polars / matplotlib / IPython.display.Image).
 
-Uso:
+Usage:
     poetry run python scripts/build_avance3_notebook.py
     poetry run python scripts/build_avance3_notebook.py \\
         --out notebooks/baseline/Avance3.Equipo17.ipynb
@@ -28,12 +27,12 @@ app = typer.Typer(add_completion=False, help=__doc__)
 
 
 def _md(source: str) -> nbf.NotebookNode:
-    """Crea una celda markdown."""
+    """Create a markdown cell."""
     return nbf.v4.new_markdown_cell(source)
 
 
 def _code(source: str) -> nbf.NotebookNode:
-    """Crea una celda de codigo."""
+    """Create a code cell."""
     return nbf.v4.new_code_cell(source)
 
 
@@ -324,10 +323,10 @@ CELLS: list[nbf.NotebookNode] = [
 
 
 def build_notebook(out_path: Path) -> None:
-    """Construye el notebook ``Avance3.Equipo17.ipynb`` y lo escribe en disco.
+    """Build the ``Avance3.Equipo17.ipynb`` notebook and write it to disk.
 
     Args:
-        out_path: Ruta destino del fichero ``.ipynb``.
+        out_path: Destination path of the ``.ipynb`` file.
     """
     nb = nbf.v4.new_notebook()
     nb.cells = CELLS
@@ -352,7 +351,7 @@ def main(
         help="Ruta destino del notebook .ipynb.",
     ),
 ) -> None:
-    """Reconstruye ``notebooks/baseline/Avance3.Equipo17.ipynb`` desde cero."""
+    """Rebuild ``notebooks/baseline/Avance3.Equipo17.ipynb`` from scratch."""
     build_notebook(out)
     typer.echo(f"Notebook escrito en {out}")
 

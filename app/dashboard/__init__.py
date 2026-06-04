@@ -1,8 +1,8 @@
-"""Paquete del dashboard Streamlit de AgroSatCopilot.
+"""AgroSatCopilot Streamlit dashboard package.
 
-Separa el monolito historico ``app/eda_dashboard.py`` en modulos con
-responsabilidad unica (design system, loaders, componentes de render,
-secciones por Avance y registro data-driven). El entry point
-``app/eda_dashboard.py`` queda como un shim delgado que ensambla ``main()``
-y reexporta la API publica que consumen los tests.
+Splits the historic monolith ``app/eda_dashboard.py`` into single-
+responsibility modules (design system, loaders, render components,
+per-Avance sections and data-driven registry). The entry point
+``app/eda_dashboard.py`` remains a thin shim that assembles ``main()``
+and re-exports the public API consumed by the tests.
 """

@@ -1,26 +1,26 @@
-"""Integra los artefactos de los modelos de segmentacion descargados del Drive
-del equipo (unet, anysat, segformer, utae) al repo, en el formato que consume
-``Avance4.Equipo17.ipynb``.
+"""Integrate the segmentation model artifacts downloaded from the team
+Drive (unet, anysat, segformer, utae) into the repo, in the format consumed
+by ``Avance4.Equipo17.ipynb``.
 
-Fuente: una carpeta local con la estructura del Drive compartido (``reports/
-segmentation/{metrics,figures}`` para unet/anysat, ``outputs/<modelo>/`` con
-``results.json`` + figuras para segformer/utae).
+Source: a local folder with the structure of the shared Drive (``reports/
+segmentation/{metrics,figures}`` for unet/anysat, ``outputs/<model>/`` with
+``results.json`` + figures for segformer/utae).
 
-Acciones:
+Actions:
 
-- Copia tal cual los parquets ``model_comparison_avance4_{unet,anysat_fast}.parquet``
-  y sus figuras (ya tienen el formato/nombres que espera el integrador).
-- Convierte el ``results.json`` de segformer y utae a un parquet
-  ``model_comparison_avance4_{modelo}.parquet`` con el esquema del integrador, y
-  copia sus figuras renombrandolas al patron ``{key}_{modelo}.png``
+- Copies as-is the parquets ``model_comparison_avance4_{unet,anysat_fast}.parquet``
+  and their figures (they already have the format/names the integrator expects).
+- Converts the ``results.json`` of segformer and utae to a parquet
+  ``model_comparison_avance4_{model}.parquet`` with the integrator schema, and
+  copies its figures renaming them to the pattern ``{key}_{model}.png``
   (``training_curves`` -> ``curves``, ``qualitative`` -> ``samples``).
 
-El ``miou_grouped`` de segformer/utae se promedia de su ``hcat_group_iou`` (6
-grupos HCAT), coherente con la columna *_grouped de la tabla.
+The ``miou_grouped`` of segformer/utae is averaged from its ``hcat_group_iou``
+(6 HCAT groups), consistent with the *_grouped column of the table.
 
-Operativo permanente y parametrizable por ``--src``. No reentrena nada.
+Permanent operational script, parameterizable by ``--src``. Retrains nothing.
 
-Uso::
+Usage::
 
     poetry run python scripts/import_avance4_from_drive.py \\
         --src "C:/Users/arthu/Downloads/avance_drive_pi"
@@ -67,15 +67,15 @@ _FIG_MAP = {
 
 
 def _row_from_results(model: str, res: dict) -> dict:
-    """Construye una fila del integrador desde un results.json de segformer/utae.
+    """Build an integrator row from a segformer/utae results.json.
 
     Args:
-        model: Nombre canonico del modelo (``segformer`` / ``utae``).
-        res: Contenido del ``results.json``.
+        model: Canonical model name (``segformer`` / ``utae``).
+        res: Contents of the ``results.json``.
 
     Returns:
-        Dict con el esquema del integrador. ``miou_grouped`` se promedia del
-        ``hcat_group_iou`` (mIoU sobre los 6 grupos HCAT).
+        Dict with the integrator schema. ``miou_grouped`` is averaged from
+        ``hcat_group_iou`` (mIoU over the 6 HCAT groups).
     """
     grouped = res.get("hcat_group_iou") or {}
     miou_grouped = (
@@ -97,7 +97,7 @@ def _row_from_results(model: str, res: dict) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Punto de entrada CLI."""
+    """CLI entry point."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--src", required=True, help="Carpeta local con la estructura del Drive.")
     parser.add_argument(

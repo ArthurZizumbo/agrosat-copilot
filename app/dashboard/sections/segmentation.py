@@ -1,10 +1,10 @@
-"""Seccion Avance 4 - Segmentacion semantica densa.
+"""Avance 4 section - dense semantic segmentation.
 
-Renderiza la ficha consolidada del Avance 4: tabla comparativa de las seis
-arquitecturas con metricas reales, figuras por arquitectura (predicciones,
-matriz de confusion, IoU por clase y curvas) con narrativa, y la convergencia
-de Optuna. Las figuras viven en ``reports/segmentation/figures/`` (no en
-``paper/figures/``), por lo que se resuelven por nombre directo.
+Renders the consolidated Avance 4 card: comparative table of the six
+architectures with real metrics, per-architecture figures (predictions,
+confusion matrix, per-class IoU and curves) with narrative, and the Optuna
+convergence. The figures live in ``reports/segmentation/figures/`` (not in
+``paper/figures/``), so they are resolved by direct name.
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ _MISSING_HINT = "Artefacto pendiente - ejecuta el notebook Avance4.Equipo17.ipyn
 
 
 def _render_comparison_table() -> None:
-    """Renderiza la tabla comparativa de las 6 arquitecturas con metricas reales."""
+    """Render the comparative table of the 6 architectures with real metrics."""
     badge = f"{len(SEGMENTATION_MODELS)} modelos"
     render_section_divider("Comparativa de arquitecturas", badge=badge)
     rows = []
@@ -54,7 +54,7 @@ def _render_comparison_table() -> None:
 
 
 def _render_model_figures() -> None:
-    """Renderiza, por arquitectura, las figuras disponibles con narrativa."""
+    """Render, per architecture, the available figures with narrative."""
     for model in SEGMENTATION_MODELS:
         available = [
             (kind, caption, SEGMENTATION_FIGURES_ROOT / f"{kind}_{model.slug}.png")
@@ -70,7 +70,7 @@ def _render_model_figures() -> None:
 
 
 def render_segmentation_section() -> None:
-    """Renderiza el bloque Avance 4: ficha + tabla comparativa + figuras."""
+    """Render the Avance 4 block: card + comparative table + figures."""
     render_card_header(SEGMENTATION_CARD)
     _render_comparison_table()
     _render_model_figures()

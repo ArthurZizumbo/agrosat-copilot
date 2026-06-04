@@ -1,18 +1,18 @@
-"""Bootstrap de notebooks de segmentacion que corren en Colab o en local.
+"""Bootstrap for segmentation notebooks that run on Colab or locally.
 
-Centraliza la celda de setup que de otra forma se duplica en cada notebook de
-segmentacion (`04d`, `04e`, `04g`, `04h`, `Avance4.Equipo17`):
+Centralizes the setup cell that would otherwise be duplicated in each
+segmentation notebook (`04d`, `04e`, `04g`, `04h`, `Avance4.Equipo17`):
 
-- Monta Google Drive (donde vive el dataset compartido del equipo) cuando se
-  ejecuta en Colab; en local es un no-op.
-- Localiza el repo por su `pyproject.toml`, lo agrega a `sys.path` y fija el CWD.
-- Instala bajo demanda las dependencias que Colab no trae por defecto.
+- Mounts Google Drive (where the team shared dataset lives) when running
+  in Colab; locally it is a no-op.
+- Locates the repo by its `pyproject.toml`, adds it to `sys.path` and sets the CWD.
+- Installs on demand the dependencies that Colab does not bring by default.
 
-El clone inicial del repo en Colab NO vive aqui: precede al `import`, asi que se
-queda en una celda minima del notebook. Una vez clonado el repo (o en local),
-``bootstrap_colab_run`` hace el resto del trabajo.
+The initial repo clone on Colab does NOT live here: it precedes the `import`,
+so it stays in a minimal notebook cell. Once the repo is cloned (or locally),
+``bootstrap_colab_run`` does the rest of the work.
 
-Uso tipico en la celda de setup del notebook:
+Typical usage in the notebook setup cell:
 
 ```python
 from ml.utils.notebook_colab import bootstrap_colab_run
@@ -38,12 +38,12 @@ _SHARED_FOLDER = "/content/drive/MyDrive/Integrador/"
 
 @dataclass(frozen=True)
 class ColabEnv:
-    """Entorno resuelto por el bootstrap de la celda de setup.
+    """Environment resolved by the bootstrap of the setup cell.
 
     Attributes:
-        repo: Ruta absoluta al repo root (resuelto via `pyproject.toml`).
-        in_colab: True si el notebook corre dentro de Google Colab.
-        shared_folder_path: Prefijo del Drive compartido (`""` en local).
+        repo: Absolute path to the repo root (resolved via `pyproject.toml`).
+        in_colab: True if the notebook runs inside Google Colab.
+        shared_folder_path: Prefix of the shared Drive (`""` locally).
     """
 
     repo: Path
@@ -52,11 +52,11 @@ class ColabEnv:
 
 
 def _mount_drive() -> tuple[bool, str]:
-    """Monta Google Drive si estamos en Colab.
+    """Mount Google Drive if we are in Colab.
 
     Returns:
-        Par ``(in_colab, shared_folder_path)``. En local devuelve
-        ``(False, "")`` sin efectos secundarios.
+        Pair ``(in_colab, shared_folder_path)``. Locally returns
+        ``(False, "")`` with no side effects.
     """
     try:
         from google.colab import drive  # type: ignore[import-not-found]
@@ -67,16 +67,16 @@ def _mount_drive() -> tuple[bool, str]:
 
 
 def _locate_repo(in_colab: bool) -> Path:
-    """Localiza el repo por su `pyproject.toml`, lo agrega a `sys.path` y fija CWD.
+    """Locate the repo by its `pyproject.toml`, add it to `sys.path` and set CWD.
 
     Args:
-        in_colab: Si True antepone `/content/agrosat-copilot` (destino del clone).
+        in_colab: If True prepends `/content/agrosat-copilot` (the clone target).
 
     Returns:
-        Ruta absoluta al repo root.
+        Absolute path to the repo root.
 
     Raises:
-        RuntimeError: Si no se encuentra `pyproject.toml` en ningun candidato.
+        RuntimeError: If `pyproject.toml` is not found in any candidate.
     """
     search = [Path.cwd().resolve(), *Path.cwd().resolve().parents]
     if in_colab:
@@ -88,8 +88,8 @@ def _locate_repo(in_colab: bool) -> Path:
             os.chdir(cand)
             return cand
     raise RuntimeError(
-        "No se encontro el repo agrosat-copilot (pyproject.toml). "
-        "Clonalo en /content/agrosat-copilot o sincronizalo desde VS Code."
+        "Could not find the agrosat-copilot repo (pyproject.toml). "
+        "Clone it into /content/agrosat-copilot or sync it from VS Code."
     )
 
 
@@ -98,17 +98,17 @@ def bootstrap_colab_run(
     pip_packages: tuple[str, ...] = (),
     require_repo: bool = True,
 ) -> ColabEnv:
-    """Aplica el bootstrap de la celda de setup y devuelve el entorno.
+    """Apply the bootstrap of the setup cell and return the environment.
 
     Args:
-        pip_packages: Paquetes a instalar via pip solo cuando se corre en Colab
-            (en local se asume el venv del repo). Lista vacia = no instala nada.
-        require_repo: Si True (default, notebooks de modelo) levanta
-            ``RuntimeError`` cuando no encuentra el repo. Si False (notebook
-            integrador) usa el CWD actual como fallback sin romper.
+        pip_packages: Packages to install via pip only when running in Colab
+            (locally the repo venv is assumed). Empty list = installs nothing.
+        require_repo: If True (default, model notebooks) raises
+            ``RuntimeError`` when it does not find the repo. If False (the
+            integrator notebook) uses the current CWD as a fallback without breaking.
 
     Returns:
-        ``ColabEnv`` con repo root, flag de Colab y prefijo del Drive compartido.
+        A ``ColabEnv`` with repo root, Colab flag and shared Drive prefix.
     """
     in_colab, shared_folder_path = _mount_drive()
 

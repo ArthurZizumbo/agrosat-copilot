@@ -1,22 +1,22 @@
-"""Builder unificado de los 6 notebooks de baseline (US-023-preview v2).
+"""Unified builder of the 6 baseline notebooks (US-023-preview v2).
 
-Genera los 6 notebooks de `notebooks/baseline/` desde una sola fuente de
-verdad, alineados al estándar de `notebooks/CLAUDE.md` y reutilizando
-todos los helpers de `ml/`:
+Generates the 6 notebooks in `notebooks/baseline/` from a single source of
+truth, aligned to the `notebooks/CLAUDE.md` standard and reusing
+all the helpers in `ml/`:
 
-- `notebooks/baseline/04_baseline.ipynb` — XGB + LGBM + RF + temporales + plots.
-- `notebooks/baseline/04b_baseline.ipynb` — variante con AlphaEarth solo
-  (piloto del patron de bootstrap nuevo).
-- `notebooks/baseline/04c_baseline.ipynb` — ablation de bloques con fix
-  de detection alphaearth_only.
+- `notebooks/baseline/04_baseline.ipynb` — XGB + LGBM + RF + temporal + plots.
+- `notebooks/baseline/04b_baseline.ipynb` — variant with AlphaEarth only
+  (pilot of the new bootstrap pattern).
+- `notebooks/baseline/04c_baseline.ipynb` — block ablation with the
+  alphaearth_only detection fix.
 - `notebooks/baseline/04_farslip_eval_pastis.ipynb` — FarSLIP vs RemoteCLIP
-  sobre PASTIS real (sin sintético).
-- `notebooks/baseline/05_reencuadre_fenologico.ipynb` — fenología + ablation
-  completa con auto-materializacion sin skips silenciosos.
-- `notebooks/baseline/Avance3.Equipo17.ipynb` — concentrador con
+  on real PASTIS (without synthetic).
+- `notebooks/baseline/05_reencuadre_fenologico.ipynb` — phenology + full
+  ablation with auto-materialization without silent skips.
+- `notebooks/baseline/Avance3.Equipo17.ipynb` — aggregator with
   select_winning_features.
 
-Uso:
+Usage:
 
 ```bash
 poetry run python scripts/build_baseline_notebooks_v2.py [--only 04b]
@@ -34,7 +34,7 @@ NOTEBOOK_DIR = Path("notebooks/baseline")
 
 
 def _md(text: str) -> dict[str, Any]:
-    """Crea celda markdown."""
+    """Creates a markdown cell."""
     return {
         "cell_type": "markdown",
         "metadata": {},
@@ -43,7 +43,7 @@ def _md(text: str) -> dict[str, Any]:
 
 
 def _code(text: str, *, tags: list[str] | None = None) -> dict[str, Any]:
-    """Crea celda de código."""
+    """Creates a code cell."""
     cell = {
         "cell_type": "code",
         "execution_count": None,
@@ -57,7 +57,7 @@ def _code(text: str, *, tags: list[str] | None = None) -> dict[str, Any]:
 
 
 def _notebook(cells: list[dict[str, Any]]) -> dict[str, Any]:
-    """Envuelve cells en estructura nbformat 4.5."""
+    """Wraps cells in an nbformat 4.5 structure."""
     return {
         "cells": cells,
         "metadata": {
@@ -131,20 +131,20 @@ display(Markdown(f"**cwd anclado al repo root**: `{env.repo}`"))
 
 
 def _hcat_grouping_cells(subset_size: int | None = None) -> list[dict[str, Any]]:
-    """Celdas de la seccion '18 clases vs 6 grupos HCAT Level-1'.
+    """Cells of the '18 classes vs 6 HCAT Level-1 groups' section.
 
-    Compartida por ``build_04_baseline`` (full 85951) y ``build_04b_baseline``
-    (subsample piloto). El experimento es apples-to-apples: mismas features,
-    mismo spatial CV, mismo XGBoost; lo unico que cambia es el remapeo de la
-    etiqueta objetivo (18 clases planas -> 6 grupos HCAT v3).
+    Shared by ``build_04_baseline`` (full 85951) and ``build_04b_baseline``
+    (pilot subsample). The experiment is apples-to-apples: same features,
+    same spatial CV, same XGBoost; the only thing that changes is the remapping
+    of the target label (18 flat classes -> 6 HCAT v3 groups).
 
     Args:
-        subset_size: Si no ``None``, submuestrea ``df_hcat`` de forma
-            estratificada por ``class_id`` antes de evaluar (modo piloto). Si
-            ``None``, corre sobre el universo completo de 85951 parcelas.
+        subset_size: If not ``None``, subsamples ``df_hcat`` in a
+            ``class_id``-stratified way before evaluating (pilot mode). If
+            ``None``, runs over the full universe of 85951 parcels.
 
     Returns:
-        Lista de celdas nbformat lista para ``cells.extend(...)``.
+        List of nbformat cells ready for ``cells.extend(...)``.
     """
     cells: list[dict[str, Any]] = []
 

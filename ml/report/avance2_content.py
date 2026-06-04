@@ -1,15 +1,15 @@
-"""Contenido estructurado de los notebooks de ingenieria de caracteristicas.
+"""Structured content of the feature engineering notebooks.
 
-Provee la metadata (titulo, indice de secciones, conclusiones interpretadas
-y directorio de figuras) que consume el notebook integrador del Avance 2.
-El texto vive aqui en lugar de embebido en el builder para que sea testeable
-sin levantar el notebook y para mantener un unico origen editorial.
+Provides the metadata (title, section table of contents, interpreted
+conclusions and figures directory) consumed by the Avance 2 integrative
+notebook. The text lives here instead of embedded in the builder so it is
+testable without launching the notebook and to keep a single editorial source.
 
-Reutiliza las dataclasses ``KPI`` y ``NotebookCard`` definidas en
-``ml.report.notebook_content`` (mismo patron que el Avance 1). Las
-conclusiones son resumenes interpretados con numeros reales extraidos de las
-salidas de los tres notebooks fuente (03a Sentinel-2, 03b PASTIS-R
-espectro-temporal, 03c fusion AlphaEarth), redactados en lenguaje accesible.
+Reuses the ``KPI`` and ``NotebookCard`` dataclasses defined in
+``ml.report.notebook_content`` (same pattern as Avance 1). The conclusions are
+interpreted summaries with real numbers extracted from the outputs of the
+three source notebooks (03a Sentinel-2, 03b spectro-temporal PASTIS-R, 03c
+AlphaEarth fusion), written in accessible language.
 """
 
 from __future__ import annotations

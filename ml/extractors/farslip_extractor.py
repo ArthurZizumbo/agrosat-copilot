@@ -1,18 +1,18 @@
-"""Extractor de embeddings FarSLIP para inferencia (US-017 / US-016b).
+"""FarSLIP embedding extractor for inference (US-017 / US-016b).
 
-Clase consumida por US-016 (fusion multisensor) y US-025 (SegFormer-B2 cabezal
-open-vocab). Carga pesos student desde GCS con cache local + checksum opcional;
-graceful fallback al cache si GCS esta offline.
+Class consumed by US-016 (multisensor fusion) and US-025 (SegFormer-B2
+open-vocab head). Loads student weights from GCS with local cache + optional
+checksum; graceful fallback to the cache if GCS is offline.
 
 API:
     extract_embeddings(crops) -> (B, 512) float32 L2-norm  (CLIP projection)
     extract_patch_features(crops) -> (B, 196, 768) float32 (vision last hidden)
     encode_text(texts) -> (N, 512) float32 L2-norm
 
-Notas:
-    - El student fue entrenado con 4 bandas Sentinel-2 (B02/B03/B04/B08).
-    - El text encoder es el del teacher (frozen) -- por eso ``encode_text``
-      carga ``openai/clip-vit-base-patch16`` por defecto.
+Notes:
+    - The student was trained with 4 Sentinel-2 bands (B02/B03/B04/B08).
+    - The text encoder is the teacher's (frozen) -- that is why ``encode_text``
+      loads ``openai/clip-vit-base-patch16`` by default.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ import torch.nn.functional as F
 try:
     from transformers import CLIPModel, CLIPTokenizer
 except ImportError as exc:  # pragma: no cover
-    raise ImportError("transformers requerido para FarSLIPExtractor") from exc
+    raise ImportError("transformers required for FarSLIPExtractor") from exc
 
 from ml.farslip.distill import adapt_patch_embed_to_n_channels
 from ml.utils.gcs_errors import is_gcs_auth_error
@@ -41,17 +41,17 @@ DEFAULT_CACHE_DIR = Path.home() / ".cache" / "agrosat" / "farslip"
 
 
 class FarSLIPExtractor:
-    """Lazy loader de pesos student FarSLIP + text encoder teacher.
+    """Lazy loader of FarSLIP student weights + teacher text encoder.
 
     Args:
-        weights_uri: ``gs://...`` o ruta local al archivo ``student.safetensors``
-            (o un directorio que lo contenga). Si es ``None``, usa los pesos
-            teacher CLIP sin destilar (modo placeholder degradado).
-        device: ``"cuda"``, ``"cpu"`` o ``"auto"``.
-        cache_dir: carpeta local de cache (default ``~/.cache/agrosat/farslip/``).
-        n_in_channels: bandas Sentinel-2 (default 4).
-        teacher_model_id: HF id usado para text encoder + arquitectura base.
-        expected_sha1: checksum SHA1 opcional del student.safetensors.
+        weights_uri: ``gs://...`` or local path to the ``student.safetensors``
+            file (or a directory containing it). If ``None``, uses the CLIP
+            teacher weights without distillation (degraded placeholder mode).
+        device: ``"cuda"``, ``"cpu"`` or ``"auto"``.
+        cache_dir: local cache folder (default ``~/.cache/agrosat/farslip/``).
+        n_in_channels: Sentinel-2 bands (default 4).
+        teacher_model_id: HF id used for the text encoder + base architecture.
+        expected_sha1: optional SHA1 checksum of student.safetensors.
     """
 
     def __init__(
@@ -184,12 +184,12 @@ class FarSLIPExtractor:
     _DOWNLOAD_WAIT_MAX_ITERATIONS = 60
 
     def _is_complete_download(self, path: Path) -> bool:
-        """Valida que ``path`` exista, tenga ``size > 0`` y matchee checksum.
+        """Validate that ``path`` exists, has ``size > 0`` and matches the checksum.
 
-        Esto cubre el caso en que un proceso paralelo murio mid-download
-        dejando un archivo parcial (size=0 o checksum invalido). El
-        checksum solo se evalua si ``self.expected_sha1`` esta seteado;
-        en ausencia de hash conocido nos quedamos con el chequeo de size.
+        This covers the case where a parallel process died mid-download
+        leaving a partial file (size=0 or invalid checksum). The checksum is
+        only evaluated if ``self.expected_sha1`` is set; in the absence of a
+        known hash we rely on the size check.
         """
         if not path.exists():
             return False
@@ -204,7 +204,7 @@ class FarSLIPExtractor:
         from google.cloud import storage  # type: ignore[import-untyped]
 
         if not uri.startswith("gs://"):
-            raise ValueError(f"URI no GCS: {uri}")
+            raise ValueError(f"Non-GCS URI: {uri}")
         without_scheme = uri[len("gs://") :]
         parts = without_scheme.split("/", 1)
         bucket_name = parts[0]
@@ -263,7 +263,7 @@ class FarSLIPExtractor:
                 dest.unlink()
 
         raise RuntimeError(
-            f"download GCS fallo {self._DOWNLOAD_MAX_ATTEMPTS} intentos: {uri}"
+            f"GCS download failed after {self._DOWNLOAD_MAX_ATTEMPTS} attempts: {uri}"
         )
 
     def _load_student_weights(self, path: Path) -> None:
@@ -285,13 +285,13 @@ class FarSLIPExtractor:
 
     @torch.inference_mode()
     def extract_embeddings(self, crops: torch.Tensor) -> torch.Tensor:
-        """Extrae embeddings CLS proyectados a 512-dim, L2-norm.
+        """Extract CLS embeddings projected to 512-dim, L2-norm.
 
         Args:
-            crops: ``(B, 4, H, W)`` float [0,1] o uint16 raw (se normaliza).
+            crops: ``(B, 4, H, W)`` float [0,1] or raw uint16 (normalized).
 
         Returns:
-            ``(B, 512)`` float32 L2-normalizados.
+            ``(B, 512)`` float32 L2-normalized.
         """
         crops = self._prep_crops(crops)
         vision_out = self.model.vision_model(pixel_values=crops)
@@ -302,7 +302,7 @@ class FarSLIPExtractor:
 
     @torch.inference_mode()
     def extract_patch_features(self, crops: torch.Tensor) -> torch.Tensor:
-        """Extrae patch features (sin CLS) ``(B, 196, 768)`` para SegFormer US-025."""
+        """Extract patch features (without CLS) ``(B, 196, 768)`` for SegFormer US-025."""
         crops = self._prep_crops(crops)
         vision_out = self.model.vision_model(pixel_values=crops)
         # last_hidden_state: (B, 1+P, 768). Remove CLS.
@@ -310,45 +310,44 @@ class FarSLIPExtractor:
         return hidden[:, 1:, :].float()
 
     def load_crops_batch(self, paths: list[str | Path]) -> torch.Tensor:
-        """Lee crops Sentinel-2 desde rutas TIFF y devuelve tensor batch.
+        """Read Sentinel-2 crops from TIFF paths and return a batch tensor.
 
-        Helper publico consumido por el asset Dagster ``farslip_embeddings_italy``
-        (nombre del asset conservado por lineage; su contenido es PASTIS-R, no
-        italiano) para abstraer el I/O TIFF (4 bandas B02/B03/B04/B08 a 10 m,
-        uint16 reflectancia escalada). El preprocessing fino (uint16 -> [0,1],
-        resize a 224x224) se aplica dentro de ``extract_embeddings`` via
-        ``_prep_crops``.
+        Public helper consumed by the Dagster asset ``farslip_embeddings_italy``
+        (asset name kept for lineage; its content is PASTIS-R, not Italian) to
+        abstract the TIFF I/O (4 bands B02/B03/B04/B08 at 10 m, uint16 scaled
+        reflectance). The fine preprocessing (uint16 -> [0,1], resize to
+        224x224) is applied inside ``extract_embeddings`` via ``_prep_crops``.
 
         Args:
-            paths: lista de rutas a ``.tif`` (4 bandas, mismo shape esperado).
+            paths: list of paths to ``.tif`` (4 bands, same expected shape).
 
         Returns:
-            ``(B, 4, H, W)`` ``torch.int32`` con valores raw uint16 (la
-            normalizacion ocurre downstream).
+            ``(B, 4, H, W)`` ``torch.int32`` with raw uint16 values (the
+            normalization happens downstream).
 
         Raises:
-            ImportError: si ``rasterio`` no esta instalado.
-            FileNotFoundError: si alguna ruta no existe.
+            ImportError: if ``rasterio`` is not installed.
+            FileNotFoundError: if any path does not exist.
         """
         try:
             import rasterio
         except ImportError as exc:  # pragma: no cover
-            raise ImportError("rasterio requerido para load_crops_batch") from exc
+            raise ImportError("rasterio required for load_crops_batch") from exc
 
         if not paths:
-            raise ValueError("paths esta vacio")
+            raise ValueError("paths is empty")
 
         arrays = []
         for p in paths:
             path = Path(p)
             if not path.exists():
-                raise FileNotFoundError(f"crop TIFF no existe: {path}")
+                raise FileNotFoundError(f"crop TIFF does not exist: {path}")
             with rasterio.open(path) as src:
                 arr = src.read()  # (C, H, W)
             if arr.shape[0] != self.n_in_channels:
                 raise ValueError(
-                    f"crop {path} tiene {arr.shape[0]} bandas; "
-                    f"esperado {self.n_in_channels}"
+                    f"crop {path} has {arr.shape[0]} bands; "
+                    f"expected {self.n_in_channels}"
                 )
             arrays.append(arr)
 
@@ -361,7 +360,7 @@ class FarSLIPExtractor:
 
     @torch.inference_mode()
     def encode_text(self, texts: list[str]) -> torch.Tensor:
-        """Codifica textos via text encoder + text_projection. L2-norm."""
+        """Encode texts via the text encoder + text_projection. L2-norm."""
         tok = self.tokenizer(
             texts,
             padding="max_length",
@@ -382,17 +381,17 @@ class FarSLIPExtractor:
     # ------------------------------------------------------------------ utils
 
     def _prep_crops(self, crops: torch.Tensor) -> torch.Tensor:
-        """Mueve crops al device, normaliza uint16 -> [0,1], asegura 4 canales y 224x224."""
+        """Move crops to device, normalize uint16 -> [0,1], ensure 4 channels and 224x224."""
         if crops.dtype in (torch.int16, torch.int32, torch.uint8):
             crops = crops.to(torch.float32) / 10000.0
         elif crops.dtype == torch.float64:
             crops = crops.to(torch.float32)
         crops = crops.to(self.device)
         if crops.dim() != 4:
-            raise ValueError(f"crops debe ser (B,C,H,W); got {crops.shape}")
+            raise ValueError(f"crops must be (B,C,H,W); got {crops.shape}")
         if crops.shape[1] != self.n_in_channels:
             raise ValueError(
-                f"esperado C={self.n_in_channels}; got C={crops.shape[1]}"
+                f"expected C={self.n_in_channels}; got C={crops.shape[1]}"
             )
         target = 224
         if crops.shape[-1] != target or crops.shape[-2] != target:

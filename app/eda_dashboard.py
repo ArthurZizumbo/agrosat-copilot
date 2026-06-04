@@ -1,14 +1,14 @@
-"""Entry point del dashboard Streamlit de AgroSatCopilot.
+"""Entry point of the AgroSatCopilot Streamlit dashboard.
 
-Shim delgado que ensambla ``main()`` a partir del paquete ``app.dashboard`` y
-reexporta la API publica que consumen los tests y el deploy. La logica vive en
-modulos con responsabilidad unica (``theme``, ``loaders``, ``components``,
-``layout``, ``spatial``, ``timeline``, ``registry`` y ``sections/``).
+Thin shim that assembles ``main()`` from the ``app.dashboard`` package and
+re-exports the public API consumed by the tests and the deploy. The logic lives
+in single-responsibility modules (``theme``, ``loaders``, ``components``,
+``layout``, ``spatial``, ``timeline``, ``registry`` and ``sections/``).
 
-El dashboard recorre la evolucion completa del proyecto (A1 EDA -> A2 FE ->
-A3 Baseline -> A4 Segmentacion) con narrativa por figura y metricas reales.
+The dashboard walks through the full evolution of the project (A1 EDA -> A2 FE ->
+A3 Baseline -> A4 Segmentation) with per-figure narrative and real metrics.
 
-Para arrancar localmente::
+To launch locally::
 
     poetry run streamlit run app/eda_dashboard.py --server.port 8501
 """
@@ -63,7 +63,7 @@ render_tab_spatial = render_spatial_tab
 
 
 def main() -> None:
-    """Punto de entrada Streamlit: design system + selector + sidebar + seccion."""
+    """Streamlit entry point: design system + selector + sidebar + section."""
     configure_page()
     inject_design_system()
     render_hero()

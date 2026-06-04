@@ -1,44 +1,44 @@
-"""Arquitecturas temporales nativas: TempCNN + InceptionTime (US-022b-C).
+"""Native temporal architectures: TempCNN + InceptionTime (US-022b-C).
 
-Implementacion propia (PyTorch) de las dos arquitecturas oficiales del
-benchmark BreizhCrops (Russwurm et al. 2020), portadas directamente desde los
-papers originales y de la implementacion de referencia (licencia MIT) en
-``breizhcrops`` 0.0.4.1. Anteriormente este modulo importaba las clases de
-``breizhcrops.models``; el reencuadre (ADR-006 D-ARQ-2 actualizado) las trae
-al repo para tener control sobre serializacion MLflow, custom layers,
-testing aislado y evolucion independiente de la dependencia externa.
+Own implementation (PyTorch) of the two official architectures of the
+BreizhCrops benchmark (Russwurm et al. 2020), ported directly from the
+original papers and from the reference implementation (MIT license) in
+``breizhcrops`` 0.0.4.1. Previously this module imported the classes from
+``breizhcrops.models``; the reframing (updated ADR-006 D-ARQ-2) brings them
+into the repo to gain control over MLflow serialization, custom layers,
+isolated testing and independent evolution from the external dependency.
 
-Modelos
--------
+Models
+------
 
-- :class:`TempCNN` (Pelletier, Webb & Petitjean 2019). CNN 1D con tres
-  bloques convolucionales + un cabezal denso. Pensado para clasificacion
-  de cultivos sobre series Sentinel-2.
-  DOI: 10.3390/rs11050523. Codigo de referencia: MIT.
-- :class:`InceptionTime` (Fawaz et al. 2020). Pila de bloques Inception
-  con shortcut residual; arquitectura ganadora del benchmark UCR.
-  DOI: 10.1007/s10618-020-00710-y. Codigo de referencia: MIT.
+- :class:`TempCNN` (Pelletier, Webb & Petitjean 2019). 1D CNN with three
+  convolutional blocks + a dense head. Designed for crop classification
+  over Sentinel-2 series.
+  DOI: 10.3390/rs11050523. Reference code: MIT.
+- :class:`InceptionTime` (Fawaz et al. 2020). Stack of Inception blocks
+  with residual shortcut; winning architecture of the UCR benchmark.
+  DOI: 10.1007/s10618-020-00710-y. Reference code: MIT.
 
-Ambas aceptan input ``(B, T, C)`` (batch, tiempo, canales = indices
-espectrales) y producen logits ``(B, num_classes)``.
+Both accept input ``(B, T, C)`` (batch, time, channels = spectral
+indices) and produce logits ``(B, num_classes)``.
 
-Decisiones tecnicas
+Technical decisions
 -------------------
 
-- Pesos He uniformemente inicializados (kaiming_uniform_) por convencion
-  de PyTorch.
-- BatchNorm1d entre conv y activacion (orden Conv-BN-ReLU).
-- Global Average Pooling antes del cabezal denso (InceptionTime); para
-  TempCNN, flatten despues del ultimo bloque conv segun la implementacion
-  original.
-- Dropout configurable; defaults heredados de los papers (0.5 para
-  TempCNN, 0.2 para InceptionTime).
-- Sin dependencia de ``breizhcrops`` en runtime; solo numpy + torch.
+- He uniformly initialized weights (kaiming_uniform_) per PyTorch
+  convention.
+- BatchNorm1d between conv and activation (Conv-BN-ReLU order).
+- Global Average Pooling before the dense head (InceptionTime); for
+  TempCNN, flatten after the last conv block per the original
+  implementation.
+- Configurable dropout; defaults inherited from the papers (0.5 for
+  TempCNN, 0.2 for InceptionTime).
+- No ``breizhcrops`` dependency at runtime; only numpy + torch.
 
-Acreditacion
-------------
+Attribution
+-----------
 
-Adaptado de:
+Adapted from:
 - breizhcrops 0.0.4.1, ``breizhcrops/models/TempCNN.py``,
   ``breizhcrops/models/InceptionTime.py`` (MIT License).
 - Pelletier, Webb & Petitjean. ``Temporal Convolutional Neural Network for
@@ -62,7 +62,7 @@ __all__ = ["InceptionTime", "TempCNN", "build_temporal_model"]
 
 
 class _TempCNNBlock(nn.Module):
-    """Bloque Conv1D + BatchNorm + ReLU + Dropout (kernel_size=5 default)."""
+    """Conv1D + BatchNorm + ReLU + Dropout block (kernel_size=5 default)."""
 
     def __init__(
         self,
@@ -88,16 +88,16 @@ class _TempCNNBlock(nn.Module):
 
 
 class TempCNN(nn.Module):
-    """TempCNN: 3 bloques Conv1D + dense head para clasificacion de series.
+    """TempCNN: 3 Conv1D blocks + dense head for series classification.
 
     Args:
-        input_dim: Numero de canales C (indices espectrales).
-        num_classes: Numero de clases en el cabezal final.
-        sequencelength: Longitud temporal T de cada serie.
-        hidden_dim: Filtros por bloque convolucional (default 64).
-        kernel_size: Tamano del kernel temporal (default 5).
-        dropout: Dropout despues de cada bloque conv y antes del dense
-            (default 0.5, como en el paper).
+        input_dim: Number of channels C (spectral indices).
+        num_classes: Number of classes in the final head.
+        sequencelength: Temporal length T of each series.
+        hidden_dim: Filters per convolutional block (default 64).
+        kernel_size: Temporal kernel size (default 5).
+        dropout: Dropout after each conv block and before the dense
+            (default 0.5, as in the paper).
 
     Input:
         Tensor ``(B, T, C)``.
@@ -105,7 +105,7 @@ class TempCNN(nn.Module):
     Output:
         Logits ``(B, num_classes)``.
 
-    Referencia:
+    Reference:
         Pelletier, Webb & Petitjean (2019), Remote Sensing 11(5):523.
         DOI 10.3390/rs11050523.
     """
@@ -165,15 +165,15 @@ class TempCNN(nn.Module):
 
 
 class _InceptionModule(nn.Module):
-    """Modulo Inception 1D: bottleneck + 3 convoluciones paralelas + maxpool.
+    """1D Inception module: bottleneck + 3 parallel convolutions + maxpool.
 
     Args:
-        in_channels: Canales de entrada.
-        nb_filters: Filtros por rama (4 ramas total, output = 4*nb_filters).
-        kernel_sizes: Tamanos de kernel para las 3 convoluciones paralelas.
-        bottleneck_channels: Canales del bottleneck inicial (0 = sin
-            bottleneck, recomendado si in_channels > 1).
-        use_bias: Si las convoluciones llevan bias.
+        in_channels: Input channels.
+        nb_filters: Filters per branch (4 branches total, output = 4*nb_filters).
+        kernel_sizes: Kernel sizes for the 3 parallel convolutions.
+        bottleneck_channels: Channels of the initial bottleneck (0 = no
+            bottleneck, recommended if in_channels > 1).
+        use_bias: Whether the convolutions carry bias.
     """
 
     def __init__(
@@ -232,7 +232,7 @@ class _InceptionModule(nn.Module):
 
 
 class _ShortcutBlock(nn.Module):
-    """Shortcut residual (Conv1d 1x1 + BatchNorm + ReLU)."""
+    """Residual shortcut (Conv1d 1x1 + BatchNorm + ReLU)."""
 
     def __init__(self, in_channels: int, out_channels: int) -> None:
         super().__init__()
@@ -248,16 +248,16 @@ class _ShortcutBlock(nn.Module):
 
 
 class InceptionTime(nn.Module):
-    """InceptionTime: 6 modulos Inception con shortcut residual cada 3.
+    """InceptionTime: 6 Inception modules with residual shortcut every 3.
 
     Args:
-        input_dim: Numero de canales C (indices espectrales).
-        num_classes: Numero de clases en el cabezal final.
-        nb_filters: Filtros por rama del modulo Inception.
-        depth: Numero de modulos Inception apilados (default 6).
-        kernel_sizes: Tamanos de kernel paralelos en cada modulo.
-        bottleneck_channels: Canales del bottleneck (default 32).
-        dropout: Dropout antes del classifier final.
+        input_dim: Number of channels C (spectral indices).
+        num_classes: Number of classes in the final head.
+        nb_filters: Filters per branch of the Inception module.
+        depth: Number of stacked Inception modules (default 6).
+        kernel_sizes: Parallel kernel sizes in each module.
+        bottleneck_channels: Bottleneck channels (default 32).
+        dropout: Dropout before the final classifier.
 
     Input:
         Tensor ``(B, T, C)``.
@@ -265,7 +265,7 @@ class InceptionTime(nn.Module):
     Output:
         Logits ``(B, num_classes)``.
 
-    Referencia:
+    Reference:
         Fawaz, Lucas, Forestier et al. (2020), Data Mining and Knowledge
         Discovery 34. DOI 10.1007/s10618-020-00710-y.
     """
@@ -317,11 +317,11 @@ class InceptionTime(nn.Module):
     def _build_shortcuts(
         self, input_dim: int, out_channels_per_module: int
     ) -> None:
-        """Crea los shortcuts 1x1 sabiendo los canales reales en cada brinco.
+        """Create the 1x1 shortcuts knowing the real channels at each jump.
 
-        Shortcuts cada 3 bloques: el primero compara input vs salida del bloque
-        2 (index 2 con +1=3); el segundo compara salida bloque 2 (out_ch_per)
-        vs salida bloque 5 (out_ch_per).
+        Shortcuts every 3 blocks: the first compares input vs the output of
+        block 2 (index 2 with +1=3); the second compares block 2 output
+        (out_ch_per) vs block 5 output (out_ch_per).
         """
         sc_modules: list[nn.Module] = []
         for d in range(self.depth):
@@ -376,21 +376,21 @@ def build_temporal_model(
     sequence_length: int,
     **overrides: object,
 ) -> nn.Module:
-    """Construye un modelo temporal por nombre.
+    """Build a temporal model by name.
 
     Args:
-        model_kind: ``"tempcnn"`` o ``"inceptiontime"``.
-        input_dim: Numero de canales C.
-        num_classes: Numero de clases efectivas.
-        sequence_length: Longitud temporal T.
-        **overrides: Hiperparametros adicionales pasados al constructor del
-            modelo (``hidden_dim``, ``dropout``, ``depth``, etc.).
+        model_kind: ``"tempcnn"`` or ``"inceptiontime"``.
+        input_dim: Number of channels C.
+        num_classes: Number of effective classes.
+        sequence_length: Temporal length T.
+        **overrides: Additional hyperparameters passed to the model
+            constructor (``hidden_dim``, ``dropout``, ``depth``, etc.).
 
     Returns:
-        ``nn.Module`` listo para entrenar.
+        ``nn.Module`` ready to train.
 
     Raises:
-        ValueError: si ``model_kind`` no es uno de los soportados.
+        ValueError: if ``model_kind`` is not one of the supported ones.
     """
     if model_kind == "tempcnn":
         return TempCNN(
@@ -406,5 +406,5 @@ def build_temporal_model(
             **overrides,  # type: ignore[arg-type]
         )
     raise ValueError(
-        f"model_kind={model_kind!r} no soportado. Usa 'tempcnn' o 'inceptiontime'."
+        f"model_kind={model_kind!r} not supported. Use 'tempcnn' or 'inceptiontime'."
     )

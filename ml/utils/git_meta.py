@@ -1,8 +1,8 @@
-"""Helpers de metadatos git para tags MLflow / Dagster (US-017+).
+"""Git metadata helpers for MLflow / Dagster tags (US-017+).
 
-Centraliza la lectura del SHA HEAD para que la misma cadena `code_version`
-aparezca en MLflow tags, en metadata de assets Dagster y en cualquier otro
-sink de versionado. Tolerante a entornos sin git (contenedores efimeros).
+Centralizes reading the HEAD SHA so the same `code_version` string appears
+in MLflow tags, in Dagster asset metadata and in any other versioning sink.
+Tolerant of environments without git (ephemeral containers).
 """
 
 from __future__ import annotations
@@ -16,16 +16,16 @@ _log = structlog.get_logger(__name__)
 
 
 def git_sha(short: bool = False) -> str:
-    """Devuelve el SHA del ``HEAD`` o ``"unknown"`` si no es un repo git.
+    """Return the ``HEAD`` SHA or ``"unknown"`` if it is not a git repo.
 
     Args:
-        short: si ``True``, devuelve los primeros 7 caracteres (formato
-            consistente con ``git log --oneline``). Default ``False``
-            (SHA completo de 40 chars para MLflow tags).
+        short: if ``True``, returns the first 7 characters (format
+            consistent with ``git log --oneline``). Default ``False``
+            (full 40-char SHA for MLflow tags).
 
     Returns:
-        SHA hex o ``"unknown"`` si git no esta instalado, el directorio
-        no es repo, o la ejecucion falla por cualquier motivo.
+        Hex SHA or ``"unknown"`` if git is not installed, the directory
+        is not a repo, or the execution fails for any reason.
     """
     git_bin = shutil.which("git")
     if git_bin is None:  # pragma: no cover
@@ -44,16 +44,16 @@ def git_sha(short: bool = False) -> str:
 
 
 def dvc_data_version(dvc_path: str) -> str:
-    """Lee el hash del .dvc file para usar como ``data_version`` en MLflow.
+    """Read the .dvc file hash to use as ``data_version`` in MLflow.
 
     Args:
-        dvc_path: ruta al archivo ``.dvc`` (e.g. ``"data/farslip_pairs.dvc"``)
-            o al directorio rastreado por DVC (se busca ``{path}.dvc``).
+        dvc_path: path to the ``.dvc`` file (e.g. ``"data/farslip_pairs.dvc"``)
+            or to the directory tracked by DVC (``{path}.dvc`` is looked up).
 
     Returns:
-        Hash MD5 del outs[0] del .dvc file, prefijado con el path para
-        contexto (``"data/farslip_pairs@<md5>"``). Devuelve ``"<path>@untracked"``
-        si el .dvc file no existe (modo desarrollo sin push DVC).
+        MD5 hash of the .dvc file's outs[0], prefixed with the path for
+        context (``"data/farslip_pairs@<md5>"``). Returns ``"<path>@untracked"``
+        if the .dvc file does not exist (development mode without DVC push).
     """
     from pathlib import Path
 

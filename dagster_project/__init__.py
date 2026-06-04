@@ -1,8 +1,8 @@
-"""Paquete Dagster del proyecto AgroSatCopilot.
+"""Dagster package of the AgroSatCopilot project.
 
-Expone ``defs`` a nivel de paquete para que ``dagster dev`` y el
-``workspace.yaml`` puedan cargarlo via ``python_package: dagster_project``
-sin necesidad de la opción ``-m dagster_project.definitions``.
+Exposes ``defs`` at the package level so that ``dagster dev`` and the
+``workspace.yaml`` can load it via ``python_package: dagster_project``
+without needing the ``-m dagster_project.definitions`` option.
 """
 
 from dagster_project.definitions import defs

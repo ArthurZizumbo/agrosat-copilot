@@ -1,24 +1,24 @@
-"""Seleccion canonica del conjunto de features ganador para downstream EPIC 5.
+"""Canonical selection of the winning feature set for downstream EPIC 5.
 
-Cierra el ciclo del baseline US-023-preview: una vez ejecutadas las
-ablaciones (FarSLIP, pheno_text, spectral_signature, geom_only), esta
-funcion decide cuales bloques se promueven y persiste el parquet final
-`data/features/features_fused_winning_pastis.parquet` que consumen los
-modelos densos de EPIC 5 (U-Net, U-TAE, TSViT, Swin-UNETR) y los ensambles
-de EPIC 6. El contenido es PASTIS-R frances (parcel_id formato `10000_1`),
-de ahi la nomenclatura canonica `_pastis`.
+Closes the US-023-preview baseline loop: once the ablations have been run
+(FarSLIP, pheno_text, spectral_signature, geom_only), this function decides
+which blocks are promoted and persists the final parquet
+`data/features/features_fused_winning_pastis.parquet` consumed by the dense
+models of EPIC 5 (U-Net, U-TAE, TSViT, Swin-UNETR) and the EPIC 6 ensembles.
+The content is French PASTIS-R (parcel_id format `10000_1`), hence the
+canonical `_pastis` naming.
 
-Regla de decision (alineada con el plan US-023-preview):
+Decision rule (aligned with the US-023-preview plan):
 
-- Bloque base obligatorio: `phenology_only` (8 cols) + `indices_stats` (85
-  cols del subset US-018: NDVI/NDWI/EVI x stats + FFT NDVI).
-- Bloque AlphaEarth (`ae_*`): siempre incluir si esta presente (Foundation
-  Model gratis vía GEE).
-- Bloque ERA5 (`era5_*`) + SRTM (`srtm_*`): incluir salvo que ablation
-  muestre que aportan negativamente.
-- `geom_*`: descartar por defecto (US-022-b decision: leakage espacial).
-- Bloques opcionales (`farslip`, `pheno_text`, `spectral_signature`):
-  incluir solo si la ablacion los promueve (delta >= +0.005 vs `full`).
+- Mandatory base block: `phenology_only` (8 cols) + `indices_stats` (85 cols
+  of the US-018 subset: NDVI/NDWI/EVI x stats + FFT NDVI).
+- AlphaEarth block (`ae_*`): always include if present (Foundation Model free
+  via GEE).
+- ERA5 block (`era5_*`) + SRTM (`srtm_*`): include unless the ablation shows
+  that they contribute negatively.
+- `geom_*`: discard by default (US-022-b decision: spatial leakage).
+- Optional blocks (`farslip`, `pheno_text`, `spectral_signature`): include only
+  if the ablation promotes them (delta >= +0.005 vs `full`).
 """
 
 from __future__ import annotations
@@ -41,15 +41,15 @@ __all__ = [
 
 @dataclass(frozen=True)
 class WinningFeatureSet:
-    """Resultado de la seleccion del conjunto ganador.
+    """Result of the winning set selection.
 
     Attributes:
-        name: Etiqueta corta (e.g. `"phenology+ae+farslip"`).
-        feature_cols: Tupla ordenada de columnas seleccionadas.
-        decisions: Mapping `{bloque: bool}` con las decisiones promover/descartar.
-        rationale: Texto en lenguaje accesible explicando la seleccion.
-        delta_vs_full: Delta de F1-macro reportado por la ablacion para
-            cada bloque opcional promovido.
+        name: Short label (e.g. `"phenology+ae+farslip"`).
+        feature_cols: Ordered tuple of selected columns.
+        decisions: Mapping `{block: bool}` with the promote/discard decisions.
+        rationale: Accessible-language text explaining the selection.
+        delta_vs_full: F1-macro delta reported by the ablation for each promoted
+            optional block.
     """
 
     name: str
@@ -66,18 +66,18 @@ def select_winning_features(
     promote_threshold: float = 0.005,
     discard_geom: bool = True,
 ) -> WinningFeatureSet:
-    """Selecciona el conjunto ganador en base a la tabla de ablation.
+    """Select the winning set based on the ablation table.
 
     Args:
-        ablation_table: DataFrame con columnas `feature_set`, `model`,
-            `f1_macro`, `delta_vs_full`. Tipicamente el output de
+        ablation_table: DataFrame with columns `feature_set`, `model`,
+            `f1_macro`, `delta_vs_full`. Typically the output of
             :func:`ml.utils.baseline_notebook_helpers.run_ablation_and_persist`.
-        available_cols: Lista de columnas disponibles en el dataset fused.
-        promote_threshold: Delta minimo para promover un bloque opcional.
-        discard_geom: Si True, descarta `geom_*` por leakage espacial.
+        available_cols: List of columns available in the fused dataset.
+        promote_threshold: Minimum delta to promote an optional block.
+        discard_geom: If True, discards `geom_*` due to spatial leakage.
 
     Returns:
-        `WinningFeatureSet` con la decision y la lista de columnas.
+        `WinningFeatureSet` with the decision and the column list.
     """
     deltas = _read_deltas(ablation_table)
     decisions: dict[str, bool] = {
@@ -151,19 +151,19 @@ def persist_winning_features(
     ),
     overwrite: bool = False,
 ) -> Path:
-    """Persiste el subset de features ganadoras del dataset fused.
+    """Persist the subset of winning features from the fused dataset.
 
-    Mantiene las columnas de metadata (`parcel_id`, `year`, `class_id`,
-    `patch_id`) ademas de las features seleccionadas.
+    Keeps the metadata columns (`parcel_id`, `year`, `class_id`, `patch_id`) in
+    addition to the selected features.
 
     Args:
-        winning: Resultado de :func:`select_winning_features`.
-        fused_df: DataFrame Polars con todas las features.
-        output_path: Path destino del parquet.
-        overwrite: Si False y el archivo existe, no escribe.
+        winning: Result of :func:`select_winning_features`.
+        fused_df: Polars DataFrame with all features.
+        output_path: Destination path of the parquet.
+        overwrite: If False and the file exists, it does not write.
 
     Returns:
-        Path del parquet escrito.
+        Path of the written parquet.
     """
     output = Path(output_path)
     if output.exists() and not overwrite:
@@ -215,7 +215,7 @@ def persist_winning_features(
 
 
 def _read_deltas(ablation_table: pl.DataFrame) -> dict[str, float]:
-    """Extrae el mapping `{feature_set: delta_vs_full}` (modelo de referencia)."""
+    """Extract the mapping `{feature_set: delta_vs_full}` (reference model)."""
     if "delta_vs_full" not in ablation_table.columns:
         return {}
     # If there are several models, take the one with the best f1_macro in `full`.
@@ -239,7 +239,7 @@ def _read_deltas(ablation_table: pl.DataFrame) -> dict[str, float]:
 
 
 def _base_block_cols(available_cols: Sequence[str], *, include_geom: bool) -> list[str]:
-    """Devuelve las columnas base obligatorias presentes en `available_cols`."""
+    """Return the mandatory base columns present in `available_cols`."""
     pheno_known = {
         "sog_doy",
         "peak_doy",
@@ -274,7 +274,7 @@ def _base_block_cols(available_cols: Sequence[str], *, include_geom: bool) -> li
 
 
 def _optional_block_cols(available_cols: Sequence[str], block: str) -> list[str]:
-    """Devuelve las cols del bloque opcional indicado."""
+    """Return the cols of the indicated optional block."""
     prefix_map = {
         "farslip": "farslip_",
         "pheno_text": "pheno_text_",

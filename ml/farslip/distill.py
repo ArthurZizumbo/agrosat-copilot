@@ -1,19 +1,19 @@
-"""Destilacion FarSLIP — perdidas + trainer (US-017 / US-016b).
+"""FarSLIP distillation — losses + trainer (US-017 / US-016b).
 
-Implementa el procedimiento Li et al. 2025 (arXiv:2511.14901):
+Implements the Li et al. 2025 procedure (arXiv:2511.14901):
 
-- :class:`PatchDistillationLoss` (paper §3.2): MSE + cosine entre los 196
-  patches del student y los del teacher, con ``stop-grad`` explicito sobre las
-  features teacher para evitar back-prop hacia el modelo congelado.
-- :class:`RegionCategoryAlignmentLoss` (paper §3.3): InfoNCE contrastivo sobre
-  el token CLS del student vs prototipos textuales region x categoria. Los
-  prototipos se calculan UNA vez por epoch (text encoder frozen).
-- :class:`FarSLIPDistillationTrainer`: orquesta el loop AdamW bf16 con MLflow
-  autolog. Inicializa student desde teacher (``copy.deepcopy``), adapta
-  ``patch_embed.proj`` de 3 a 4 canales con init = mean(RGB) para el canal NIR
-  (evita dead-neuron). Hard cap 8 h, warning a 6 h.
+- :class:`PatchDistillationLoss` (paper §3.2): MSE + cosine between the 196
+  patches of the student and those of the teacher, with explicit ``stop-grad``
+  on the teacher features to avoid back-prop toward the frozen model.
+- :class:`RegionCategoryAlignmentLoss` (paper §3.3): contrastive InfoNCE on the
+  student's CLS token vs region x category text prototypes. The prototypes are
+  computed ONCE per epoch (text encoder frozen).
+- :class:`FarSLIPDistillationTrainer`: orchestrates the AdamW bf16 loop with
+  MLflow autolog. Initializes the student from the teacher (``copy.deepcopy``),
+  adapts ``patch_embed.proj`` from 3 to 4 channels with init = mean(RGB) for the
+  NIR channel (avoids dead-neuron). Hard cap 8 h, warning at 6 h.
 
-VRAM esperada en GCP L4 24 GB: ~22 GB (ViT-B/16 bf16, batch=64, grad_accum=2).
+Expected VRAM on GCP L4 24 GB: ~22 GB (ViT-B/16 bf16, batch=64, grad_accum=2).
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ try:
     from transformers import CLIPVisionModel
 except ImportError as exc:  # pragma: no cover
     raise ImportError(
-        "FarSLIP requiere transformers>=4.46. Instala con `poetry add transformers`."
+        "FarSLIP requires transformers>=4.46. Install with `poetry add transformers`."
     ) from exc
 
 _log = structlog.get_logger(__name__)
@@ -53,16 +53,16 @@ SaveFormat = Literal["safetensors", "pytorch"]
 
 
 class PatchDistillationLoss(nn.Module):
-    """Perdida de destilacion parche-a-parche (FarSLIP §3.2).
+    """Patch-to-patch distillation loss (FarSLIP §3.2).
 
-    Combina MSE y/o coseno entre las features de los 196 patches del student
-    y del teacher. El teacher se asume congelado; aplicamos ``.detach()`` para
-    garantizar stop-gradient explicito (defensive contra fallos del caller).
+    Combines MSE and/or cosine between the features of the 196 patches of the
+    student and the teacher. The teacher is assumed frozen; we apply ``.detach()``
+    to guarantee explicit stop-gradient (defensive against caller failures).
 
     Args:
-        loss_type: ``"mse"``, ``"cosine"`` o ``"mse_plus_cosine"`` (default).
-        cosine_weight: peso del termino coseno cuando ``loss_type=="mse_plus_cosine"``.
-        normalize: si ``True``, normaliza L2 las features antes del computo.
+        loss_type: ``"mse"``, ``"cosine"`` or ``"mse_plus_cosine"`` (default).
+        cosine_weight: weight of the cosine term when ``loss_type=="mse_plus_cosine"``.
+        normalize: if ``True``, L2-normalizes the features before the computation.
     """
 
     def __init__(
@@ -73,9 +73,9 @@ class PatchDistillationLoss(nn.Module):
     ) -> None:
         super().__init__()
         if loss_type not in ("mse", "cosine", "mse_plus_cosine"):
-            raise ValueError(f"loss_type invalido: {loss_type!r}")
+            raise ValueError(f"invalid loss_type: {loss_type!r}")
         if not 0.0 <= cosine_weight <= 1.0:
-            raise ValueError(f"cosine_weight fuera de [0,1]: {cosine_weight}")
+            raise ValueError(f"cosine_weight out of [0,1]: {cosine_weight}")
         self.loss_type = loss_type
         self.cosine_weight = cosine_weight
         self.normalize = normalize
@@ -86,15 +86,15 @@ class PatchDistillationLoss(nn.Module):
         teacher_patch_feats: torch.Tensor,
         patch_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        """Calcula la perdida escalar diferenciable wrt ``student_patch_feats``.
+        """Computes the scalar loss differentiable wrt ``student_patch_feats``.
 
         Args:
             student_patch_feats: tensor ``(B, P, D)`` (P=196 patches default).
-            teacher_patch_feats: tensor ``(B, P, D)`` — sera detacheado.
-            patch_mask: opcional bool ``(B, P)`` (True = patch valido).
+            teacher_patch_feats: tensor ``(B, P, D)`` — will be detached.
+            patch_mask: optional bool ``(B, P)`` (True = valid patch).
 
         Returns:
-            Loss escalar tensor con grad activo respecto al student.
+            Scalar loss tensor with grad active with respect to the student.
         """
 
         if student_patch_feats.shape != teacher_patch_feats.shape:
@@ -160,17 +160,17 @@ class PatchDistillationLoss(nn.Module):
 
 
 class RegionCategoryAlignmentLoss(nn.Module):
-    """Alineacion region-categoria sobre el token CLS (FarSLIP §3.3).
+    """Region-category alignment on the CLS token (FarSLIP §3.3).
 
-    Calcula InfoNCE contrastivo entre el CLS del student y los prototipos
-    textuales ``(n_regions * n_categories, D)`` precomputados por el text
-    encoder del teacher (frozen). El positivo de cada sample es el prototipo
-    correspondiente a su pareja (region_id, category_id).
+    Computes contrastive InfoNCE between the student's CLS and the text
+    prototypes ``(n_regions * n_categories, D)`` precomputed by the teacher's text
+    encoder (frozen). The positive of each sample is the prototype corresponding
+    to its (region_id, category_id) pair.
 
     Args:
-        temperature: temperatura softmax (default 0.07, paper §3.3).
-        n_regions: numero de regiones (3 default para Italia).
-        n_categories: numero de clases CAP (32 default).
+        temperature: softmax temperature (default 0.07, paper §3.3).
+        n_regions: number of regions (3 default for Italy).
+        n_categories: number of CAP classes (32 default).
     """
 
     def __init__(
@@ -181,9 +181,9 @@ class RegionCategoryAlignmentLoss(nn.Module):
     ) -> None:
         super().__init__()
         if temperature <= 0:
-            raise ValueError(f"temperature debe ser positivo: {temperature}")
+            raise ValueError(f"temperature must be positive: {temperature}")
         if n_regions < 1 or n_categories < 1:
-            raise ValueError("n_regions y n_categories deben ser >= 1")
+            raise ValueError("n_regions and n_categories must be >= 1")
         self.temperature = temperature
         self.n_regions = n_regions
         self.n_categories = n_categories
@@ -195,38 +195,38 @@ class RegionCategoryAlignmentLoss(nn.Module):
         region_ids: torch.Tensor,
         category_ids: torch.Tensor,
     ) -> torch.Tensor:
-        """Calcula InfoNCE contrastivo.
+        """Computes contrastive InfoNCE.
 
         Args:
-            student_cls: tensor ``(B, D)`` del student.
-            text_prototypes: tensor ``(n_regions * n_categories, D)``; se
-                detachea internamente (frozen).
-            region_ids: tensor long ``(B,)`` con region index.
-            category_ids: tensor long ``(B,)`` con categoria index.
+            student_cls: tensor ``(B, D)`` of the student.
+            text_prototypes: tensor ``(n_regions * n_categories, D)``; it is
+                detached internally (frozen).
+            region_ids: long tensor ``(B,)`` with region index.
+            category_ids: long tensor ``(B,)`` with category index.
 
         Returns:
-            Loss escalar tensor con grad activo respecto al student.
+            Scalar loss tensor with grad active with respect to the student.
         """
 
         if student_cls.dim() != 2:
-            raise ValueError(f"student_cls debe ser (B,D); got {student_cls.shape}")
+            raise ValueError(f"student_cls must be (B,D); got {student_cls.shape}")
         if text_prototypes.dim() != 2:
             raise ValueError(
-                f"text_prototypes debe ser (R*C,D); got {text_prototypes.shape}"
+                f"text_prototypes must be (R*C,D); got {text_prototypes.shape}"
             )
         expected_protos = self.n_regions * self.n_categories
         if text_prototypes.shape[0] != expected_protos:
             raise ValueError(
-                f"text_prototypes filas={text_prototypes.shape[0]} esperado={expected_protos}"
+                f"text_prototypes rows={text_prototypes.shape[0]} expected={expected_protos}"
             )
         if region_ids.shape != category_ids.shape:
-            raise ValueError("region_ids y category_ids deben tener mismo shape")
+            raise ValueError("region_ids and category_ids must have the same shape")
         if region_ids.shape[0] != student_cls.shape[0]:
-            raise ValueError("batch size inconsistente entre student_cls e ids")
+            raise ValueError("inconsistent batch size between student_cls and ids")
         if (region_ids < 0).any() or (region_ids >= self.n_regions).any():
-            raise ValueError("region_ids fuera de rango")
+            raise ValueError("region_ids out of range")
         if (category_ids < 0).any() or (category_ids >= self.n_categories).any():
-            raise ValueError("category_ids fuera de rango")
+            raise ValueError("category_ids out of range")
 
         protos = text_prototypes.detach()
         student_n = F.normalize(student_cls, p=2, dim=-1)
@@ -246,24 +246,24 @@ class RegionCategoryAlignmentLoss(nn.Module):
 
 @dataclass
 class FarSLIPTrainerConfig:
-    """Hparams de :class:`FarSLIPDistillationTrainer`.
+    """Hparams of :class:`FarSLIPDistillationTrainer`.
 
     Attributes:
-        teacher_model_id: HF id del CLIP teacher.
-        dataset_root: ruta a ``data/farslip_pairs/`` (manifest + crops).
-        output_dir: ruta local de pesos antes de subir a GCS.
-        gcs_output_uri: ``gs://agrosat-models/farslip/{run_name}/`` opcional.
+        teacher_model_id: HF id of the CLIP teacher.
+        dataset_root: path to ``data/farslip_pairs/`` (manifest + crops).
+        output_dir: local path of the weights before uploading to GCS.
+        gcs_output_uri: optional ``gs://agrosat-models/farslip/{run_name}/``.
         loss_weights: ``{"alpha":1.0, "beta":0.5, "gamma":0.2}`` default.
         n_epochs: AC-4 default 4.
-        batch_size: AC-4 default 64 (effective 128 con grad_accum=2).
+        batch_size: AC-4 default 64 (effective 128 with grad_accum=2).
         grad_accum_steps: AC-4 default 2.
         lr: AC-4 default 1e-5 AdamW.
         weight_decay: 0.01 default.
         warmup_ratio: 0.05 cosine warmup.
-        seed: 42 (propagado a torch/np/random + deterministic algos).
+        seed: 42 (propagated to torch/np/random + deterministic algos).
         mlflow_run_name: ``"farslip-clip-italy-v1"``.
         device: ``"cuda"`` | ``"cpu"`` | ``"auto"``.
-        time_cap_hours: hard cap 8 h (warning a 6 h).
+        time_cap_hours: hard cap 8 h (warning at 6 h).
         num_workers: DataLoader workers default 4.
         n_in_channels: 4 (B02 B03 B04 B08).
         n_regions: 3.
@@ -304,13 +304,13 @@ def _resolve_device(device: str) -> torch.device:
 def adapt_patch_embed_to_n_channels(
     vision_model: nn.Module, target_channels: int
 ) -> None:
-    """Adapta el ``patch_embedding`` de un CLIP vision model a ``target_channels``.
+    """Adapts the ``patch_embedding`` of a CLIP vision model to ``target_channels``.
 
-    Soporta tanto :class:`CLIPVisionModel` (transformers 5.x, plano: tiene
-    ``embeddings`` directo) como ``CLIPModel.vision_model`` (con jerarquia).
-    El canal extra (NIR) se inicializa como ``mean`` de los 3 RGB para evitar
-    dead-neuron (init en ceros aplanaria la senal NIR). Modifica el modulo
-    in-place. Reusa el mismo bias (no hay bias en patch_embed CLIP).
+    Supports both :class:`CLIPVisionModel` (transformers 5.x, flat: it has
+    ``embeddings`` directly) and ``CLIPModel.vision_model`` (with hierarchy). The
+    extra channel (NIR) is initialized as the ``mean`` of the 3 RGB to avoid
+    dead-neuron (zero init would flatten the NIR signal). Modifies the module
+    in-place. Reuses the same bias (there is no bias in the CLIP patch_embed).
     """
 
     # Resolve ``embeddings`` with fallback (transformers 4.x vs 5.x).
@@ -319,16 +319,16 @@ def adapt_patch_embed_to_n_channels(
     elif hasattr(vision_model, "vision_model"):
         embeddings = vision_model.vision_model.embeddings  # type: ignore[union-attr]
     else:
-        raise AttributeError("vision_model no expone .embeddings ni .vision_model")
+        raise AttributeError("vision_model exposes neither .embeddings nor .vision_model")
     old_proj = embeddings.patch_embedding  # type: ignore[union-attr]
     assert isinstance(old_proj, nn.Conv2d), (
-        f"patch_embedding debe ser Conv2d; got {type(old_proj).__name__}"
+        f"patch_embedding must be Conv2d; got {type(old_proj).__name__}"
     )
     if old_proj.in_channels == target_channels:
         return
     if old_proj.in_channels != 3:
         raise ValueError(
-            f"esperado patch_embed con 3 input channels, got {old_proj.in_channels}"
+            f"expected patch_embed with 3 input channels, got {old_proj.in_channels}"
         )
     out_ch = old_proj.out_channels
     # Conv2d.kernel_size/stride/padding are tuple[int, int] at runtime although
@@ -368,14 +368,14 @@ def adapt_patch_embed_to_n_channels(
 
 
 class FarSLIPDistillationTrainer:
-    """Trainer end-to-end de destilacion FarSLIP.
+    """End-to-end FarSLIP distillation trainer.
 
-    Inicializa teacher (frozen) y student (clon profundo + trainable) desde el
-    mismo HF id, adapta patch_embed a ``n_in_channels``, configura AdamW + cosine
-    warmup + AMP bf16 + grad accumulation, registra MLflow autolog y guarda
-    pesos en formato safetensors.
+    Initializes teacher (frozen) and student (deep clone + trainable) from the
+    same HF id, adapts patch_embed to ``n_in_channels``, configures AdamW + cosine
+    warmup + AMP bf16 + grad accumulation, records MLflow autolog and saves
+    weights in safetensors format.
 
-    Args ver :class:`FarSLIPTrainerConfig`.
+    Args see :class:`FarSLIPTrainerConfig`.
     """
 
     def __init__(
@@ -417,14 +417,14 @@ class FarSLIPDistillationTrainer:
         self.student = student.to(self.device)  # type: ignore[arg-type]
 
     def _patch_student_proj(self) -> None:
-        """Adapta SOLO el student a ``n_in_channels`` bandas Sentinel-2.
+        """Adapts ONLY the student to ``n_in_channels`` Sentinel-2 bands.
 
-        El teacher se conserva con 3 canales (RGB puro, paper FarSLIP §3.2 +
-        AC-2: teacher = ``openai/clip-vit-base-patch16`` original). El forward
-        del teacher recibe las 3 primeras bandas del student via slicing en
-        :meth:`_teacher_forward`. Esto preserva la senal de destilacion
-        autentica del CLIP pretrained — adaptar tambien el teacher
-        contaminaba la pseudo-label con una proyeccion NIR no entrenada.
+        The teacher is kept with 3 channels (pure RGB, FarSLIP paper §3.2 +
+        AC-2: teacher = original ``openai/clip-vit-base-patch16``). The teacher's
+        forward receives the first 3 bands of the student via slicing in
+        :meth:`_teacher_forward`. This preserves the authentic distillation signal
+        of the pretrained CLIP — adapting the teacher as well would contaminate
+        the pseudo-label with an untrained NIR projection.
         """
         adapt_patch_embed_to_n_channels(self.student, self.config.n_in_channels)
         # Move back to the device (new layers created on CPU).
@@ -454,10 +454,10 @@ class FarSLIPDistillationTrainer:
     # ------------------------------------------------------------------ API
 
     def set_text_prototypes(self, prototypes: torch.Tensor) -> None:
-        """Inyecta prototipos textuales precomputados ``(R*C, D)``.
+        """Injects precomputed text prototypes ``(R*C, D)``.
 
-        Calculados externamente para evitar acoplar el text encoder al trainer
-        (el text encoder esta frozen, basta correrlo 1x por epoch).
+        Computed externally to avoid coupling the text encoder to the trainer
+        (the text encoder is frozen, running it once per epoch is enough).
         """
         self._text_prototypes = prototypes.to(self.device)
 
@@ -467,15 +467,15 @@ class FarSLIPDistillationTrainer:
         region_ids: torch.Tensor,
         category_ids: torch.Tensor,
     ) -> dict[str, torch.Tensor]:
-        """Forward + backward de UN batch (sin optimizer.step).
+        """Forward + backward of ONE batch (without optimizer.step).
 
-        Devuelve dict con tensores de perdida (no detacheados) para que el
-        caller decida cuando hacer ``backward`` + ``optimizer.step`` (smoke
-        tests usan este metodo bajo el capot).
+        Returns a dict with loss tensors (not detached) so that the caller decides
+        when to do ``backward`` + ``optimizer.step`` (smoke tests use this method
+        under the hood).
         """
         if self._text_prototypes is None:
             raise RuntimeError(
-                "text_prototypes no inicializados. Llama set_text_prototypes()."
+                "text_prototypes not initialized. Call set_text_prototypes()."
             )
         images = images.to(self.device)
         region_ids = region_ids.to(self.device)
@@ -521,17 +521,17 @@ class FarSLIPDistillationTrainer:
         }
 
     def train(self, dataloader: DataLoader | None = None) -> dict[str, float]:
-        """Ejecuta ``n_epochs`` completas con MLflow autolog.
+        """Runs ``n_epochs`` complete with MLflow autolog.
 
         Args:
-            dataloader: opcional. Si no se pasa, requiere ``self._dataset`` set.
+            dataloader: optional. If not passed, requires ``self._dataset`` set.
 
         Returns:
-            Dict con ``loss_total`` y demas metricas finales (epoch ultima).
+            Dict with ``loss_total`` and the other final metrics (last epoch).
         """
         if dataloader is None:
             if self._dataset is None:
-                raise RuntimeError("dataset y dataloader nulos: nada que entrenar")
+                raise RuntimeError("dataset and dataloader null: nothing to train")
             dataloader = DataLoader(
                 self._dataset,
                 batch_size=self.config.batch_size,
@@ -652,14 +652,14 @@ class FarSLIPDistillationTrainer:
         format: SaveFormat = "safetensors",
         suffix: str | None = None,
     ) -> str:
-        """Persiste pesos del student.
+        """Persists the student weights.
 
         Args:
-            format: ``"safetensors"`` (default) o ``"pytorch"``.
-            suffix: opcional, p.ej. ``"epoch_3"``; sufijo del archivo.
+            format: ``"safetensors"`` (default) or ``"pytorch"``.
+            suffix: optional, e.g. ``"epoch_3"``; file suffix.
 
         Returns:
-            Ruta local absoluta del archivo escrito.
+            Absolute local path of the written file.
         """
         out_dir = self.config.output_dir
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -697,12 +697,12 @@ def build_default_trainer(
     output_dir: Path = Path("artifacts/farslip"),
     **overrides: Any,
 ) -> FarSLIPDistillationTrainer:
-    """Factory ergonomica con defaults validados en planning."""
+    """Ergonomic factory with defaults validated during planning."""
 
     cfg = FarSLIPTrainerConfig(dataset_root=dataset_root, output_dir=output_dir)
     for k, v in overrides.items():
         if not hasattr(cfg, k):
-            raise AttributeError(f"FarSLIPTrainerConfig no tiene atributo {k!r}")
+            raise AttributeError(f"FarSLIPTrainerConfig has no attribute {k!r}")
         setattr(cfg, k, v)
     return FarSLIPDistillationTrainer(cfg)
 

@@ -1,8 +1,8 @@
-"""Detección de outliers univariados por banda.
+"""Univariate per-band outlier detection.
 
-Dos métodos:
-- IQR clásico (Tukey): outlier si valor < Q1 - k*IQR o > Q3 + k*IQR.
-- IsolationForest multivariado sobre pivot ancho banda x píxel.
+Two methods:
+- Classic IQR (Tukey): outlier if value < Q1 - k*IQR or > Q3 + k*IQR.
+- Multivariate IsolationForest on the wide band x pixel pivot.
 """
 
 from __future__ import annotations
@@ -19,17 +19,17 @@ def detect_outliers_iqr(
     band_col: str = "band",
     value_col: str = "value",
 ) -> pl.DataFrame:
-    """Detecta outliers por banda usando regla IQR (Tukey).
+    """Detects per-band outliers using the IQR (Tukey) rule.
 
     Args:
-        df: DataFrame long-format.
-        band: Banda específica a evaluar. Si None, evalúa todas.
-        k: Multiplicador IQR (1.5 ligero, 3.0 agresivo).
-        band_col: Nombre columna banda.
-        value_col: Nombre columna valor.
+        df: long-format DataFrame.
+        band: Specific band to evaluate. If None, evaluates all.
+        k: IQR multiplier (1.5 light, 3.0 aggressive).
+        band_col: Band column name.
+        value_col: Value column name.
 
     Returns:
-        DataFrame con columnas `band, n, n_outliers, pct_outliers, q1, q3, lower, upper`.
+        DataFrame with columns `band, n, n_outliers, pct_outliers, q1, q3, lower, upper`.
     """
     if band is not None:
         df = df.filter(pl.col(band_col) == band)
@@ -85,25 +85,25 @@ def detect_outliers_isoforest(
     value_col: str = "value",
     pixel_id_cols: list[str] | None = None,
 ) -> pl.DataFrame:
-    """Detecta outliers multivariados con Isolation Forest.
+    """Detects multivariate outliers with Isolation Forest.
 
-    Pivotea el DataFrame long-format a wide (1 columna por banda) y entrena
-    `IsolationForest(contamination=contamination)`. Reporta porcentaje de
-    outliers detectados global y la importancia (no nativa) aproximada
-    como pct outliers por banda en el subset detectado.
+    Pivots the long-format DataFrame to wide (1 column per band) and trains
+    `IsolationForest(contamination=contamination)`. Reports the global
+    percentage of detected outliers and the (non-native) approximate
+    importance as pct outliers per band in the detected subset.
 
     Args:
-        df: DataFrame long-format con columnas `band`, `value`, y un identificador
-            de píxel (por defecto `patch_id, t, y, x`).
-        contamination: Proporción esperada de outliers en [0, 0.5).
-        seed: Semilla para reproducibilidad.
-        band_col: Nombre columna banda.
-        value_col: Nombre columna valor.
-        pixel_id_cols: Columnas que identifican cada píxel-fecha unívocamente.
+        df: long-format DataFrame with columns `band`, `value`, and a pixel
+            identifier (by default `patch_id, t, y, x`).
+        contamination: Expected proportion of outliers in [0, 0.5).
+        seed: Seed for reproducibility.
+        band_col: Band column name.
+        value_col: Value column name.
+        pixel_id_cols: Columns that uniquely identify each pixel-date.
 
     Returns:
-        DataFrame con columnas `band, n, n_outliers, pct_outliers,
-        contamination_target`. Si no hay datos suficientes, retorna DataFrame vacío.
+        DataFrame with columns `band, n, n_outliers, pct_outliers,
+        contamination_target`. If there is not enough data, returns an empty DataFrame.
     """
     pixel_id_cols = pixel_id_cols or [
         c for c in ("patch_id", "t", "y", "x") if c in df.columns

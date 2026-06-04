@@ -1,22 +1,22 @@
-"""Genera features espectro-temporales por parcela individual (no por patch dominante).
+"""Generate spectro-temporal features per individual parcel (not per dominant patch).
 
-Variante parcel-level de `generate_feature_selection_subset.py`. Para cada patch
-PASTIS-R itera por las parcelas (instance_id) dentro y agrega los píxeles de cada
-una mediante mean espacial, luego computa indices espectrales + temporal features.
+Parcel-level variant of `generate_feature_selection_subset.py`. For each PASTIS-R
+patch it iterates over the parcels (instance_id) inside and aggregates the pixels
+of each one via spatial mean, then computes spectral indices + temporal features.
 
 Output:
     data/test_fixtures/feature_selection_parcels_subset.parquet
 
-Columnas: parcel_id (str "<patch>_<instance>"), patch_id, instance_id, year,
-class_id, fold, n_pixels, area_m2, + 187 features (153 stats + 24 FFT + 8 fenologia + 2 aux).
+Columns: parcel_id (str "<patch>_<instance>"), patch_id, instance_id, year,
+class_id, fold, n_pixels, area_m2, + 187 features (153 stats + 24 FFT + 8 phenology + 2 aux).
 
-Filtros:
-- Descartar instance_id=0 (background del patch sin parcela asignada).
-- Descartar class_id=0 (Background PASTIS) y class_id=19 (Void).
-- Descartar parcelas con n_pixels < --min-pixels (default 10).
-- Descartar patches con dates_s2 < 3 (serie temporal insuficiente).
+Filters:
+- Discard instance_id=0 (patch background with no assigned parcel).
+- Discard class_id=0 (Background PASTIS) and class_id=19 (Void).
+- Discard parcels with n_pixels < --min-pixels (default 10).
+- Discard patches with dates_s2 < 3 (insufficient time series).
 
-Paralelización: joblib.Parallel(n_jobs) por patch (cada patch es atómico).
+Parallelization: joblib.Parallel(n_jobs) per patch (each patch is atomic).
 """
 
 from __future__ import annotations
@@ -47,7 +47,7 @@ app = typer.Typer(add_completion=False, help=__doc__)
 def _parcel_to_dataarray(
     s2_patch: np.ndarray, mask: np.ndarray, dates: list[int]
 ) -> xr.DataArray:
-    """Convierte los pixeles enmascarados de un patch a DataArray (time, band)."""
+    """Convert the masked pixels of a patch to a DataArray (time, band)."""
     # s2_patch shape (T, 10, H, W). mask shape (H, W).
     # Spatial mean over the masked pixels.
     masked_pixels = s2_patch[:, :, mask].mean(axis=2).astype(np.float32) / 10_000.0
@@ -68,7 +68,7 @@ def _parcel_to_dataarray(
 def _enrich_with_indices(
     s2_da: xr.DataArray, indices: tuple[str, ...]
 ) -> xr.DataArray:
-    """Añade bandas de indices espectrales al DataArray de bandas Sentinel-2."""
+    """Add spectral index bands to the DataArray of Sentinel-2 bands."""
     arr = s2_da.expand_dims(y=1, x=1)
     new_bands: list[np.ndarray] = []
     new_names: list[str] = []
@@ -93,9 +93,9 @@ def _enrich_with_indices(
 def _process_patch(
     patch: dict, min_pixels: int, indices_to_compute: tuple[str, ...]
 ) -> list[dict]:
-    """Procesa un patch entero: itera por parcela, agrega + extrae features.
+    """Process an entire patch: iterate per parcel, aggregate + extract features.
 
-    Devuelve lista de dicts (uno por parcela válida).
+    Returns a list of dicts (one per valid parcel).
     """
     semantic = patch.get("semantic")
     instance = patch.get("instance") if isinstance(patch, dict) else None
@@ -162,7 +162,7 @@ def _process_patch(
 def _process_patch_id(
     patch_id: str, root: Path, min_pixels: int, indices: tuple[str, ...]
 ) -> list[dict]:
-    """Wrapper para joblib: lee el patch y devuelve filas."""
+    """Wrapper for joblib: read the patch and return rows."""
     for p in iter_pastis_patches([patch_id], root=root, load_annotations=True):
         return _process_patch(p, min_pixels=min_pixels, indices_to_compute=indices)
     return []
@@ -194,7 +194,7 @@ def main(
         help="Si > 0, procesa solo los primeros N patches (smoke test)",
     ),
 ) -> None:
-    """Genera spectral-temporal features por parcela individual PASTIS-R."""
+    """Generate spectral-temporal features per individual PASTIS-R parcel."""
     if not root.exists():
         logger.warning("pastis_root_missing", root=str(root))
         raise typer.Exit(code=0)

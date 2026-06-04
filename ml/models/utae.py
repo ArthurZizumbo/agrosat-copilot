@@ -1,22 +1,22 @@
 """U-TAE — U-Net with Lightweight Temporal Attention Encoder (Garnot & Landrieu 2021).
 
-Arquitectura de segmentacion semantica temporal de series Sentinel-2: un U-Net
-2D codifica cada timestep de forma independiente, un L-TAE (Lightweight Temporal
-Attention Encoder) agrega la dimension temporal en el cuello de botella, y los
-pesos de atencion temporal re-ponderan las skip connections antes del decoder.
+Temporal semantic segmentation architecture for Sentinel-2 series: a 2D U-Net
+encodes each timestep independently, an L-TAE (Lightweight Temporal Attention
+Encoder) aggregates the temporal dimension at the bottleneck, and the temporal
+attention weights re-weight the skip connections before the decoder.
 
-Entrada ``(B, T, C_in, H, W)`` (parche multi-temporal) + ``batch_positions``
-``(B, T)`` (day-of-year para el encoding posicional). Salida
+Input ``(B, T, C_in, H, W)`` (multi-temporal patch) + ``batch_positions``
+``(B, T)`` (day-of-year for the positional encoding). Output
 ``(B, num_classes, H, W)``.
 
-Esta implementacion es el port verbatim (mismas dimensiones y nombres de modulo)
-del modelo entrenado por Isaac en ``notebooks/segmentation/04j_segmentation_utae``,
-de modo que su checkpoint (``best_model.pt``, ``model_state_dict`` con claves
-``in_conv`` / ``down_convs`` / ``temporal_encoder`` / ...) carga sin renombrar.
-Se porta a modulo para poder construir el modelo fuera del notebook (Optuna,
-inferencia) respetando separation of concerns (regla CLAUDE.md 8).
+This implementation is the verbatim port (same dimensions and module names) of
+the model trained by Isaac in ``notebooks/segmentation/04j_segmentation_utae``,
+so its checkpoint (``best_model.pt``, ``model_state_dict`` with keys
+``in_conv`` / ``down_convs`` / ``temporal_encoder`` / ...) loads without
+renaming. It is ported to a module to be able to build the model outside the
+notebook (Optuna, inference) respecting separation of concerns (CLAUDE.md rule 8).
 
-Referencia: V. Sainte Fare Garnot, L. Landrieu, "Panoptic Segmentation of
+Reference: V. Sainte Fare Garnot, L. Landrieu, "Panoptic Segmentation of
 Satellite Image Time Series with Convolutional Temporal Attention Networks",
 ICCV 2021.
 """
@@ -33,7 +33,7 @@ __all__ = ["UTAE", "build_utae"]
 
 
 class PositionalEncoding(nn.Module):
-    """Encoding posicional sinusoidal sumado a una serie ``(B, T, C, H, W)``."""
+    """Sinusoidal positional encoding added to a ``(B, T, C, H, W)`` series."""
 
     def __init__(self, d: int, T: int = 1000, repeat: int | None = None) -> None:
         super().__init__()
@@ -42,14 +42,14 @@ class PositionalEncoding(nn.Module):
         self.repeat = repeat
 
     def forward(self, x: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
-        """Suma el encoding posicional por timestep.
+        """Add the positional encoding per timestep.
 
         Args:
-            x: Serie ``(B, T, C, H, W)``.
-            positions: Posiciones temporales ``(B, T)`` (day-of-year enteros).
+            x: Series ``(B, T, C, H, W)``.
+            positions: Temporal positions ``(B, T)`` (integer day-of-year).
 
         Returns:
-            ``x`` con el encoding posicional sumado, misma forma.
+            ``x`` with the positional encoding added, same shape.
         """
         _, _, C, _, _ = x.shape
         pe = self._get_pe(positions, C, x.device)  # (B, T, C)
@@ -69,11 +69,11 @@ class PositionalEncoding(nn.Module):
 
 
 class LTAE2d(nn.Module):
-    """Lightweight Temporal Attention Encoder aplicado por posicion espacial.
+    """Lightweight Temporal Attention Encoder applied per spatial position.
 
-    Entrada ``(B, T, C, H, W)`` -> salida ``(B, C_out, H, W)`` (mapa agregado en
-    el tiempo). Opcionalmente devuelve los pesos de atencion ``(B, n_head, T, H, W)``
-    para re-ponderar las skip connections.
+    Input ``(B, T, C, H, W)`` -> output ``(B, C_out, H, W)`` (time-aggregated
+    map). Optionally returns the attention weights ``(B, n_head, T, H, W)`` to
+    re-weight the skip connections.
     """
 
     def __init__(
@@ -118,16 +118,16 @@ class LTAE2d(nn.Module):
         batch_positions: torch.Tensor | None = None,
         return_att: bool = False,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
-        """Agrega la dimension temporal por atencion.
+        """Aggregate the temporal dimension by attention.
 
         Args:
-            x: Serie ``(B, T, C, H, W)``.
-            batch_positions: Posiciones temporales ``(B, T)`` o ``None``.
-            return_att: Si ``True`` devuelve tambien los pesos de atencion.
+            x: Series ``(B, T, C, H, W)``.
+            batch_positions: Temporal positions ``(B, T)`` or ``None``.
+            return_att: If ``True`` also returns the attention weights.
 
         Returns:
-            ``out`` ``(B, C_out, H, W)``, o ``(out, att)`` con
-            ``att`` ``(B, n_head, T, H, W)`` si ``return_att``/``self.return_att``.
+            ``out`` ``(B, C_out, H, W)``, or ``(out, att)`` with
+            ``att`` ``(B, n_head, T, H, W)`` if ``return_att``/``self.return_att``.
         """
         B, T, C, H, W = x.shape
 
@@ -161,7 +161,7 @@ class LTAE2d(nn.Module):
 
 
 class ConvLayer(nn.Module):
-    """Bloque Conv -> GroupNorm/BatchNorm -> ReLU."""
+    """Conv -> GroupNorm/BatchNorm -> ReLU block."""
 
     def __init__(
         self,
@@ -188,7 +188,7 @@ class ConvLayer(nn.Module):
 
 
 class DownConv(nn.Module):
-    """Conv stride-2 para downsampling."""
+    """Stride-2 Conv for downsampling."""
 
     def __init__(
         self, in_ch: int, out_ch: int, k: int = 4, s: int = 2, p: int = 1, norm: str = "group"
@@ -205,7 +205,7 @@ class DownConv(nn.Module):
 
 
 class UpConv(nn.Module):
-    """ConvTranspose stride-2 para upsampling."""
+    """Stride-2 ConvTranspose for upsampling."""
 
     def __init__(
         self, in_ch: int, out_ch: int, k: int = 4, s: int = 2, p: int = 1, norm: str = "group"
@@ -222,10 +222,10 @@ class UpConv(nn.Module):
 
 
 class UTAE(nn.Module):
-    """U-Net con L-TAE en el cuello de botella y skip connections re-ponderadas.
+    """U-Net with L-TAE at the bottleneck and re-weighted skip connections.
 
-    Entrada ``(B, T, C_in, H, W)`` (serie S2 multi-temporal) + ``batch_positions``
-    ``(B, T)``. Salida ``(B, num_classes, H, W)``.
+    Input ``(B, T, C_in, H, W)`` (multi-temporal S2 series) + ``batch_positions``
+    ``(B, T)``. Output ``(B, num_classes, H, W)``.
     """
 
     def __init__(
@@ -292,14 +292,14 @@ class UTAE(nn.Module):
         self.out_conv = nn.Sequential(*head_layers)
 
     def forward(self, x: torch.Tensor, batch_positions: torch.Tensor | None = None) -> torch.Tensor:
-        """Segmenta una serie temporal.
+        """Segment a temporal series.
 
         Args:
-            x: Serie ``(B, T, C_in, H, W)``.
-            batch_positions: Posiciones temporales ``(B, T)`` (day-of-year).
+            x: Series ``(B, T, C_in, H, W)``.
+            batch_positions: Temporal positions ``(B, T)`` (day-of-year).
 
         Returns:
-            Logits densos ``(B, num_classes, H, W)``.
+            Dense logits ``(B, num_classes, H, W)``.
         """
         B, T, C, H, W = x.shape
 
@@ -342,16 +342,16 @@ class UTAE(nn.Module):
 
 
 def build_utae(num_classes: int = 20, input_dim: int = 10) -> UTAE:
-    """Construye el U-TAE con la config del checkpoint de Isaac (04j).
+    """Build the U-TAE with the config of Isaac's checkpoint (04j).
 
     Args:
-        num_classes: Numero de clases de salida. El checkpoint de Isaac se
-            entreno con 20 (18 cultivos PASTIS + background + void), por eso es
-            el default; para 18 clases hay que reentrenar la cabeza.
-        input_dim: Bandas de entrada (10 bandas S2).
+        num_classes: Number of output classes. Isaac's checkpoint was trained
+            with 20 (18 PASTIS crops + background + void), hence the default; for
+            18 classes the head must be retrained.
+        input_dim: Input bands (10 S2 bands).
 
     Returns:
-        Modelo :class:`UTAE` listo para cargar ``model_state_dict``.
+        :class:`UTAE` model ready to load ``model_state_dict``.
     """
     return UTAE(
         input_dim=input_dim,

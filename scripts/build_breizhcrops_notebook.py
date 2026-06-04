@@ -1,9 +1,9 @@
-"""Construye notebooks/eda/02d_eda_breizhcrops.ipynb (clon estructural de 02c).
+"""Build notebooks/eda/02d_eda_breizhcrops.ipynb (structural clone of 02c).
 
-Operativo permanente: regenera el .ipynb desde una definicion declarativa de
-celdas para mantener la estructura canonica (parametros papermill, bootstrap,
-secciones, conclusiones) consistente con los demas notebooks de EDA. La
-ejecucion real (poblar outputs) se hace luego con papermill.
+Permanent operational script: regenerates the .ipynb from a declarative cell
+definition to keep the canonical structure (papermill parameters, bootstrap,
+sections, conclusions) consistent with the other EDA notebooks. The actual
+execution (populating outputs) is done later with papermill.
 """
 
 from __future__ import annotations
@@ -264,7 +264,7 @@ CELLS.append(
     code(
         """
 def add_ndvi(df: pl.DataFrame) -> pl.DataFrame:
-    \"\"\"Pivotea bandas a ancho y calcula NDVI=(B08-B04)/(B08+B04) por (parcela,t).\"\"\"
+    \"\"\"Pivot bands to wide format and compute NDVI=(B08-B04)/(B08+B04) per (parcel,t).\"\"\"
     if df.is_empty():
         return pl.DataFrame(
             schema={

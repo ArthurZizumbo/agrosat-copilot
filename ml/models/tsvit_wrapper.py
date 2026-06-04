@@ -1,55 +1,55 @@
-"""TSViT factorizado para segmentacion densa de series Sentinel-2.
+"""Factorized TSViT for dense segmentation of Sentinel-2 series.
 
-Reimplementacion limpia (no clon del repo externo) del Temporal-Spatial
-Vision Transformer (TSViT) de Tarasiou, Chavez & Zafeiriou (2023),
-"ViTs for SITS: Vision Transformers for Satellite Image Time Series"
-(arXiv:2301.04944, CVPR 2023). La idea central de TSViT es **invertir el
-orden tipico de los video-ViT**: en lugar de atender primero al espacio y
-luego al tiempo, TSViT factoriza el self-attention aplicando **primero el
-encoder temporal** (a lo largo del eje de adquisiciones) y **despues el
-encoder espacial** (a lo largo de los tokens de parche). Esto explota la
-estructura agronomica de las series: el patron fenologico temporal es la
-senal mas discriminante para el tipo de cultivo.
+Clean reimplementation (not a clone of the external repo) of the
+Temporal-Spatial Vision Transformer (TSViT) by Tarasiou, Chavez & Zafeiriou
+(2023), "ViTs for SITS: Vision Transformers for Satellite Image Time Series"
+(arXiv:2301.04944, CVPR 2023). The core idea of TSViT is to **invert the
+typical order of video-ViTs**: instead of attending first to space and then to
+time, TSViT factorizes the self-attention by applying **the temporal encoder
+first** (along the acquisitions axis) and **the spatial encoder afterwards**
+(along the patch tokens). This exploits the agronomic structure of the series:
+the temporal phenology pattern is the most discriminative signal for the crop
+type.
 
-Componentes (Secciones 3.1-3.3 del paper):
+Components (Sections 3.1-3.3 of the paper):
 
-1. **Tokenizacion 3D por parches** ``(t=1, h, w)``: una ``Conv2d`` con
-   ``kernel=stride=patch_size`` se aplica de forma independiente a cada
-   imagen temporal, produciendo ``N = (H/p) * (W/p)`` tokens espaciales por
-   timestep con dimension ``dim``.
-2. **Positional encoding temporal por fecha real**: tabla aprendida indexada
-   por dia-del-anio (DOY, 1..365) en lugar de por posicion ordinal. Acepta
-   el ``doy`` del batch, lo que hace al modelo invariante al numero de
-   adquisiciones y consciente de la fecha real (Seccion 3.2). Si no se pasa
-   ``doy`` se cae a un PE temporal ordinal aprendido.
-3. **Encoder TEMPORAL**: ``K`` cls-tokens separables (uno por clase) se
-   anteponen a la secuencia temporal de cada posicion espacial; el
-   self-attention recorre el eje temporal. Cada cls-token aprende a resumir
-   la evidencia temporal para SU clase (Seccion 3.3, "multiple cls tokens").
-4. **Encoder ESPACIAL**: tras el temporal se conserva un token por
-   ``(clase, posicion-espacial)``; un PE espacial aprendido se suma y el
-   self-attention recorre el eje espacial para cada clase.
-5. **Head de segmentacion densa**: reconstruye logits ``(B, K, H, W)``
-   proyectando cada token de parche a ``p*p`` y reordenando a resolucion
-   plena.
-6. **Rama visual contrastiva (US-025 Seccion A)**: ademas del head de
-   segmentacion, expone una proyeccion opcional de las **features visuales
-   por pixel** al espacio semantico de dimension ``semantic_dim`` (384, el
-   de los prototipos fenologicos de
-   :mod:`ml.features.phenology_class_prototypes`). Permite la alineacion
-   contrastiva pixel-visual <-> prototipo-de-clase del metodo de Wen et al.
-   (2025) sin concatenar texto al vector (ver Seccion A.0 del plan US-025).
+1. **3D patch tokenization** ``(t=1, h, w)``: a ``Conv2d`` with
+   ``kernel=stride=patch_size`` is applied independently to each temporal
+   image, producing ``N = (H/p) * (W/p)`` spatial tokens per timestep with
+   dimension ``dim``.
+2. **Temporal positional encoding by real date**: learned table indexed by
+   day-of-year (DOY, 1..365) instead of by ordinal position. It accepts the
+   ``doy`` of the batch, which makes the model invariant to the number of
+   acquisitions and aware of the real date (Section 3.2). If ``doy`` is not
+   provided it falls back to a learned ordinal temporal PE.
+3. **TEMPORAL encoder**: ``K`` separable cls-tokens (one per class) are
+   prepended to the temporal sequence of each spatial position; the
+   self-attention runs over the temporal axis. Each cls-token learns to
+   summarize the temporal evidence for ITS class (Section 3.3, "multiple cls
+   tokens").
+4. **SPATIAL encoder**: after the temporal one, a token per
+   ``(class, spatial-position)`` is kept; a learned spatial PE is added and the
+   self-attention runs over the spatial axis for each class.
+5. **Dense segmentation head**: reconstructs logits ``(B, K, H, W)`` by
+   projecting each patch token to ``p*p`` and reordering to full resolution.
+6. **Contrastive visual branch (US-025 Section A)**: besides the segmentation
+   head, it exposes an optional projection of the **per-pixel visual features**
+   to the semantic space of dimension ``semantic_dim`` (384, that of the
+   phenology prototypes from
+   :mod:`ml.features.phenology_class_prototypes`). It enables the contrastive
+   visual-pixel <-> class-prototype alignment of the method by Wen et al.
+   (2025) without concatenating text to the vector (see Section A.0 of the
+   US-025 plan).
 
-Recorte para L4 (de-risk, no se dispone de H100 hoy): con ``T=10``, 128px,
-``patch_size=8`` (16x16 = 256 tokens espaciales) y ``dim=128``,
-``depth_temporal=depth_spatial=4`` el modelo entra holgado en una L4 24GB
-con ``batch=4``. No se exageran ``dim``/``depth`` para mantener el
-entrenamiento viable en la ventana de computo asignada.
+Trim for L4 (de-risk, no H100 available today): with ``T=10``, 128px,
+``patch_size=8`` (16x16 = 256 spatial tokens) and ``dim=128``,
+``depth_temporal=depth_spatial=4`` the model fits comfortably in an L4 24GB
+with ``batch=4``. ``dim``/``depth`` are not exaggerated to keep the training
+viable within the assigned compute window.
 
-Atribucion: arquitectura de Tarasiou et al. (2023), arXiv:2301.04944
-(repo de referencia ``michaeltrs/DeepSatModels``, licencia Apache-2.0).
-Esta es una reimplementacion propia; documentada en
-``docs/licenses/DATA_LICENSE.md``.
+Attribution: architecture by Tarasiou et al. (2023), arXiv:2301.04944
+(reference repo ``michaeltrs/DeepSatModels``, Apache-2.0 license). This is an
+in-house reimplementation; documented in ``docs/licenses/DATA_LICENSE.md``.
 """
 
 from __future__ import annotations
@@ -67,12 +67,12 @@ __all__ = ["TSViT", "build_tsvit"]
 
 
 class _FeedForward(nn.Module):
-    """MLP de dos capas con GELU usado dentro de cada bloque Transformer.
+    """Two-layer MLP with GELU used inside each Transformer block.
 
     Args:
-        dim: Dimension de entrada y salida.
-        hidden_dim: Dimension oculta (expansion intermedia).
-        dropout: Probabilidad de dropout aplicada tras cada lineal.
+        dim: Input and output dimension.
+        hidden_dim: Hidden dimension (intermediate expansion).
+        dropout: Dropout probability applied after each linear layer.
     """
 
     def __init__(self, dim: int, hidden_dim: int, dropout: float = 0.0) -> None:
@@ -90,13 +90,13 @@ class _FeedForward(nn.Module):
 
 
 class _Attention(nn.Module):
-    """Multi-head self-attention escalada (scaled dot-product).
+    """Scaled multi-head self-attention (scaled dot-product).
 
     Args:
-        dim: Dimension del token.
-        heads: Numero de cabezas de atencion.
-        dim_head: Dimension por cabeza.
-        dropout: Dropout sobre la salida de la proyeccion.
+        dim: Token dimension.
+        heads: Number of attention heads.
+        dim_head: Dimension per head.
+        dropout: Dropout over the projection output.
     """
 
     def __init__(
@@ -130,14 +130,14 @@ class _Attention(nn.Module):
 
 
 class _TransformerBlock(nn.Module):
-    """Bloque Transformer pre-norm: LN -> Attn -> res; LN -> MLP -> res.
+    """Pre-norm Transformer block: LN -> Attn -> res; LN -> MLP -> res.
 
     Args:
-        dim: Dimension del token.
-        heads: Cabezas de atencion.
-        dim_head: Dimension por cabeza.
-        mlp_dim: Dimension oculta del feed-forward.
-        dropout: Dropout en atencion y MLP.
+        dim: Token dimension.
+        heads: Attention heads.
+        dim_head: Dimension per head.
+        mlp_dim: Hidden dimension of the feed-forward.
+        dropout: Dropout in attention and MLP.
     """
 
     def __init__(
@@ -161,15 +161,15 @@ class _TransformerBlock(nn.Module):
 
 
 class _Transformer(nn.Module):
-    """Pila de ``depth`` bloques Transformer con LayerNorm final.
+    """Stack of ``depth`` Transformer blocks with a final LayerNorm.
 
     Args:
-        dim: Dimension del token.
-        depth: Numero de bloques.
-        heads: Cabezas de atencion.
-        dim_head: Dimension por cabeza.
-        mlp_dim: Dimension oculta del feed-forward.
-        dropout: Dropout interno.
+        dim: Token dimension.
+        depth: Number of blocks.
+        heads: Attention heads.
+        dim_head: Dimension per head.
+        mlp_dim: Hidden dimension of the feed-forward.
+        dropout: Internal dropout.
     """
 
     def __init__(
@@ -202,45 +202,45 @@ class _Transformer(nn.Module):
 
 
 class TSViT(nn.Module):
-    """Temporal-Spatial ViT factorizado para segmentacion densa de SITS.
+    """Factorized Temporal-Spatial ViT for dense segmentation of SITS.
 
-    Implementa la arquitectura de Tarasiou et al. (2023): tokenizacion 3D por
-    parches, encoder **temporal primero** con ``K`` cls-tokens separables
-    (uno por clase), encoder **espacial despues**, positional encoding
-    temporal por fecha real (DOY) y un head de segmentacion densa que
-    reconstruye ``(B, K, H, W)``.
+    Implements the architecture of Tarasiou et al. (2023): 3D patch
+    tokenization, **temporal-first** encoder with ``K`` separable cls-tokens
+    (one per class), **spatial-afterwards** encoder, temporal positional
+    encoding by real date (DOY) and a dense segmentation head that reconstructs
+    ``(B, K, H, W)``.
 
-    Ademas del head de segmentacion expone una **proyeccion visual por pixel**
-    al espacio semantico (``semantic_dim``) para la alineacion contrastiva con
-    los prototipos fenologicos por clase (US-025 Seccion A, Wen et al. 2025).
+    Besides the segmentation head it exposes a **per-pixel visual projection**
+    to the semantic space (``semantic_dim``) for the contrastive alignment with
+    the per-class phenology prototypes (US-025 Section A, Wen et al. 2025).
 
     Args:
-        num_classes: Numero ``K`` de clases; tambien el numero de cls-tokens
-            temporales separables y los canales de salida del head de
-            segmentacion.
-        n_timesteps: Longitud temporal ``T`` esperada (define el PE temporal
-            ordinal de respaldo cuando no se pasa ``doy``).
-        img_size: Lado ``H = W`` del patch de entrada en pixeles.
-        in_channels: Numero de bandas de entrada por timestep (10 para
-            Sentinel-2 PASTIS-R).
-        patch_size: Lado del parche espacial ``p``. Produce
-            ``(img_size/p)^2`` tokens espaciales por timestep.
-        dim: Dimension del token Transformer.
-        depth_temporal: Numero de bloques del encoder temporal.
-        depth_spatial: Numero de bloques del encoder espacial.
-        heads: Cabezas de atencion en ambos encoders.
-        dim_head: Dimension por cabeza de atencion.
-        mlp_ratio: Factor de expansion del feed-forward (``mlp_dim = dim *
+        num_classes: Number ``K`` of classes; also the number of separable
+            temporal cls-tokens and the output channels of the segmentation
+            head.
+        n_timesteps: Expected temporal length ``T`` (defines the fallback
+            ordinal temporal PE when ``doy`` is not provided).
+        img_size: Side ``H = W`` of the input patch in pixels.
+        in_channels: Number of input bands per timestep (10 for Sentinel-2
+            PASTIS-R).
+        patch_size: Side of the spatial patch ``p``. Produces
+            ``(img_size/p)^2`` spatial tokens per timestep.
+        dim: Transformer token dimension.
+        depth_temporal: Number of blocks of the temporal encoder.
+        depth_spatial: Number of blocks of the spatial encoder.
+        heads: Attention heads in both encoders.
+        dim_head: Dimension per attention head.
+        mlp_ratio: Expansion factor of the feed-forward (``mlp_dim = dim *
             mlp_ratio``).
-        semantic_dim: Dimension del espacio semantico de la rama contrastiva
-            (384 para coincidir con los embeddings de
-            ``all-MiniLM-L6-v2`` de los prototipos por clase).
-        dropout: Dropout aplicado en los Transformers.
-        max_doy: Maximo dia-del-anio admitido por la tabla de PE temporal
-            (366 para cubrir anios bisiestos; el indice 0 queda sin uso).
+        semantic_dim: Dimension of the semantic space of the contrastive branch
+            (384 to match the ``all-MiniLM-L6-v2`` embeddings of the per-class
+            prototypes).
+        dropout: Dropout applied in the Transformers.
+        max_doy: Maximum day-of-year admitted by the temporal PE table (366 to
+            cover leap years; index 0 is unused).
 
     Raises:
-        ValueError: Si ``img_size`` no es divisible por ``patch_size``.
+        ValueError: If ``img_size`` is not divisible by ``patch_size``.
     """
 
     def __init__(
@@ -263,7 +263,7 @@ class TSViT(nn.Module):
         super().__init__()
         if img_size % patch_size != 0:
             raise ValueError(
-                f"img_size ({img_size}) debe ser divisible por patch_size "
+                f"img_size ({img_size}) must be divisible by patch_size "
                 f"({patch_size})."
             )
 
@@ -334,14 +334,14 @@ class TSViT(nn.Module):
         )
 
     def _tokenize(self, x: torch.Tensor) -> tuple[torch.Tensor, int]:
-        """Tokeniza la entrada ``(B, T, C, H, W)`` a tokens de parche.
+        """Tokenize the input ``(B, T, C, H, W)`` into patch tokens.
 
         Args:
-            x: Tensor de entrada ``(B, T, C, H, W)``.
+            x: Input tensor ``(B, T, C, H, W)``.
 
         Returns:
-            Tupla ``(tokens, batch)`` donde ``tokens`` tiene forma
-            ``(B, T, N, dim)`` con ``N`` tokens espaciales por timestep.
+            Tuple ``(tokens, batch)`` where ``tokens`` has shape
+            ``(B, T, N, dim)`` with ``N`` spatial tokens per timestep.
         """
         b, t = x.shape[0], x.shape[1]
         # Conv2d is applied to each temporal image independently.
@@ -353,16 +353,16 @@ class TSViT(nn.Module):
     def _temporal_pos(
         self, doy: torch.Tensor | None, batch: int, t: int, device: torch.device
     ) -> torch.Tensor:
-        """Devuelve el PE temporal ``(B, T, dim)`` por DOY o ordinal.
+        """Return the temporal PE ``(B, T, dim)`` by DOY or ordinal.
 
         Args:
-            doy: Dia-del-anio por timestep ``(B, T)`` int, o ``None``.
-            batch: Tamano de batch ``B``.
-            t: Numero de timesteps ``T``.
-            device: Dispositivo destino.
+            doy: Day-of-year per timestep ``(B, T)`` int, or ``None``.
+            batch: Batch size ``B``.
+            t: Number of timesteps ``T``.
+            device: Target device.
 
         Returns:
-            Tensor ``(B, T, dim)`` con el positional encoding temporal.
+            Tensor ``(B, T, dim)`` with the temporal positional encoding.
         """
         if doy is None:
             return self.temporal_pos_ordinal[:, :t, :].expand(batch, -1, -1)
@@ -376,21 +376,21 @@ class TSViT(nn.Module):
         *,
         return_visual_proj: bool = False,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
-        """Pasa la serie por los encoders factorizados y reconstruye logits.
+        """Pass the series through the factorized encoders and reconstruct logits.
 
         Args:
-            x: Serie de entrada ``(B, T, C, H, W)`` float (B4 idx2, B8 idx6,
-                10 bandas Sentinel-2 PASTIS-R, escala /10000).
-            doy: Dia-del-anio de adquisicion por timestep ``(B, T)`` int. Si
-                ``None`` se usa el PE temporal ordinal de respaldo.
-            return_visual_proj: Si ``True``, devuelve ademas la proyeccion
-                visual por pixel al espacio semantico ``semantic_dim``.
+            x: Input series ``(B, T, C, H, W)`` float (B4 idx2, B8 idx6,
+                10 Sentinel-2 PASTIS-R bands, scale /10000).
+            doy: Acquisition day-of-year per timestep ``(B, T)`` int. If
+                ``None`` the fallback ordinal temporal PE is used.
+            return_visual_proj: If ``True``, also returns the per-pixel visual
+                projection to the semantic space ``semantic_dim``.
 
         Returns:
-            - ``return_visual_proj=False``: logits de segmentacion
+            - ``return_visual_proj=False``: segmentation logits
               ``(B, num_classes, H, W)``.
-            - ``return_visual_proj=True``: tupla ``(logits, visual_proj)`` con
-              ``visual_proj`` de forma ``(B, semantic_dim, H, W)``.
+            - ``return_visual_proj=True``: tuple ``(logits, visual_proj)`` with
+              ``visual_proj`` of shape ``(B, semantic_dim, H, W)``.
         """
         tokens, b = self._tokenize(x)  # (B, T, N, dim)
         t = tokens.shape[1]
@@ -463,26 +463,26 @@ def build_tsvit(
     depth_spatial: int = 4,
     semantic_dim: int = 384,
 ) -> nn.Module:
-    """Construye un :class:`TSViT` con los defaults recortados para L4.
+    """Build a :class:`TSViT` with the defaults trimmed for L4.
 
-    Factory publica del wrapper TSViT (US-025 Tarea 3). Los defaults
-    (``patch_size=8`` -> 16x16 tokens, ``dim=128``, profundidad 4+4) mantienen
-    el modelo entrenable en una L4 24GB con ``T=10``, 128px y ``batch=4``.
+    Public factory of the TSViT wrapper (US-025 Task 3). The defaults
+    (``patch_size=8`` -> 16x16 tokens, ``dim=128``, depth 4+4) keep the model
+    trainable on an L4 24GB with ``T=10``, 128px and ``batch=4``.
 
     Args:
-        num_classes: Numero ``K`` de clases / cls-tokens separables.
-        n_timesteps: Longitud temporal ``T`` esperada.
-        img_size: Lado del patch de entrada en pixeles.
-        in_channels: Bandas de entrada por timestep (10 para Sentinel-2).
-        patch_size: Lado del parche espacial.
-        dim: Dimension del token Transformer.
-        depth_temporal: Bloques del encoder temporal.
-        depth_spatial: Bloques del encoder espacial.
-        semantic_dim: Dimension del espacio semantico de la rama contrastiva
-            (384 para los prototipos fenologicos por clase).
+        num_classes: Number ``K`` of classes / separable cls-tokens.
+        n_timesteps: Expected temporal length ``T``.
+        img_size: Side of the input patch in pixels.
+        in_channels: Input bands per timestep (10 for Sentinel-2).
+        patch_size: Side of the spatial patch.
+        dim: Transformer token dimension.
+        depth_temporal: Blocks of the temporal encoder.
+        depth_spatial: Blocks of the spatial encoder.
+        semantic_dim: Dimension of the semantic space of the contrastive branch
+            (384 for the per-class phenology prototypes).
 
     Returns:
-        Modulo :class:`TSViT` listo para entrenar/inferir.
+        :class:`TSViT` module ready to train/infer.
     """
     return TSViT(
         num_classes=num_classes,

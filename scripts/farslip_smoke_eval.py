@@ -1,9 +1,9 @@
-"""Operativo permanente: smoke eval del extractor FarSLIP (US-017 / US-016b).
+"""Permanent operational script: smoke eval of the FarSLIP extractor (US-017 / US-016b).
 
-Descarga pesos (o usa cache local), corre ``extract_embeddings`` sobre N
-patches sinteticos y reporta tiempo + shape + L2 norm. NO viola el anti-patron
-``scripts/_*.py``: es operativo de despliegue (verifica que el modelo se sirve
-correctamente desde GCS antes de exponerlo a US-016/US-025).
+Downloads weights (or uses a local cache), runs ``extract_embeddings`` over N
+synthetic patches and reports time + shape + L2 norm. Does NOT violate the
+``scripts/_*.py`` anti-pattern: it is a deployment operational script (verifies
+that the model is served correctly from GCS before exposing it to US-016/US-025).
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ import torch
 try:
     import typer
 except ImportError as exc:  # pragma: no cover
-    raise ImportError("typer requerido para CLI scripts. poetry add typer") from exc
+    raise ImportError("typer required for CLI scripts. poetry add typer") from exc
 
 from ml.extractors.farslip_extractor import FarSLIPExtractor
 
@@ -38,7 +38,7 @@ def smoke(
         Path | None, typer.Option(help="Cache dir local")
     ] = None,
 ) -> None:
-    """Descarga pesos + corre extract_embeddings + reporta diagnostico."""
+    """Download weights + run extract_embeddings + report diagnostics."""
     _log.info(
         "starting farslip smoke eval", weights_uri=weights_uri, n_patches=n_patches
     )

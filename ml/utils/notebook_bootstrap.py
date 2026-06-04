@@ -1,19 +1,19 @@
-"""Bootstrap canonico para notebooks del proyecto AgroSatCopilot.
+"""Canonical bootstrap for AgroSatCopilot project notebooks.
 
-Centraliza el patron que de otra forma se duplica en cada `.ipynb`:
+Centralizes the pattern that would otherwise be duplicated in each `.ipynb`:
 
-- Resolucion robusta del repo root (re-export de `notebook_setup.find_repo_root`).
-- Carga de `.env.local`.
-- Configuracion de `sys.path` para que `import ml.*` funcione desde cualquier
-  subcarpeta de `notebooks/`.
-- Configuracion de Polars (rendering rico HTML), matplotlib (DPI, inline) y
+- Robust resolution of the repo root (re-export of `notebook_setup.find_repo_root`).
+- Loading of `.env.local`.
+- Configuration of `sys.path` so `import ml.*` works from any subfolder of
+  `notebooks/`.
+- Configuration of Polars (rich HTML rendering), matplotlib (DPI, inline) and
   autoreload (`%autoreload 2`).
-- Creacion del directorio de figuras del notebook (`paper/figures/{slug}`).
+- Creation of the notebook figures directory (`paper/figures/{slug}`).
 
-Devuelve un dataclass `NotebookEnv` con los paths utiles para que cada notebook
-no tenga que reconstruirlos.
+Returns a `NotebookEnv` dataclass with the useful paths so each notebook does not
+have to rebuild them.
 
-Uso tipico en la celda 3 del notebook:
+Typical usage in cell 3 of the notebook:
 
 ```python
 from ml.utils.notebook_bootstrap import setup_notebook
@@ -45,20 +45,20 @@ __all__ = ["NotebookEnv", "setup_notebook"]
 
 @dataclass(frozen=True)
 class NotebookEnv:
-    """Paths y configuracion derivados del bootstrap del notebook.
+    """Paths and configuration derived from the notebook bootstrap.
 
     Attributes:
-        repo: Ruta absoluta al repo root (resuelto via `pyproject.toml`).
-        figures_dir: Directorio donde el notebook persiste plots PNG.
-        reports_dir: Directorio donde el notebook persiste tablas y parquets.
-        data_dir: Atajo a `repo / "data"`.
-        cache_dir: Atajo a `repo / "data/cache"`.
-        has_gemini_api_key: True si `GEMINI_API_KEY` o `GOOGLE_API_KEY` o
-            `GOOGLE_GENAI_USE_VERTEXAI=true` estan presentes en el env.
-        has_ee_credentials: True si Earth Engine puede iniciarse con SA o ADC.
-        gee_project: Proyecto GCP para EE (puede ser None).
-        gee_sa_path: Path al JSON de la service account de EE (puede ser None).
-        env_warnings: Lista de mensajes accionables para el usuario.
+        repo: Absolute path to the repo root (resolved via `pyproject.toml`).
+        figures_dir: Directory where the notebook persists PNG plots.
+        reports_dir: Directory where the notebook persists tables and parquets.
+        data_dir: Shortcut to `repo / "data"`.
+        cache_dir: Shortcut to `repo / "data/cache"`.
+        has_gemini_api_key: True if `GEMINI_API_KEY` or `GOOGLE_API_KEY` or
+            `GOOGLE_GENAI_USE_VERTEXAI=true` are present in the env.
+        has_ee_credentials: True if Earth Engine can be initialized with SA or ADC.
+        gee_project: GCP project for EE (may be None).
+        gee_sa_path: Path to the EE service account JSON (may be None).
+        env_warnings: List of actionable messages for the user.
     """
 
     repo: Path
@@ -73,10 +73,10 @@ class NotebookEnv:
     env_warnings: list[str] = field(default_factory=list)
 
     def summary_markdown(self) -> str:
-        """Construye un resumen Markdown legible para `display(Markdown(...))`.
+        """Build a readable Markdown summary for `display(Markdown(...))`.
 
         Returns:
-            Texto Markdown con tabla de paths y estado de credenciales.
+            Markdown text with a table of paths and credential status.
         """
         rows = [
             "| Recurso | Estado |",
@@ -105,30 +105,30 @@ def setup_notebook(
     load_dotenv: bool = True,
     ipython: InteractiveShell | None = None,
 ) -> NotebookEnv:
-    """Aplica el bootstrap canonico y devuelve el entorno listo para usar.
+    """Apply the canonical bootstrap and return the environment ready to use.
 
-    Sigue el orden documentado en `notebooks/CLAUDE.md` Seccion "Estructura
-    estandar de notebook" Celda 3.
+    Follows the order documented in `notebooks/CLAUDE.md` Section "Estructura
+    estandar de notebook" Cell 3.
 
     Args:
-        figures_subdir: Subcarpeta bajo `paper/figures/` para los PNG. La
-            ruta efectiva queda en `env.figures_dir`.
-        reports_subdir: Subcarpeta bajo `reports/` para tablas/parquets.
-        enable_autoreload: Si True ejecuta `%load_ext autoreload` y
-            `%autoreload 2` (cambios en `ml/*.py` se reflejan sin reiniciar
-            el kernel).
-        matplotlib_inline: Si True ejecuta `%matplotlib inline`.
-        polars_rich_html: Si True configura Polars para render HTML formateado
-            (`ASCII_MARKDOWN`, 20 filas, 60 chars).
-        load_dotenv: Si True (default) carga `.env.local` en `os.environ`.
-            Tests deterministas pueden ponerlo a False para no sobrescribir
-            sus monkeypatches.
-        ipython: Shell de IPython (auto-detectada si None). Se usa para los
-            magics `%load_ext`, `%autoreload`, `%matplotlib`. Si no estamos
-            dentro de IPython, los magics se omiten silenciosamente.
+        figures_subdir: Subfolder under `paper/figures/` for the PNGs. The
+            effective path is left in `env.figures_dir`.
+        reports_subdir: Subfolder under `reports/` for tables/parquets.
+        enable_autoreload: If True runs `%load_ext autoreload` and
+            `%autoreload 2` (changes in `ml/*.py` are reflected without
+            restarting the kernel).
+        matplotlib_inline: If True runs `%matplotlib inline`.
+        polars_rich_html: If True configures Polars for formatted HTML rendering
+            (`ASCII_MARKDOWN`, 20 rows, 60 chars).
+        load_dotenv: If True (default) loads `.env.local` into `os.environ`.
+            Deterministic tests can set it to False to avoid overwriting their
+            monkeypatches.
+        ipython: IPython shell (auto-detected if None). Used for the magics
+            `%load_ext`, `%autoreload`, `%matplotlib`. If we are not inside
+            IPython, the magics are silently skipped.
 
     Returns:
-        `NotebookEnv` con paths resueltos y status de credenciales.
+        `NotebookEnv` with resolved paths and credential status.
     """
     repo = find_repo_root()
 
@@ -194,7 +194,7 @@ def setup_notebook(
 
 
 def _configure_polars() -> None:
-    """Configura Polars para rendering rico en notebooks."""
+    """Configure Polars for rich rendering in notebooks."""
     import polars as pl
 
     pl.Config.set_tbl_formatting("ASCII_MARKDOWN")
@@ -203,7 +203,7 @@ def _configure_polars() -> None:
 
 
 def _configure_matplotlib(ipython: InteractiveShell | None) -> None:
-    """Configura matplotlib (DPI alta + backend inline) para notebooks."""
+    """Configure matplotlib (high DPI + inline backend) for notebooks."""
     import matplotlib.pyplot as plt
 
     shell = ipython or _get_ipython()
@@ -218,7 +218,7 @@ def _configure_matplotlib(ipython: InteractiveShell | None) -> None:
 
 
 def _enable_autoreload(ipython: InteractiveShell | None) -> None:
-    """Activa `%autoreload 2` si estamos dentro de IPython."""
+    """Enable `%autoreload 2` if we are inside IPython."""
     shell = ipython or _get_ipython()
     if shell is None:
         return
@@ -230,7 +230,7 @@ def _enable_autoreload(ipython: InteractiveShell | None) -> None:
 
 
 def _get_ipython() -> InteractiveShell | None:
-    """Devuelve el shell de IPython activo o None si no estamos en notebook."""
+    """Return the active IPython shell or None if we are not in a notebook."""
     try:
         from IPython import get_ipython
     except ImportError:
@@ -239,11 +239,11 @@ def _get_ipython() -> InteractiveShell | None:
 
 
 def _detect_gemini_credentials() -> bool:
-    """Detecta si alguna variable de entorno habilita la llamada a Gemini.
+    """Detect whether any environment variable enables the Gemini call.
 
     Returns:
-        True si al menos una de las siguientes esta presente: GEMINI_API_KEY,
-        GOOGLE_API_KEY, o (GOOGLE_GENAI_USE_VERTEXAI=true con GOOGLE_CLOUD_PROJECT).
+        True if at least one of the following is present: GEMINI_API_KEY,
+        GOOGLE_API_KEY, or (GOOGLE_GENAI_USE_VERTEXAI=true with GOOGLE_CLOUD_PROJECT).
     """
     if os.environ.get("GEMINI_API_KEY"):
         return True

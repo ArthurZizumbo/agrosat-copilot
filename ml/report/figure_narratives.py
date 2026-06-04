@@ -1,13 +1,13 @@
-"""Narrativas interpretativas por figura para dashboard y PDF.
+"""Interpretive per-figure narratives for the dashboard and PDF.
 
-Cada figura del EDA recibe un párrafo que explica:
-    - Qué muestra la figura (lectura visual).
-    - Por qué se hizo ese análisis.
-    - Cómo se llegó a la conclusión (método y datos).
-    - Qué implica para los siguientes Avances del proyecto.
+Each EDA figure receives a paragraph that explains:
+    - What the figure shows (visual reading).
+    - Why that analysis was done.
+    - How the conclusion was reached (method and data).
+    - What it implies for the project's next Avances.
 
-El texto se escribe en lenguaje claro para que un sponsor académico no
-técnico pueda seguir el razonamiento sin saltar a la fórmula.
+The text is written in plain language so a non-technical academic sponsor can
+follow the reasoning without jumping to the formula.
 """
 
 from __future__ import annotations
@@ -17,14 +17,14 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class FigureNarrative:
-    """Narrativa asociada a una figura PNG.
+    """Narrative associated with a PNG figure.
 
     Attributes:
-        filename: Nombre del archivo PNG (sin path), tal como existe en
+        filename: Name of the PNG file (without path), as it exists in
             ``paper/figures/<dir>/``.
-        title: Título legible para mostrar sobre la figura.
-        narrative: Párrafo interpretativo de lectura accesible.
-        method: Cómo se construyó la figura (datos y procesamiento).
+        title: Readable title to display above the figure.
+        narrative: Interpretive paragraph for accessible reading.
+        method: How the figure was built (data and processing).
     """
 
     filename: str
@@ -1435,15 +1435,15 @@ NARRATIVES_BY_NOTEBOOK: dict[str, tuple[FigureNarrative, ...]] = {
 
 
 def get_narrative(notebook_id: str, filename: str) -> FigureNarrative | None:
-    """Busca la narrativa asociada a una figura.
+    """Look up the narrative associated with a figure.
 
     Args:
-        notebook_id: ID de la ficha (e.g. ``"sentinel2"``).
-        filename: Nombre del PNG sin path (e.g. ``"band_distributions.png"``).
+        notebook_id: ID of the card (e.g. ``"sentinel2"``).
+        filename: Name of the PNG without path (e.g. ``"band_distributions.png"``).
 
     Returns:
-        ``FigureNarrative`` si la figura tiene narrativa asignada,
-        ``None`` en caso contrario.
+        ``FigureNarrative`` if the figure has an assigned narrative,
+        ``None`` otherwise.
     """
     narratives = NARRATIVES_BY_NOTEBOOK.get(notebook_id, ())
     for narrative in narratives:

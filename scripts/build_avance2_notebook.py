@@ -1,31 +1,32 @@
-"""Genera el notebook integrador Avance2.Equipo17.ipynb a partir de
+"""Generate the integrative notebook Avance2.Equipo17.ipynb from
 ``ml.report.avance2_content``.
 
-El notebook consolidado del Avance 2 reune el trabajo de ingenieria de
-caracteristicas realizado sobre tres fuentes de datos complementarias
-(Sentinel-2, PASTIS-R espectro-temporal y embeddings AlphaEarth) en un
-unico entregable coherente, sin re-ejecutar el feature engineering inline.
-Sigue el mismo patron que ``scripts/build_avance1_notebook.py``.
+The consolidated Avance 2 notebook brings together the feature engineering
+work done over three complementary data sources (Sentinel-2, spectro-temporal
+PASTIS-R and AlphaEarth embeddings) into a single coherent deliverable,
+without re-running the feature engineering inline. It follows the same pattern
+as ``scripts/build_avance1_notebook.py``.
 
-Estructura del notebook generado:
-    1. Portada (titulo, equipo, fecha, datasets)
-    2. Resumen ejecutivo + indice general
-    3-5. Capitulos (uno por notebook fuente): titulo, subtitulo, indice del
-        notebook fuente, figuras con narrativa, conclusiones interpretadas
-    6. Conclusiones globales de la fase de preparacion de datos
-    7. Atribuciones de licencias
+Structure of the generated notebook:
+    1. Cover (title, team, date, datasets)
+    2. Executive summary + general table of contents
+    3-5. Chapters (one per source notebook): title, subtitle, source
+        notebook table of contents, figures with narrative, interpreted
+        conclusions
+    6. Global conclusions of the data preparation phase
+    7. License attributions
 
-Las figuras se embeben como base64 en las celdas de codigo, de modo que el
-notebook se commitea con las figuras pobladas sin necesidad de re-ejecutarlo
-(no requiere papermill). Las figuras se extraen previamente de los tres
-notebooks fuente con ``ml.report.extract_notebook_figures``.
+The figures are embedded as base64 in the code cells, so the notebook is
+committed with the figures populated without needing to re-run it (no
+papermill required). The figures are extracted beforehand from the three
+source notebooks with ``ml.report.extract_notebook_figures``.
 
-Uso:
+Usage:
     poetry run python scripts/build_avance2_notebook.py
     poetry run python scripts/build_avance2_notebook.py \\
         --out notebooks/feature_engineering/Avance2.Equipo17.ipynb
 
-Se ejecuta una sola vez por sprint cuando cambia el contenido editorial
+Runs once per sprint when the editorial content changes
 (``ml/report/avance2_content.py``).
 """
 
@@ -45,12 +46,12 @@ from ml.report.notebook_cover import build_cover_markdown, build_team_conclusion
 
 
 def _new_id() -> str:
-    """ID estable para cada celda (nbformat >= 4.5 lo exige)."""
+    """Stable ID for each cell (nbformat >= 4.5 requires it)."""
     return uuid.uuid4().hex[:12]
 
 
 def _visual_cover_cell() -> dict[str, Any]:
-    """Portada visual homologada (badges + header) antes del resumen ejecutivo."""
+    """Standardized visual cover (badges + header) before the executive summary."""
     return _md_cell(
         build_cover_markdown(
             "Avance 2",
@@ -64,7 +65,7 @@ def _visual_cover_cell() -> dict[str, Any]:
 
 
 def _team_conclusions_cell() -> dict[str, Any]:
-    """Celda de conclusiones individuales por integrante."""
+    """Cell of individual conclusions per team member."""
     return _md_cell(build_team_conclusions_markdown(A2_CONCLUSIONS))
 
 
@@ -87,7 +88,7 @@ app = typer.Typer(add_completion=False)
 
 
 def _md_cell(source: str) -> dict[str, Any]:
-    """Celda markdown nbformat v4.5."""
+    """nbformat v4.5 markdown cell."""
     return {
         "cell_type": "markdown",
         "id": _new_id(),
@@ -101,7 +102,7 @@ def _code_cell(
     outputs: list[dict[str, Any]] | None = None,
     tags: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Celda code nbformat v4.5 con outputs embebidos y tags opcionales."""
+    """nbformat v4.5 code cell with embedded outputs and optional tags."""
     metadata: dict[str, Any] = {}
     if tags:
         metadata["tags"] = tags
@@ -116,11 +117,11 @@ def _code_cell(
 
 
 def _image_output(png_path: Path) -> dict[str, Any]:
-    """Output display_data con PNG embebido en base64.
+    """display_data output with a base64-embedded PNG.
 
-    Embebe la imagen como output de la celda code que la renderiza, para que
-    el notebook se commitee con las figuras pobladas y se vea sin tener que
-    re-ejecutarlo.
+    Embeds the image as the output of the code cell that renders it, so the
+    notebook is committed with the figures populated and is viewable without
+    having to re-run it.
     """
     png_bytes = png_path.read_bytes()
     b64 = base64.b64encode(png_bytes).decode("ascii")
@@ -140,11 +141,11 @@ def _image_output(png_path: Path) -> dict[str, Any]:
 
 
 def _parameters_cell() -> dict[str, Any]:
-    """Celda code con tag 'parameters'.
+    """Code cell with the 'parameters' tag.
 
-    El notebook es file-driven (no consume datos externos), pero exponemos
-    ``figures_dir`` para que pueda apuntarse a un directorio alternativo si se
-    ejecuta en otra maquina.
+    The notebook is file-driven (it consumes no external data), but we expose
+    ``figures_dir`` so it can be pointed to an alternative directory if run on
+    another machine.
     """
     src = (
         "# Parametros configurables del notebook integrador:\n"
@@ -154,7 +155,7 @@ def _parameters_cell() -> dict[str, Any]:
 
 
 def _bootstrap_cell() -> dict[str, Any]:
-    """Celda code con sys.path, autoreload y resolucion del directorio de figuras."""
+    """Code cell with sys.path, autoreload and figures-directory resolution."""
     src = (
         "from __future__ import annotations\n"
         "\n"
@@ -185,7 +186,7 @@ def _bootstrap_cell() -> dict[str, Any]:
 
 
 def _kpi_table_cell(card: NotebookCard) -> dict[str, Any] | None:
-    """Tabla markdown de KPIs por capitulo."""
+    """Markdown table of KPIs per chapter."""
     if not card.kpis:
         return None
     lines = [
@@ -201,7 +202,7 @@ def _kpi_table_cell(card: NotebookCard) -> dict[str, Any] | None:
 
 
 def _cover_cell() -> dict[str, Any]:
-    """Portada del notebook + resumen ejecutivo."""
+    """Notebook cover + executive summary."""
     return _md_cell(
         "# Avance 2 — Ingenieria de Caracteristicas\n"
         "## Equipo 17 · AgroSatCopilot · Proyecto Integrador MNA\n"
@@ -252,7 +253,7 @@ def _cover_cell() -> dict[str, Any]:
 
 
 def _toc_cell() -> dict[str, Any]:
-    """Indice general del notebook."""
+    """General table of contents of the notebook."""
     lines = ["# Indice\n", "\n"]
     for idx, card in enumerate(FE_CARDS, start=1):
         anchor = card.notebook_id.replace("-", "")
@@ -262,7 +263,7 @@ def _toc_cell() -> dict[str, Any]:
 
 
 def _chapter_header_cell(idx: int, card: NotebookCard) -> dict[str, Any]:
-    """Header del capitulo: titulo, subtitulo, notebook fuente, indice."""
+    """Chapter header: title, subtitle, source notebook, table of contents."""
     anchor = card.notebook_id.replace("-", "")
     lines = [
         f'<a id="{anchor}"></a>\n',
@@ -287,16 +288,16 @@ def _chapter_header_cell(idx: int, card: NotebookCard) -> dict[str, Any]:
 
 
 def _figure_cells(card: NotebookCard) -> list[dict[str, Any]]:
-    """Celdas markdown + code con figuras embebidas y narrativa por figura.
+    """Markdown + code cells with embedded figures and per-figure narrative.
 
-    Cada figura genera:
-        1. Markdown con titulo + narrativa interpretativa + metodo.
-        2. Code cell con ``display(Image(...))`` + el PNG embebido como output.
+    Each figure generates:
+        1. Markdown with title + interpretive narrative + method.
+        2. Code cell with ``display(Image(...))`` + the PNG embedded as output.
 
-    Replica el patron del notebook integrador del Avance 1: la narrativa
-    se resuelve con :func:`ml.report.figure_narratives.get_narrative` usando
-    el ``notebook_id`` de la ficha. Si una figura no tiene narrativa
-    registrada, se usa un fallback con el nombre del archivo.
+    Replicates the pattern of the Avance 1 integrative notebook: the narrative
+    is resolved with :func:`ml.report.figure_narratives.get_narrative` using
+    the card's ``notebook_id``. If a figure has no registered narrative, a
+    fallback with the file name is used.
     """
     cells: list[dict[str, Any]] = []
     pngs = list_figures(card, FIGURES_ROOT)
@@ -332,7 +333,7 @@ def _figure_cells(card: NotebookCard) -> list[dict[str, Any]]:
 
 
 def _conclusions_cells(card: NotebookCard) -> list[dict[str, Any]]:
-    """Celdas markdown con las conclusiones interpretadas del capitulo."""
+    """Markdown cells with the interpreted conclusions of the chapter."""
     if not card.conclusions:
         return []
 
@@ -347,7 +348,7 @@ def _conclusions_cells(card: NotebookCard) -> list[dict[str, Any]]:
 
 
 def _attributions_cell() -> dict[str, Any]:
-    """Cierre con atribuciones de licencias."""
+    """Closing section with license attributions."""
     return _md_cell(
         '<a id="atribuciones"></a>\n'
         "## Atribuciones de licencias\n"
@@ -373,7 +374,7 @@ def _attributions_cell() -> dict[str, Any]:
 
 
 def build_notebook() -> dict[str, Any]:
-    """Construye el dict del notebook listo para escribir a JSON."""
+    """Build the notebook dict ready to write to JSON."""
     cells: list[dict[str, Any]] = [
         _visual_cover_cell(),
         _cover_cell(),
@@ -425,7 +426,7 @@ def build(
         help="Ruta destino del .ipynb generado.",
     ),
 ) -> None:
-    """Genera el notebook integrador Avance 2 con figuras embebidas."""
+    """Generate the Avance 2 integrative notebook with embedded figures."""
     nb = build_notebook()
     out_path = out if out.is_absolute() else Path.cwd() / out
     out_path.parent.mkdir(parents=True, exist_ok=True)

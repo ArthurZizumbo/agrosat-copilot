@@ -1,13 +1,13 @@
-"""Ejecuta solo el bloque P8 del baseline v2 (US-023-preview).
+"""Run only the P8 block of baseline v2 (US-023-preview).
 
-Equivalente a la seccion 9 del notebook ``04_baseline.ipynb`` pero sin las
-secciones pesadas previas (comparativa AlphaEarth vs S2 raw, learning curves,
-SHAP). Entrena los 3 modelos canonicos del A3 (XGBoost + TempCNN +
-InceptionTime) con spatial CV 5-fold buffer 1 km sobre el conjunto ganador
-post-ablation, registra 3 MLflow runs y emite los artefactos requeridos por
+Equivalent to section 9 of the notebook ``04_baseline.ipynb`` but without the
+heavy prior sections (AlphaEarth vs S2 raw comparison, learning curves,
+SHAP). Trains the 3 canonical A3 models (XGBoost + TempCNN +
+InceptionTime) with 5-fold spatial CV buffer 1 km over the post-ablation
+winning set, logs 3 MLflow runs and emits the artifacts required by
 AC-P8-1..AC-P8-8.
 
-Uso:
+Usage:
     poetry run python scripts/run_baseline_v2_standalone.py
 """
 
@@ -44,11 +44,11 @@ V2_DEVICE = "auto"  # autodetect CUDA
 
 
 def _resolve_winner_set(ablation_csv: Path) -> str:
-    """Decide el conjunto ganador post-ablation.
+    """Decide the post-ablation winning set.
 
-    Si el reporte no existe o todas sus F1-macro son NaN, devuelve el
-    fallback documentado en D-9: ``"no_geom"`` (descarta las 3 cols
-    ``geom_*`` por leakage espacial).
+    If the report does not exist or all its F1-macro are NaN, returns the
+    fallback documented in D-9: ``"no_geom"`` (discards the 3 ``geom_*``
+    cols due to spatial leakage).
     """
     if not ablation_csv.exists():
         print(f"[winner] reporte {ablation_csv} no existe; fallback 'no_geom'")
@@ -66,11 +66,11 @@ def _resolve_winner_set(ablation_csv: Path) -> str:
 
 
 def _filter_dataset_by_winner(df: pl.DataFrame, winner_set: str) -> pl.DataFrame:
-    """Filtra el dataset segun el conjunto ganador.
+    """Filter the dataset according to the winning set.
 
-    Para ``no_geom`` simplemente descarta las cols ``geom_*``. Otros conjuntos
-    futuros (con FarSLIP, pheno_text, firma espectral) requeririan logica
-    explicita aqui.
+    For ``no_geom`` simply discards the ``geom_*`` cols. Other future sets
+    (with FarSLIP, pheno_text, spectral signature) would require explicit
+    logic here.
     """
     if winner_set == "no_geom":
         geom_cols = [c for c in df.columns if c.startswith("geom_")]
@@ -81,7 +81,7 @@ def _filter_dataset_by_winner(df: pl.DataFrame, winner_set: str) -> pl.DataFrame
 
 
 def _log_run(run_name: str, metrics: dict, tags: dict, params: dict) -> str:
-    """Abre un run MLflow y registra params/metrics/tags. Devuelve run_id."""
+    """Open an MLflow run and log params/metrics/tags. Return run_id."""
     with mlflow.start_run(run_name=run_name):
         mlflow.set_tags(tags)
         mlflow.log_params(params)

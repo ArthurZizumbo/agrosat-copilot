@@ -1,40 +1,40 @@
-"""Factory de DeepLabv3+ (MobileNetV3-Large) para segmentacion densa 10 bandas.
+"""DeepLabv3+ (MobileNetV3-Large) factory for 10-band dense segmentation.
 
-Segmentador CNN base del EPIC 5 (US-025, Tarea 2). Envuelve
-``segmentation_models_pytorch`` 0.5 para producir un DeepLabv3+ con encoder
-MobileNetV3-Large (timm) adaptado a entrada Sentinel-2 de 10 bandas y salida
-densa de 18 clases semanticas PASTIS-R.
+Base CNN segmenter of EPIC 5 (US-025, Task 2). Wraps
+``segmentation_models_pytorch`` 0.5 to produce a DeepLabv3+ with a
+MobileNetV3-Large encoder (timm) adapted to a 10-band Sentinel-2 input and a
+dense output of 18 PASTIS-R semantic classes.
 
-El registro nativo de encoders de smp 0.5 NO incluye ``mobilenet_v3_large``
-(solo ResNet/EfficientNet/MiT/MobileOne + un subconjunto ``timm-*``). Para
-MobileNetV3-Large se usa el prefijo timm-universal ``tu-``: el nombre del
-encoder es ``tu-mobilenetv3_large_100``, que delega en ``timm`` y descarga los
-pesos ImageNet adaptando la primera convolucion a ``in_channels`` canales.
+The native encoder registry of smp 0.5 does NOT include ``mobilenet_v3_large``
+(only ResNet/EfficientNet/MiT/MobileOne + a ``timm-*`` subset). For
+MobileNetV3-Large the timm-universal prefix ``tu-`` is used: the encoder name
+is ``tu-mobilenetv3_large_100``, which delegates to ``timm`` and downloads the
+ImageNet weights adapting the first convolution to ``in_channels`` channels.
 
-A diferencia del uso por defecto de smp (entrada RGB, ``in_channels=3``), aqui
-``in_channels=10``: smp/timm adaptan la primera convolucion replicando y
-promediando los pesos ImageNet sobre los canales extra. Si la inicializacion
-ImageNet falla con 10 canales se reintenta con pesos aleatorios
-(``encoder_weights=None``) emitiendo un warning estructurado.
+Unlike smp's default usage (RGB input, ``in_channels=3``), here
+``in_channels=10``: smp/timm adapt the first convolution by replicating and
+averaging the ImageNet weights over the extra channels. If the ImageNet
+initialization fails with 10 channels it retries with random weights
+(``encoder_weights=None``) emitting a structured warning.
 
-El modulo expone tambien una perdida combinada Dice + CrossEntropy
-(:func:`build_dice_ce_loss`), patron habitual en segmentacion de cultivos
-desbalanceada: Dice estabiliza clases minoritarias y CrossEntropy aporta
-gradiente por pixel. Ambas respetan ``ignore_index`` para Background/Void.
+The module also exposes a combined Dice + CrossEntropy loss
+(:func:`build_dice_ce_loss`), a common pattern in imbalanced crop
+segmentation: Dice stabilizes minority classes and CrossEntropy provides
+per-pixel gradient. Both respect ``ignore_index`` for Background/Void.
 
-Decisiones tecnicas
+Technical decisions
 -------------------
 
-- ``decoder_atrous_rates=(6, 12, 18)`` por el criterio de aceptacion de la
-  US-025 (el default de smp es ``(12, 24, 36)``); rates menores favorecen
-  parcelas pequenas a 128px.
-- ``decoder_aspp_separable=True`` reduce parametros del modulo ASPP
-  (convoluciones separables en profundidad), util para entrenar en laptop RTX.
-- ``encoder_name="mobilenet_v3_large"`` (timm) por presupuesto de VRAM
-  (<8 GB, batch 8, 128px segun plan US-025).
+- ``decoder_atrous_rates=(6, 12, 18)`` per the US-025 acceptance criterion
+  (smp's default is ``(12, 24, 36)``); smaller rates favor
+  small parcels at 128px.
+- ``decoder_aspp_separable=True`` reduces ASPP module parameters
+  (depthwise separable convolutions), useful for training on an RTX laptop.
+- ``encoder_name="mobilenet_v3_large"`` (timm) for VRAM budget
+  (<8 GB, batch 8, 128px per plan US-025).
 
-Acreditacion
-------------
+Acknowledgment
+--------------
 
 - segmentation-models-pytorch 0.5 (MIT License), Pavel Iakubovskii.
 - Chen et al. ``Encoder-Decoder with Atrous Separable Convolution for
@@ -76,26 +76,26 @@ def build_deeplabv3plus_mobilenet(
     atrous_rates: tuple[int, int, int] = (6, 12, 18),
     encoder_weights: str | None = "imagenet",
 ) -> nn.Module:
-    """Construye un DeepLabv3+ con encoder MobileNetV3-Large para 10 bandas.
+    """Build a DeepLabv3+ with a MobileNetV3-Large encoder for 10 bands.
 
     Args:
-        in_channels: Numero de canales de entrada. Por defecto 10 (bandas
-            Sentinel-2 de PASTIS-R). smp/timm adaptan la primera convolucion
-            cuando es distinto de 3 (RGB).
-        classes: Numero de clases de salida (canales del logit denso). Por
-            defecto 18 (clases semanticas PASTIS-R sin Background/Void).
-        atrous_rates: Tasas de dilatacion del modulo ASPP (3 enteros). Por
-            defecto ``(6, 12, 18)`` segun el criterio de aceptacion US-025.
-        encoder_weights: Pesos iniciales del encoder. ``"imagenet"`` (por
-            defecto) o ``None`` (aleatorio). Si ``"imagenet"`` falla al
-            adaptarse a ``in_channels`` se reintenta con ``None``.
+        in_channels: Number of input channels. Default 10 (PASTIS-R
+            Sentinel-2 bands). smp/timm adapt the first convolution
+            when it differs from 3 (RGB).
+        classes: Number of output classes (dense logit channels). Default
+            18 (PASTIS-R semantic classes without Background/Void).
+        atrous_rates: Dilation rates of the ASPP module (3 integers). Default
+            ``(6, 12, 18)`` per the US-025 acceptance criterion.
+        encoder_weights: Initial encoder weights. ``"imagenet"`` (default)
+            or ``None`` (random). If ``"imagenet"`` fails to adapt
+            to ``in_channels`` it retries with ``None``.
 
     Returns:
-        Modelo ``torch.nn.Module`` que mapea ``(B, in_channels, H, W)`` a
-        logits densos ``(B, classes, H, W)``.
+        A ``torch.nn.Module`` model mapping ``(B, in_channels, H, W)`` to
+        dense logits ``(B, classes, H, W)``.
 
     Raises:
-        ValueError: Si ``atrous_rates`` no contiene exactamente 3 enteros.
+        ValueError: If ``atrous_rates`` does not contain exactly 3 integers.
     """
     rates = tuple(atrous_rates)
     if len(rates) != 3:
@@ -145,23 +145,23 @@ def build_deeplabv3plus_mobilenet(
 
 
 class DiceCrossEntropyLoss(nn.Module):
-    """Perdida combinada Dice + CrossEntropy para segmentacion multiclase.
+    """Combined Dice + CrossEntropy loss for multiclass segmentation.
 
-    Suma ponderada de :class:`segmentation_models_pytorch.losses.DiceLoss`
-    (modo ``multiclass``, sobre logits) y
-    :class:`torch.nn.CrossEntropyLoss`. Ambos terminos ignoran ``ignore_index``
-    (Background/Void). CrossEntropy admite pesos por clase opcionales para
-    contrarrestar el desbalance de cultivos.
+    Weighted sum of :class:`segmentation_models_pytorch.losses.DiceLoss`
+    (``multiclass`` mode, over logits) and
+    :class:`torch.nn.CrossEntropyLoss`. Both terms ignore ``ignore_index``
+    (Background/Void). CrossEntropy accepts optional per-class weights to
+    counteract crop imbalance.
 
-    El termino total es ``dice_weight * dice + ce_weight * ce``. Dice estabiliza
-    clases minoritarias (region overlap) y CrossEntropy aporta gradiente por
-    pixel; la combinacion es estandar en segmentacion de cultivos.
+    The total term is ``dice_weight * dice + ce_weight * ce``. Dice stabilizes
+    minority classes (region overlap) and CrossEntropy provides per-pixel
+    gradient; the combination is standard in crop segmentation.
 
     Attributes:
-        dice: Termino Dice multiclase sobre logits.
-        ce: Termino CrossEntropy por pixel.
-        dice_weight: Peso del termino Dice.
-        ce_weight: Peso del termino CrossEntropy.
+        dice: Multiclass Dice term over logits.
+        ce: Per-pixel CrossEntropy term.
+        dice_weight: Weight of the Dice term.
+        ce_weight: Weight of the CrossEntropy term.
     """
 
     def __init__(
@@ -172,19 +172,19 @@ class DiceCrossEntropyLoss(nn.Module):
         dice_weight: float = 1.0,
         ce_weight: float = 1.0,
     ) -> None:
-        """Inicializa la perdida combinada.
+        """Initialize the combined loss.
 
         Args:
-            ignore_index: Etiqueta a ignorar en ambos terminos (Background/Void).
-            n_classes: Numero de clases del logit denso. Solo se usa para
-                validar la forma de ``class_weights``.
-            class_weights: Pesos por clase para CrossEntropy. Tensor o secuencia
-                de longitud ``n_classes``, o ``None`` (sin ponderar).
-            dice_weight: Peso del termino Dice en la suma.
-            ce_weight: Peso del termino CrossEntropy en la suma.
+            ignore_index: Label to ignore in both terms (Background/Void).
+            n_classes: Number of dense logit classes. Used only to
+                validate the shape of ``class_weights``.
+            class_weights: Per-class weights for CrossEntropy. Tensor or sequence
+                of length ``n_classes``, or ``None`` (unweighted).
+            dice_weight: Weight of the Dice term in the sum.
+            ce_weight: Weight of the CrossEntropy term in the sum.
 
         Raises:
-            ValueError: Si ``class_weights`` no tiene longitud ``n_classes``.
+            ValueError: If ``class_weights`` does not have length ``n_classes``.
         """
         super().__init__()
 
@@ -214,15 +214,15 @@ class DiceCrossEntropyLoss(nn.Module):
         self.ce_weight = float(ce_weight)
 
     def forward(self, logits: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        """Calcula la perdida combinada.
+        """Compute the combined loss.
 
         Args:
-            logits: Logits densos ``(B, C, H, W)`` (sin softmax).
-            target: Etiquetas por pixel ``(B, H, W)`` de tipo entero, con
-                ``ignore_index`` en pixeles a omitir.
+            logits: Dense logits ``(B, C, H, W)`` (without softmax).
+            target: Per-pixel integer labels ``(B, H, W)``, with
+                ``ignore_index`` on pixels to omit.
 
         Returns:
-            Escalar ``torch.Tensor`` con la perdida combinada ponderada.
+            A scalar ``torch.Tensor`` with the weighted combined loss.
         """
         target_long = target.long()
         dice_term = self.dice(logits, target_long)
@@ -242,18 +242,18 @@ def build_dice_ce_loss(
     dice_weight: float = 1.0,
     ce_weight: float = 1.0,
 ) -> DiceCrossEntropyLoss:
-    """Construye la perdida combinada Dice + CrossEntropy ponderada.
+    """Build the weighted combined Dice + CrossEntropy loss.
 
     Args:
-        ignore_index: Etiqueta a ignorar (Background/Void). Por defecto 255.
-        n_classes: Numero de clases del logit denso. Por defecto 18.
-        class_weights: Pesos por clase opcionales para CrossEntropy (longitud
-            ``n_classes``) o ``None``.
-        dice_weight: Peso del termino Dice en la suma.
-        ce_weight: Peso del termino CrossEntropy en la suma.
+        ignore_index: Label to ignore (Background/Void). Default 255.
+        n_classes: Number of dense logit classes. Default 18.
+        class_weights: Optional per-class weights for CrossEntropy (length
+            ``n_classes``) or ``None``.
+        dice_weight: Weight of the Dice term in the sum.
+        ce_weight: Weight of the CrossEntropy term in the sum.
 
     Returns:
-        Instancia de :class:`DiceCrossEntropyLoss` lista para usar.
+        A ready-to-use :class:`DiceCrossEntropyLoss` instance.
     """
     return DiceCrossEntropyLoss(
         ignore_index=ignore_index,

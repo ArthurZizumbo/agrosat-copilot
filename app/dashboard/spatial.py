@@ -1,9 +1,10 @@
-"""Mapa espacial folium (ROIs Italia + tiles PASTIS-R Francia).
+"""Folium spatial map (Italy ROIs + PASTIS-R France tiles).
 
-Aisla la unica dependencia opcional pesada del dashboard (folium / geopandas).
-Si no estan instaladas, las funciones degradan con un mensaje en vez de
-romper el import del resto del paquete. El mapa NO se cachea: cachear el
-objeto ``folium.Map`` provoca colisiones de IDs en el DOM al re-renderizar.
+Isolates the only heavy optional dependency of the dashboard (folium /
+geopandas). If they are not installed, the functions degrade with a message
+instead of breaking the import of the rest of the package. The map is NOT
+cached: caching the ``folium.Map`` object causes ID collisions in the DOM when
+re-rendering.
 """
 
 from __future__ import annotations
@@ -38,14 +39,14 @@ _FOLIUM_TOP_TILES = 10
 
 
 def build_folium_map(rois: list[dict[str, Any]], pastis_geojson_path: str | None) -> Any:
-    """Construye el mapa folium con ROIs italianas + tiles PASTIS dissolved.
+    """Build the folium map with Italian ROIs + dissolved PASTIS tiles.
 
     Args:
-        rois: Lista de ROIs cargadas desde ``config/rois.yaml``.
-        pastis_geojson_path: Ruta al ``metadata.geojson`` dissolved o ``None``.
+        rois: List of ROIs loaded from ``config/rois.yaml``.
+        pastis_geojson_path: Path to the dissolved ``metadata.geojson`` or ``None``.
 
     Returns:
-        Objeto ``folium.Map`` o ``None`` si folium no esta instalado.
+        ``folium.Map`` object or ``None`` if folium is not installed.
     """
     if not _HAS_FOLIUM or folium is None:  # pragma: no cover - import guard
         return None
@@ -84,7 +85,7 @@ def build_folium_map(rois: list[dict[str, Any]], pastis_geojson_path: str | None
 
 
 def _add_pastis_tiles(feature_group: Any, path: Path) -> None:
-    """Agrega los tiles PASTIS-R dissolved al feature group de Francia."""
+    """Add the dissolved PASTIS-R tiles to the France feature group."""
     if not path.exists():
         return
     try:
@@ -111,11 +112,11 @@ def _add_pastis_tiles(feature_group: Any, path: Path) -> None:
 
 
 def render_spatial_tab(rois_yaml: Path, pastis_metadata: Path) -> None:
-    """Renderiza el tab espacial con ROIs Italia + PASTIS-R Francia.
+    """Render the spatial tab with Italy ROIs + PASTIS-R France.
 
     Args:
-        rois_yaml: Ruta a ``config/rois.yaml``.
-        pastis_metadata: Ruta al GeoJSON dissolved de PASTIS-R (o full).
+        rois_yaml: Path to ``config/rois.yaml``.
+        pastis_metadata: Path to the dissolved PASTIS-R GeoJSON (or full).
     """
     st.markdown(
         '<h2 style="margin-top:0.5rem;color:#1E293B;font-weight:700;">'

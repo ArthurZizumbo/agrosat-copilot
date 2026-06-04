@@ -1,15 +1,16 @@
-"""Construye programaticamente notebooks/feature_engineering/03c_fe_alphaearth_pastis.ipynb.
+"""Programmatically builds notebooks/feature_engineering/03c_fe_alphaearth_pastis.ipynb.
 
-Operativo permanente reusable: regenera el .ipynb desde codigo Python con
-``nbformat.v4``, ejecutable end-to-end con papermill y reproducible byte-a-byte.
+Reusable permanent operational tool: regenerates the .ipynb from Python code with
+``nbformat.v4``, executable end-to-end with papermill and reproducible
+byte-by-byte.
 
-El notebook explora el bloque de fusion multisensor sobre una capa real de
-embeddings AlphaEarth 64-dim ya cacheados localmente (`data/cache/gee/`) y
-unidos con labels PASTIS-R via JOIN sobre `px_id`. Cubre caracterizacion
-diagnostica del embedding, estabilidad inter-anual, comparativa indicativa
-contra spectral-temporal del notebook 03b, spatial K-fold + scaler sin
-leakage, seleccion/normalizacion sobre AE y persistencia de outputs
-consumibles downstream.
+The notebook explores the multisensor fusion block over a real layer of
+AlphaEarth 64-dim embeddings already cached locally (`data/cache/gee/`) and
+joined with PASTIS-R labels via a JOIN on `px_id`. It covers diagnostic
+characterization of the embedding, inter-annual stability, an indicative
+comparison against the spectral-temporal features of notebook 03b, spatial
+K-fold + scaler without leakage, selection/normalization over AE and persistence
+of downstream-consumable outputs.
 """
 
 from __future__ import annotations
@@ -453,7 +454,7 @@ CELLS: list[nbf.NotebookNode] = [
         "def cv_f1_macro_official_folds(\n"
         "    X: np.ndarray, y: np.ndarray, folds: np.ndarray, seed: int = 42\n"
         ") -> tuple[float, float]:\n"
-        "    \"\"\"F1-macro promedio sobre los folds oficiales PASTIS-R (1..5).\"\"\"\n"
+        "    \"\"\"Mean F1-macro over the official PASTIS-R folds (1..5).\"\"\"\n"
         "    scores = []\n"
         "    unique_folds = sorted(set(int(f) for f in folds.tolist()))\n"
         "    for f in unique_folds:\n"

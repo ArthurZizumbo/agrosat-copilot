@@ -1,14 +1,14 @@
-"""Carga de patches PASTIS-R desde disco a estructuras Numpy / Polars.
+"""Loading of PASTIS-R patches from disk into Numpy / Polars structures.
 
-PASTIS-R (Sainte-Fare-Garnot et al. 2021) entrega Sentinel-2 multitemporal
-como tensores `(T, 10, 128, 128)` int16 en `DATA_S2/S2_<patch_id>.npy`,
-anotaciones panopticas `(3, 128, 128)` uint8 en `ANNOTATIONS/TARGET_<patch_id>.npy`,
-metadatos por patch en `metadata.geojson` (EPSG:2154) y estadísticas
-por fold en `NORM_S2_patch.json`.
+PASTIS-R (Sainte-Fare-Garnot et al. 2021) delivers multitemporal Sentinel-2
+as `(T, 10, 128, 128)` int16 tensors in `DATA_S2/S2_<patch_id>.npy`, panoptic
+annotations `(3, 128, 128)` uint8 in `ANNOTATIONS/TARGET_<patch_id>.npy`,
+per-patch metadata in `metadata.geojson` (EPSG:2154) and per-fold statistics
+in `NORM_S2_patch.json`.
 
-Este módulo expone helpers ligeros para cargar 1 patch o iterar varios,
-y para convertir un sample a `pl.DataFrame` long-format ergonómico para
-EDA.
+This module exposes lightweight helpers to load 1 patch or iterate over
+several, and to convert a sample to an ergonomic long-format `pl.DataFrame`
+for EDA.
 """
 
 from __future__ import annotations
@@ -33,9 +33,9 @@ PASTIS_S2_BANDS: list[str] = [
     "B11",
     "B12",
 ]
-"""Orden canónico de las 10 bandas Sentinel-2 conservadas en PASTIS-R.
+"""Canonical order of the 10 Sentinel-2 bands kept in PASTIS-R.
 
-Las bandas atmosféricas B01, B09, B10 se excluyen en el dataset original.
+The atmospheric bands B01, B09, B10 are excluded in the original dataset.
 """
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -44,13 +44,13 @@ _CLASS_MAP_PATH = _REPO_ROOT / "data" / "reference" / "pastis_class_mapping.json
 
 
 def _load_class_mapping(path: Path = _CLASS_MAP_PATH) -> dict[int, str]:
-    """Carga la tabla de clases canónicas PASTIS-R (20 clases).
+    """Load the table of canonical PASTIS-R classes (20 classes).
 
     Args:
-        path: Ruta al `pastis_class_mapping.json`.
+        path: Path to `pastis_class_mapping.json`.
 
     Returns:
-        Diccionario `{class_id: nombre}` con las 20 clases (0..19).
+        Dictionary `{class_id: name}` with the 20 classes (0..19).
     """
     if not path.exists():
         # Minimal fallback mapping if the JSON is not found (degraded mode)
@@ -62,13 +62,14 @@ def _load_class_mapping(path: Path = _CLASS_MAP_PATH) -> dict[int, str]:
 
 
 def _load_groupings(path: Path = _CLASS_MAP_PATH) -> dict[str, dict[int, str]]:
-    """Carga las agrupaciones derivadas (phenological_cycle, agronomic_group, etc.).
+    """Load the derived groupings (phenological_cycle, agronomic_group, etc.).
 
     Args:
-        path: Ruta al `pastis_class_mapping.json`.
+        path: Path to `pastis_class_mapping.json`.
 
     Returns:
-        Diccionario `{nombre_agrupacion: {class_id: nombre_grupo}}`. Vacío si no existe.
+        Dictionary `{grouping_name: {class_id: group_name}}`. Empty if it does
+        not exist.
     """
     if not path.exists():
         return {}
@@ -84,13 +85,13 @@ def _load_groupings(path: Path = _CLASS_MAP_PATH) -> dict[str, dict[int, str]]:
 
 
 PASTIS_CLASS_MAP: dict[int, str] = _load_class_mapping()
-"""Mapeo `class_id -> nombre legible` cargado desde `data/reference/pastis_class_mapping.json`."""
+"""Mapping `class_id -> readable name` loaded from `data/reference/pastis_class_mapping.json`."""
 
 PASTIS_R_CLASSES: dict[int, str] = PASTIS_CLASS_MAP
-"""Alias semantico requerido por US-011 (signature publica del plan)."""
+"""Semantic alias required by US-011 (public signature of the plan)."""
 
 PASTIS_R_GROUPINGS: dict[str, dict[int, str]] = _load_groupings()
-"""Agrupaciones derivadas (`phenological_cycle`, `agronomic_group`, `cereals_winter_vs_spring`)."""
+"""Derived groupings (`phenological_cycle`, `agronomic_group`, `cereals_winter_vs_spring`)."""
 
 
 def load_pastis_patch(
@@ -98,32 +99,32 @@ def load_pastis_patch(
     root: Path | None = None,
     load_annotations: bool = True,
 ) -> dict[str, Any]:
-    """Carga un patch PASTIS-R (S2 + anotaciones + fechas + fold).
+    """Load a PASTIS-R patch (S2 + annotations + dates + fold).
 
     Args:
-        patch_id: Identificador del patch (numérico o string sin extensión).
-        root: Raíz del dataset (default `data/PASTIS-R/`).
-        load_annotations: Si True intenta cargar `TARGET_<id>.npy`.
+        patch_id: Patch identifier (numeric or string without extension).
+        root: Dataset root (default `data/PASTIS-R/`).
+        load_annotations: If True attempts to load `TARGET_<id>.npy`.
 
     Returns:
-        Diccionario con keys:
+        Dictionary with keys:
             - `s2`: ndarray int16 shape (T, 10, 128, 128)
-            - `semantic`: ndarray uint8 (128, 128) | None — canal 0 de TARGET
-            - `instance`: ndarray uint8 (128, 128) | None — canal 1 de TARGET
-            - `zone`: ndarray uint8 (128, 128) | None — canal 2 de TARGET
-            - `dates_s2`: list[int] — fechas YYYYMMDD ordenadas
+            - `semantic`: ndarray uint8 (128, 128) | None — channel 0 of TARGET
+            - `instance`: ndarray uint8 (128, 128) | None — channel 1 of TARGET
+            - `zone`: ndarray uint8 (128, 128) | None — channel 2 of TARGET
+            - `dates_s2`: list[int] — sorted YYYYMMDD dates
             - `patch_id`: str
-            - `fold`: int (1..5) si disponible en metadata, sino None
+            - `fold`: int (1..5) if available in metadata, otherwise None
 
     Raises:
-        FileNotFoundError: Si no existe el archivo S2 del patch.
+        FileNotFoundError: If the patch's S2 file does not exist.
     """
     root = root or _DEFAULT_ROOT
     pid = str(patch_id)
 
     s2_path = root / "DATA_S2" / f"S2_{pid}.npy"
     if not s2_path.exists():
-        raise FileNotFoundError(f"PASTIS S2 patch no encontrado: {s2_path}")
+        raise FileNotFoundError(f"PASTIS S2 patch not found: {s2_path}")
     s2 = np.load(s2_path)
 
     semantic = instance = zone = None
@@ -171,15 +172,15 @@ def iter_pastis_patches(
     root: Path | None = None,
     load_annotations: bool = True,
 ) -> Iterator[dict[str, Any]]:
-    """Itera sobre múltiples patches sin cargarlos todos a memoria.
+    """Iterate over multiple patches without loading them all into memory.
 
     Args:
-        patch_ids: Lista de identificadores.
-        root: Raíz del dataset.
-        load_annotations: Si carga TARGETs.
+        patch_ids: List of identifiers.
+        root: Dataset root.
+        load_annotations: Whether to load TARGETs.
 
     Yields:
-        Diccionario por patch con la misma estructura que `load_pastis_patch`.
+        Dictionary per patch with the same structure as `load_pastis_patch`.
     """
     for pid in patch_ids:
         try:
@@ -196,24 +197,24 @@ def pastis_to_polars(
     include_dates: bool = True,
     pixel_stride: int = 1,
 ) -> pl.DataFrame:
-    """Convierte una lista de patches PASTIS-R a un `pl.DataFrame` long-format.
+    """Convert a list of PASTIS-R patches to a long-format `pl.DataFrame`.
 
-    Columnas resultantes:
+    Resulting columns:
         `patch_id, t, date, y, x, band, value, class_id, class_name, fold`
 
-    Para evitar OOM con N alto se admite `pixel_stride > 1` que muestrea
-    1 de cada `stride` píxeles por banda y por t.
+    To avoid OOM with high N, `pixel_stride > 1` is allowed, which samples
+    1 of every `stride` pixels per band and per t.
 
     Args:
-        patch_ids: Identificadores de patches a cargar.
-        bands: Subset de bandas a incluir (default todas PASTIS_S2_BANDS).
-        root: Raíz del dataset.
-        include_labels: Si añade columnas `class_id`, `class_name` desde TARGET[0].
-        include_dates: Si añade columna `date` (YYYYMMDD) parseada del metadata.
-        pixel_stride: Stride de submuestreo espacial (1 = todos los píxeles).
+        patch_ids: Identifiers of patches to load.
+        bands: Subset of bands to include (default all PASTIS_S2_BANDS).
+        root: Dataset root.
+        include_labels: Whether to add `class_id`, `class_name` columns from TARGET[0].
+        include_dates: Whether to add a `date` (YYYYMMDD) column parsed from the metadata.
+        pixel_stride: Spatial subsampling stride (1 = all pixels).
 
     Returns:
-        DataFrame Polars long-format. Vacío si ningún patch se pudo cargar.
+        Long-format Polars DataFrame. Empty if no patch could be loaded.
     """
     selected = bands or PASTIS_S2_BANDS
     band_idx = [PASTIS_S2_BANDS.index(b) for b in selected]
@@ -284,18 +285,18 @@ def pastis_to_polars(
 
 
 def _multipolygon_centroid_2154(coordinates: list[Any]) -> tuple[float, float]:
-    """Calcula el centroide en EPSG:2154 de una geometria MultiPolygon GeoJSON.
+    """Compute the EPSG:2154 centroid of a GeoJSON MultiPolygon geometry.
 
-    Implementacion minima sin dependencia de shapely para que el test unitario
-    pueda ejecutarse aunque shapely no este instalado. Si shapely esta disponible
-    se delega a el (mas exacto sobre polígonos con agujeros).
+    Minimal implementation without a shapely dependency so the unit test can
+    run even if shapely is not installed. If shapely is available it is
+    delegated to (more exact over polygons with holes).
 
     Args:
-        coordinates: Lista de coordenadas estilo GeoJSON MultiPolygon:
+        coordinates: GeoJSON MultiPolygon-style coordinate list:
             `[[[ [x,y], ... ]], ...]`.
 
     Returns:
-        Tupla `(x, y)` en EPSG:2154.
+        Tuple `(x, y)` in EPSG:2154.
     """
     try:
         from shapely.geometry import MultiPolygon, shape  # type: ignore[import-untyped]
@@ -330,18 +331,18 @@ def pastis_patch_coords(
     metadata_geojson: Path,
     target_crs: str = "EPSG:4326",
 ) -> pl.DataFrame:
-    """Lee `metadata.geojson` de PASTIS-R (EPSG:2154) y reproyecta los centroides.
+    """Read PASTIS-R `metadata.geojson` (EPSG:2154) and reproject the centroids.
 
-    Recorre cada feature, calcula el centroide del MultiPolygon en EPSG:2154
-    (Lambert-93) y lo reproyecta al CRS objetivo (default EPSG:4326).
+    Iterates over each feature, computes the MultiPolygon centroid in EPSG:2154
+    (Lambert-93) and reprojects it to the target CRS (default EPSG:4326).
 
     Args:
-        metadata_geojson: Ruta al `metadata.geojson` distribuido con PASTIS-R.
-        target_crs: CRS destino para `lon`/`lat`. Default `EPSG:4326`.
+        metadata_geojson: Path to the `metadata.geojson` distributed with PASTIS-R.
+        target_crs: Target CRS for `lon`/`lat`. Default `EPSG:4326`.
 
     Returns:
-        DataFrame Polars con columnas `patch_id, lon, lat, tile, fold`. Si el
-        archivo no existe o no contiene features retorna DataFrame vacio.
+        Polars DataFrame with columns `patch_id, lon, lat, tile, fold`. If the
+        file does not exist or contains no features returns an empty DataFrame.
     """
     schema: dict[str, Any] = {
         "patch_id": pl.Utf8,
@@ -398,20 +399,20 @@ def pastis_patch_coords(
 
 
 def pastis_patch_index(metadata_geojson: Path | None = None) -> pl.DataFrame:
-    """Lee `metadata.geojson` y devuelve un indice plano de patches PASTIS-R.
+    """Read `metadata.geojson` and return a flat index of PASTIS-R patches.
 
-    Util para muestreo estratificado por `(TILE, Fold)` antes de cargar el
-    `.npy` real de cada patch. Mas ligero que `pastis_patch_coords` (no
-    reproyecta geometrias) y mas semantico que parsear el GeoJSON inline
-    en cada notebook.
+    Useful for stratified sampling by `(TILE, Fold)` before loading each
+    patch's actual `.npy`. Lighter than `pastis_patch_coords` (does not
+    reproject geometries) and more semantic than parsing the GeoJSON inline in
+    each notebook.
 
     Args:
-        metadata_geojson: Ruta al `metadata.geojson` de PASTIS-R. Si None,
-            usa `_DEFAULT_ROOT / "metadata.geojson"` (relativo al repo).
+        metadata_geojson: Path to PASTIS-R's `metadata.geojson`. If None,
+            uses `_DEFAULT_ROOT / "metadata.geojson"` (relative to the repo).
 
     Returns:
-        DataFrame Polars con columnas `patch_id` (str), `TILE` (str), `Fold`
-        (int64). Vacio si el archivo no existe.
+        Polars DataFrame with columns `patch_id` (str), `TILE` (str), `Fold`
+        (int64). Empty if the file does not exist.
     """
     schema: dict[str, Any] = {
         "patch_id": pl.Utf8,
@@ -451,23 +452,23 @@ def pastis_pixel_labels(
     seed: int = 42,
     exclude_classes: tuple[int, ...] = (0, 19),
 ) -> pl.DataFrame:
-    """Carga `TARGET_{patch_id}.npy[0]` y georreferencia cada pixel a (lon, lat) 4326.
+    """Load `TARGET_{patch_id}.npy[0]` and georeference each pixel to (lon, lat) 4326.
 
-    Usa el bbox del MultiPolygon en `metadata.geojson` proyectado a EPSG:4326
-    como referencia espacial y genera una grilla regular 128x128 sobre ese bbox.
-    Es una aproximacion suficiente para EDA (alineamiento exacto requeriria el
-    `transform` GeoTIFF que PASTIS-R no distribuye con los `.npy`).
+    Uses the MultiPolygon bbox in `metadata.geojson` projected to EPSG:4326 as
+    spatial reference and generates a regular 128x128 grid over that bbox. It
+    is a sufficient approximation for EDA (exact alignment would require the
+    GeoTIFF `transform` that PASTIS-R does not distribute with the `.npy`).
 
     Args:
-        patch_id: Identificador del patch.
-        root: Raíz del dataset (default `data/PASTIS-R/`).
-        sample_per_patch: Si no None, muestrea aleatoriamente N pixeles.
-        seed: Semilla para reproducibilidad.
-        exclude_classes: Clases a filtrar antes del sample (default bg y void).
+        patch_id: Patch identifier.
+        root: Dataset root (default `data/PASTIS-R/`).
+        sample_per_patch: If not None, randomly samples N pixels.
+        seed: Seed for reproducibility.
+        exclude_classes: Classes to filter before the sample (default bg and void).
 
     Returns:
-        DataFrame Polars con columnas `px_id, patch_id, lon, lat, class_id,
-        class_name`. Vacio si el archivo no existe.
+        Polars DataFrame with columns `px_id, patch_id, lon, lat, class_id,
+        class_name`. Empty if the file does not exist.
     """
     schema: dict[str, Any] = {
         "px_id": pl.Utf8,

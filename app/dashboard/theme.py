@@ -1,8 +1,8 @@
-"""Design system del dashboard (Data-Dense Dashboard).
+"""Dashboard design system (Data-Dense Dashboard).
 
-Aisla la hoja de estilos CSS y su inyeccion en Streamlit. Mantener el CSS
-fuera de la logica de render permite ajustar la identidad visual sin tocar
-los componentes.
+Isolates the CSS stylesheet and its injection into Streamlit. Keeping the CSS
+out of the render logic allows adjusting the visual identity without touching
+the components.
 """
 
 from __future__ import annotations
@@ -374,5 +374,5 @@ code, pre, .stCodeBlock {
 
 
 def inject_design_system() -> None:
-    """Inyecta la hoja de estilos del design system en la pagina activa."""
+    """Inject the design system stylesheet into the active page."""
     st.markdown(DESIGN_SYSTEM_CSS, unsafe_allow_html=True)

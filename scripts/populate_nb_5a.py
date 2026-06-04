@@ -1,12 +1,13 @@
-"""Inserta la Seccion de evaluacion (checkpoints reales locales) en
-``notebooks/segmentation/5a_deeplabv3plus.ipynb`` y actualiza
-parametros/conclusiones.
+"""Insert the evaluation Section (real local checkpoints) into
+``notebooks/segmentation/5a_deeplabv3plus.ipynb`` and update
+parameters/conclusions.
 
-No re-entrena: carga los ``best.pt`` de DeepLabv3+ entrenados en local (variante
-18 clases y variante 6 grupos HCAT) y genera el analisis visual (matriz de
-confusion, IoU/F1 por clase, predicciones RGB|GT|pred). DeepLabv3+ es un modelo
-2D: el dataset colapsa la serie temporal por mediana antes del forward.
-Operativo permanente de poblado de notebook (reproducible via papermill).
+Does not re-train: it loads the DeepLabv3+ ``best.pt`` checkpoints trained
+locally (18-class variant and 6-group HCAT variant) and generates the visual
+analysis (confusion matrix, per-class IoU/F1, RGB|GT|pred predictions).
+DeepLabv3+ is a 2D model: the dataset collapses the time series by median
+before the forward pass. Permanent notebook-population operative tool
+(reproducible via papermill).
 """
 
 from __future__ import annotations
@@ -85,7 +86,7 @@ if "skip-if-trained" not in cell4 and "Checkpoint entrenado ya presente" not in 
 
 '''
     marker = "    cmd = ["
-    assert marker in cell4, "no se encontro el inicio de cmd en run_training (5a)"
+    assert marker in cell4, "could not find the start of cmd in run_training (5a)"
     cell4 = cell4.replace(marker, shortcut + marker, 1)
     cells[4]["source"] = cell4.splitlines(keepends=True)
 

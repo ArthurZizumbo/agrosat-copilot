@@ -1,10 +1,10 @@
-"""Loaders cacheados con degradacion graceful.
+"""Cached loaders with graceful degradation.
 
-Centraliza la lectura de CSV, YAML y parquet usados por las distintas
-secciones del dashboard. Cada loader devuelve una estructura vacia cuando el
-archivo no existe o no se puede leer, de modo que las secciones degradan sin
-levantar traceback. El cache de Streamlit (``@st.cache_data``) evita releer
-el mismo artefacto entre re-renders.
+Centralizes the reading of CSV, YAML and parquet used by the different
+dashboard sections. Each loader returns an empty structure when the
+file does not exist or cannot be read, so the sections degrade without
+raising a traceback. The Streamlit cache (``@st.cache_data``) avoids
+re-reading the same artifact between re-renders.
 """
 
 from __future__ import annotations
@@ -19,13 +19,13 @@ import yaml
 
 @st.cache_data(show_spinner=False)
 def load_csv(path: Path) -> pl.DataFrame:
-    """Carga un CSV como ``polars.DataFrame`` con cache de Streamlit.
+    """Loads a CSV as a ``polars.DataFrame`` with Streamlit cache.
 
     Args:
-        path: Ruta absoluta o relativa al CSV en disco.
+        path: Absolute or relative path to the CSV on disk.
 
     Returns:
-        DataFrame de Polars. Vacio si la lectura falla o el archivo no existe.
+        Polars DataFrame. Empty if the read fails or the file does not exist.
     """
     path = Path(path)
     if not path.exists():
@@ -38,13 +38,13 @@ def load_csv(path: Path) -> pl.DataFrame:
 
 @st.cache_data(show_spinner=False)
 def load_yaml(path: Path) -> dict[str, Any]:
-    """Carga un YAML como diccionario con cache de Streamlit.
+    """Loads a YAML as a dictionary with Streamlit cache.
 
     Args:
-        path: Ruta al archivo YAML.
+        path: Path to the YAML file.
 
     Returns:
-        Diccionario parseado. Vacio si el archivo no existe.
+        Parsed dictionary. Empty if the file does not exist.
     """
     path = Path(path)
     if not path.exists():
@@ -56,13 +56,13 @@ def load_yaml(path: Path) -> dict[str, Any]:
 
 @st.cache_data(show_spinner=False)
 def load_parquet(path: Path) -> pl.DataFrame:
-    """Carga un parquet como ``polars.DataFrame`` con cache de Streamlit.
+    """Loads a parquet as a ``polars.DataFrame`` with Streamlit cache.
 
     Args:
-        path: Ruta absoluta o relativa al parquet en disco.
+        path: Absolute or relative path to the parquet on disk.
 
     Returns:
-        DataFrame de Polars. Vacio si la lectura falla o el archivo no existe.
+        Polars DataFrame. Empty if the read fails or the file does not exist.
     """
     path = Path(path)
     if not path.exists():
@@ -74,14 +74,14 @@ def load_parquet(path: Path) -> pl.DataFrame:
 
 
 def list_csvs(directory: Path, pattern: str = "*.csv") -> list[Path]:
-    """Lista CSVs ordenados alfabeticamente filtrando por glob.
+    """Lists CSVs sorted alphabetically, filtering by glob.
 
     Args:
-        directory: Directorio donde buscar.
-        pattern: Glob de filtrado (por defecto ``*.csv``).
+        directory: Directory to search in.
+        pattern: Filtering glob (default ``*.csv``).
 
     Returns:
-        Lista de paths ordenada. Vacia si el directorio no existe.
+        Sorted list of paths. Empty if the directory does not exist.
     """
     if not directory.exists():
         return []

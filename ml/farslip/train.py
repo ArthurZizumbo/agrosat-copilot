@@ -1,15 +1,15 @@
-"""CLI Typer para entrenar FarSLIP (US-017 / US-016b).
+"""Typer CLI to train FarSLIP (US-017 / US-016b).
 
-Lanza el trainer con la config validada en planning. VRAM esperada en GCP L4
-24 GB: ~22 GB. Hard cap 8 h (warning 6 h).
+Launches the trainer with the config validated in planning. Expected VRAM on
+GCP L4 24 GB: ~22 GB. Hard cap 8 h (warning 6 h).
 
-Uso tipico::
+Typical usage::
 
     poetry run python -m ml.farslip.train \\
         --rois italy --epochs 4 --batch-size 64 --lr 1e-5 --seed 42 \\
         --output-dir artifacts/farslip --gcs-output-uri gs://agrosat-models/farslip/v1/
 
-Flags ``--resume`` carga un checkpoint previo (ruta local o GCS) y reanuda.
+The ``--resume`` flag loads a previous checkpoint (local path or GCS) and resumes.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ import torch
 try:
     import typer
 except ImportError as exc:  # pragma: no cover
-    raise ImportError("typer requerido para CLI train. poetry add typer") from exc
+    raise ImportError("typer required for the train CLI. poetry add typer") from exc
 
 from torch.utils.data import ConcatDataset, DataLoader
 
@@ -41,32 +41,32 @@ _ROIS_BY_KEY: dict[str, tuple[str, ...]] = {
 
 
 def _build_dataset(dataset_root: Path, rois_key: str) -> tuple[ConcatDataset, int, int]:
-    """Concatena los manifests de las ROIs italianas en un Dataset PyTorch.
+    """Concatenate the Italian ROI manifests into a PyTorch Dataset.
 
-    Importante: pasamos `cap_classes` y `regions` canonicos globales (unificados
-    a partir de los 3 manifests) para que `region_id` y `category_id` esten en
-    un namespace consistente entre los 3 FarSLIPDataset hijos. Sin esto cada
-    dataset hijo deriva sus propios indices y region_id seria ambiguo al
-    concatenar.
+    Important: we pass global canonical `cap_classes` and `regions` (unified
+    from the 3 manifests) so that `region_id` and `category_id` are in a
+    consistent namespace across the 3 child FarSLIPDataset instances. Without
+    this each child dataset derives its own indices and region_id would be
+    ambiguous when concatenating.
 
     Args:
-        dataset_root: ruta a `data/farslip_pairs/`.
-        rois_key: clave en `_ROIS_BY_KEY` (default "italy").
+        dataset_root: path to `data/farslip_pairs/`.
+        rois_key: key in `_ROIS_BY_KEY` (default "italy").
 
     Returns:
-        Tupla (ConcatDataset, n_regions, n_categories) donde n_regions y
-        n_categories son los tamanios reales del vocabulario global (necesarios
-        para dimensionar text_prototypes correctamente).
+        Tuple (ConcatDataset, n_regions, n_categories) where n_regions and
+        n_categories are the real sizes of the global vocabulary (needed
+        to dimension text_prototypes correctly).
 
     Raises:
-        FileNotFoundError: si alguno de los manifests no existe.
-        KeyError: si rois_key no esta en `_ROIS_BY_KEY`.
+        FileNotFoundError: if any of the manifests does not exist.
+        KeyError: if rois_key is not in `_ROIS_BY_KEY`.
     """
     import polars as pl
 
     if rois_key not in _ROIS_BY_KEY:
         raise KeyError(
-            f"rois={rois_key!r} no reconocido. Validos: {list(_ROIS_BY_KEY)}"
+            f"rois={rois_key!r} not recognized. Valid: {list(_ROIS_BY_KEY)}"
         )
     roi_slugs = _ROIS_BY_KEY[rois_key]
 
@@ -78,7 +78,7 @@ def _build_dataset(dataset_root: Path, rois_key: str) -> tuple[ConcatDataset, in
     for roi in roi_slugs:
         manifest = dataset_root / roi / "manifest.parquet"
         if not manifest.exists():
-            raise FileNotFoundError(f"manifest no existe: {manifest}")
+            raise FileNotFoundError(f"manifest does not exist: {manifest}")
         df = pl.read_parquet(manifest, columns=["cap_class", "region"])
         for c in df["cap_class"].to_list():
             if c not in seen_caps:
@@ -130,7 +130,7 @@ def train(
     ] = None,
     time_cap_hours: Annotated[float, typer.Option(help="Hard cap horas")] = 8.0,
 ) -> None:
-    """Entrena FarSLIP con la configuracion provista."""
+    """Train FarSLIP with the provided configuration."""
     propagate_seed(seed)
     _log.info(
         "starting farslip training",

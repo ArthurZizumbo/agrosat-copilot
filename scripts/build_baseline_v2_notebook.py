@@ -1,19 +1,19 @@
-"""Constructor del notebook ``04b_baseline_v2.ipynb``.
+"""Builder of the ``04b_baseline_v2.ipynb`` notebook.
 
-Genera un notebook ligero que **lee** los artefactos persistidos por la
-corrida real de Baseline v2 (3 modelos sobre el conjunto ganador
-post-ablacion) y los presenta como entregable visual. El notebook NO
-reentrena modelos: el training real vive en MLflow + parquet bajo
+Generates a lightweight notebook that **reads** the artifacts persisted by the
+real Baseline v2 run (3 models over the post-ablation winning set) and presents
+them as a visual deliverable. The notebook does NOT re-train models: the real
+training lives in MLflow + parquet under
 ``reports/baseline/model_comparison_v2/``.
 
-Artefactos que el notebook lee:
+Artifacts the notebook reads:
   - ``reports/baseline/model_comparison_v2/model_comparison_v2.parquet``
   - ``paper/figures/us-023-preview/model_comparison_v2.png``
-  - MLflow runs (3) bajo ``mlruns/560033025078177743/``
+  - MLflow runs (3) under ``mlruns/560033025078177743/``
 
-Wall clock esperado en papermill: <= 30 s (solo I/O parquet + render PNG).
+Expected wall clock in papermill: <= 30 s (only parquet I/O + PNG render).
 
-Uso:
+Usage:
     poetry run python scripts/build_baseline_v2_notebook.py
     poetry run python scripts/build_baseline_v2_notebook.py \\
         --out notebooks/baseline/04b_baseline_v2.ipynb
@@ -30,12 +30,12 @@ app = typer.Typer(add_completion=False, help=__doc__)
 
 
 def _md(source: str) -> nbf.NotebookNode:
-    """Crea una celda markdown."""
+    """Create a markdown cell."""
     return nbf.v4.new_markdown_cell(source)
 
 
 def _code(source: str) -> nbf.NotebookNode:
-    """Crea una celda de codigo."""
+    """Create a code cell."""
     return nbf.v4.new_code_cell(source)
 
 
@@ -269,10 +269,10 @@ CELLS: list[nbf.NotebookNode] = [
 
 
 def build_notebook(out_path: Path) -> None:
-    """Construye el notebook ``04b_baseline_v2.ipynb`` y lo escribe en disco.
+    """Build the ``04b_baseline_v2.ipynb`` notebook and write it to disk.
 
     Args:
-        out_path: Ruta destino del fichero ``.ipynb``.
+        out_path: Destination path of the ``.ipynb`` file.
     """
     nb = nbf.v4.new_notebook()
     nb.cells = CELLS
@@ -297,7 +297,7 @@ def main(
         help="Ruta destino del notebook .ipynb.",
     ),
 ) -> None:
-    """Reconstruye ``notebooks/baseline/04b_baseline_v2.ipynb`` desde cero."""
+    """Rebuild ``notebooks/baseline/04b_baseline_v2.ipynb`` from scratch."""
     build_notebook(out)
     typer.echo(f"Notebook escrito en {out}")
 

@@ -1,11 +1,12 @@
-"""Construye programaticamente notebooks/feature_engineering/03b_fe_spectral_temporal_pastis.ipynb.
+"""Programmatically build notebooks/feature_engineering/03b_fe_spectral_temporal_pastis.ipynb.
 
-Operativo permanente reusable: regenera el .ipynb desde codigo Python con
-``nbformat.v4``, ejecutable end-to-end con papermill y reproducible byte-a-byte.
+Reusable permanent operational tool: regenerates the .ipynb from Python code
+with ``nbformat.v4``, executable end-to-end with papermill and reproducible
+byte-by-byte.
 
-Las secciones del notebook se definen como listas de celdas
-``(cell_type, source)`` para que la edicion del contenido sea quirurgica
-sin tocar la metadata JSON del ipynb.
+The notebook sections are defined as lists of cells
+``(cell_type, source)`` so that editing the content is surgical without
+touching the JSON metadata of the ipynb.
 """
 
 from __future__ import annotations
@@ -189,7 +190,7 @@ CELLS: list[nbf.NotebookNode] = [
         "META_COLS = {'parcel_id', 'year', 'fold', 'class_id'}\n"
         "\n"
         "def classify_feature(col_name: str) -> tuple[str, str]:\n"
-        "    \"\"\"Devuelve (familia_idx, kind) para una columna.\"\"\"\n"
+        "    \"\"\"Return (family_idx, kind) for a column.\"\"\"\n"
         "    if col_name in META_COLS:\n"
         "        return ('_meta', 'meta')\n"
         "    if col_name in PHENOLOGY_COLS:\n"
@@ -315,11 +316,11 @@ CELLS: list[nbf.NotebookNode] = [
         "# NIR/Green pequeños, fenología sobre series cortas). El clipping a percentiles 1 y 99\n"
         "# mantiene el rango natural de cada feature sin distorsionarla.\n"
         "def _winsorize_clip(df_in: pl.DataFrame, q_lo: float = 0.01, q_hi: float = 0.99) -> pl.DataFrame:\n"
-        "    \"\"\"Winsorize: clipa cada feature al [percentil q_lo, percentil q_hi].\n"
+        "    \"\"\"Winsorize: clip each feature to [percentile q_lo, percentile q_hi].\n"
         "\n"
-        "    Pre-step: reemplaza inf/-inf por NaN. Post-step: cualquier NaN restante (parcelas\n"
-        "    enteramente missing en esa feature) se imputa con la mediana de la columna en\n"
-        "    lugar de 0.0 — la mediana es la mejor estimación univariada en ausencia de modelo.\n"
+        "    Pre-step: replace inf/-inf with NaN. Post-step: any remaining NaN (parcels\n"
+        "    entirely missing in that feature) is imputed with the column median instead\n"
+        "    of 0.0 — the median is the best univariate estimate in the absence of a model.\n"
         "    \"\"\"\n"
         "    feat_cols_clean = [c for c in df_in.columns if c not in ('parcel_id', 'year', 'fold', 'class_id', 'patch_id', 'instance_id', 'n_pixels', 'area_m2')]\n"
         "    out = df_in.clone()\n"

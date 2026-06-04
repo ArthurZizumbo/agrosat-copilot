@@ -6,6 +6,13 @@
 **US relacionada**: US-010 (EDA Sentinel-2), US-011 (EDA AlphaEarth), US-012 (EDA bivariado-temporal), prefigura US-014 (FE), US-017 (Baseline XGBoost)
 **Avance**: A1 (2026-05-03 entrega original · recovery sprint S2)
 
+> **Actualización 2026-06-03**: la regla de idioma para **docstrings y comentarios
+> in-code** cambió a **inglés** (antes los docstrings iban en español neutro). El
+> resto de la política se mantiene: el texto visible al lector (markdown, `print`,
+> `display`, títulos de plot, portadas, conclusiones) sigue en **español**, y los
+> notebooks se siguen commiteando con outputs poblados. La tabla de abajo refleja
+> ya la regla vigente. Fuente única: `AGENTS.md` ≡ `CLAUDE.md` regla 2.
+
 ---
 
 ## Contexto
@@ -74,8 +81,8 @@ Identificadores Python con caracteres no-ASCII (variables `año`, funciones
 | **Strings en `print(...)`** | Español con acentos | UTF-8 | `print(f"Cargados {n} píxeles en {dt:.1f}s")` |
 | **Títulos de plots (`title=`, `xlabel=`, `ylabel=`)** | Español con acentos | UTF-8 | `tsne_scatter(..., "t-SNE Italia × Dynamic World")` |
 | **Nombres de variables / funciones / parámetros** | Inglés ASCII puro | ASCII | `df_italia`, `sample_alphaearth_roi`, `roi_name` |
-| **Comentarios técnicos en código** | Inglés o español SIN acentos | ASCII | `# fallback if filter empty` |
-| **Docstrings** | Español neutro estilo Google | UTF-8 | (regla de CLAUDE.md root) |
+| **Comentarios técnicos en código** | Inglés ASCII puro | ASCII | `# fallback if filter empty` |
+| **Docstrings** | Inglés estilo Google | ASCII | (regla de CLAUDE.md root) |
 | **Claves de cache / IDs lógicos / nombres de archivo** | Inglés ASCII puro | ASCII | `cache_key="italia"`, `pianura_padana` |
 | **Conventional Commits** | Inglés ASCII puro | ASCII | `feat(E2): fix DW batching for >1k coords` |
 
@@ -189,8 +196,8 @@ Patrones típicos de IA prohibidos en código y comentarios:
 
 - `make notebooks-strip` sigue existiendo como target opcional para casos
   específicos. No se invoca por defecto en `make check`.
-- Acentos en docstrings de `ml/*.py` siguen permitidos (regla heredada del
-  CLAUDE.md root: docstrings/docs en español neutro).
+- Docstrings de `ml/*.py` van en inglés (actualización 2026-06-03; antes
+  español neutro). Los docs `.md` siguen en español.
 
 ---
 

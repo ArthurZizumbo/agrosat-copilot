@@ -1,16 +1,16 @@
-"""Seed idempotente de datos demo para AgroSatCopilot.
+"""Idempotent seed of demo data for AgroSatCopilot.
 
-Inserta una sesion de chat demo y una parcela (AOI) en la Toscana, Italia,
-sobre el esquema inicial (``chat_sessions`` + ``aois``). Pensado para
-ejecutarse via ``make db-seed`` tras ``dbmate up`` en un entorno ``dev``
-recien clonado.
+Inserts a demo chat session and a parcel (AOI) in Tuscany, Italy,
+on the initial schema (``chat_sessions`` + ``aois``). Intended to be
+run via ``make db-seed`` after ``dbmate up`` in a freshly-cloned ``dev``
+environment.
 
-Uso:
+Usage:
     poetry run python scripts/seed.py
 
-Variables de entorno relevantes:
-    DATABASE_URL: URL de Postgres. Acepta el prefijo ``postgresql+asyncpg://``
-        usado por SQLAlchemy; se normaliza a ``postgresql://`` para asyncpg.
+Relevant environment variables:
+    DATABASE_URL: Postgres URL. Accepts the ``postgresql+asyncpg://`` prefix
+        used by SQLAlchemy; it is normalized to ``postgresql://`` for asyncpg.
 """
 
 from __future__ import annotations
@@ -37,10 +37,10 @@ DEMO_AOI_AREA_HA: Final[float] = 1.0
 
 
 def _resolve_database_url() -> str:
-    """Resuelve la URL de Postgres normalizada para asyncpg.
+    """Resolves the Postgres URL normalized for asyncpg.
 
     Returns:
-        URL con esquema ``postgresql://`` (sin el sufijo de driver SQLAlchemy).
+        URL with ``postgresql://`` scheme (without the SQLAlchemy driver suffix).
     """
     raw_url = os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
     if raw_url.startswith("postgresql+asyncpg://"):
@@ -49,16 +49,16 @@ def _resolve_database_url() -> str:
 
 
 async def _aoi_exists(conn: asyncpg.Connection, label: str) -> bool:
-    """Verifica si ya existe un AOI con la etiqueta dada."""
+    """Checks whether an AOI with the given label already exists."""
     row = await conn.fetchrow("SELECT 1 FROM aois WHERE label = $1 LIMIT 1", label)
     return row is not None
 
 
 async def _insert_demo(conn: asyncpg.Connection) -> tuple[str, int]:
-    """Inserta la sesion demo y su AOI dentro de una transaccion.
+    """Inserts the demo session and its AOI within a transaction.
 
     Returns:
-        Tupla ``(session_id, aoi_id)`` recien creados.
+        Tuple ``(session_id, aoi_id)`` just created.
     """
     async with conn.transaction():
         session_id: str = await conn.fetchval(
@@ -91,13 +91,13 @@ async def _insert_demo(conn: asyncpg.Connection) -> tuple[str, int]:
 
 
 async def main() -> int:
-    """Punto de entrada async del seed.
+    """Async entry point of the seed.
 
-    Conecta a Postgres, verifica idempotencia por ``label`` y, si no existe,
-    crea una ``chat_sessions`` + ``aois`` demo. Imprime el resultado en stdout.
+    Connects to Postgres, checks idempotency by ``label`` and, if it does not
+    exist, creates a demo ``chat_sessions`` + ``aois``. Prints the result to stdout.
 
     Returns:
-        Codigo de salida: ``0`` exito, ``1`` error de conexion o ejecucion.
+        Exit code: ``0`` success, ``1`` connection or execution error.
     """
     dsn = _resolve_database_url()
     logger.info("seed.connect", dsn_host=dsn.split("@")[-1])

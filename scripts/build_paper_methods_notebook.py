@@ -1,12 +1,12 @@
-"""Construye notebooks/eda/02e_eda_metodos_paper.ipynb (CLI Typer permanente).
+"""Build notebooks/eda/02e_eda_metodos_paper.ipynb (permanent Typer CLI).
 
-Operativo permanente reusable: regenera el .ipynb desde una definicion
-declarativa de celdas para mantener la estructura canonica de los notebooks
-de EDA del proyecto. El notebook resultante aplica los 8 metodos derivados de
-4 papers (``ml.analysis.paper_methods``) sobre datos PASTIS-R reales, con
-fallback sintetico si el dataset no esta presente.
+Reusable permanent operational tool: regenerates the .ipynb from a declarative
+cell definition to keep the canonical structure of the project's EDA notebooks.
+The resulting notebook applies the 8 methods derived from 4 papers
+(``ml.analysis.paper_methods``) over real PASTIS-R data, with a synthetic
+fallback if the dataset is not present.
 
-La ejecucion real (poblar outputs) se hace luego con papermill:
+The actual execution (populating outputs) is done afterwards with papermill:
 
     MPLBACKEND=Agg poetry run papermill \\
         notebooks/eda/02e_eda_metodos_paper.ipynb \\
@@ -24,12 +24,12 @@ app = typer.Typer(add_completion=False)
 
 
 def _md(source: str) -> nbf.NotebookNode:
-    """Crea una celda markdown."""
+    """Create a markdown cell."""
     return nbf.v4.new_markdown_cell(source)
 
 
 def _code(source: str, tags: list[str] | None = None) -> nbf.NotebookNode:
-    """Crea una celda de codigo con tags opcionales."""
+    """Create a code cell with optional tags."""
     cell = nbf.v4.new_code_cell(source.strip("\n"))
     if tags:
         cell.metadata["tags"] = tags
@@ -844,7 +844,7 @@ def build(
         help="Ruta destino del .ipynb generado.",
     ),
 ) -> None:
-    """Construye el notebook EDA de metodos de paper desde ``CELLS``."""
+    """Build the paper-methods EDA notebook from ``CELLS``."""
     nb = nbf.v4.new_notebook()
     nb.cells = CELLS
     nb.metadata.update(

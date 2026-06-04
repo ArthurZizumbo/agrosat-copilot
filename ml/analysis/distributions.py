@@ -1,8 +1,8 @@
-"""Tests de normalidad y recomendaciones de transformación por banda.
+"""Normality tests and per-band transformation recommendations.
 
-`shapiro_test_bands`: Shapiro-Wilk con subsample (límite scipy: 5000).
-`recommend_transform`: Box-Cox si todos los valores son positivos,
-Yeo-Johnson si hay negativos (PowerTransformer admite cualquier signo).
+`shapiro_test_bands`: Shapiro-Wilk with subsample (scipy limit: 5000).
+`recommend_transform`: Box-Cox if all values are positive, Yeo-Johnson if there
+are negatives (PowerTransformer admits any sign).
 """
 
 from __future__ import annotations
@@ -24,20 +24,20 @@ def shapiro_test_bands(
     value_col: str = "value",
     alpha: float = 0.01,
 ) -> pl.DataFrame:
-    """Test de normalidad Shapiro-Wilk por banda.
+    """Shapiro-Wilk normality test per band.
 
-    Subsamplea cada banda a `subsample_n` para respetar el límite scipy.
+    Subsamples each band to `subsample_n` to respect the scipy limit.
 
     Args:
-        df: DataFrame long-format.
-        subsample_n: Tamaño de subsample por banda (max 5000 para scipy).
-        seed: Semilla para subsample reproducible.
-        band_col: Nombre columna banda.
-        value_col: Nombre columna valor.
-        alpha: Nivel de significancia (default 0.01).
+        df: Long-format DataFrame.
+        subsample_n: Subsample size per band (max 5000 for scipy).
+        seed: Seed for a reproducible subsample.
+        band_col: Band column name.
+        value_col: Value column name.
+        alpha: Significance level (default 0.01).
 
     Returns:
-        DataFrame con columnas `band, n_test, shapiro_stat, shapiro_pvalue, normal_at_alpha`.
+        DataFrame with columns `band, n_test, shapiro_stat, shapiro_pvalue, normal_at_alpha`.
     """
     n = min(subsample_n, 5000)
     rng = np.random.default_rng(seed)
@@ -75,22 +75,22 @@ def recommend_transform(
     normality_df: pl.DataFrame | None = None,
     alpha: float = 0.01,
 ) -> pl.DataFrame:
-    """Recomienda transformación por banda según signo y normalidad.
+    """Recommend a transformation per band based on sign and normality.
 
-    Reglas:
-    - Si la banda ya pasa Shapiro a `alpha`: `none`.
-    - Si todos los valores son estrictamente positivos: `box-cox`.
-    - Si hay valores <= 0: `yeo-johnson` (admite cualquier signo).
+    Rules:
+    - If the band already passes Shapiro at `alpha`: `none`.
+    - If all values are strictly positive: `box-cox`.
+    - If there are values <= 0: `yeo-johnson` (admits any sign).
 
     Args:
-        df: DataFrame long-format.
-        band_col: Nombre columna banda.
-        value_col: Nombre columna valor.
-        normality_df: Resultado opcional de `shapiro_test_bands`.
-        alpha: Nivel de significancia.
+        df: Long-format DataFrame.
+        band_col: Band column name.
+        value_col: Value column name.
+        normality_df: Optional result of `shapiro_test_bands`.
+        alpha: Significance level.
 
     Returns:
-        DataFrame con columnas `band, min_value, all_positive, normal, recommended_transform`.
+        DataFrame with columns `band, min_value, all_positive, normal, recommended_transform`.
     """
     summary = df.group_by(band_col).agg(
         pl.col(value_col).min().alias("min_value"),

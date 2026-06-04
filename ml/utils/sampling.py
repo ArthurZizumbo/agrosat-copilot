@@ -1,8 +1,8 @@
-"""Utilidades de muestreo estratificado con Polars 1.x.
+"""Stratified sampling utilities with Polars 1.x.
 
-Proporciona muestreo proporcional sobre DataFrames Polars, útil para
-EDA cuando hay clases o regiones desbalanceadas y se quiere preservar la
-distribución original sin saturar memoria.
+Provides proportional sampling over Polars DataFrames, useful for
+EDA when there are imbalanced classes or regions and the original
+distribution should be preserved without saturating memory.
 """
 
 from __future__ import annotations
@@ -18,34 +18,34 @@ def stratified_sample(
     n: int,
     seed: int = 42,
 ) -> pl.DataFrame:
-    """Muestreo estratificado proporcional con Polars.
+    """Proportional stratified sampling with Polars.
 
-    Recorre los grupos definidos por `by` y toma de cada uno una fracción
-    proporcional al tamaño relativo del grupo, garantizando que la suma
-    total de filas sea cercana a `n` (puede variar +/- 1 por estrato por
-    redondeo y por estratos con menos filas que la cuota asignada).
+    Iterates over the groups defined by `by` and takes from each one a fraction
+    proportional to the relative size of the group, guaranteeing that the total
+    sum of rows is close to `n` (it may vary +/- 1 per stratum due to
+    rounding and strata with fewer rows than the assigned quota).
 
     Args:
-        df: DataFrame de entrada con las columnas categóricas en `by`.
-        by: Lista de columnas para estratificar (ej. ["roi", "class_id"]).
-        n: Tamaño total objetivo del sample.
-        seed: Semilla para reproducibilidad.
+        df: Input DataFrame with the categorical columns in `by`.
+        by: List of columns to stratify by (e.g. ["roi", "class_id"]).
+        n: Target total sample size.
+        seed: Seed for reproducibility.
 
     Returns:
-        DataFrame con aproximadamente `n` filas preservando proporciones
-        relativas de los estratos.
+        DataFrame with approximately `n` rows preserving the relative
+        proportions of the strata.
 
     Raises:
-        ValueError: Si `by` es vacío, `n` es no positivo, o si `df` no
-            contiene alguna columna de `by`.
+        ValueError: If `by` is empty, `n` is non-positive, or if `df` does
+            not contain some column of `by`.
     """
     if not by:
-        raise ValueError("`by` no puede ser vacío.")
+        raise ValueError("`by` cannot be empty.")
     if n <= 0:
-        raise ValueError(f"`n` debe ser positivo, se recibió {n}.")
+        raise ValueError(f"`n` must be positive, got {n}.")
     missing = [c for c in by if c not in df.columns]
     if missing:
-        raise ValueError(f"Columnas no encontradas en df: {missing}")
+        raise ValueError(f"Columns not found in df: {missing}")
     if df.is_empty():
         return df.clear()
 

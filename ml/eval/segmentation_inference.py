@@ -1,11 +1,11 @@
-"""Inferencia y visualizacion de predicciones de segmentacion densa.
+"""Inference and visualization of dense segmentation predictions.
 
-Carga un checkpoint entrenado (``best.pt`` de
-:mod:`ml.train.train_segmentation`), predice sobre patches PASTIS-R y genera
-la figura comparativa ``Input (RGB) | Ground truth | Prediction`` por patch,
-mas las metricas del modelo cargado. Es el modulo que el notebook
-``notebooks/models/5*`` invoca para el analisis visual; el notebook llama, no
-implementa la logica.
+Loads a trained checkpoint (``best.pt`` from
+:mod:`ml.train.train_segmentation`), predicts over PASTIS-R patches and
+generates the comparison figure ``Input (RGB) | Ground truth | Prediction``
+per patch, plus the metrics of the loaded model. It is the module the
+``notebooks/models/5*`` notebook invokes for visual analysis; the notebook
+calls, it does not implement the logic.
 """
 
 from __future__ import annotations
@@ -22,8 +22,8 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger(__name__)
 
-#: Bandas RGB en los .npy PASTIS-R (orden S2 de 10: B2,B3,B4,...): B4(rojo)=2,
-#: B3(verde)=1, B2(azul)=0.
+#: RGB bands in the PASTIS-R .npy files (S2 order of 10: B2,B3,B4,...): B4(red)=2,
+#: B3(green)=1, B2(blue)=0.
 _RGB_BANDS = (2, 1, 0)
 
 
@@ -35,17 +35,17 @@ def load_segmentation_model(
     n_timesteps: int = 10,
     device: str = "auto",
 ) -> torch.nn.Module:
-    """Reconstruye el modelo y carga los pesos del checkpoint.
+    """Rebuild the model and load the checkpoint weights.
 
     Args:
-        checkpoint_path: Ruta a ``best.pt`` (state completo del entrenamiento).
-        model_kind: Arquitectura para reconstruir la topologia exacta.
-        num_classes: Numero de clases del head (18 semantico o 6 HCAT).
-        n_timesteps: T submuestreado (solo modelos temporales).
-        device: ``"auto"``, ``"cuda"`` o ``"cpu"``.
+        checkpoint_path: Path to ``best.pt`` (full training state).
+        model_kind: Architecture to rebuild the exact topology.
+        num_classes: Number of head classes (18 semantic or 6 HCAT).
+        n_timesteps: Subsampled T (temporal models only).
+        device: ``"auto"``, ``"cuda"`` or ``"cpu"``.
 
     Returns:
-        Modelo en modo ``eval()`` con los pesos del mejor epoch cargados.
+        Model in ``eval()`` mode with the best-epoch weights loaded.
     """
     from ml.models.deeplabv3plus import build_deeplabv3plus_mobilenet
     from ml.models.tsvit_wrapper import build_tsvit
@@ -87,18 +87,18 @@ def predict_patch(
     model_kind: str,
     doy: torch.Tensor | None = None,
 ) -> np.ndarray:
-    """Predice la mascara densa de un patch.
+    """Predict the dense mask of a patch.
 
     Args:
-        model: Modelo cargado en ``eval()``.
-        x: Tensor del patch: ``(10, H, W)`` (2D) o ``(T, 10, H, W)``
-            (temporal). Se le anade la dimension batch internamente.
-        model_kind: Arquitectura (decide si pasa ``doy``).
-        doy: Vector de DOY ``(T,)`` para los modelos temporales.
+        model: Model loaded in ``eval()``.
+        x: Patch tensor: ``(10, H, W)`` (2D) or ``(T, 10, H, W)``
+            (temporal). The batch dimension is added internally.
+        model_kind: Architecture (decides whether ``doy`` is passed).
+        doy: DOY vector ``(T,)`` for the temporal models.
 
     Returns:
-        Mascara ``(H, W)`` int con la clase predicha por pixel (en el espacio
-        ``[0..num_classes-1]``).
+        Mask ``(H, W)`` int with the predicted class per pixel (in the
+        ``[0..num_classes-1]`` space).
     """
     device = next(model.parameters()).device
     xb = x.unsqueeze(0).to(device).float()
@@ -120,18 +120,18 @@ def prediction_figure(
     ignore_index: int = 255,
     titles: tuple[str, str, str] = ("Input (RGB)", "Ground truth", "Prediction"),
 ) -> Figure:
-    """Construye la figura comparativa RGB | ground truth | prediccion.
+    """Build the comparison figure RGB | ground truth | prediction.
 
     Args:
-        rgb: Imagen RGB ``(H, W, 3)`` en ``[0, 1]``.
-        y_true: Mascara real ``(H, W)`` (clases ``[0..C-1]`` + ``ignore_index``).
-        y_pred: Mascara predicha ``(H, W)``.
-        num_classes: Numero de clases para el colormap discreto.
-        ignore_index: Valor ignorado en ``y_true`` (se pinta neutro).
-        titles: Titulos de los tres paneles.
+        rgb: RGB image ``(H, W, 3)`` in ``[0, 1]``.
+        y_true: Ground-truth mask ``(H, W)`` (classes ``[0..C-1]`` + ``ignore_index``).
+        y_pred: Predicted mask ``(H, W)``.
+        num_classes: Number of classes for the discrete colormap.
+        ignore_index: Value ignored in ``y_true`` (drawn neutral).
+        titles: Titles of the three panels.
 
     Returns:
-        Figura matplotlib 1x3 lista para ``display(fig)`` en el notebook.
+        1x3 matplotlib figure ready for ``display(fig)`` in the notebook.
     """
     import matplotlib.pyplot as plt
     from matplotlib import colors
@@ -153,16 +153,16 @@ def prediction_figure(
 
 
 def rgb_from_patch(x_2d: np.ndarray) -> np.ndarray:
-    """Extrae una imagen RGB ``(H, W, 3)`` normalizada de un patch 2D.
+    """Extract a normalized RGB image ``(H, W, 3)`` from a 2D patch.
 
-    Toma las bandas B4/B3/B2 y reescala por percentiles (2-98) para un
-    contraste visual razonable (las reflectancias S2 crudas son oscuras).
+    Takes the B4/B3/B2 bands and rescales by percentiles (2-98) for a
+    reasonable visual contrast (raw S2 reflectances are dark).
 
     Args:
-        x_2d: Patch ``(10, H, W)`` (ya colapsado en tiempo, escala cualquiera).
+        x_2d: Patch ``(10, H, W)`` (already time-collapsed, any scale).
 
     Returns:
-        Array ``(H, W, 3)`` float en ``[0, 1]``.
+        ``(H, W, 3)`` float array in ``[0, 1]``.
     """
     rgb = np.stack([x_2d[b] for b in _RGB_BANDS], axis=-1).astype(np.float32)
     lo, hi = np.nanpercentile(rgb, 2), np.nanpercentile(rgb, 98)
@@ -181,27 +181,27 @@ def evaluate_checkpoint(
     ignore_index: int = 255,
     max_patches: int | None = None,
 ) -> tuple[dict[str, object], np.ndarray]:
-    """Evalua un checkpoint sobre un split acumulando la matriz de confusion.
+    """Evaluate a checkpoint over a split accumulating the confusion matrix.
 
-    Recorre el ``dataset`` de validacion patch a patch, predice y acumula la
-    matriz de confusion densa; al final deriva todas las metricas con
+    Walks the validation ``dataset`` patch by patch, predicts and accumulates
+    the dense confusion matrix; at the end it derives all metrics with
     :func:`ml.eval.metrics.dense_metrics_from_cm` (mIoU, F1-macro, pixel_acc,
-    balanced accuracy, Cohen kappa, IoU y F1 por clase). Es el helper que las
-    notebooks ``5*`` invocan para reproducir las cifras del entrenamiento sin
-    re-entrenar: cargan ``best.pt`` y llaman aqui.
+    balanced accuracy, Cohen kappa, IoU and F1 per class). It is the helper the
+    ``5*`` notebooks invoke to reproduce the training figures without
+    retraining: they load ``best.pt`` and call here.
 
     Args:
-        model: Modelo cargado en ``eval()`` (ver :func:`load_segmentation_model`).
-        dataset: ``PASTISSegmentationDataset`` del split de validacion.
-        model_kind: Arquitectura (decide la firma del forward).
-        num_classes: Numero de clases (18 semantico o 6 HCAT).
-        ignore_index: Valor ignorado en las etiquetas.
-        max_patches: Si se da, limita el numero de patches evaluados (smoke).
+        model: Model loaded in ``eval()`` (see :func:`load_segmentation_model`).
+        dataset: ``PASTISSegmentationDataset`` of the validation split.
+        model_kind: Architecture (decides the forward signature).
+        num_classes: Number of classes (18 semantic or 6 HCAT).
+        ignore_index: Value ignored in the labels.
+        max_patches: If given, limits the number of evaluated patches (smoke).
 
     Returns:
-        Tupla ``(metrics, cm)``: ``metrics`` es el dict completo de
-        ``dense_metrics_from_cm`` y ``cm`` la matriz de confusion
-        ``(num_classes, num_classes)`` acumulada.
+        Tuple ``(metrics, cm)``: ``metrics`` is the full dict of
+        ``dense_metrics_from_cm`` and ``cm`` the accumulated confusion matrix
+        ``(num_classes, num_classes)``.
     """
     from ml.eval.metrics import dense_confusion_matrix, dense_metrics_from_cm
 
@@ -237,28 +237,28 @@ def predict_examples(
     num_classes: int = 18,
     ignore_index: int = 255,
 ) -> list[Figure]:
-    """Genera las figuras RGB|GT|pred para una lista de patches del dataset.
+    """Generate the RGB|GT|pred figures for a list of dataset patches.
 
-    Helper de alto nivel para el notebook: por cada indice, obtiene el patch,
-    predice, arma el RGB y construye la figura comparativa. Para modelos
-    temporales colapsa la serie por mediana solo para el panel RGB.
+    High-level helper for the notebook: for each index, it gets the patch,
+    predicts, builds the RGB and constructs the comparison figure. For
+    temporal models it collapses the series by median only for the RGB panel.
 
     Args:
-        model: Modelo cargado en ``eval()``.
-        dataset: ``PASTISSegmentationDataset`` (2D o temporal segun el modelo).
-        model_kind: Arquitectura.
-        indices: Indices de los patches a visualizar.
-        num_classes: Numero de clases.
-        ignore_index: Valor ignorado.
+        model: Model loaded in ``eval()``.
+        dataset: ``PASTISSegmentationDataset`` (2D or temporal depending on the model).
+        model_kind: Architecture.
+        indices: Indices of the patches to visualize.
+        num_classes: Number of classes.
+        ignore_index: Ignored value.
 
     Returns:
-        Lista de figuras matplotlib (una por indice).
+        List of matplotlib figures (one per index).
     """
     figs: list[Figure] = []
     for idx in indices:
         x, y = dataset[idx]  # type: ignore[index]
         x_np = x.numpy()
-        if x_np.ndim == 4:  # temporal (T,10,H,W) -> RGB de la mediana temporal
+        if x_np.ndim == 4:  # temporal (T,10,H,W) -> RGB from the temporal median
             rgb = rgb_from_patch(np.median(x_np, axis=0))
         else:  # 2D (10,H,W)
             rgb = rgb_from_patch(x_np)

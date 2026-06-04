@@ -1,50 +1,50 @@
-"""Agregación temporal de series multiespectrales por parcela (US-015).
+"""Temporal aggregation of per-parcel multispectral series (US-015).
 
-Este módulo extrae features descriptivos, espectrales (FFT) y fenológicos a
-partir de una serie temporal multibanda de una parcela individual, devolviendo
-un :class:`polars.DataFrame` listo para cargar a la tabla ``features_parcels``
-de PostgreSQL (ver ``ml/features/persist_features.py``).
+This module extracts descriptive, spectral (FFT) and phenological features
+from a multiband time series of a single parcel, returning a
+:class:`polars.DataFrame` ready to load into the PostgreSQL
+``features_parcels`` table (see ``ml/features/persist_features.py``).
 
-La salida consta de aproximadamente 187 columnas por (parcel_id, year):
+The output consists of approximately 187 columns per (parcel_id, year):
 
-- 153 estadísticos: 9 stats (``mean``, ``std``, ``min``, ``max``,
-  ``p05``, ``p25``, ``p50``, ``p75``, ``p95``) por cada uno de los 17
-  índices espectrales canónicos.
-- 24 columnas FFT: 4 amplitudes y 4 fases (DC + 3 armónicos) por cada
-  uno de los 3 índices clave (NDVI, NDWI, EVI).
-- 8 columnas fenológicas derivadas de NDVI: ``sog_doy``, ``peak_doy``,
+- 153 statistics: 9 stats (``mean``, ``std``, ``min``, ``max``,
+  ``p05``, ``p25``, ``p50``, ``p75``, ``p95``) for each of the 17 canonical
+  spectral indices.
+- 24 FFT columns: 4 amplitudes and 4 phases (DC + 3 harmonics) for each of
+  the 3 key indices (NDVI, NDWI, EVI).
+- 8 NDVI-derived phenology columns: ``sog_doy``, ``peak_doy``,
   ``peak_value``, ``senescence_doy``, ``ndvi_auc``, ``ndvi_slope_pre_peak``,
   ``ndvi_slope_post_peak``, ``maturity_duration_days``.
-- 2 columnas índice: ``parcel_id``, ``year``.
+- 2 index columns: ``parcel_id``, ``year``.
 
-Pre-condiciones
----------------
-Sentinel-2 tiene revisita irregular (~5 días con huecos por nubes). Antes
-de aplicar FFT la serie se interpola linealmente a una rejilla diaria. Los
-estadísticos descriptivos se calculan sobre las muestras originales (sin
-imputar). La fenología se calcula sobre la curva NDVI interpolada diaria.
+Pre-conditions
+--------------
+Sentinel-2 has an irregular revisit (~5 days with cloud gaps). Before
+applying FFT the series is linearly interpolated to a daily grid. The
+descriptive statistics are computed on the original samples (without
+imputation). Phenology is computed on the daily interpolated NDVI curve.
 
-Referencias
------------
-- White et al. 1997 — umbral SOG (start of greenness) NDVI 0.3 para inicio
-  de fase de crecimiento. DOI 10.1029/97GB00993.
-- Reed et al. 2003 — AUC NDVI como proxy de productividad primaria bruta
+References
+----------
+- White et al. 1997 — SOG (start of greenness) threshold NDVI 0.3 for the
+  start of the growth phase. DOI 10.1029/97GB00993.
+- Reed et al. 2003 — NDVI AUC as a proxy for gross primary productivity
   (GPP). DOI 10.1016/S0034-4257(03)00018-1.
-- Jönsson & Eklundh 2002 — TIMESAT, métricas fenológicas (peak, slopes,
+- Jönsson & Eklundh 2002 — TIMESAT, phenology metrics (peak, slopes,
   amplitude). DOI 10.1016/S0098-3004(02)00040-X.
-- Eklundh & Jönsson 2017 — TIMESAT 3.3 software para análisis temporal de
-  vegetación. ISBN 978-91-87983-19-0.
+- Eklundh & Jönsson 2017 — TIMESAT 3.3 software for temporal vegetation
+  analysis. ISBN 978-91-87983-19-0.
 
-Notas de implementación
------------------------
-- Polars LazyFrame con ``.collect(engine="streaming")`` (Polars 1.x) para
-  escalar a ~30k parcelas Italia sin desbordar memoria. La firma legacy
-  ``streaming=True`` queda desaconsejada por upstream.
-- Función pura sin side-effects: dos llamadas consecutivas devuelven
-  DataFrames idénticos byte-a-byte (determinismo verificado en test).
-- Fenología graceful: si NDVI nunca cruza el umbral SOG, las columnas
-  fenológicas se devuelven como ``None`` (NULL en Postgres) y no se lanza
-  excepción.
+Implementation notes
+--------------------
+- Polars LazyFrame with ``.collect(engine="streaming")`` (Polars 1.x) to
+  scale to ~30k Italy parcels without exhausting memory. The legacy
+  ``streaming=True`` signature is discouraged by upstream.
+- Pure function with no side-effects: two consecutive calls return
+  byte-for-byte identical DataFrames (determinism verified in tests).
+- Graceful phenology: if NDVI never crosses the SOG threshold, the phenology
+  columns are returned as ``None`` (NULL in Postgres) and no exception is
+  raised.
 """
 
 from __future__ import annotations
@@ -115,34 +115,34 @@ def extract_temporal_features(
     sog_threshold: float = 0.3,
     maturity_pct: float = 0.8,
 ) -> pl.DataFrame:
-    """Extrae features temporales por ``(parcel_id, year)`` desde una serie xarray.
+    """Extract temporal features per ``(parcel_id, year)`` from an xarray series.
 
     Args:
-        parcel_timeseries: DataArray con dims ``(time, band)`` y attrs
-            ``{"parcel_id": int, "year": int}``. La coord ``time`` debe ser
-            ``datetime64``; la coord ``band`` debe contener los nombres de los
-            índices listados en ``indices``.
-        indices: índices espectrales a agregar estadísticamente (default: los
-            17 canónicos del proyecto).
-        fft_indices: subconjunto de ``indices`` al que se aplica descomposición
-            FFT (default: ``("NDVI", "NDWI", "EVI")``).
-        n_fft_harmonics: número de armónicos FFT a extraer **además** del
-            componente DC (default 3 → 4 amplitudes y 4 fases por índice). La
-            justificación agronómica de 3 armónicos está en
+        parcel_timeseries: DataArray with dims ``(time, band)`` and attrs
+            ``{"parcel_id": int, "year": int}``. The ``time`` coord must be
+            ``datetime64``; the ``band`` coord must contain the names of the
+            indices listed in ``indices``.
+        indices: spectral indices to aggregate statistically (default: the
+            17 canonical project indices).
+        fft_indices: subset of ``indices`` to which FFT decomposition is
+            applied (default: ``("NDVI", "NDWI", "EVI")``).
+        n_fft_harmonics: number of FFT harmonics to extract **in addition** to
+            the DC component (default 3 → 4 amplitudes and 4 phases per index).
+            The agronomic justification for 3 harmonics is in
             ``docs/spectral_indices.md`` §"Temporal aggregation".
-        sog_threshold: umbral NDVI para start of greenness (default 0.3, White
-            et al. 1997).
-        maturity_pct: fracción del NDVI pico que define el período de madurez
-            (default 0.8 → días con NDVI ≥ 0.8 * pico).
+        sog_threshold: NDVI threshold for start of greenness (default 0.3,
+            White et al. 1997).
+        maturity_pct: fraction of the NDVI peak that defines the maturity
+            period (default 0.8 → days with NDVI ≥ 0.8 * peak).
 
     Returns:
-        :class:`polars.DataFrame` con una fila por ``(parcel_id, year)`` y
-        ~187 columnas (ver docstring del módulo).
+        :class:`polars.DataFrame` with one row per ``(parcel_id, year)`` and
+        ~187 columns (see the module docstring).
 
     Raises:
-        ValueError: si ``parcel_timeseries`` no tiene ``attrs["parcel_id"]`` o
-            ``attrs["year"]``, si ``time`` no es ``datetime64``, o si
-            ``indices`` contiene un nombre ausente en ``coord band``.
+        ValueError: if ``parcel_timeseries`` lacks ``attrs["parcel_id"]`` or
+            ``attrs["year"]``, if ``time`` is not ``datetime64``, or if
+            ``indices`` contains a name absent from ``coord band``.
     """
     _validate_input(parcel_timeseries, indices=indices, fft_indices=fft_indices)
 
@@ -191,7 +191,7 @@ def _validate_input(
     indices: tuple[str, ...],
     fft_indices: tuple[str, ...],
 ) -> None:
-    """Valida attrs, dims y bandas requeridas."""
+    """Validate attrs, dims and required bands."""
     for attr in ("parcel_id", "year"):
         if attr not in da.attrs:
             raise ValueError(f"parcel_timeseries.attrs missing required key '{attr}'")
@@ -230,7 +230,7 @@ def _xr_to_lazy(
     parcel_id: int,
     year: int,
 ) -> pl.LazyFrame:
-    """Convierte el DataArray a un LazyFrame en formato long para agregar."""
+    """Convert the DataArray to a long-format LazyFrame for aggregation."""
     subset = da.sel(band=list(indices))
     values = np.asarray(subset.values, dtype=np.float64)  # shape (T, B)
     times = np.asarray(subset.coords["time"].values)
@@ -258,9 +258,9 @@ def _aggregate_stats(
     *,
     indices: tuple[str, ...],
 ) -> pl.LazyFrame:
-    """Genera 9 stats por índice agrupando por (parcel_id, year, band) y pivota.
+    """Generate 9 stats per index grouping by (parcel_id, year, band) and pivot.
 
-    Output: LazyFrame con columnas ``parcel_id, year`` + 9*len(indices) cols
+    Output: LazyFrame with columns ``parcel_id, year`` + 9*len(indices) cols
     ``{idx}_{stat}``.
     """
     valid = lf.filter(pl.col("value").is_not_nan() & pl.col("value").is_not_null())
@@ -316,16 +316,16 @@ def _interpolate_daily(
     *,
     indices: tuple[str, ...],
 ) -> dict[str, np.ndarray]:
-    """Interpola linealmente cada índice a una rejilla diaria del año.
+    """Linearly interpolate each index to a daily grid of the year.
 
     Args:
-        da: DataArray con dims ``(time, band)``.
-        indices: lista de índices a interpolar (subset de ``coord band``).
+        da: DataArray with dims ``(time, band)``.
+        indices: list of indices to interpolate (subset of ``coord band``).
 
     Returns:
-        Mapping ``index_name -> np.ndarray`` con valores diarios sobre la
-        ventana ``[t_min, t_max]`` en pasos de 1 día. Si la serie tiene
-        menos de 2 puntos válidos, devuelve un array vacío para ese índice.
+        Mapping ``index_name -> np.ndarray`` with daily values over the
+        window ``[t_min, t_max]`` in 1-day steps. If the series has fewer
+        than 2 valid points, returns an empty array for that index.
     """
     times = np.asarray(da.coords["time"].values, dtype="datetime64[ns]")
     t_min = times.min()
@@ -366,25 +366,25 @@ def _fft_harmonics(
     parcel_id: int,
     year: int,
 ) -> pl.DataFrame:
-    """Calcula amplitud y fase de los primeros ``n_harmonics`` armónicos FFT.
+    """Compute amplitude and phase of the first ``n_harmonics`` FFT harmonics.
 
-    Para una serie real ``x[n]`` de longitud ``N``, se aplica ``np.fft.rfft``:
+    For a real series ``x[n]`` of length ``N``, ``np.fft.rfft`` is applied:
 
-    - Componente DC (``k=0``): amplitud = ``|X[0]| / N`` (igual a la media).
-    - Armónicos ``k >= 1``: amplitud = ``|X[k]| * 2 / N`` (normalización
-      single-sided), fase = ``angle(X[k])`` en radianes en ``(-π, π]``.
+    - DC component (``k=0``): amplitude = ``|X[0]| / N`` (equal to the mean).
+    - Harmonics ``k >= 1``: amplitude = ``|X[k]| * 2 / N`` (single-sided
+      normalization), phase = ``angle(X[k])`` in radians in ``(-π, π]``.
 
     Args:
-        daily_curves: salida de :func:`_interpolate_daily`.
-        fft_indices: índices sobre los que aplicar FFT.
-        n_harmonics: número de armónicos además del DC.
-        parcel_id: identificador de la parcela.
-        year: año del ciclo agrícola.
+        daily_curves: output of :func:`_interpolate_daily`.
+        fft_indices: indices over which to apply FFT.
+        n_harmonics: number of harmonics besides the DC.
+        parcel_id: parcel identifier.
+        year: year of the agricultural cycle.
 
     Returns:
-        :class:`polars.DataFrame` con una sola fila y columnas
-        ``parcel_id, year`` + ``{idx}_fft_amp_{k}`` y ``{idx}_fft_phase_{k}``
-        para ``k`` ∈ ``[0, n_harmonics]``.
+        :class:`polars.DataFrame` with a single row and columns
+        ``parcel_id, year`` + ``{idx}_fft_amp_{k}`` and ``{idx}_fft_phase_{k}``
+        for ``k`` ∈ ``[0, n_harmonics]``.
     """
     row: dict[str, object] = {"parcel_id": parcel_id, "year": year}
     n_components = n_harmonics + 1  # includes DC
@@ -415,7 +415,7 @@ def _compute_rfft_components(
     *,
     n_components: int,
 ) -> tuple[list[float | None], list[float | None]]:
-    """Aplica ``np.fft.rfft`` y devuelve listas de amplitudes y fases."""
+    """Apply ``np.fft.rfft`` and return lists of amplitudes and phases."""
     if curve.size == 0:
         return ([None] * n_components, [None] * n_components)
 
@@ -449,7 +449,7 @@ def _phenology_frame(
     sog_threshold: float,
     maturity_pct: float,
 ) -> pl.DataFrame:
-    """Construye el DataFrame de 1 fila con las 8 métricas fenológicas."""
+    """Build the 1-row DataFrame with the 8 phenology metrics."""
     metrics = _detect_phenology(
         ndvi_daily if ndvi_daily is not None else np.empty(0, dtype=np.float64),
         sog_threshold=sog_threshold,
@@ -493,17 +493,18 @@ def _detect_phenology(
     *,
     sog_threshold: float,
 ) -> dict[str, float | int | None]:
-    """Detecta SOG, peak, senescencia y AUC sobre una curva NDVI diaria.
+    """Detect SOG, peak, senescence and AUC over a daily NDVI curve.
 
-    Implementa el criterio de umbral fijo (White et al. 1997): SOG es el
-    primer día del año en que NDVI cruza ``sog_threshold`` ascendente;
-    senescencia es el primer día tras el peak en que NDVI cae bajo el mismo
-    umbral. AUC es la integral trapezoidal de la curva (Reed et al. 2003).
+    Implements the fixed-threshold criterion (White et al. 1997): SOG is the
+    first day of the year on which NDVI crosses ``sog_threshold`` upward;
+    senescence is the first day after the peak on which NDVI falls below the
+    same threshold. AUC is the trapezoidal integral of the curve (Reed et al.
+    2003).
 
     Returns:
         ``{"sog_doy", "peak_doy", "peak_value", "senescence_doy", "ndvi_auc"}``
-        con ``None`` para métricas que no aplican (ej. NDVI nunca cruza el
-        umbral o peak en el extremo del ciclo).
+        with ``None`` for metrics that do not apply (e.g. NDVI never crosses
+        the threshold or the peak is at the edge of the cycle).
     """
     null_result: dict[str, float | int | None] = {
         "sog_doy": None,
@@ -556,14 +557,14 @@ def _phenology_slopes(
     metrics: dict[str, float | int | None],
     maturity_pct: float,
 ) -> dict[str, float | int | None]:
-    """Calcula pendientes pre/post peak y duración de madurez.
+    """Compute pre/post-peak slopes and maturity duration.
 
-    - ``slope_pre``: pendiente de regresión lineal en la ventana
-      ``[sog_doy, peak_doy]`` (NDVI/día).
-    - ``slope_post``: pendiente en ``[peak_doy, senescence_doy]``.
-    - ``maturity_duration_days``: número de días consecutivos en torno al
-      peak donde NDVI ≥ ``maturity_pct * peak_value`` (TIMESAT-like, Jönsson
-      & Eklundh 2002).
+    - ``slope_pre``: linear regression slope in the window
+      ``[sog_doy, peak_doy]`` (NDVI/day).
+    - ``slope_post``: slope in ``[peak_doy, senescence_doy]``.
+    - ``maturity_duration_days``: number of consecutive days around the peak
+      where NDVI ≥ ``maturity_pct * peak_value`` (TIMESAT-like, Jönsson &
+      Eklundh 2002).
     """
     null_result: dict[str, float | int | None] = {
         "slope_pre": None,

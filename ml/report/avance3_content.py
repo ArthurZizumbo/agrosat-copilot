@@ -1,15 +1,15 @@
-"""Contenido estructurado del Avance 3 (baseline tabular y fenologico).
+"""Structured content of Avance 3 (tabular and phenological baseline).
 
-Modela los cinco bloques del baseline saneado post-Avance 3 (US-023-preview)
-como datos en lugar de codigo: cada tab es un ``BaselineTab`` con su ficha
-editorial (``NotebookCard``) y la lista de artefactos (figuras y tablas) que
-debe renderizar. El dashboard recorre esta estructura con un unico renderer
-generico, de modo que agregar o cambiar un tab no implica escribir render.
+Models the five blocks of the cleaned post-Avance 3 baseline (US-023-preview)
+as data instead of code: each tab is a ``BaselineTab`` with its editorial
+card (``NotebookCard``) and the list of artifacts (figures and tables) it
+must render. The dashboard traverses this structure with a single generic
+renderer, so that adding or changing a tab does not imply writing render code.
 
-Las decisiones H-1..H-4 provienen de
-``reports/baseline/Avance3/decision_table.parquet``; las metricas del
-reencuadre fenologico (XGBoost F1-macro 0.4094, hipotesis C-2 confirmada con
-delta 0.0) provienen del cierre de US-022-b.
+The H-1..H-4 decisions come from
+``reports/baseline/Avance3/decision_table.parquet``; the phenological
+reframing metrics (XGBoost F1-macro 0.4094, hypothesis C-2 confirmed with
+delta 0.0) come from the US-022-b closure.
 """
 
 from __future__ import annotations
@@ -27,14 +27,14 @@ BASELINE_MISSING_HINT = (
 
 @dataclass(frozen=True)
 class BaselineArtifact:
-    """Artefacto (figura o tabla) que un tab del Avance 3 debe renderizar.
+    """Artifact (figure or table) that an Avance 3 tab must render.
 
     Attributes:
-        kind: ``"figure"`` para PNG o ``"table"`` para parquet.
-        relpath: Ruta relativa a la raiz del repositorio.
-        caption: Texto descriptivo bajo el artefacto.
-        fallbacks: Rutas alternativas en orden de preferencia. La primera que
-            exista en disco se usa; replica los ``if exists()`` historicos.
+        kind: ``"figure"`` for PNG or ``"table"`` for parquet.
+        relpath: Path relative to the repository root.
+        caption: Descriptive text below the artifact.
+        fallbacks: Alternative paths in order of preference. The first one
+            that exists on disk is used; replicates the historic ``if exists()``.
     """
 
     kind: Literal["figure", "table"]
@@ -45,12 +45,12 @@ class BaselineArtifact:
 
 @dataclass(frozen=True)
 class BaselineTab:
-    """Tab del Avance 3: etiqueta + ficha editorial + artefactos.
+    """Avance 3 tab: label + editorial card + artifacts.
 
     Attributes:
-        label: Etiqueta visible del tab (en espanol).
-        card: Ficha editorial con titulo, prosa, KPIs y conclusiones.
-        artifacts: Artefactos a renderizar en orden.
+        label: Visible tab label (in Spanish).
+        card: Editorial card with title, prose, KPIs and conclusions.
+        artifacts: Artifacts to render in order.
     """
 
     label: str

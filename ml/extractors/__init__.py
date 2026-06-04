@@ -1,4 +1,4 @@
-"""Re-exports del paquete ``ml.extractors``."""
+"""Re-exports of the ``ml.extractors`` package."""
 
 from ml.extractors.farslip_extractor import FarSLIPExtractor
 

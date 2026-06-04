@@ -53,8 +53,8 @@ El proyecto separa estrictamente texto del lector vs símbolos del intérprete:
 | **Strings dentro de `print(...)`** | Español con acentos | UTF-8 | `print(f"Cargados {n} píxeles en {dt:.1f}s")` |
 | **Títulos de plots (`title=`, `xlabel=`)** | Español con acentos | UTF-8 | `tsne_scatter(..., "t-SNE Italia × Dynamic World")` |
 | **Nombres de variables / funciones / parámetros** | Inglés ASCII puro | ASCII | `df_italia`, `sample_alphaearth_roi`, `roi_name` |
-| **Comentarios técnicos en código** | Inglés o español SIN acentos | ASCII | `# fallback if filter empty` |
-| **Docstrings** | Español neutro estilo Google | UTF-8 | Ver §"Docstrings" más abajo |
+| **Comentarios técnicos en código** | Inglés ASCII puro | ASCII | `# fallback if filter empty` |
+| **Docstrings** | Inglés estilo Google | ASCII | Ver §"Docstrings" más abajo |
 | **Claves de cache / IDs lógicos** | Inglés ASCII puro | ASCII | `cache_key="italia"`, `pianura_padana` |
 
 **Razón**: el código se intercambia con tooling (linters, mypy, papermill, IDEs) que no siempre maneja bien caracteres no-ASCII en identificadores. El texto que ve el lector del notebook (markdown, prints, displays, títulos de figura) sí lleva ortografía correcta porque es entregable visual del curso.
@@ -62,18 +62,18 @@ El proyecto separa estrictamente texto del lector vs símbolos del intérprete:
 ### Ejemplo concreto
 
 ```python
-# Comentario técnico en ASCII puro
-# Bboxes reducidos (~50x50 km) para evitar timeout del compute graph
+# Technical comment in pure ASCII
+# Reduced bboxes (~50x50 km) to avoid compute graph timeout
 ROI_BBOXES: dict[str, list[float]] = {
     "pianura_padana": [10.0, 45.0, 11.0, 45.5],
 }
 
 for roi_name, bbox in ROI_BBOXES.items():
     df_roi = sample_alphaearth_roi(roi=ee.Geometry.BBox(*bbox), roi_name=roi_name)
-    # print con ortografia correcta en espanol -> visible al lector
+    # print in correct Spanish -> visible to the reader
     print(f"{roi_name}: {df_roi.height} píxeles cargados")
 
-# display con Markdown UTF-8 -> visible al lector
+# display with Markdown UTF-8 -> visible to the reader
 display(Markdown(f"**Muestras de Italia**: `{df_italia.height:,}` filas en {len(ROI_BBOXES)} ROIs"))
 ```
 
@@ -166,11 +166,11 @@ import polars as pl
 
 
 class TemporalEmbeddingFeatures(BaseEstimator, TransformerMixin):
-    """Genera features temporales a partir de embeddings AlphaEarth multi-anio.
+    """Build temporal features from multi-year AlphaEarth embeddings.
 
     Args:
-        year_cols: Lista de columnas anuales (e.g. ['emb_2022', ..., 'emb_2025']).
-        compute_delta: Si True agrega columnas `delta_YYYY_YYYY` y `mean_cosine`.
+        year_cols: List of yearly columns (e.g. ['emb_2022', ..., 'emb_2025']).
+        compute_delta: If True, add `delta_YYYY_YYYY` and `mean_cosine` columns.
     """
 
     def __init__(self, year_cols: list[str], compute_delta: bool = True) -> None:
@@ -196,8 +196,8 @@ class TemporalEmbeddingFeatures(BaseEstimator, TransformerMixin):
 scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
 model.fit(X_train_scaled, y_train)
-# (mas tarde, en otra celda...)
-X_test_scaled = scaler.transform(X_test)  # facil de olvidar
+# (later, in another cell...)
+X_test_scaled = scaler.transform(X_test)  # easy to forget
 
 # BIEN — Pipeline atrapa todo el preprocesamiento
 from sklearn.pipeline import Pipeline
@@ -415,7 +415,7 @@ def process_data(df: pl.DataFrame, threshold: float = 0.5) -> pl.DataFrame:
     ...
 ```
 
-### Docstrings estilo Google en español
+### Docstrings estilo Google en inglés
 
 ```python
 def sample_dynamic_world_at(
@@ -425,20 +425,20 @@ def sample_dynamic_world_at(
     cache_key: str = "coords",
     batch_size: int = 500,
 ) -> pl.DataFrame:
-    """Extrae la clase moda Dynamic World del anio dado para cada (lon, lat).
+    """Extract the Dynamic World mode class for the given year at each (lon, lat).
 
-    Procesa coords en lotes de `batch_size` puntos para evitar timeouts del
-    compute graph server-side de GEE.
+    Processes coords in batches of `batch_size` points to avoid timeouts in the
+    GEE server-side compute graph.
 
     Args:
-        coords: DataFrame con columnas `px_id, lon, lat` en EPSG:4326.
-        year: Anio para filtrar la coleccion Dynamic World.
-        cache_path: Carpeta cache parquet.
-        cache_key: Identificador logico para el cache.
-        batch_size: Numero maximo de puntos por request `reduceRegions`.
+        coords: DataFrame with columns `px_id, lon, lat` in EPSG:4326.
+        year: Year used to filter the Dynamic World collection.
+        cache_path: Parquet cache folder.
+        cache_key: Logical identifier for the cache.
+        batch_size: Maximum number of points per `reduceRegions` request.
 
     Returns:
-        DataFrame con columnas `px_id, dw_class_id, dw_class_name, dw_confidence`.
+        DataFrame with columns `px_id, dw_class_id, dw_class_name, dw_confidence`.
     """
 ```
 

@@ -1,25 +1,26 @@
-"""Analisis bivariado, multivariado y temporal para US-012 (EDA).
+"""Bivariate, multivariate and temporal analysis for US-012 (EDA).
 
-Provee 7 funciones reutilizables sobre DataFrames Polars con bandas Sentinel-2,
-indices espectrales derivados y series temporales por parcela:
+Provides 7 reusable functions over Polars DataFrames with Sentinel-2 bands,
+derived spectral indices and per-parcel time series:
 
-- `compute_indices_subset`: anade columnas con el subset core de 6 indices
-  espectrales (NDVI, NDWI, NDMI, EVI, SAVI, NDRE).
-- `correlation_pair`: matriz de correlacion long-format entre dos subsets de
-  columnas (Pearson o Spearman).
-- `vif_table`: Variance Inflation Factor por columna con statsmodels.
-- `phenology_peaks`: detecta pico NDVI por parcela y devuelve mes, doy y year.
-- `acf_pacf_per_parcel`: ACF y PACF de la serie NDVI por parcela tras
-  resampleo mensual con interpolacion lineal.
-- `dtw_cluster_temporal`: clustering DTW (`tslearn.TimeSeriesKMeans`) con
-  Sakoe-Chiba band sobre series NDVI z-normalizadas.
-- `era5_ndvi_anomaly`: cruza precipitacion anual ERA5 con NDVI maximo anual,
-  marcando years secos vs normales por percentil.
+- `compute_indices_subset`: adds columns with the core subset of 6 spectral
+  indices (NDVI, NDWI, NDMI, EVI, SAVI, NDRE).
+- `correlation_pair`: long-format correlation matrix between two column
+  subsets (Pearson or Spearman).
+- `vif_table`: Variance Inflation Factor per column with statsmodels.
+- `phenology_peaks`: detects the NDVI peak per parcel and returns month, doy
+  and year.
+- `acf_pacf_per_parcel`: ACF and PACF of the per-parcel NDVI series after
+  monthly resampling with linear interpolation.
+- `dtw_cluster_temporal`: DTW clustering (`tslearn.TimeSeriesKMeans`) with a
+  Sakoe-Chiba band over z-normalized NDVI series.
+- `era5_ndvi_anomaly`: crosses annual ERA5 precipitation with annual maximum
+  NDVI, flagging dry vs normal years by percentile.
 
-Nota Polars: el adapter a pandas se usa unicamente como borde tecnico para
-`statsmodels.tsa.stattools` (ACF/PACF) y `variance_inflation_factor` cuando
-esas libs no aceptan Polars directamente. Toda la persistencia y agregacion
-se mantiene en Polars.
+Polars note: the pandas adapter is used only as a technical boundary for
+`statsmodels.tsa.stattools` (ACF/PACF) and `variance_inflation_factor` when
+those libraries do not accept Polars directly. All persistence and
+aggregation stays in Polars.
 """
 
 from __future__ import annotations
@@ -37,12 +38,12 @@ SPECTRAL_INDICES_CORE: dict[str, str] = {
     "SAVI": "1.5*(B08-B04)/(B08+B04+0.5)",
     "NDRE": "(B08-B05)/(B08+B05)",
 }
-"""Subset core de 6 indices espectrales US-012.
+"""Core subset of 6 spectral indices for US-012.
 
-La biblioteca completa (17 indices) se entrega en US-014 con `spyndex`.
-Las formulas usan bandas Sentinel-2 con escala original (sin dividir por 10000);
-internamente la implementacion castea a Float64 y aplica un epsilon para evitar
-divisiones por cero.
+The full library (17 indices) is delivered in US-014 with `spyndex`. The
+formulas use Sentinel-2 bands at the original scale (not divided by 10000);
+internally the implementation casts to Float64 and applies an epsilon to
+avoid divisions by zero.
 """
 
 _EPS: float = 1e-6
@@ -50,7 +51,7 @@ _DEFAULT_REQUIRED_BANDS: tuple[str, ...] = ("B02", "B03", "B04", "B05", "B08", "
 
 
 def _safe_div(num: pl.Expr, den: pl.Expr) -> pl.Expr:
-    """Division segura con epsilon en el denominador (vectorizada Polars)."""
+    """Safe division with epsilon in the denominator (Polars-vectorized)."""
     return num / pl.when(den.abs() < _EPS).then(_EPS).otherwise(den)
 
 
@@ -62,51 +63,50 @@ def compute_indices_subset(
     mask_invalid_band_range: tuple[float, float] | None = None,
     clip_evi_range: tuple[float, float] | None = None,
 ) -> pl.DataFrame:
-    """Calcula el subset core de 6 indices espectrales vectorizado en Polars.
+    """Compute the core subset of 6 spectral indices, vectorized in Polars.
 
-    Las bandas deben estar en columnas separadas (formato wide) con los
-    nombres canonicos PASTIS-R: `B02, B03, B04, B05, B08, B11`. Si recibes
-    un DataFrame long-format de `pastis_to_polars`, pivota primero por
-    `(patch_id, t, y, x)` antes de pasar a esta funcion.
+    The bands must be in separate columns (wide format) with the canonical
+    PASTIS-R names: `B02, B03, B04, B05, B08, B11`. If you receive a
+    long-format DataFrame from `pastis_to_polars`, pivot first by
+    `(patch_id, t, y, x)` before passing it to this function.
 
     Args:
-        df_bands: DataFrame Polars con las bandas Sentinel-2 como columnas
-            float (o casteables a float). Como minimo `B02, B03, B04, B05,
-            B08, B11`.
-        indices: Subset opcional de indices a computar; default todos los 6.
-        scale: Factor multiplicativo aplicado a cada banda antes del computo
-            (default 1.0, sin escala). Para Sentinel-2 L2A en DN crudo
-            (rango 0-10000) usar 1e-4 para llevar a reflectancia [0, 1] y
-            evitar overflow en EVI por denominador cercano a cero.
-        clip_negative: Si True clipa valores negativos a 0 antes del computo
-            (artefactos BOA pueden producir DN negativo, lo que rompe los
-            indices normalizados al hacer a + b cercano a 0). Aplica antes
-            del computo de indices. Recomendado usar `mask_invalid_band_range`
-            en su lugar para preservar variabilidad real.
-        mask_invalid_band_range: Tupla `(min, max)` post-escala. Timesteps con
-            cualquier banda requerida fuera de este rango se filtran (drop)
-            antes de calcular indices. Ejemplo: `(0.0, 1.5)` con `scale=1e-4`
-            descarta DN negativos (artefactos BOA) y reflectancias > 1.5
-            (nubes saturadas). Mutuamente excluyente con `clip_negative`.
-        clip_evi_range: Tupla `(min, max)` opcional aplicada a `EVI` despues
-            del computo. Util porque la formula EVI puede producir outliers
-            por geometria del denominador aun con bandas validas. Default
-            no clipea.
+        df_bands: Polars DataFrame with the Sentinel-2 bands as float columns
+            (or castable to float). At least `B02, B03, B04, B05, B08, B11`.
+        indices: Optional subset of indices to compute; default all 6.
+        scale: Multiplicative factor applied to each band before the
+            computation (default 1.0, no scaling). For Sentinel-2 L2A in raw
+            DN (range 0-10000) use 1e-4 to bring it to reflectance [0, 1] and
+            avoid EVI overflow from a near-zero denominator.
+        clip_negative: If True, clips negative values to 0 before the
+            computation (BOA artifacts can produce negative DN, which breaks
+            the normalized indices when a + b is near 0). Applied before the
+            index computation. Using `mask_invalid_band_range` instead is
+            recommended to preserve real variability.
+        mask_invalid_band_range: Post-scale `(min, max)` tuple. Timesteps with
+            any required band outside this range are filtered (dropped) before
+            computing indices. Example: `(0.0, 1.5)` with `scale=1e-4`
+            discards negative DN (BOA artifacts) and reflectances > 1.5
+            (saturated clouds). Mutually exclusive with `clip_negative`.
+        clip_evi_range: Optional `(min, max)` tuple applied to `EVI` after the
+            computation. Useful because the EVI formula can produce outliers
+            from denominator geometry even with valid bands. Default does not
+            clip.
 
     Returns:
-        DataFrame original con columnas adicionales `NDVI, NDWI, NDMI, EVI,
-        SAVI, NDRE` (o el subset solicitado). Si `mask_invalid_band_range` se
-        pasa, el DataFrame retornado puede tener menos filas que la entrada
-        (los timesteps invalidos quedan filtrados). Si `df_bands` esta vacio
-        o le faltan bandas requeridas para los indices pedidos, devuelve el
-        df original sin alterar.
+        The original DataFrame with additional columns `NDVI, NDWI, NDMI, EVI,
+        SAVI, NDRE` (or the requested subset). If `mask_invalid_band_range` is
+        passed, the returned DataFrame may have fewer rows than the input
+        (invalid timesteps are filtered out). If `df_bands` is empty or is
+        missing required bands for the requested indices, it returns the
+        original df unchanged.
     """
     if clip_negative and mask_invalid_band_range is not None:
-        raise ValueError("clip_negative y mask_invalid_band_range son mutuamente excluyentes")
+        raise ValueError("clip_negative and mask_invalid_band_range are mutually exclusive")
     requested = indices or list(SPECTRAL_INDICES_CORE.keys())
     unknown = [i for i in requested if i not in SPECTRAL_INDICES_CORE]
     if unknown:
-        raise ValueError(f"Indices no soportados: {unknown}")
+        raise ValueError(f"Unsupported indices: {unknown}")
 
     if df_bands.is_empty():
         # Append empty Float64 columns to preserve the downstream contract
@@ -184,18 +184,18 @@ def correlation_pair(
     cols_b: list[str],
     method: Literal["pearson", "spearman"] = "pearson",
 ) -> pl.DataFrame:
-    """Matriz de correlacion long-format entre dos subconjuntos de columnas.
+    """Long-format correlation matrix between two column subsets.
 
     Args:
-        df: DataFrame Polars con las columnas en `cols_a` y `cols_b`.
-        cols_a: Columnas del primer subset (filas del heatmap).
-        cols_b: Columnas del segundo subset (columnas del heatmap).
-        method: `pearson` o `spearman`.
+        df: Polars DataFrame with the columns in `cols_a` and `cols_b`.
+        cols_a: Columns of the first subset (heatmap rows).
+        cols_b: Columns of the second subset (heatmap columns).
+        method: `pearson` or `spearman`.
 
     Returns:
-        DataFrame Polars con columnas `feature_a, feature_b, corr, abs_corr`,
-        ordenado por `abs_corr` desc. Si `df` esta vacio o falta alguna
-        columna devuelve DataFrame con esquema correcto pero sin filas.
+        Polars DataFrame with columns `feature_a, feature_b, corr, abs_corr`,
+        sorted by `abs_corr` desc. If `df` is empty or any column is missing,
+        returns a DataFrame with the correct schema but no rows.
     """
     schema = {
         "feature_a": pl.Utf8,
@@ -246,24 +246,25 @@ def vif_table(
     drop_na: bool = True,
     near_perfect_corr_threshold: float = 0.99,
 ) -> pl.DataFrame:
-    """Variance Inflation Factor por columna usando statsmodels.
+    """Variance Inflation Factor per column using statsmodels.
 
-    Pre-filtra columnas con correlacion absoluta mayor a `near_perfect_corr_threshold`
-    para evitar matrices singulares (la primera de cada par se conserva, la
-    segunda se descarta y se documenta como `dropped_near_perfect_corr`).
+    Pre-filters columns with absolute correlation greater than
+    `near_perfect_corr_threshold` to avoid singular matrices (the first of
+    each pair is kept, the second is dropped and documented as
+    `dropped_near_perfect_corr`).
 
     Args:
-        df: DataFrame Polars con las columnas numericas.
-        cols: Lista de columnas sobre las que calcular VIF.
-        drop_na: Si elimina filas con NaN en cualquier `cols` antes del VIF.
-        near_perfect_corr_threshold: Umbral de `|corr|` a partir del cual se
-            considera redundancia casi perfecta (default 0.99).
+        df: Polars DataFrame with the numeric columns.
+        cols: List of columns over which to compute the VIF.
+        drop_na: Whether to drop rows with NaN in any of `cols` before the VIF.
+        near_perfect_corr_threshold: `|corr|` threshold above which a pair is
+            considered near-perfect redundancy (default 0.99).
 
     Returns:
-        DataFrame Polars con columnas `feature, vif, status`
+        Polars DataFrame with columns `feature, vif, status`
         (`status in {"ok", "warning", "drop", "dropped_near_perfect_corr"}`),
-        ordenado por VIF desc. Si statsmodels no esta instalado o `cols` esta
-        vacio devuelve DataFrame vacio con esquema valido.
+        sorted by VIF desc. If statsmodels is not installed or `cols` is
+        empty, returns an empty DataFrame with a valid schema.
     """
     schema = {"feature": pl.Utf8, "vif": pl.Float64, "status": pl.Utf8}
     if df.is_empty() or not cols:
@@ -346,23 +347,24 @@ def phenology_peaks(
     ndvi_col: str = "ndvi",
     class_col: str = "class_name",
 ) -> pl.DataFrame:
-    """Detecta el pico NDVI por parcela.
+    """Detect the NDVI peak per parcel.
 
-    La columna `date` puede ser tipo Date / Datetime o entero `YYYYMMDD`. La
-    funcion la normaliza a `pl.Date` antes de extraer mes / doy / year.
+    The `date` column can be a Date / Datetime type or an integer `YYYYMMDD`.
+    The function normalizes it to `pl.Date` before extracting month / doy /
+    year.
 
     Args:
-        df_ts: DataFrame Polars con series NDVI por parcela. Columnas
-            requeridas: `parcel_col, date_col, ndvi_col, class_col`.
-        parcel_col: Nombre columna identificador de parcela.
-        date_col: Nombre columna fecha (Date / Datetime / Int).
-        ndvi_col: Nombre columna NDVI.
-        class_col: Nombre columna clase (se conserva en el output).
+        df_ts: Polars DataFrame with per-parcel NDVI series. Required columns:
+            `parcel_col, date_col, ndvi_col, class_col`.
+        parcel_col: Name of the parcel identifier column.
+        date_col: Name of the date column (Date / Datetime / Int).
+        ndvi_col: Name of the NDVI column.
+        class_col: Name of the class column (preserved in the output).
 
     Returns:
-        DataFrame Polars con columnas `parcel_id, class_name, peak_ndvi_value,
-        peak_ndvi_month, peak_ndvi_doy, peak_ndvi_year`. Vacio (con esquema)
-        si el input esta vacio o si faltan columnas requeridas.
+        Polars DataFrame with columns `parcel_id, class_name, peak_ndvi_value,
+        peak_ndvi_month, peak_ndvi_doy, peak_ndvi_year`. Empty (with schema)
+        if the input is empty or required columns are missing.
     """
     schema = {
         "parcel_id": pl.Utf8,
@@ -438,19 +440,20 @@ def _resample_monthly_pandas(
     dates: np.ndarray,
     values: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Resamplea mensualmente con interpolacion lineal usando pandas como adapter.
+    """Resample monthly with linear interpolation using pandas as an adapter.
 
-    `pandas.resample("MS").mean()` es el camino mas corto: las fechas Sentinel-2
-    son irregulares (median ~5 dias por filtrado de nubes) y necesitamos paso
-    uniforme antes de ACF/PACF.
+    `pandas.resample("MS").mean()` is the shortest path: Sentinel-2 dates are
+    irregular (median ~5 days due to cloud filtering) and we need a uniform
+    step before ACF/PACF.
 
     Args:
-        parcel_id: Identificador de la parcela (solo para logging).
-        dates: Array `datetime64[D]` ordenado ascendente.
-        values: Array de NDVI alineado con `dates`.
+        parcel_id: Parcel identifier (logging only).
+        dates: `datetime64[D]` array sorted ascending.
+        values: NDVI array aligned with `dates`.
 
     Returns:
-        Tupla `(months_ts, ndvi_monthly)` con paso mensual (`MS` = month start).
+        Tuple `(months_ts, ndvi_monthly)` with a monthly step (`MS` = month
+        start).
     """
     import pandas as pd
 
@@ -471,34 +474,34 @@ def acf_pacf_per_parcel(
     series_col: str = "ndvi",
     class_col: str = "class_name",
 ) -> pl.DataFrame:
-    """ACF y PACF de la serie NDVI por parcela tras resampleo mensual.
+    """ACF and PACF of the per-parcel NDVI series after monthly resampling.
 
-    Pre-filtra clases (`class_id`) fuera de `[1, 18]` cuando exista la columna
-    `class_id`, para excluir background (0) y void (19) en PASTIS-R. Antes
-    del calculo, cada serie se resamplea con paso mensual y se interpola
-    linealmente (Sentinel-2 PASTIS tiene median ~5 dias entre acquisitions
-    pero irregular por filtrado de nubes).
+    Pre-filters classes (`class_id`) outside `[1, 18]` when the `class_id`
+    column exists, to exclude background (0) and void (19) in PASTIS-R.
+    Before the computation, each series is resampled at a monthly step and
+    linearly interpolated (PASTIS Sentinel-2 has a median ~5 days between
+    acquisitions but is irregular due to cloud filtering).
 
-    Nota Polars: `pandas` se usa como adapter borde porque
-    `statsmodels.tsa.stattools.acf/pacf` no acepta Polars y porque
-    `pl.DataFrame.upsample` no soporta interpolacion linear out-of-the-box
-    sobre series con valores reales arbitrarios.
+    Polars note: `pandas` is used as a boundary adapter because
+    `statsmodels.tsa.stattools.acf/pacf` does not accept Polars and because
+    `pl.DataFrame.upsample` does not support linear interpolation
+    out-of-the-box over series with arbitrary real values.
 
     Args:
-        df_ts: DataFrame Polars long con columnas requeridas
-            `parcel_col, date_col, series_col, class_col`. Opcional `class_id`
-            para filtrar `[1, 18]`.
-        max_lag: Numero de lags a computar (default 6, justificado por
-            cobertura PASTIS ~14 meses).
-        parcel_col: Columna identificador de parcela.
-        date_col: Columna fecha (Date / Datetime / Int YYYYMMDD).
-        series_col: Columna NDVI.
-        class_col: Columna clase (se preserva en output).
+        df_ts: Long Polars DataFrame with required columns
+            `parcel_col, date_col, series_col, class_col`. Optional `class_id`
+            to filter `[1, 18]`.
+        max_lag: Number of lags to compute (default 6, justified by PASTIS
+            coverage ~14 months).
+        parcel_col: Parcel identifier column.
+        date_col: Date column (Date / Datetime / Int YYYYMMDD).
+        series_col: NDVI column.
+        class_col: Class column (preserved in the output).
 
     Returns:
-        DataFrame Polars long con columnas
-        `parcel_id, class_name, lag, acf, pacf`. ACF y PACF estan acotados
-        en `[-1, 1]`. `acf[0] = 1.0` siempre.
+        Long Polars DataFrame with columns
+        `parcel_id, class_name, lag, acf, pacf`. ACF and PACF are bounded in
+        `[-1, 1]`. `acf[0] = 1.0` always.
     """
     schema = {
         "parcel_id": pl.Utf8,
@@ -604,31 +607,31 @@ def dtw_cluster_temporal(
     sakoe_chiba_radius: int = 3,
     seed: int = 42,
 ) -> tuple[pl.DataFrame, Any]:
-    """Clustering DTW con `tslearn.TimeSeriesKMeans` y Sakoe-Chiba band.
+    """DTW clustering with `tslearn.TimeSeriesKMeans` and a Sakoe-Chiba band.
 
-    Pre-filtra `class_id in [1, 18]` cuando exista la columna. Cada serie
-    NDVI se resamplea mensualmente, se interpola y se z-normaliza por parcela
-    antes del fit DTW. La banda de Sakoe-Chiba (`sakoe_chiba_radius`) acota
-    el coste DTW a O(T*radius) en lugar de O(T^2).
+    Pre-filters `class_id in [1, 18]` when the column exists. Each NDVI series
+    is resampled monthly, interpolated and z-normalized per parcel before the
+    DTW fit. The Sakoe-Chiba band (`sakoe_chiba_radius`) bounds the DTW cost
+    to O(T*radius) instead of O(T^2).
 
     Args:
-        df_ts: DataFrame Polars long con series NDVI por parcela. Columnas
-            requeridas: `parcel_col, date_col, series_col, class_col`. Opcional
-            `class_id` para filtrar `[1, 18]`.
-        n_clusters: Numero de clusters DTW (default 4).
-        parcel_col: Columna identificador de parcela.
-        date_col: Columna fecha.
-        series_col: Columna NDVI.
-        class_col: Columna clase (se preserva en output).
-        sakoe_chiba_radius: Radio de la banda de Sakoe-Chiba (default 3).
-        seed: Semilla para reproducibilidad.
+        df_ts: Long Polars DataFrame with per-parcel NDVI series. Required
+            columns: `parcel_col, date_col, series_col, class_col`. Optional
+            `class_id` to filter `[1, 18]`.
+        n_clusters: Number of DTW clusters (default 4).
+        parcel_col: Parcel identifier column.
+        date_col: Date column.
+        series_col: NDVI column.
+        class_col: Class column (preserved in the output).
+        sakoe_chiba_radius: Radius of the Sakoe-Chiba band (default 3).
+        seed: Seed for reproducibility.
 
     Returns:
-        Tupla `(df_with_cluster, fitted_model)` donde `df_with_cluster` tiene
-        columnas `parcel_id, class_name, cluster_id`, y `fitted_model` es el
-        `TimeSeriesKMeans` ajustado (con `cluster_centers_` accesible). Si
-        `tslearn` no esta instalado o no hay suficientes series, devuelve
-        DataFrame vacio + `None`.
+        Tuple `(df_with_cluster, fitted_model)` where `df_with_cluster` has
+        columns `parcel_id, class_name, cluster_id`, and `fitted_model` is the
+        fitted `TimeSeriesKMeans` (with `cluster_centers_` accessible). If
+        `tslearn` is not installed or there are not enough series, returns an
+        empty DataFrame + `None`.
     """
     schema = {
         "parcel_id": pl.Utf8,
@@ -757,20 +760,20 @@ def era5_ndvi_anomaly(
     df_ndvi_annual: pl.DataFrame,
     dry_year_percentile: float = 0.25,
 ) -> pl.DataFrame:
-    """Cruza precipitacion anual ERA5 con NDVI maximo anual y marca anos secos.
+    """Cross annual ERA5 precipitation with annual maximum NDVI, flag dry years.
 
     Args:
-        df_era5: DataFrame Polars con `year, roi_name, precip_mm`.
-        df_ndvi_annual: DataFrame Polars con `year, roi_name, ndvi_max`.
-        dry_year_percentile: Percentil para considerar un ano como "seco"
-            (default 0.25 = inferior al cuartil 1 de precipitacion historica
-            por ROI).
+        df_era5: Polars DataFrame with `year, roi_name, precip_mm`.
+        df_ndvi_annual: Polars DataFrame with `year, roi_name, ndvi_max`.
+        dry_year_percentile: Percentile to consider a year as "dry"
+            (default 0.25 = below the first quartile of historical
+            precipitation per ROI).
 
     Returns:
-        DataFrame Polars con columnas `year, roi_name, precip_mm, ndvi_max,
-        ndvi_anomaly_z, is_dry_year`. La anomalia z se calcula por ROI sobre
-        `ndvi_max`. Si cualquiera de los inputs esta vacio devuelve DataFrame
-        vacio con esquema valido.
+        Polars DataFrame with columns `year, roi_name, precip_mm, ndvi_max,
+        ndvi_anomaly_z, is_dry_year`. The z anomaly is computed per ROI over
+        `ndvi_max`. If any of the inputs is empty, returns an empty DataFrame
+        with a valid schema.
     """
     schema = {
         "year": pl.Int64,

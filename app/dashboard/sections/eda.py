@@ -1,7 +1,7 @@
-"""Seccion Avance 1 - Analisis Exploratorio de Datos (EDA).
+"""Avance 1 section - Exploratory Data Analysis (EDA).
 
-Renderiza las fichas de EDA (seis notebooks consolidados) mas el mapa
-espacial folium como tab final. El contenido editorial vive en
+Renders the EDA cards (six consolidated notebooks) plus the spatial folium
+map as the final tab. The editorial content lives in
 ``ml.report.notebook_content`` (``CARDS`` + ``CARDS_EXTRA``).
 """
 
@@ -30,7 +30,7 @@ EDA_TAB_LABELS: tuple[str, ...] = (
 
 
 def render_eda_section() -> None:
-    """Renderiza el bloque EDA: 7 fichas de contenido + mapa espacial."""
+    """Render the EDA block: 7 content cards + spatial map."""
     assert len(EDA_TAB_LABELS) == len(_EDA_CARDS) + 1, "Etiquetas EDA desincronizadas"
 
     tabs = st.tabs(list(EDA_TAB_LABELS))

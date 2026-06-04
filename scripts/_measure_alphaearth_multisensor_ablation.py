@@ -1,18 +1,19 @@
-"""Mide el aporte incremental de AlphaEarth (2018/2019) + ERA5/SRTM/S1 al baseline.
+"""Measure the incremental contribution of AlphaEarth (2018/2019) + ERA5/SRTM/S1 to the baseline.
 
-Contexto: el baseline tabular (F1-macro 0.4094) corre sobre 185 features
-espectrales/fenologicas SIN AlphaEarth ni los bloques patch-level (ERA5, SRTM,
-S1), que existen como dato real pero nunca se unieron al subset de entrenamiento
-(ver docs/audit/us-023-preview-v2-audit.md). Este script une cada familia en
-memoria y ejecuta la ablation con CV espacial (buffer 1 km) reusando
-``run_feature_ablation``, para medir cuanto sube el F1 cada bloque. NO persiste
-ningun parquet: solo imprime la tabla para decidir si materializar.
+Context: the tabular baseline (F1-macro 0.4094) runs over 185 spectral/phenology
+features WITHOUT AlphaEarth nor the patch-level blocks (ERA5, SRTM, S1), which
+exist as real data but were never joined to the training subset (see
+docs/audit/us-023-preview-v2-audit.md). This script joins each family in memory
+and runs the ablation with spatial CV (1 km buffer) reusing
+``run_feature_ablation``, to measure how much each block raises the F1. It does
+NOT persist any parquet: it only prints the table to decide whether to
+materialize.
 
-Claves de join:
-- AlphaEarth (2018, 2019): por ``parcel_id`` (string PASTIS, overlap 100%).
-- ERA5 / SRTM / S1: por ``patch_id`` (nivel patch ~1 km^2, propaga a parcelas).
+Join keys:
+- AlphaEarth (2018, 2019): by ``parcel_id`` (PASTIS string, 100% overlap).
+- ERA5 / SRTM / S1: by ``patch_id`` (patch level ~1 km^2, propagates to parcels).
 
-Uso:
+Usage:
     python scripts/measure_alphaearth_multisensor_ablation.py
 """
 
@@ -45,7 +46,7 @@ _META_DROP = ("year", "patch_id", "class_id", "class_name", "fold", "n_pixels", 
 
 
 def _ae_block(path: Path, prefix: str) -> pl.DataFrame:
-    """Carga un parquet AlphaEarth y renombra ``dim_NN -> {prefix}NN`` (parcel-level)."""
+    """Load an AlphaEarth parquet and rename ``dim_NN -> {prefix}NN`` (parcel-level)."""
     df = pl.read_parquet(path)
     dims = [c for c in df.columns if c.startswith("dim_")]
     ren = {c: f"{prefix}{c.split('_')[1]}" for c in dims}
@@ -53,7 +54,7 @@ def _ae_block(path: Path, prefix: str) -> pl.DataFrame:
 
 
 def _patch_block(path: Path, keep_prefixes: tuple[str, ...]) -> pl.DataFrame:
-    """Carga un bloque patch-level y deja solo ``patch_id`` + features numericas."""
+    """Load a patch-level block and keep only ``patch_id`` + numeric features."""
     df = pl.read_parquet(path)
     # parcel_id here IS the integer patch_id -> rename to patch_id for the join
     df = df.rename({"parcel_id": "patch_id"})

@@ -1,14 +1,14 @@
-"""Persistencia del :class:`StandardScaler` ajustado sobre el split train (US-016).
+"""Persistence of the :class:`StandardScaler` fitted on the train split (US-016).
 
-El scaler se ajusta solo con los ``parcel_id`` del split train (Fold-0 por
-convención) para evitar leakage hacia val/test. Persiste con :mod:`joblib`
-(no ``pickle`` desnudo) — formato firmado, soportado por scikit-learn y
-compatible con DVC tracking.
+The scaler is fitted only with the ``parcel_id`` of the train split (Fold-0 by
+convention) to avoid leakage toward val/test. Persisted with :mod:`joblib`
+(not bare ``pickle``) — a signed format, supported by scikit-learn and
+compatible with DVC tracking.
 
-El frame ``StandardScaler`` recibido aquí siempre debe ser el output de
-:func:`ml.features.fusion.build_fused_features`. Las columnas categóricas
-(``srtm_aspect_dominant``) se excluyen automáticamente si están presentes
-en ``feature_cols``.
+The ``StandardScaler`` frame received here must always be the output of
+:func:`ml.features.fusion.build_fused_features`. Categorical columns
+(``srtm_aspect_dominant``) are excluded automatically if present in
+``feature_cols``.
 """
 
 from __future__ import annotations
@@ -45,37 +45,37 @@ def fit_scaler_on_train(
     val_ids: tuple[int, ...] | None = None,
     test_ids: tuple[int, ...] | None = None,
 ) -> StandardScaler:
-    """Ajusta un :class:`StandardScaler` sobre el subset train y lo persiste.
+    """Fit a :class:`StandardScaler` on the train subset and persist it.
 
     Args:
-        df: DataFrame fusionado (output de
+        df: Fused DataFrame (output of
             :func:`ml.features.fusion.build_fused_features`).
-        train_ids: ``parcel_id`` del split train. Debe ser disjunto de
-            ``val_ids`` y ``test_ids`` (validado si se proporcionan).
-        feature_cols: Nombres de columnas numéricas a estandarizar.
-            Las columnas categóricas presentes (ej.
-            ``srtm_aspect_dominant``) se filtran silenciosamente con un
+        train_ids: ``parcel_id`` of the train split. Must be disjoint from
+            ``val_ids`` and ``test_ids`` (validated if provided).
+        feature_cols: Names of numeric columns to standardize.
+            Present categorical columns (e.g.
+            ``srtm_aspect_dominant``) are filtered out silently with a
             log.warning.
-        scaler_path: Destino joblib. Convención
-            ``artifacts/scaler_{version}.pkl``. El directorio padre se
-            crea si no existe.
-        version: Tag de versión inyectado en los metadatos del scaler para
-            trazabilidad downstream.
-        val_ids: ``parcel_id`` del split val (opcional, para validar
-            ausencia de leakage).
-        test_ids: ``parcel_id`` del split test (opcional, mismo propósito).
+        scaler_path: joblib destination. Convention
+            ``artifacts/scaler_{version}.pkl``. The parent directory is
+            created if it does not exist.
+        version: Version tag injected into the scaler metadata for
+            downstream traceability.
+        val_ids: ``parcel_id`` of the val split (optional, to validate
+            absence of leakage).
+        test_ids: ``parcel_id`` of the test split (optional, same purpose).
 
     Returns:
-        El :class:`StandardScaler` ajustado. Atributos adicionales en
+        The fitted :class:`StandardScaler`. Additional attributes in
         ``_agrosat_meta``: ``{"version", "feature_cols", "n_train"}``.
 
     Raises:
-        ValueError: si ``train_ids`` interseca con ``val_ids``/``test_ids``,
-            si ``feature_cols`` está vacío tras filtrar categóricas, o si
-            ``df`` no contiene ``parcel_id``.
+        ValueError: if ``train_ids`` intersects with ``val_ids``/``test_ids``,
+            if ``feature_cols`` is empty after filtering categoricals, or if
+            ``df`` does not contain ``parcel_id``.
     """
     if "parcel_id" not in df.columns:
-        raise ValueError("`df` debe contener la columna `parcel_id`.")
+        raise ValueError("`df` must contain the `parcel_id` column.")
 
     if val_ids is not None or test_ids is not None:
         _validate_no_leakage(train_ids=train_ids, val_ids=val_ids, test_ids=test_ids)
@@ -83,14 +83,14 @@ def fit_scaler_on_train(
     numeric_cols = _filter_numeric(df=df, feature_cols=feature_cols)
     if not numeric_cols:
         raise ValueError(
-            "No quedan columnas numéricas tras filtrar categóricas; revisa `feature_cols`."
+            "No numeric columns remain after filtering categoricals; check `feature_cols`."
         )
 
     train_set = set(int(x) for x in train_ids)
     train_df = df.filter(pl.col("parcel_id").is_in(list(train_set))).select(numeric_cols)
     if train_df.height == 0:
         raise ValueError(
-            "Tras filtrar por `train_ids` el frame está vacío. ¿IDs en otro fold?"
+            "After filtering by `train_ids` the frame is empty. IDs in another fold?"
         )
 
     matrix = train_df.to_numpy()
@@ -130,7 +130,7 @@ def fit_scaler_on_train(
         numeric_cols = [c for c, drop in zip(numeric_cols, all_nan_mask, strict=True) if not drop]
         if not numeric_cols:
             raise ValueError(
-                "Todas las columnas numéricas eran all-NaN. ¿Frame sin GEE poblado?"
+                "All numeric columns were all-NaN. Frame without GEE populated?"
             )
         matrix = matrix[:, ~all_nan_mask]
     # Replace remaining NaN with the column mean (StandardScaler
@@ -164,27 +164,27 @@ def fit_scaler_on_train(
 
 
 def load_scaler(path: Path | str) -> StandardScaler:
-    """Carga un :class:`StandardScaler` persistido con :func:`fit_scaler_on_train`.
+    """Load a :class:`StandardScaler` persisted with :func:`fit_scaler_on_train`.
 
     Args:
-        path: Ruta al fichero joblib (``artifacts/scaler_v1.pkl`` por
-            convención).
+        path: Path to the joblib file (``artifacts/scaler_v1.pkl`` by
+            convention).
 
     Returns:
-        Scaler con metadata ``_agrosat_meta`` si fue ajustado por este
-        módulo, o el scaler raw si fue producido por otro pipeline.
+        Scaler with ``_agrosat_meta`` metadata if it was fitted by this
+        module, or the raw scaler if it was produced by another pipeline.
 
     Raises:
-        FileNotFoundError: si ``path`` no existe.
-        ValueError: si el archivo no es un :class:`StandardScaler` válido.
+        FileNotFoundError: if ``path`` does not exist.
+        ValueError: if the file is not a valid :class:`StandardScaler`.
     """
     p = Path(path)
     if not p.exists():
-        raise FileNotFoundError(f"Scaler no encontrado en {p}.")
+        raise FileNotFoundError(f"Scaler not found at {p}.")
     obj = joblib.load(p)
     if not isinstance(obj, StandardScaler):
         raise ValueError(
-            f"El archivo en {p} no es un StandardScaler (tipo={type(obj).__name__})."
+            f"The file at {p} is not a StandardScaler (type={type(obj).__name__})."
         )
     return cast(StandardScaler, obj)
 
@@ -200,7 +200,7 @@ def _validate_no_leakage(
     val_ids: tuple[int, ...] | None,
     test_ids: tuple[int, ...] | None,
 ) -> None:
-    """Lanza :class:`ValueError` si ``train_ids`` interseca val/test."""
+    """Raise :class:`ValueError` if ``train_ids`` intersects val/test."""
     train_set = set(int(x) for x in train_ids)
     for label, ids in (("val", val_ids), ("test", test_ids)):
         if not ids:
@@ -208,13 +208,13 @@ def _validate_no_leakage(
         overlap = train_set.intersection(int(x) for x in ids)
         if overlap:
             raise ValueError(
-                f"Leakage detectado: train_ids interseca {label}_ids en "
-                f"{len(overlap)} parcel_ids (ej. {sorted(overlap)[:3]}...)."
+                f"Leakage detected: train_ids intersects {label}_ids in "
+                f"{len(overlap)} parcel_ids (e.g. {sorted(overlap)[:3]}...)."
             )
 
 
 def _filter_numeric(*, df: pl.DataFrame, feature_cols: tuple[str, ...]) -> list[str]:
-    """Filtra `feature_cols` quedándose solo con las numéricas presentes en df."""
+    """Filter `feature_cols` keeping only the numeric ones present in df."""
     keep: list[str] = []
     dropped: list[str] = []
     for col in feature_cols:

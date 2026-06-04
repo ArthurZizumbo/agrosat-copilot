@@ -1,16 +1,16 @@
-"""Portada visual y conclusiones por integrante para los notebooks del curso.
+"""Visual cover and per-member conclusions for the course notebooks.
 
-Genera el Markdown/HTML de:
+Generates the Markdown/HTML of:
 
-- ``build_cover_markdown``: una portada homologada con identidad visual
-  (badges de institucion/programa/materia, stack tecnologico, datos del equipo,
-  sponsor y fecha) para los cuatro entregables AvanceX.Equipo17.
-- ``build_team_conclusions_markdown``: el bloque de cierre con una conclusion
-  individual por integrante sobre los resultados del avance.
+- ``build_cover_markdown``: a standardized cover with visual identity
+  (institution/program/course badges, technology stack, team data,
+  sponsor and date) for the four AvanceX.Equipo17 deliverables.
+- ``build_team_conclusions_markdown``: the closing block with an individual
+  conclusion per member about the results of the avance.
 
-El texto vive aqui (no embebido en cada builder) para que las cuatro portadas
-sean identicas y la edicion sea DRY. Las cadenas se renderizan igual en Jupyter,
-papermill y el visor de GitHub (HTML inline + badges shields.io).
+The text lives here (not embedded in each builder) so that the four covers
+are identical and editing is DRY. The strings render the same in Jupyter,
+papermill and the GitHub viewer (inline HTML + shields.io badges).
 """
 
 from __future__ import annotations
@@ -36,12 +36,12 @@ _COURSE = "MNA — Tec de Monterrey · 20-abr → 3-jul-2026"
 
 @dataclass(frozen=True)
 class MemberConclusion:
-    """Conclusion individual de un integrante sobre los resultados del avance.
+    """Individual conclusion of a member about the results of the avance.
 
     Attributes:
-        name: Nombre del integrante.
-        role: Rol corto entre parentesis (e.g. ``"ML / Data Scientist"``).
-        text: Parrafo con la lectura individual de los resultados obtenidos.
+        name: Member name.
+        role: Short role in parentheses (e.g. ``"ML / Data Scientist"``).
+        text: Paragraph with the individual reading of the obtained results.
     """
 
     name: str
@@ -50,7 +50,7 @@ class MemberConclusion:
 
 
 def _badge(label: str, message: str, color: str) -> str:
-    """Devuelve un ``<img>`` de shields.io para un badge label-message."""
+    """Return a shields.io ``<img>`` for a label-message badge."""
     label_enc = label.replace(" ", "%20").replace("-", "--")
     msg_enc = message.replace(" ", "%20").replace("-", "--")
     return (
@@ -66,17 +66,17 @@ def build_cover_markdown(
     delivery_date: str,
     tech_badges: tuple[tuple[str, str], ...] = (),
 ) -> str:
-    """Construye la portada visual homologada de un entregable.
+    """Build the standardized visual cover of a deliverable.
 
     Args:
-        avance: Etiqueta del avance (e.g. ``"Avance 4"``).
-        title: Titulo del entregable (e.g. ``"Segmentacion semantica densa"``).
-        subtitle: Bajada de una linea con el alcance del notebook.
-        delivery_date: Fecha de entrega (texto libre, e.g. ``"2026-05-31"``).
-        tech_badges: Pares (label, message) de badges de stack adicionales.
+        avance: Avance label (e.g. ``"Avance 4"``).
+        title: Deliverable title (e.g. ``"Segmentacion semantica densa"``).
+        subtitle: One-line tagline with the notebook scope.
+        delivery_date: Delivery date (free text, e.g. ``"2026-05-31"``).
+        tech_badges: (label, message) pairs of additional stack badges.
 
     Returns:
-        Cadena Markdown con HTML inline lista para una celda de portada.
+        Markdown string with inline HTML ready for a cover cell.
     """
     nav_badges = "&nbsp;".join(
         (
@@ -133,13 +133,13 @@ def build_cover_markdown(
 
 
 def build_team_conclusions_markdown(conclusions: tuple[MemberConclusion, ...]) -> str:
-    """Construye el bloque de conclusiones individuales por integrante.
+    """Build the block of individual per-member conclusions.
 
     Args:
-        conclusions: Conclusiones por integrante sobre los resultados del avance.
+        conclusions: Per-member conclusions about the results of the avance.
 
     Returns:
-        Cadena Markdown con una subseccion por integrante.
+        Markdown string with one subsection per member.
     """
     blocks = [
         "## Conclusiones individuales del equipo\n\n"

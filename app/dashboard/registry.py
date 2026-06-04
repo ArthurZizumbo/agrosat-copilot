@@ -1,10 +1,10 @@
-"""Registro data-driven de secciones del dashboard.
+"""Data-driven registry of dashboard sections.
 
-Una unica fuente de verdad (``SECTIONS``) alimenta el selector de nivel
-superior, la navegacion de la sidebar y el dispatch de ``main()``. Agregar un
-Avance se reduce a crear su modulo de contenido + renderer y anadir una entrada
-a ``SECTIONS``; ni el selector ni la sidebar ni ``main()`` requieren edicion
-(principio Open/Closed).
+A single source of truth (``SECTIONS``) feeds the top-level selector, the
+sidebar navigation and the ``main()`` dispatch. Adding an Avance reduces to
+creating its content module + renderer and adding an entry to ``SECTIONS``;
+neither the selector nor the sidebar nor ``main()`` require editing
+(Open/Closed principle).
 """
 
 from __future__ import annotations
@@ -35,13 +35,13 @@ SECTION_STATE_KEY = "dashboard_section"
 
 @dataclass(frozen=True)
 class Section:
-    """Seccion navegable del dashboard.
+    """Navigable section of the dashboard.
 
     Attributes:
-        key: Identificador estable (e.g. ``"a1-eda"``).
-        label: Texto del selector y la sidebar.
-        renderer: Funcion sin argumentos que renderiza la seccion.
-        tab_labels: Etiquetas de tabs para la navegacion de la sidebar.
+        key: Stable identifier (e.g. ``"a1-eda"``).
+        label: Text of the selector and the sidebar.
+        renderer: Argument-less function that renders the section.
+        tab_labels: Tab labels for the sidebar navigation.
     """
 
     key: str
@@ -70,15 +70,15 @@ _LABEL_TO_SECTION: dict[str, Section] = {section.label: section for section in S
 
 
 def render_section_selector(sections: Sequence[Section]) -> Section:
-    """Renderiza el selector de seccion y devuelve la seccion activa.
+    """Render the section selector and return the active section.
 
     Args:
-        sections: Secciones disponibles (orden de presentacion).
+        sections: Available sections (presentation order).
 
     Returns:
-        La ``Section`` seleccionada. El valor se preserva entre re-renders via
-        ``st.session_state``; si el usuario deselecciona, se conserva la ultima
-        seccion valida (default: la primera).
+        The selected ``Section``. The value is preserved across re-renders via
+        ``st.session_state``; if the user deselects, the last valid section is
+        kept (default: the first).
     """
     if SECTION_STATE_KEY not in st.session_state:
         st.session_state[SECTION_STATE_KEY] = sections[0].label

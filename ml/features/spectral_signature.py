@@ -1,55 +1,54 @@
-"""Descriptores compactos de firma espectral por parcela (US-023-preview P5).
+"""Compact per-parcel spectral signature descriptors (US-023-preview P5).
 
-Genera ``spectral_signature_*`` como bloque opcional para ``fusion.py`` con
-descriptores agronomicamente justificados de la curva espectral muestreada
-por parcela:
+Generates ``spectral_signature_*`` as an optional block for ``fusion.py`` with
+agronomically justified descriptors of the spectral curve sampled per parcel:
 
 - ``rep`` (default, **Frampton et al. 2013**, DOI 10.1016/j.isprsjprs.2013.04.007):
-  Red Edge Position estacional. Posicion (en nm) del punto de inflexion de
-  la curva de reflectancia entre el rojo y el infrarrojo cercano. La REP
-  varia con el contenido de clorofila y la fenologia del cultivo;
-  bibliografia de teledeteccion agronomica la documenta como uno de los
-  descriptores compactos mas fiables del estado del cultivo.
-- ``sam`` (Spectral Angle Mapper): coseno del angulo espectral entre la
-  firma de la parcela y el centroide de la clase mayoritaria observada en
-  fit. Es ``1.0`` cuando la parcela "se parece" a la firma media de la
-  clase mayoritaria, ``-1.0`` cuando es ortogonal. Util como base learner
-  contrastivo.
-- ``redge_moments``: momentos estadisticos (mean, var, skew) de la
-  reflectancia red-edge agregada por parcela. Captura la forma de la
-  curva red-edge en 3 numeros compactos.
+  seasonal Red Edge Position. Position (in nm) of the inflection point of
+  the reflectance curve between red and near-infrared. The REP varies with
+  chlorophyll content and crop phenology; agronomic remote-sensing
+  literature documents it as one of the most reliable compact descriptors
+  of crop condition.
+- ``sam`` (Spectral Angle Mapper): cosine of the spectral angle between the
+  parcel signature and the centroid of the majority class observed during
+  fit. It is ``1.0`` when the parcel "resembles" the mean signature of the
+  majority class, ``-1.0`` when orthogonal. Useful as a contrastive base
+  learner.
+- ``redge_moments``: statistical moments (mean, var, skew) of the red-edge
+  reflectance aggregated per parcel. Captures the shape of the red-edge
+  curve in 3 compact numbers.
 
-Decisiones canonicas (US-023-preview plan §11 D-3):
+Canonical decisions (US-023-preview plan §11 D-3):
 
-- Default ``rep`` por defecto: bien establecido en literatura, computable
-  desde S2 ya muestreado, no requiere nueva ingesta GEE.
-- Sklearn-compatible (``BaseEstimator`` + ``TransformerMixin``) para
-  encajar en Pipelines y pasar el contrato de los tests de US-022b.
-- Polars in / Polars out: el DataFrame de entrada ya esta limpio y
-  filtrado; el caller (notebook 05 / ``fusion.py``) hace los joins.
-- **No consume cuota GEE**: las bandas y stats vienen del parquet de
-  features fusionadas (``data/features/*``). El modulo solo combina cols
-  ya muestreadas.
+- ``rep`` as default: well established in the literature, computable from
+  already-sampled S2, requires no new GEE ingestion.
+- Sklearn-compatible (``BaseEstimator`` + ``TransformerMixin``) to fit into
+  Pipelines and satisfy the contract of the US-022b tests.
+- Polars in / Polars out: the input DataFrame is already clean and
+  filtered; the caller (notebook 05 / ``fusion.py``) performs the joins.
+- **Consumes no GEE quota**: the bands and stats come from the fused
+  features parquet (``data/features/*``). The module only combines
+  already-sampled columns.
 
-Layout de salida (orden estable, downstream depende):
+Output layout (stable order, downstream depends on it):
 
 ::
 
     parcel_id (i64) | year (i16) |
     spectral_signature_000 .. spectral_signature_{K-1} (K)
 
-Donde ``K`` depende del descriptor:
+Where ``K`` depends on the descriptor:
 - ``rep``: ``K = len(phenology_anchors)`` (default 3 — SOG/peak/senescence
   -> ``spectral_signature_000, 001, 002``).
-- ``sam``: ``K = 1`` (un solo angulo escalar).
+- ``sam``: ``K = 1`` (a single scalar angle).
 - ``redge_moments``: ``K = 3 * len(phenology_anchors)`` (mean, var, skew
-  por ancla; default 9 cols).
+  per anchor; default 9 cols).
 
-El bloque entra a ``fusion.py`` via ``LEFT JOIN`` sobre ``(parcel_id, year)``,
-mismo patron que FarSLIP y phenology_text.
+The block enters ``fusion.py`` via ``LEFT JOIN`` on ``(parcel_id, year)``,
+the same pattern as FarSLIP and phenology_text.
 
-Referencias agronomicas
------------------------
+Agronomic references
+--------------------
 - Frampton, W.J. et al. (2013), *Evaluating the capabilities of Sentinel-2
   for quantitative estimation of biophysical variables in vegetation*,
   ISPRS J. 82, 83-92. DOI 10.1016/j.isprsjprs.2013.04.007.
@@ -107,38 +106,38 @@ def compute_rep(
     reflectance_b06: np.ndarray,
     reflectance_b07: np.ndarray,
 ) -> np.ndarray:
-    """Calcula Red Edge Position (REP) linear-4-bands (Frampton et al. 2013).
+    """Compute the linear-4-bands Red Edge Position (REP) (Frampton et al. 2013).
 
-    Implementa la formula linealizada de la version "Red Edge Position
-    Linear 4-bands" del paper de Frampton (eq. 1):
+    Implements the linearized formula of the "Red Edge Position Linear
+    4-bands" version from Frampton's paper (eq. 1):
 
     .. math::
 
         REP = 705 + 35 \\times
         \\frac{(R_{B04} + R_{B07}) / 2 - R_{B05}}{R_{B06} - R_{B05}}
 
-    El resultado esta en nm y suele oscilar entre 700 y 740 nm para
-    vegetacion sana. Cultivos estresados o suelos desnudos producen valores
-    fuera de ese rango — la formula los tolera (no se acota artificialmente).
+    The result is in nm and usually ranges between 700 and 740 nm for
+    healthy vegetation. Stressed crops or bare soil produce values outside
+    that range — the formula tolerates them (no artificial clipping).
 
     Args:
-        reflectance_b04: Reflectancia B04 (red, ~665 nm) shape ``(N,)``.
-        reflectance_b05: Reflectancia B05 (red-edge 1, ~704 nm) shape ``(N,)``.
-        reflectance_b06: Reflectancia B06 (red-edge 2, ~740 nm) shape ``(N,)``.
-        reflectance_b07: Reflectancia B07 (red-edge 3, ~783 nm) shape ``(N,)``.
+        reflectance_b04: B04 reflectance (red, ~665 nm) shape ``(N,)``.
+        reflectance_b05: B05 reflectance (red-edge 1, ~704 nm) shape ``(N,)``.
+        reflectance_b06: B06 reflectance (red-edge 2, ~740 nm) shape ``(N,)``.
+        reflectance_b07: B07 reflectance (red-edge 3, ~783 nm) shape ``(N,)``.
 
     Returns:
-        Vector REP en nm, shape ``(N,)``, dtype ``float64``. Valores
-        ``NaN`` cuando la formula degenera (denominador ~0 o entradas NaN).
+        REP vector in nm, shape ``(N,)``, dtype ``float64``. ``NaN`` values
+        where the formula degenerates (denominator ~0 or NaN inputs).
 
     Raises:
-        ValueError: si los 4 arrays no tienen el mismo shape.
+        ValueError: if the 4 arrays do not have the same shape.
     """
     arrays = (reflectance_b04, reflectance_b05, reflectance_b06, reflectance_b07)
     shapes = {a.shape for a in arrays}
     if len(shapes) != 1:
         raise ValueError(
-            f"Las 4 bandas deben tener el mismo shape; recibido {shapes!r}."
+            f"The 4 bands must have the same shape; got {shapes!r}."
         )
     b04 = reflectance_b04.astype(np.float64, copy=False)
     b05 = reflectance_b05.astype(np.float64, copy=False)
@@ -154,32 +153,31 @@ def compute_rep(
 
 
 class SpectralSignatureFeatures(BaseEstimator, TransformerMixin):
-    """Genera features compactas derivadas de la firma espectral por parcela.
+    """Generate compact features derived from the per-parcel spectral signature.
 
-    Sklearn-compatible: encaja en ``sklearn.pipeline.Pipeline`` con
-    ``StandardScaler``, ``XGBRegressor``, etc. El metodo ``fit`` aprende
-    (cuando aplica) el centroide de la clase mayoritaria para el descriptor
-    ``sam``; ``transform`` siempre devuelve un :class:`polars.DataFrame`
-    con columnas ``parcel_id, year, spectral_signature_NNN``.
+    Sklearn-compatible: fits into ``sklearn.pipeline.Pipeline`` with
+    ``StandardScaler``, ``XGBRegressor``, etc. The ``fit`` method learns
+    (when applicable) the centroid of the majority class for the ``sam``
+    descriptor; ``transform`` always returns a :class:`polars.DataFrame`
+    with columns ``parcel_id, year, spectral_signature_NNN``.
 
     Args:
-        descriptor: Tipo de descriptor. Uno de ``"rep"`` (default, Frampton
+        descriptor: Descriptor type. One of ``"rep"`` (default, Frampton
             et al. 2013 Red Edge Position), ``"sam"`` (Spectral Angle Mapper
-            vs centroide de la clase mayoritaria) o ``"redge_moments"``
-            (mean/var/skew de la reflectancia red-edge en cada ancla).
-        phenology_anchors: Anclajes temporales sobre los que se calcula
-            cada descriptor. Default ``("sog", "peak", "senescence")``.
-            Para cada ancla se buscan columnas ``{ancla}_{banda}`` (e.g.
-            ``sog_b05``); si no existen, el ancla se rellena con NaN.
-        bands: Bandas red-edge requeridas (default
-            ``("b05", "b06", "b07", "b08")``). Para ``rep`` se usan B04..B07.
-        parcel_id_col: Nombre de la columna identificadora (default
+            vs the majority-class centroid) or ``"redge_moments"``
+            (mean/var/skew of the red-edge reflectance at each anchor).
+        phenology_anchors: Temporal anchors over which each descriptor is
+            computed. Default ``("sog", "peak", "senescence")``. For each
+            anchor, columns ``{anchor}_{band}`` (e.g. ``sog_b05``) are
+            looked up; if absent, the anchor is filled with NaN.
+        bands: Required red-edge bands (default
+            ``("b05", "b06", "b07", "b08")``). For ``rep``, B04..B07 are used.
+        parcel_id_col: Name of the identifier column (default
             ``"parcel_id"``).
-        year_col: Nombre de la columna de anio (default ``"year"``).
-        class_col: Columna de clase usada por ``sam`` para calcular el
-            centroide en ``fit``. Si es ``None``, ``sam`` calcula contra
-            un vector de unos (mero fallback) y avisa via warning
-            estructurado.
+        year_col: Name of the year column (default ``"year"``).
+        class_col: Class column used by ``sam`` to compute the centroid
+            during ``fit``. If ``None``, ``sam`` computes against a vector
+            of ones (mere fallback) and warns via a structured warning.
     """
 
     def __init__(
@@ -207,23 +205,23 @@ class SpectralSignatureFeatures(BaseEstimator, TransformerMixin):
         X: pl.DataFrame,
         y: object | None = None,
     ) -> SpectralSignatureFeatures:
-        """Aprende el centroide de la clase mayoritaria (solo ``sam``).
+        """Learn the centroid of the majority class (``sam`` only).
 
         Args:
-            X: DataFrame Polars con al menos ``parcel_id``, ``year`` y las
-                columnas espectrales requeridas por el descriptor.
-            y: Ignorado (sklearn signature).
+            X: Polars DataFrame with at least ``parcel_id``, ``year`` and the
+                spectral columns required by the descriptor.
+            y: Ignored (sklearn signature).
 
         Returns:
-            La instancia ``self`` para encadenar.
+            The ``self`` instance for chaining.
 
         Raises:
-            ValueError: si ``descriptor`` no es uno de los soportados.
+            ValueError: if ``descriptor`` is not one of the supported values.
         """
         if self.descriptor not in ("rep", "sam", "redge_moments"):
             raise ValueError(
-                f"`descriptor` debe ser 'rep', 'sam' o 'redge_moments'; "
-                f"recibido {self.descriptor!r}."
+                f"`descriptor` must be 'rep', 'sam' or 'redge_moments'; "
+                f"got {self.descriptor!r}."
             )
 
         self.centroid_: np.ndarray | None = None
@@ -232,18 +230,18 @@ class SpectralSignatureFeatures(BaseEstimator, TransformerMixin):
         return self
 
     def transform(self, X: pl.DataFrame) -> pl.DataFrame:
-        """Produce el DataFrame ``parcel_id, year, spectral_signature_NNN``.
+        """Produce the ``parcel_id, year, spectral_signature_NNN`` DataFrame.
 
         Args:
-            X: DataFrame Polars con las columnas espectrales requeridas.
+            X: Polars DataFrame with the required spectral columns.
 
         Returns:
-            DataFrame Polars con shape ``(N, 2 + K)`` donde ``K`` depende
-            del descriptor (3 para ``rep`` default, 1 para ``sam``, 9 para
-            ``redge_moments`` default).
+            Polars DataFrame with shape ``(N, 2 + K)`` where ``K`` depends
+            on the descriptor (3 for default ``rep``, 1 for ``sam``, 9 for
+            default ``redge_moments``).
 
         Raises:
-            ValueError: si ``parcel_id`` o ``year`` no estan en ``X``.
+            ValueError: if ``parcel_id`` or ``year`` are not in ``X``.
         """
         self._validate_input(X)
 
@@ -290,20 +288,20 @@ class SpectralSignatureFeatures(BaseEstimator, TransformerMixin):
         return self.fit(X, y).transform(X)
 
     # ------------------------------------------------------------------
-    # Helpers privados.
+    # Private helpers.
     # ------------------------------------------------------------------
 
     def _validate_input(self, X: pl.DataFrame) -> None:
-        """Valida que el DataFrame trae las columnas minimas."""
+        """Validate that the DataFrame carries the minimum columns."""
         if not isinstance(X, pl.DataFrame):
             raise TypeError(
-                f"`X` debe ser un polars.DataFrame; recibido {type(X)!r}."
+                f"`X` must be a polars.DataFrame; got {type(X)!r}."
             )
         missing = [c for c in (self.parcel_id_col, self.year_col) if c not in X.columns]
         if missing:
             raise ValueError(
-                f"`X` no contiene columnas requeridas: {missing}. "
-                f"Esperadas al menos: ['{self.parcel_id_col}', '{self.year_col}']."
+                f"`X` does not contain required columns: {missing}. "
+                f"Expected at least: ['{self.parcel_id_col}', '{self.year_col}']."
             )
 
     def _extract_anchor_bands(
@@ -312,12 +310,12 @@ class SpectralSignatureFeatures(BaseEstimator, TransformerMixin):
         anchor: str,
         bands: Sequence[str],
     ) -> np.ndarray:
-        """Devuelve matriz ``(N, len(bands))`` de reflectancias.
+        """Return a ``(N, len(bands))`` matrix of reflectances.
 
-        Busca columnas con prefijo ``{anchor}_{band}``. Si no existen,
-        intenta el fallback de columnas estilo subset US-018:
-        ``{band}_mean`` (ignora el ancla). Si tampoco existen, rellena
-        con NaN para mantener el contrato de shape.
+        Looks for columns with prefix ``{anchor}_{band}``. If absent, it
+        tries the US-018 subset-style column fallback ``{band}_mean``
+        (ignores the anchor). If those are missing too, it fills with NaN
+        to preserve the shape contract.
         """
         n = X.height
         out = np.full((n, len(bands)), np.nan, dtype=np.float64)
@@ -335,10 +333,10 @@ class SpectralSignatureFeatures(BaseEstimator, TransformerMixin):
         return out
 
     def _transform_rep(self, X: pl.DataFrame) -> np.ndarray:
-        """Calcula REP en cada ancla fenologica.
+        """Compute REP at each phenology anchor.
 
-        Requiere las 4 bandas B04/B05/B06/B07 por ancla. Si alguna falta,
-        la columna resultante queda en NaN para esa ancla.
+        Requires the 4 bands B04/B05/B06/B07 per anchor. If any is missing,
+        the resulting column stays NaN for that anchor.
         """
         n = X.height
         out = np.full((n, len(self.phenology_anchors)), np.nan, dtype=np.float64)
@@ -354,12 +352,12 @@ class SpectralSignatureFeatures(BaseEstimator, TransformerMixin):
         return out
 
     def _transform_sam(self, X: pl.DataFrame) -> np.ndarray:
-        """Calcula Spectral Angle Mapper vs centroide aprendido en fit.
+        """Compute Spectral Angle Mapper vs the centroid learned during fit.
 
-        Devuelve un escalar por parcela: el coseno del angulo entre la
-        firma media (concatenacion de bandas red-edge en las anclas) de la
-        parcela y el centroide. Sin centroide aprendido (fit no llamado o
-        sin ``class_col``), produce coseno vs un vector de unos.
+        Returns a scalar per parcel: the cosine of the angle between the
+        parcel's mean signature (concatenation of red-edge bands at the
+        anchors) and the centroid. With no learned centroid (fit not called
+        or no ``class_col``), it yields the cosine vs a vector of ones.
         """
         signatures = self._stack_signatures(X)
         if self.centroid_ is None:
@@ -380,10 +378,10 @@ class SpectralSignatureFeatures(BaseEstimator, TransformerMixin):
         return (num / safe_denom).reshape(-1, 1)
 
     def _transform_redge_moments(self, X: pl.DataFrame) -> np.ndarray:
-        """Calcula mean/var/skew de las bandas red-edge por ancla.
+        """Compute mean/var/skew of the red-edge bands per anchor.
 
-        Devuelve ``K = 3 * len(phenology_anchors)`` columnas: por cada
-        ancla, los 3 momentos estadisticos sobre la curva red-edge.
+        Returns ``K = 3 * len(phenology_anchors)`` columns: for each anchor,
+        the 3 statistical moments over the red-edge curve.
         """
         n = X.height
         out = np.full((n, 3 * len(self.phenology_anchors)), np.nan, dtype=np.float64)
@@ -410,12 +408,12 @@ class SpectralSignatureFeatures(BaseEstimator, TransformerMixin):
         return out
 
     def _stack_signatures(self, X: pl.DataFrame) -> np.ndarray:
-        """Construye la firma concatenada (anchors x bands) por parcela.
+        """Build the concatenated signature (anchors x bands) per parcel.
 
         Returns:
-            Matriz ``(N, len(phenology_anchors) * len(bands))`` con todas
-            las reflectancias en el orden ``anchor0_band0, anchor0_band1,
-            ..., anchorK_bandJ``.
+            Matrix ``(N, len(phenology_anchors) * len(bands))`` with all the
+            reflectances in the order ``anchor0_band0, anchor0_band1, ...,
+            anchorK_bandJ``.
         """
         n = X.height
         out = np.full(
@@ -430,7 +428,7 @@ class SpectralSignatureFeatures(BaseEstimator, TransformerMixin):
         return out
 
     def _fit_centroid(self, X: pl.DataFrame) -> np.ndarray:
-        """Calcula el centroide de la clase mayoritaria para SAM."""
+        """Compute the centroid of the majority class for SAM."""
         if self.class_col is None or self.class_col not in X.columns:
             logger.warning(
                 "spectral_signature_no_class_col",

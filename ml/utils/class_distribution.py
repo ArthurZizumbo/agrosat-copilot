@@ -1,20 +1,20 @@
-"""Reporte de distribucion de clases para notebooks de baseline.
+"""Class distribution report for baseline notebooks.
 
-Sustituye el reporte ad-hoc "Clases con < 1000 parcelas: [...]" que aparece
-en `notebooks/baseline/05_reencuadre_fenologico.ipynb` y produce informacion
-util para decidir threshold de soporte, merge fenologico via
-`PASTIS_R_GROUPINGS`, y stratificacion del CV espacial.
+Replaces the ad-hoc report "Classes with < 1000 parcels: [...]" that appears
+in `notebooks/baseline/05_reencuadre_fenologico.ipynb` and produces
+information useful to decide a support threshold, phenological merge via
+`PASTIS_R_GROUPINGS`, and stratification of the spatial CV.
 
-Funciones publicas:
+Public functions:
 
-- :func:`class_distribution_report` — DataFrame Polars con `class_id`,
+- :func:`class_distribution_report` — Polars DataFrame with `class_id`,
   `class_name`, `n_parcels`, `share`, `support_band` (high/med/low/very_low),
   `agronomic_group`, `phenological_cycle`.
-- :func:`recommend_threshold` — sugiere un threshold sensato basado en
-  percentiles del soporte, en lugar del 1000 hardcoded que rompia el reporte.
-- :func:`merge_to_phenological_groups` — agrupa class_ids segun
-  `PASTIS_R_GROUPINGS["phenological_cycle"]` para reducir cardinalidad y
-  habilitar baselines con clases balanceadas.
+- :func:`recommend_threshold` — suggests a sensible threshold based on
+  support percentiles, instead of the hardcoded 1000 that broke the report.
+- :func:`merge_to_phenological_groups` — groups class_ids according to
+  `PASTIS_R_GROUPINGS["phenological_cycle"]` to reduce cardinality and
+  enable baselines with balanced classes.
 """
 
 from __future__ import annotations
@@ -45,27 +45,27 @@ def class_distribution_report(
     thresholds: tuple[int, int, int] = (1000, 200, 30),
     drop_class_ids: tuple[int, ...] = (0, 19),
 ) -> pl.DataFrame:
-    """Construye un reporte detallado de distribucion de clases.
+    """Build a detailed class distribution report.
 
-    Resuelve el ruido que producia el reporte "Clases con < 1000 parcelas:
-    [3, 8, ...]" sustituyendolo por una tabla con bandas de soporte y nombres
-    legibles.
+    Resolves the noise produced by the report "Classes with < 1000 parcels:
+    [3, 8, ...]" by replacing it with a table of support bands and readable
+    names.
 
     Args:
-        df: DataFrame Polars con la columna `class_col`.
-        class_col: Nombre de la columna de clase. Default `"class_id"`.
-        thresholds: Tupla `(high, med, low)` para clasificar en bandas de
-            soporte. `n >= high` es "high"; `med <= n < high` es "med"; `low
-            <= n < med` es "low"; `n < low` es "very_low". Default
+        df: Polars DataFrame with the `class_col` column.
+        class_col: Name of the class column. Default `"class_id"`.
+        thresholds: Tuple `(high, med, low)` to classify into support
+            bands. `n >= high` is "high"; `med <= n < high` is "med"; `low
+            <= n < med` is "low"; `n < low` is "very_low". Default
             `(1000, 200, 30)`.
-        drop_class_ids: Class IDs a descartar antes del conteo (PASTIS-R 0
-            Background y 19 Void). Default `(0, 19)`.
+        drop_class_ids: Class IDs to discard before counting (PASTIS-R 0
+            Background and 19 Void). Default `(0, 19)`.
 
     Returns:
-        DataFrame con columnas `class_id`, `class_name`, `n_parcels`,
-        `share` (proporcion), `support_band` (`high|med|low|very_low`),
-        `agronomic_group`, `phenological_cycle`. Ordenado por `n_parcels`
-        descendente.
+        DataFrame with columns `class_id`, `class_name`, `n_parcels`,
+        `share` (proportion), `support_band` (`high|med|low|very_low`),
+        `agronomic_group`, `phenological_cycle`. Sorted by `n_parcels`
+        descending.
     """
     if class_col not in df.columns:
         raise ValueError(f"`df` no contiene la columna `{class_col}`.")
@@ -150,24 +150,24 @@ def recommend_threshold(
     n_count_col: str = "n_parcels",
     method: Literal["p25", "p50", "minmax_balance"] = "p25",
 ) -> int:
-    """Sugiere un threshold de soporte sensato para reportes.
+    """Suggest a sensible support threshold for reports.
 
-    El threshold hardcoded de 1000 que aparecia en notebooks producia el
-    ruido "solo 1 clase cumple" porque PASTIS-R Italia esta muy
-    desbalanceado (1 clase mayoritaria con ~30k parcelas, resto con <500).
+    The hardcoded threshold of 1000 that appeared in notebooks produced the
+    noise "only 1 class qualifies" because PASTIS-R Italy is highly
+    imbalanced (1 majority class with ~30k parcels, the rest with <500).
 
     Args:
-        report: DataFrame de `class_distribution_report`.
-        n_count_col: Columna con el conteo por clase.
-        method: Estrategia de calculo:
+        report: DataFrame from `class_distribution_report`.
+        n_count_col: Column with the per-class count.
+        method: Computation strategy:
 
-            - `"p25"`: percentil 25 del conteo (mas tolerante).
-            - `"p50"`: mediana del conteo.
-            - `"minmax_balance"`: media geometrica entre min y max.
+            - `"p25"`: 25th percentile of the count (more tolerant).
+            - `"p50"`: median of the count.
+            - `"minmax_balance"`: geometric mean between min and max.
 
     Returns:
-        Threshold entero recomendado. Para Italia 18 clases tipicamente
-        cae en el rango [30, 200].
+        Recommended integer threshold. For Italy's 18 classes it typically
+        falls in the range [30, 200].
     """
     counts = report[n_count_col].to_numpy()
     if counts.size == 0:
@@ -194,21 +194,21 @@ def merge_to_phenological_groups(
     grouping_name: str = "phenological_cycle",
     output_col: str = "pheno_group_id",
 ) -> pl.DataFrame:
-    """Agrega una columna de grupo agronomico/fenologico para reducir cardinalidad.
+    """Add an agronomic/phenological group column to reduce cardinality.
 
-    Usa `PASTIS_R_GROUPINGS` (cargado desde
-    `data/reference/pastis_class_mapping.json`). Permite entrenar baselines
-    sobre grupos balanceados cuando el set de 18 clases es demasiado escaso.
+    Uses `PASTIS_R_GROUPINGS` (loaded from
+    `data/reference/pastis_class_mapping.json`). Allows training baselines
+    over balanced groups when the 18-class set is too sparse.
 
     Args:
-        df: DataFrame con `class_col`.
-        class_col: Columna con `class_id` PASTIS.
-        grouping_name: Clave de `PASTIS_R_GROUPINGS`. Default
-            `"phenological_cycle"` (cereales invernal/primavera/perenne/...).
-        output_col: Nombre de la nueva columna.
+        df: DataFrame with `class_col`.
+        class_col: Column with the PASTIS `class_id`.
+        grouping_name: Key of `PASTIS_R_GROUPINGS`. Default
+            `"phenological_cycle"` (winter/spring/perennial/... cereals).
+        output_col: Name of the new column.
 
     Returns:
-        Una copia del DataFrame con la columna `output_col` adicional.
+        A copy of the DataFrame with the additional `output_col` column.
     """
     grouping = PASTIS_R_GROUPINGS.get(grouping_name)
     if not grouping:

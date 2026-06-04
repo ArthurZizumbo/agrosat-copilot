@@ -1,21 +1,21 @@
-"""Vectoriza las máscaras instance de PASTIS-R a polígonos por parcela.
+"""Vectorizes the PASTIS-R instance masks into per-parcel polygons.
 
-Operativo permanente. Para cada patch (2433 total) lee `TARGET_<id>.npy`,
-extrae las máscaras instance (canal 1) y semantic (canal 0), vectoriza
-cada parcela (instance_id único) con `rasterio.features.shapes`,
-georreferencia el polígono usando el bbox del patch en `metadata.geojson`
-(EPSG:2154) y reproyecta a EPSG:4326.
+Permanent operational tool. For each patch (2433 total) it reads
+`TARGET_<id>.npy`, extracts the instance (channel 1) and semantic (channel 0)
+masks, vectorizes each parcel (unique instance_id) with
+`rasterio.features.shapes`, georeferences the polygon using the patch bbox in
+`metadata.geojson` (EPSG:2154) and reprojects to EPSG:4326.
 
-Genera un GeoParquet con una fila por parcela:
+Generates a GeoParquet with one row per parcel:
     parcel_id (str: "<patch_id>_<instance_id>"), patch_id, instance_id,
     class_id, class_name, fold, area_m2, n_pixels, geometry (EPSG:4326).
 
-Filtros aplicados:
-- Descarta clase 0 (Background) y clase 19 (Void label).
-- Descarta parcelas con n_pixels < --min-pixels (default 10).
-- Descarta geometrías inválidas tras buffer(0) defensivo.
+Filters applied:
+- Discards class 0 (Background) and class 19 (Void label).
+- Discards parcels with n_pixels < --min-pixels (default 10).
+- Discards invalid geometries after a defensive buffer(0).
 
-Uso::
+Usage::
 
     poetry run python scripts/vectorize_pastis_parcels.py \\
         --min-pixels 10 \\
@@ -49,20 +49,20 @@ def _vectorize_patch(
     target_arr: np.ndarray,
     min_pixels: int,
 ) -> list[dict]:
-    """Vectoriza un patch en parcelas-polígono individuales (en EPSG:2154).
+    """Vectorizes a patch into individual parcel-polygons (in EPSG:2154).
 
     Args:
-        patch_id: Identificador del patch PASTIS-R.
-        fold: Fold oficial (1-5) heredado del patch.
-        bbox_2154: ``(minx, miny, maxx, maxy)`` del patch en EPSG:2154.
-        target_arr: Array ``(3, H, W)`` cargado de ``TARGET_<id>.npy``.
-            Canal 0 = semantic, Canal 1 = instance.
-        min_pixels: Filtro mínimo de píxeles por parcela.
+        patch_id: PASTIS-R patch identifier.
+        fold: Official fold (1-5) inherited from the patch.
+        bbox_2154: ``(minx, miny, maxx, maxy)`` of the patch in EPSG:2154.
+        target_arr: Array ``(3, H, W)`` loaded from ``TARGET_<id>.npy``.
+            Channel 0 = semantic, Channel 1 = instance.
+        min_pixels: Minimum pixel filter per parcel.
 
     Returns:
-        Lista de dicts con `parcel_id`, `patch_id`, `instance_id`, `class_id`,
-        `class_name`, `fold`, `area_m2`, `n_pixels`, `geometry` (shapely en
-        EPSG:2154 todavía; reproyección se hace al final en bulk).
+        List of dicts with `parcel_id`, `patch_id`, `instance_id`, `class_id`,
+        `class_name`, `fold`, `area_m2`, `n_pixels`, `geometry` (shapely still in
+        EPSG:2154; reprojection is done at the end in bulk).
     """
     semantic = target_arr[0]
     instance = target_arr[1]
@@ -173,7 +173,7 @@ def main(
         help="Si > 0, procesa solo los primeros N patches (smoke test)",
     ),
 ) -> None:
-    """Vectoriza las máscaras instance de PASTIS-R a polígonos por parcela."""
+    """Vectorizes the PASTIS-R instance masks into per-parcel polygons."""
     if not metadata.exists():
         logger.error("metadata_missing", path=str(metadata))
         raise typer.Exit(code=2)

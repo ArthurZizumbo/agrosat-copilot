@@ -1,18 +1,19 @@
-"""Inserta portada visual + conclusiones por integrante en los 4 entregables.
+"""Inserts a visual cover + per-member conclusions into the 4 deliverables.
 
-Operativo permanente e idempotente (reproducible). Para cada AvanceX.Equipo17:
+Permanent and idempotent operational script (reproducible). For each
+AvanceX.Equipo17:
 
-1. Reemplaza la primera celda (portada) por la portada homologada con badges,
-   header e identidad visual (``ml.report.notebook_cover.build_cover_markdown``).
-2. Anade al final el bloque de conclusiones individuales por integrante
-   (``ml.report.notebook_conclusions``), si no esta ya presente.
-3. Solo en el Avance 4: adelgaza la celda de galeria de figuras para que use
-   ``ml.report.segmentation_figures.find_figure`` en vez del mapa hardcodeado.
+1. Replaces the first cell (cover) with the standardized cover with badges,
+   header and visual identity (``ml.report.notebook_cover.build_cover_markdown``).
+2. Appends at the end the block of individual per-member conclusions
+   (``ml.report.notebook_conclusions``), if not already present.
+3. Only in Avance 4: slims down the figure gallery cell so it uses
+   ``ml.report.segmentation_figures.find_figure`` instead of the hardcoded map.
 
-No re-ejecuta los notebooks: eso lo hace papermill despues. Las marcas de
-idempotencia evitan duplicar portada o conclusiones en corridas repetidas.
+It does not re-execute the notebooks: papermill does that afterwards. The
+idempotency marks avoid duplicating the cover or conclusions on repeated runs.
 
-Uso::
+Usage::
 
     poetry run python scripts/populate_notebook_covers.py
 """
@@ -38,24 +39,24 @@ _CONCL_MARK = "<!-- agrosat-team-conclusions -->"
 
 
 def _md(src: str) -> dict:
-    """Celda markdown nbformat v4 a partir de una cadena."""
+    """nbformat v4 markdown cell from a string."""
     return {"cell_type": "markdown", "metadata": {}, "source": src.splitlines(keepends=True)}
 
 
 def _cover_cell(avance: str, title: str, subtitle: str, date: str) -> dict:
-    """Construye la celda de portada marcada para idempotencia."""
+    """Builds the cover cell marked for idempotency."""
     body = build_cover_markdown(avance, title, subtitle, date)
     return _md(f"{_COVER_MARK}\n{body}")
 
 
 def _conclusions_cell(conclusions: tuple) -> dict:
-    """Construye la celda de conclusiones por integrante marcada."""
+    """Builds the per-member conclusions cell, marked."""
     body = build_team_conclusions_markdown(conclusions)
     return _md(f"{_CONCL_MARK}\n{body}")
 
 
 def _is_legacy_cover(cell: dict) -> bool:
-    """Detecta la portada plana antigua (titulo + matriculas del equipo)."""
+    """Detects the old flat cover (title + team enrollment IDs)."""
     if cell["cell_type"] != "markdown":
         return False
     src = "".join(cell["source"])
@@ -63,11 +64,11 @@ def _is_legacy_cover(cell: dict) -> bool:
 
 
 def _trim_legacy_header(cell: dict) -> dict:
-    """Quita el encabezado de portada plano, conservando del primer ``---``.
+    """Removes the flat cover header, keeping from the first ``---``.
 
-    La portada plana antigua fusiona titulo + equipo + resumen ejecutivo (y a
-    veces indice/tabla). Se elimina solo el encabezado duplicado (hasta el
-    primer separador ``---``) y se conserva el resto del contenido.
+    The old flat cover merges title + team + executive summary (and
+    sometimes index/table). Only the duplicated header is removed (up to the
+    first ``---`` separator) and the rest of the content is kept.
     """
     src = "".join(cell["source"])
     sep = src.find("---")
@@ -78,11 +79,11 @@ def _trim_legacy_header(cell: dict) -> dict:
 
 
 def _replace_cover(cells: list[dict], cover: dict) -> None:
-    """Pone la portada nueva e integra el contenido util de la portada plana.
+    """Places the new cover and integrates the useful content of the flat cover.
 
-    Idempotente: si ya hay portada generada, solo la actualiza. Si encuentra la
-    portada plana antigua, la recorta para conservar su resumen ejecutivo y la
-    deja como segunda celda; la portada nueva queda primera.
+    Idempotent: if a generated cover already exists, it only updates it. If it
+    finds the old flat cover, it trims it to keep its executive summary and
+    leaves it as the second cell; the new cover becomes first.
     """
     if cells and _COVER_MARK in "".join(cells[0]["source"]):
         cells[0] = cover
@@ -93,7 +94,7 @@ def _replace_cover(cells: list[dict], cover: dict) -> None:
 
 
 def _append_conclusions(cells: list[dict], conclusions_cell: dict) -> None:
-    """Anade el bloque de conclusiones si no esta ya presente."""
+    """Appends the conclusions block if not already present."""
     if any(_CONCL_MARK in "".join(c["source"]) for c in cells):
         for idx, c in enumerate(cells):
             if _CONCL_MARK in "".join(c["source"]):
@@ -103,35 +104,16 @@ def _append_conclusions(cells: list[dict], conclusions_cell: dict) -> None:
 
 
 def _clean_a4_gallery(cells: list[dict]) -> None:
-    """Adelgaza la celda de galeria del A4 para usar el resolver de ml.report."""
+    """Slims down the A4 gallery cell to import the ml.report renderer.
+
+    The resolver and renderer live in ``ml.report.segmentation_figures``; the
+    notebook only imports ``show_model_figs`` (the notebook calls, it does not
+    implement logic). Idempotent: rewrites the legacy inline-def cell if present.
+    """
     new_src = (
-        "# Per-model figure gallery (resolved in ml.report.segmentation_figures).\n"
-        "from IPython.display import Image, Markdown, display\n"
-        "\n"
-        "from ml.report.segmentation_figures import FIGURE_TYPES, find_figure\n"
-        "\n"
-        "\n"
-        "def _find_fig(key, model):\n"
-        '    """Resuelve la figura ``key`` del ``model`` (delega en ml.report)."""\n'
-        "    return find_figure(FIGURES, key, model)\n"
-        "\n"
-        "\n"
-        "def show_model_figs(model):\n"
-        '    """Muestra las figuras disponibles de un modelo (de los 4 tipos).\n'
-        "\n"
-        "    Args:\n"
-        "        model: Slug del modelo (unet, anysat, deeplabv3plus, ...).\n"
-        '    """\n'
-        "    shown = False\n"
-        "    for key, label in FIGURE_TYPES:\n"
-        "        fpath = _find_fig(key, model)\n"
-        "        if fpath is not None:\n"
-        "            display(Markdown(f'**{label}**'))\n"
-        "            display(Image(filename=str(fpath)))\n"
-        "            shown = True\n"
-        "    if not shown:\n"
-        "        display(Markdown(f'_Aun no hay figuras para `{model}` "
-        "(correr su notebook de entrenamiento)._'))\n"
+        "# Per-model figure gallery: the resolver + renderer live in ml.report\n"
+        "# (the notebook calls, it does not implement logic).\n"
+        "from ml.report.segmentation_figures import show_model_figs\n"
     )
     for idx, c in enumerate(cells):
         if c["cell_type"] != "code":
@@ -149,7 +131,7 @@ def _clean_a4_gallery(cells: list[dict]) -> None:
 
 
 def _process(path: Path, cover: dict, conclusions_cell: dict, clean_a4: bool = False) -> None:
-    """Aplica portada + conclusiones (+ limpieza A4) a un notebook."""
+    """Applies cover + conclusions (+ A4 cleanup) to a notebook."""
     nb = json.loads(path.read_text(encoding="utf-8"))
     cells = nb["cells"]
     _replace_cover(cells, cover)
@@ -207,7 +189,7 @@ _SPECS = (
 
 
 def main() -> None:
-    """Aplica portada + conclusiones a los cuatro entregables."""
+    """Applies cover + conclusions to the four deliverables."""
     for path, cover, conclusions_cell, clean_a4 in _SPECS:
         if not path.exists():
             print(f"AVISO: no existe {path}, se omite.")

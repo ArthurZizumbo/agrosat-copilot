@@ -1,8 +1,8 @@
-"""Resources Dagster del proyecto AgroSatCopilot.
+"""Dagster resources of the AgroSatCopilot project.
 
-Cada resource externo (MLflow, GCS, Earth Engine, Postgres) se declara aqui
-y se inyecta en ``Definitions.resources`` para que los assets reciban
-clientes ya configurados (no instanciar en el cuerpo del asset).
+Each external resource (MLflow, GCS, Earth Engine, Postgres) is declared here
+and injected into ``Definitions.resources`` so the assets receive
+already-configured clients (do not instantiate in the asset body).
 """
 
 from dagster_project.resources.mlflow import (

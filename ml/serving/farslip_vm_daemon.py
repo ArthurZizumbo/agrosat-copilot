@@ -1,35 +1,35 @@
-"""Daemon Pub/Sub para la VM Compute Engine `agrosat-farslip-trainer` (US-022-c P1 fix).
+"""Pub/Sub daemon for the Compute Engine VM `agrosat-farslip-trainer` (US-022-c P1 fix).
 
-Reemplaza el patron Vertex AI Custom Job (caprichoso de scheduling en us-central1
-saturado de L4) por una VM persistente con L4 on-demand + Pub/Sub event-driven +
-auto-shutdown idle 5 min.
+Replaces the Vertex AI Custom Job pattern (finicky scheduling in us-central1
+saturated with L4) with a persistent VM with on-demand L4 + Pub/Sub
+event-driven + idle auto-shutdown 5 min.
 
-Flujo:
-  1) Suscribe a `agrosat-farslip-jobs` (subscription `farslip-vm-sub`).
-  2) Por cada mensaje: ejecuta el comando shell del payload (usa `subprocess.run`),
-     loggea stdout/stderr a Cloud Logging via structlog.
-  3) Reconoce el mensaje (ack) solo despues de exit code (success o fail).
-  4) Cuando la cola lleva >= IDLE_SHUTDOWN_SECONDS sin mensajes nuevos Y no hay
-     proceso corriendo, ejecuta `shutdown -h now` para auto-apagar la VM.
+Flow:
+  1) Subscribes to `agrosat-farslip-jobs` (subscription `farslip-vm-sub`).
+  2) For each message: runs the payload's shell command (uses `subprocess.run`),
+     logs stdout/stderr to Cloud Logging via structlog.
+  3) Acknowledges the message (ack) only after the exit code (success or fail).
+  4) When the queue has gone >= IDLE_SHUTDOWN_SECONDS without new messages AND no
+     process is running, it runs `shutdown -h now` to auto-power-off the VM.
 
-Payload Pub/Sub esperado (JSON UTF-8):
+Expected Pub/Sub payload (JSON UTF-8):
   {
-    "command": "make farslip-train ...",   # comando shell a ejecutar (workdir /app)
-    "label": "smoke-farslip-2026-05-24",   # log identifier opcional
-    "timeout_seconds": 21600               # cap individual; default 28800 (8h)
+    "command": "make farslip-train ...",   # shell command to run (workdir /app)
+    "label": "smoke-farslip-2026-05-24",   # optional log identifier
+    "timeout_seconds": 21600               # individual cap; default 28800 (8h)
   }
 
-Variables de entorno (inyectadas por systemd / cloud-init):
+Environment variables (injected by systemd / cloud-init):
   PROJECT_ID                    GCP project id (default: agrosat-copilot)
   SUBSCRIPTION_ID               Pub/Sub subscription id (default: farslip-vm-sub)
-  IDLE_SHUTDOWN_SECONDS         segundos de cola vacia antes de shutdown (default: 300)
-  WORKDIR                       directorio donde ejecutar comandos (default: /app)
+  IDLE_SHUTDOWN_SECONDS         seconds of empty queue before shutdown (default: 300)
+  WORKDIR                       directory where commands run (default: /app)
   LOG_LEVEL                     INFO|DEBUG|WARNING (default: INFO)
 
-Salida:
+Output:
   - Cloud Logging via structlog (JSON).
-  - stdout/stderr de cada comando incluido en el log estructurado.
-  - Exit code 0 al recibir SIGTERM (cloud-init shutdown). Nunca exit 1 voluntario.
+  - stdout/stderr of each command included in the structured log.
+  - Exit code 0 on SIGTERM (cloud-init shutdown). Never a voluntary exit 1.
 """
 
 from __future__ import annotations
@@ -73,7 +73,7 @@ log = structlog.get_logger(__name__)
 
 @dataclass
 class DaemonState:
-    """Estado compartido entre el thread Pub/Sub y el watchdog idle."""
+    """Shared state between the Pub/Sub thread and the idle watchdog."""
 
     last_message_at: float
     job_running: bool
@@ -82,7 +82,7 @@ class DaemonState:
 
 
 def _trigger_shutdown(reason: str) -> None:
-    """Ejecuta shutdown -h now con razon registrada (idempotente)."""
+    """Run shutdown -h now with the recorded reason (idempotent)."""
     log.info("auto_shutdown_triggered", reason=reason)
     try:
         subprocess.run(["sudo", "shutdown", "-h", "+1", reason], check=False, timeout=10)
@@ -91,7 +91,7 @@ def _trigger_shutdown(reason: str) -> None:
 
 
 def _run_command(payload: dict[str, Any]) -> int:
-    """Ejecuta el comando del payload en WORKDIR; retorna exit code."""
+    """Run the payload's command in WORKDIR; returns the exit code."""
     command = payload.get("command")
     if not command:
         log.warning("payload_missing_command", payload_keys=list(payload.keys()))
@@ -149,7 +149,7 @@ def _make_callback(state: DaemonState):
 
 
 def _watchdog_loop(state: DaemonState) -> None:
-    """Vigila idle time y dispara shutdown cuando se excede IDLE_SHUTDOWN_SECONDS."""
+    """Watch idle time and trigger shutdown when IDLE_SHUTDOWN_SECONDS is exceeded."""
     while not state.shutdown_requested.is_set():
         time.sleep(30)
         with state.lock:
@@ -163,7 +163,7 @@ def _watchdog_loop(state: DaemonState) -> None:
 
 
 def main() -> int:
-    """Entrypoint: inicia subscriber + watchdog. Bloquea hasta SIGTERM."""
+    """Entrypoint: starts subscriber + watchdog. Blocks until SIGTERM."""
     state = DaemonState(
         last_message_at=time.monotonic(),
         job_running=False,

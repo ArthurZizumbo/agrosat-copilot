@@ -1,10 +1,10 @@
-"""Inserta la Seccion 5 de evaluacion (checkpoints reales 30 epochs) en
-``notebooks/segmentation/5b_tsvit.ipynb`` y actualiza parametros/conclusiones.
+"""Insert the evaluation Section 5 (real 30-epoch checkpoints) into
+``notebooks/segmentation/5b_tsvit.ipynb`` and update parameters/conclusions.
 
-No entrena: carga los ``best.pt`` traidos de la VM L4 y genera el analisis
-visual (matriz de confusion, IoU/F1 por clase, predicciones RGB|GT|pred,
-comparativa base vs pheno). Operativo permanente de poblado de notebook
-(reproducible via papermill); no es un script de smoke/debug.
+It does not train: it loads the ``best.pt`` brought from the L4 VM and generates
+the visual analysis (confusion matrix, per-class IoU/F1, RGB|GT|pred predictions,
+base vs pheno comparison). Permanent notebook-population operative (reproducible
+via papermill); it is not a smoke/debug script.
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""Paquete de entrenamiento: baseline tabular RF/XGB y modelos de segmentacion (US-019+)."""
+"""Training package: tabular RF/XGB baseline and segmentation models (US-019+)."""
 
 from __future__ import annotations
 

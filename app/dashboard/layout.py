@@ -1,9 +1,9 @@
-"""Chrome de pagina: configuracion, hero, sidebar y footer.
+"""Page chrome: configuration, hero, sidebar and footer.
 
-La sidebar es data-driven: itera el registro de secciones en lugar de
-hardcodear la navegacion, de modo que agregar un Avance no obliga a editar
-este modulo. El hero presenta la identidad del proyecto y su narrativa de
-evolucion (no solo el Avance 1).
+The sidebar is data-driven: it iterates the section registry instead of
+hardcoding the navigation, so adding an Avance does not force editing this
+module. The hero presents the project identity and its evolution narrative
+(not only Avance 1).
 """
 
 from __future__ import annotations
@@ -13,12 +13,12 @@ from typing import TYPE_CHECKING
 
 import streamlit as st
 
-if TYPE_CHECKING:  # evita import circular en runtime
+if TYPE_CHECKING:  # avoids circular import at runtime
     from app.dashboard.registry import Section
 
 
 def configure_page() -> None:
-    """Aplica la configuracion global de la pagina Streamlit."""
+    """Apply the global configuration of the Streamlit page."""
     st.set_page_config(
         page_title="AgroSatCopilot - Evolucion del proyecto",
         page_icon=None,
@@ -28,7 +28,7 @@ def configure_page() -> None:
 
 
 def render_hero() -> None:
-    """Renderiza el hero banner con identidad y narrativa del proyecto."""
+    """Render the hero banner with project identity and narrative."""
     st.markdown(
         '<div class="hero-banner">'
         "<h1>AgroSatCopilot - Cuantificacion de cultivos por satelite</h1>"
@@ -49,11 +49,11 @@ def render_hero() -> None:
 
 
 def render_sidebar(sections: Sequence[Section], active_key: str) -> None:
-    """Renderiza la sidebar con navegacion data-driven y metadata.
+    """Render the sidebar with data-driven navigation and metadata.
 
     Args:
-        sections: Registro de secciones del dashboard.
-        active_key: ``key`` de la seccion activa, resaltada en la navegacion.
+        sections: Registry of dashboard sections.
+        active_key: ``key`` of the active section, highlighted in the navigation.
     """
     with st.sidebar:
         st.title("AgroSatCopilot")
@@ -81,7 +81,7 @@ def render_sidebar(sections: Sequence[Section], active_key: str) -> None:
 
 
 def render_footer() -> None:
-    """Renderiza el footer con atribuciones de datasets y modelos."""
+    """Render the footer with dataset and model attributions."""
     st.markdown(
         '<div class="footer-attributions">'
         "<strong>Atribuciones</strong><br>"

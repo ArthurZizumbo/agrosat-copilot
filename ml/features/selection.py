@@ -1,39 +1,39 @@
-"""Selección, extracción y normalización de features (US-018, Avance 2 CRISP-ML(Q)).
+"""Feature selection, extraction and normalization (US-018, Avance 2 CRISP-ML(Q)).
 
-Modulo canonico de la fase **Data Preparation** del CRISP-ML(Q). Expone una
-API estable Polars-in / Polars-out (numpy solo en el borde sklearn via
-:func:`_to_numpy`) que cubre:
+Canonical module for the **Data Preparation** phase of CRISP-ML(Q). Exposes a
+stable Polars-in / Polars-out API (numpy only at the sklearn boundary via
+:func:`_to_numpy`) that covers:
 
-- **Filtros** (variance threshold, correlacion Pearson/Spearman, chi-cuadrado,
+- **Filters** (variance threshold, Pearson/Spearman correlation, chi-square,
   ANOVA F).
-- **Extractores** (PCA parametrico por varianza objetivo, Factor Analysis,
-  UMAP 2D para visualizacion).
-- **Complemento metodologico** (importance Random Forest + XGBoost).
-- **Comparativa antes/despues** con split espacial PASTIS folds 1-5
-  (Sainte-Fare-Garnot 2021, NO random KFold).
-- **Normalizacion** con reglas justificadas por familia de modelo
-  (``StandardScaler`` lineal, ``MinMaxScaler`` NN, ``PowerTransformer``
-  Yeo-Johnson para sesgadas, ``log1p`` para LAI/biomasa).
+- **Extractors** (parametric PCA by target variance, Factor Analysis,
+  UMAP 2D for visualization).
+- **Methodological complement** (Random Forest + XGBoost importance).
+- **Before/after comparison** with PASTIS spatial split folds 1-5
+  (Sainte-Fare-Garnot 2021, NOT random KFold).
+- **Normalization** with rules justified by model family
+  (``StandardScaler`` linear, ``MinMaxScaler`` NN, ``PowerTransformer``
+  Yeo-Johnson for skewed, ``log1p`` for LAI/biomass).
 
-Decisiones irrevocables (ver ``docs/us-planning/us-018.md`` §2.1)
----------------------------------------------------------------
-- D1: split espacial = folds PASTIS oficiales 1-5, NO GroupKFold custom.
-- D3: PCA con ``target_variance`` parametrico, no ``n_components`` fijo.
-- D5: Polars in / Polars out + conversion explicita a numpy en
-  :func:`_to_numpy` (regla ``ml/CLAUDE.md NEVER pandas``).
-- D6: chi2 con binning sintetico de cuartiles documentado para cumplir
-  rubrica cuando las features upstream son numericas continuas.
-- D7: RF/XGB exploratorios, NO production. No registrados en MLflow.
-- D9: ``ColumnTransformer`` por familia de modelo, no scaler unico global.
-- D10: Yeo-Johnson sobre NDVI (acepta negativos) en lugar de Box-Cox.
+Irrevocable decisions (see ``docs/us-planning/us-018.md`` §2.1)
+--------------------------------------------------------------
+- D1: spatial split = official PASTIS folds 1-5, NOT custom GroupKFold.
+- D3: PCA with parametric ``target_variance``, not fixed ``n_components``.
+- D5: Polars in / Polars out + explicit conversion to numpy in
+  :func:`_to_numpy` (rule ``ml/CLAUDE.md NEVER pandas``).
+- D6: chi2 with documented synthetic quartile binning to satisfy the
+  rubric when upstream features are continuous numeric.
+- D7: RF/XGB exploratory, NOT production. Not logged to MLflow.
+- D9: ``ColumnTransformer`` per model family, not a single global scaler.
+- D10: Yeo-Johnson over NDVI (accepts negatives) instead of Box-Cox.
 
-Referencias
------------
+References
+----------
 - Sainte-Fare-Garnot, V., Landrieu, L. (2021). *Panoptic Segmentation of
   Satellite Image Time Series with Convolutional Temporal Attention Networks*.
-  ICCV 2021. PASTIS-R folds 1-5 oficiales.
-- Daughtry et al. 2000 — MCARI/clorofila (interpretacion factor "vigor canopy").
-- Gao 1996 — NDMI/humedad canopy (interpretacion factor "humedad").
+  ICCV 2021. Official PASTIS-R folds 1-5.
+- Daughtry et al. 2000 — MCARI/chlorophyll (factor interpretation "canopy vigor").
+- Gao 1996 — NDMI/canopy moisture (factor interpretation "moisture").
 - McInnes, Healy, Melville 2018 — UMAP (``n_neighbors`` default 15).
 """
 
@@ -104,18 +104,18 @@ def _to_numpy(
     *,
     exclude_cols: tuple[str, ...] = _DEFAULT_EXCLUDE,
 ) -> tuple[np.ndarray, list[str]]:
-    """Convierte ``df`` a ``np.ndarray`` excluyendo las columnas de indice.
+    """Convert ``df`` to ``np.ndarray`` excluding the index columns.
 
     Args:
-        df: DataFrame Polars con features numericas + columnas de indice
+        df: Polars DataFrame with numeric features + index columns
             (``parcel_id``, ``year``).
-        exclude_cols: Columnas que NO se consideran features (default:
+        exclude_cols: Columns NOT considered features (default:
             ``("parcel_id", "year")``).
 
     Returns:
-        Tupla ``(matrix, feature_names)`` donde ``matrix`` tiene shape
-        ``(n_samples, n_features)`` y ``feature_names`` es la lista ordenada
-        de nombres de columna usadas. Los NaN se preservan.
+        Tuple ``(matrix, feature_names)`` where ``matrix`` has shape
+        ``(n_samples, n_features)`` and ``feature_names`` is the ordered list
+        of column names used. NaN values are preserved.
     """
     feature_cols = [c for c in df.columns if c not in exclude_cols]
     if not feature_cols:
@@ -125,12 +125,12 @@ def _to_numpy(
 
 
 def _impute_with_column_mean(matrix: np.ndarray) -> np.ndarray:
-    """Imputa NaN e inf con la media de la columna (sklearn no acepta ninguno).
+    """Impute NaN and inf with the column mean (sklearn accepts neither).
 
-    ``inf`` / ``-inf`` se convierten a ``NaN`` antes de imputar; pueden
-    aparecer en features derivadas (e.g. GCVI con NIR/Green pequenos, ratios
-    espectrales sobre pixeles oscuros). Si una columna es enteramente NaN, se
-    imputa con 0.0 (caso degenerado; el caller deberia haber filtrado con
+    ``inf`` / ``-inf`` are converted to ``NaN`` before imputing; they can
+    appear in derived features (e.g. GCVI with small NIR/Green, spectral
+    ratios over dark pixels). If a column is entirely NaN, it is imputed
+    with 0.0 (degenerate case; the caller should have filtered it with
     :func:`apply_variance_threshold`).
     """
     if matrix.size == 0:
@@ -158,7 +158,7 @@ def _build_strategy_table(
     miou_mean: float,
     miou_std: float,
 ) -> dict[str, float | str | int]:
-    """Construye una fila de la tabla comparativa."""
+    """Build a row of the comparison table."""
     return {
         "strategy": strategy,
         "n_features": int(n_features),
@@ -177,22 +177,22 @@ def _run_cv_baseline_rf(
     n_estimators: int = 100,
     random_state: int = 42,
 ) -> tuple[float, float, float, float]:
-    """Ejecuta CV con folds PASTIS y devuelve F1-macro + mIoU mean/std.
+    """Run CV with PASTIS folds and return F1-macro + mIoU mean/std.
 
-    Para cada fold ``k`` en ``{1..5}`` (filtra los no presentes), entrena un
-    :class:`RandomForestClassifier` sobre las muestras con ``fold != k`` y
-    evalua sobre las muestras con ``fold == k``.
+    For each fold ``k`` in ``{1..5}`` (skipping those not present), trains a
+    :class:`RandomForestClassifier` on the samples with ``fold != k`` and
+    evaluates on the samples with ``fold == k``.
 
     Args:
-        X: Matriz ``(n_samples, n_features)``.
+        X: Matrix ``(n_samples, n_features)``.
         y: Vector ``(n_samples,)``.
-        folds: Vector ``(n_samples,)`` con valores en ``{1..5}``.
-        n_estimators: Numero de arboles del RF.
-        random_state: Semilla.
+        folds: Vector ``(n_samples,)`` with values in ``{1..5}``.
+        n_estimators: Number of RF trees.
+        random_state: Seed.
 
     Returns:
-        ``(f1_mean, f1_std, miou_mean, miou_std)`` sobre los folds usados.
-        Si no hay folds validos, devuelve ``(nan, nan, nan, nan)``.
+        ``(f1_mean, f1_std, miou_mean, miou_std)`` over the folds used.
+        If there are no valid folds, returns ``(nan, nan, nan, nan)``.
     """
     X_clean = _impute_with_column_mean(X)
     unique_folds = sorted(int(f) for f in np.unique(folds) if 1 <= int(f) <= 5)
@@ -246,35 +246,35 @@ def _load_pastis_features_subset(
     target_col: str = "class_id",
     fold_col: str = "fold",
 ) -> tuple[pl.DataFrame, pl.Series, np.ndarray]:
-    """Carga el subset PASTIS pre-generado para US-018.
+    """Load the pre-generated PASTIS subset for US-018.
 
-    El parquet se genera con ``scripts/generate_feature_selection_subset.py``
-    y debe contener: ``parcel_id, year, fold, class_id`` + features
-    estadisticas/FFT/fenologia.
+    The parquet is generated with ``scripts/generate_feature_selection_subset.py``
+    and must contain: ``parcel_id, year, fold, class_id`` + statistical/FFT/
+    phenology features.
 
     Args:
-        parquet_path: Ruta al ``data/test_fixtures/feature_selection_subset.parquet``.
-        target_col: Columna objetivo (default ``class_id``).
-        fold_col: Columna de fold espacial PASTIS (default ``fold``).
+        parquet_path: Path to ``data/test_fixtures/feature_selection_subset.parquet``.
+        target_col: Target column (default ``class_id``).
+        fold_col: PASTIS spatial fold column (default ``fold``).
 
     Returns:
-        Tupla ``(X, y, folds)``: features wide-format (sin target/fold),
-        target ``pl.Series`` y vector numpy de folds ``(n_samples,)``.
+        Tuple ``(X, y, folds)``: wide-format features (without target/fold),
+        target ``pl.Series`` and numpy folds vector ``(n_samples,)``.
 
     Raises:
-        FileNotFoundError: Si el parquet no existe.
-        ValueError: Si faltan columnas obligatorias.
+        FileNotFoundError: If the parquet does not exist.
+        ValueError: If mandatory columns are missing.
     """
     if not parquet_path.exists():
         raise FileNotFoundError(
-            f"Subset PASTIS no encontrado en {parquet_path}. "
-            "Genera con: poetry run python scripts/generate_feature_selection_subset.py"
+            f"PASTIS subset not found at {parquet_path}. "
+            "Generate with: poetry run python scripts/generate_feature_selection_subset.py"
         )
     df = pl.read_parquet(parquet_path)
     missing = [c for c in (target_col, fold_col) if c not in df.columns]
     if missing:
         raise ValueError(
-            f"Subset PASTIS carece de columnas obligatorias: {missing}. Disponibles: {df.columns}"
+            f"PASTIS subset lacks mandatory columns: {missing}. Available: {df.columns}"
         )
     y = df.get_column(target_col)
     folds = df.get_column(fold_col).to_numpy().astype(np.int64)
@@ -283,7 +283,7 @@ def _load_pastis_features_subset(
 
 
 # ---------------------------------------------------------------------------
-# FILTROS
+# FILTERS
 # ---------------------------------------------------------------------------
 
 
@@ -292,23 +292,23 @@ def apply_variance_threshold(
     threshold: float = 0.01,
     exclude_cols: tuple[str, ...] = _DEFAULT_EXCLUDE,
 ) -> tuple[pl.DataFrame, dict[str, Any]]:
-    """Filtra features cuya varianza es menor o igual al umbral.
+    """Filter features whose variance is less than or equal to the threshold.
 
     Args:
-        df: DataFrame Polars con columnas numericas + indices excluidos.
-        threshold: Umbral de varianza (default 0.01). Features con
-            ``var <= threshold`` se eliminan.
-        exclude_cols: Columnas que NO participan del filtrado (siempre
-            conservadas).
+        df: Polars DataFrame with numeric columns + excluded indices.
+        threshold: Variance threshold (default 0.01). Features with
+            ``var <= threshold`` are removed.
+        exclude_cols: Columns NOT participating in the filtering (always
+            kept).
 
     Returns:
-        Tupla ``(df_filtered, report)`` donde ``report`` contiene
+        Tuple ``(df_filtered, report)`` where ``report`` contains
         ``{"kept": [...], "removed": [...], "variances": {col: var}}``.
 
     Notes:
-        Se usa varianza muestral con ``ddof=0`` (consistente con sklearn
-        :class:`~sklearn.feature_selection.VarianceThreshold`). NaN se ignora
-        en el computo de la varianza.
+        Uses sample variance with ``ddof=0`` (consistent with sklearn
+        :class:`~sklearn.feature_selection.VarianceThreshold`). NaN is ignored
+        in the variance computation.
     """
     matrix, feature_cols = _to_numpy(df, exclude_cols=exclude_cols)
     if matrix.shape[1] == 0:
@@ -348,20 +348,20 @@ def drop_correlated_features(
     method: Literal["pearson", "spearman"] = "pearson",
     exclude_cols: tuple[str, ...] = _DEFAULT_EXCLUDE,
 ) -> tuple[pl.DataFrame, dict[str, Any]]:
-    """Remueve uno de cada par de features con ``|r| > threshold``.
+    """Remove one of each pair of features with ``|r| > threshold``.
 
-    Itera la matriz triangular superior en orden alfabetico determinista: si
-    ``feature_i`` y ``feature_j`` (``i < j``) superan el umbral, se descarta
-    ``feature_j``. Garantiza idempotencia.
+    Iterates the upper triangular matrix in deterministic alphabetical order:
+    if ``feature_i`` and ``feature_j`` (``i < j``) exceed the threshold,
+    ``feature_j`` is dropped. Guarantees idempotency.
 
     Args:
-        df: DataFrame Polars wide-format.
-        threshold: Umbral absoluto de correlacion (default 0.95).
-        method: Metodo de correlacion (``"pearson"`` o ``"spearman"``).
-        exclude_cols: Columnas a preservar siempre.
+        df: Polars wide-format DataFrame.
+        threshold: Absolute correlation threshold (default 0.95).
+        method: Correlation method (``"pearson"`` or ``"spearman"``).
+        exclude_cols: Columns to always preserve.
 
     Returns:
-        Tupla ``(df_filtered, report)`` con ``report = {"kept", "removed",
+        Tuple ``(df_filtered, report)`` with ``report = {"kept", "removed",
         "corr_matrix" (np.ndarray), "feature_order" (list[str])}``.
     """
     matrix, feature_cols = _to_numpy(df, exclude_cols=exclude_cols)
@@ -380,7 +380,7 @@ def drop_correlated_features(
     else:  # spearman: use scipy
         rho, _ = scipy_stats.spearmanr(matrix_clean, axis=0)
         corr = np.atleast_2d(np.asarray(rho, dtype=np.float64))
-    # Sanitiza NaN (varianza cero -> corr NaN). Treat as 0 (no asociacion).
+    # Sanitize NaN (zero variance -> corr NaN). Treat as 0 (no association).
     corr = np.where(np.isnan(corr), 0.0, corr)
 
     n = corr.shape[0]
@@ -426,29 +426,29 @@ def chi2_select(
     binning_strategy: Literal["quartiles", "deciles"] | None = "quartiles",
     exclude_cols: tuple[str, ...] = _DEFAULT_EXCLUDE,
 ) -> tuple[pl.DataFrame, dict[str, float]]:
-    """Selecciona los ``k_best`` features con mayor chi2 contra ``y``.
+    """Select the ``k_best`` features with the highest chi2 against ``y``.
 
-    Si ``X`` contiene features numericas continuas (caso esperado en
-    AgroSatCopilot tras US-014/015), se aplica binning sintetico documentado
-    segun ``binning_strategy`` para cumplir el CA de chi-cuadrado de la
-    rubrica (Avance 2). El binning se ejecuta por feature.
+    If ``X`` contains continuous numeric features (the expected case in
+    AgroSatCopilot after US-014/015), documented synthetic binning is applied
+    according to ``binning_strategy`` to satisfy the chi-square AC of the
+    rubric (Avance 2). Binning is run per feature.
 
     Args:
-        X: DataFrame Polars wide-format con features.
-        y: Serie Polars con la clase (entera).
-        k_best: Numero de features a devolver.
-        binning_strategy: Si no es ``None``, discretiza features continuas
-            usando ``"quartiles"`` (4 bins) o ``"deciles"`` (10 bins).
-        exclude_cols: Columnas a preservar siempre en el frame de salida.
+        X: Polars wide-format DataFrame with features.
+        y: Polars Series with the class (integer).
+        k_best: Number of features to return.
+        binning_strategy: If not ``None``, discretizes continuous features
+            using ``"quartiles"`` (4 bins) or ``"deciles"`` (10 bins).
+        exclude_cols: Columns to always preserve in the output frame.
 
     Returns:
-        Tupla ``(top_k_df, scores)`` donde ``top_k_df`` conserva las columnas
-        ``exclude_cols`` + las ``k_best`` features seleccionadas y ``scores``
-        es ``{feature: chi2_stat}`` (ordenado descendente externamente).
+        Tuple ``(top_k_df, scores)`` where ``top_k_df`` keeps the
+        ``exclude_cols`` columns + the ``k_best`` selected features and
+        ``scores`` is ``{feature: chi2_stat}`` (sorted descending externally).
 
     Notes:
-        chi2 requiere features no negativas. Cuando ``binning_strategy is None``
-        el caller debe garantizar que ``X >= 0`` (se aplica clipping defensivo).
+        chi2 requires non-negative features. When ``binning_strategy is None``
+        the caller must guarantee that ``X >= 0`` (defensive clipping is applied).
     """
     matrix, feature_cols = _to_numpy(X, exclude_cols=exclude_cols)
     if matrix.shape[1] == 0:
@@ -480,7 +480,7 @@ def chi2_select(
                 binned[:, col] = 0.0
         x_input = binned
     else:
-        # Clipping defensivo: chi2 requiere >= 0.
+        # Defensive clipping: chi2 requires >= 0.
         x_input = np.clip(matrix_clean, a_min=0.0, a_max=None)
 
     chi2_stats, _ = chi2(x_input, y_arr)
@@ -510,16 +510,16 @@ def anova_f_select(
     k_best: int = 20,
     exclude_cols: tuple[str, ...] = _DEFAULT_EXCLUDE,
 ) -> tuple[pl.DataFrame, dict[str, float]]:
-    """Selecciona los ``k_best`` features con mayor F-score ANOVA contra ``y``.
+    """Select the ``k_best`` features with the highest ANOVA F-score against ``y``.
 
     Args:
-        X: DataFrame Polars wide-format.
-        y: Serie Polars con la clase.
-        k_best: Numero de features a devolver.
-        exclude_cols: Columnas a preservar siempre.
+        X: Polars wide-format DataFrame.
+        y: Polars Series with the class.
+        k_best: Number of features to return.
+        exclude_cols: Columns to always preserve.
 
     Returns:
-        Tupla ``(top_k_df, scores)`` con ``scores = {feature: f_value}``.
+        Tuple ``(top_k_df, scores)`` with ``scores = {feature: f_value}``.
     """
     matrix, feature_cols = _to_numpy(X, exclude_cols=exclude_cols)
     if matrix.shape[1] == 0:
@@ -566,61 +566,61 @@ def discretize_features(
     exclude_cols: tuple[str, ...] = _DEFAULT_EXCLUDE,
     random_state: int = 42,
 ) -> tuple[pl.DataFrame, dict[str, Any]]:
-    """Discretiza columnas numericas creando ``{col}__bin`` con bordes registrados.
+    """Discretize numeric columns creating ``{col}__bin`` with recorded edges.
 
-    Cubre las 4 estrategias canonicas de binning del CRISP-ML(Q) Data
-    Preparation (rubrica Avance 2 — "Construccion de features"):
+    Covers the 4 canonical binning strategies of CRISP-ML(Q) Data
+    Preparation (Avance 2 rubric — "Feature construction"):
 
-    - ``"quantile"``: cuantiles equiprobables via :meth:`polars.Series.qcut`
-      (Polars nativo). ``n_bins`` bins con masas iguales aprox.
-    - ``"uniform"``: bordes equiespaciados entre ``min`` y ``max`` via
-      :meth:`polars.Series.cut` (Polars nativo).
-    - ``"kmeans"``: clusters 1D con
+    - ``"quantile"``: equiprobable quantiles via :meth:`polars.Series.qcut`
+      (native Polars). ``n_bins`` bins with approximately equal masses.
+    - ``"uniform"``: equispaced edges between ``min`` and ``max`` via
+      :meth:`polars.Series.cut` (native Polars).
+    - ``"kmeans"``: 1D clusters with
       :class:`~sklearn.cluster.KMeans(n_clusters=n_bins, random_state=42)`
-      por columna; los centros se ordenan ascendentemente y el bin es la
-      etiqueta del cluster mas cercano.
-    - ``"domain"``: requiere ``bin_edges = {col: [e1, e2, ...]}`` con
-      bordes agronomicos justificados (p. ej. umbrales NDVI). Aplicado con
+      per column; centers are sorted ascending and the bin is the label
+      of the closest cluster.
+    - ``"domain"``: requires ``bin_edges = {col: [e1, e2, ...]}`` with
+      justified agronomic edges (e.g. NDVI thresholds). Applied with
       :meth:`polars.Series.cut`.
 
     Args:
-        df: DataFrame Polars wide-format.
-        columns: Columnas numericas a discretizar.
-        strategy: Una de :data:`_DISCRETIZE_STRATEGIES`.
-        n_bins: Numero de bins (ignorado en ``"domain"`` — se infiere de
+        df: Polars wide-format DataFrame.
+        columns: Numeric columns to discretize.
+        strategy: One of :data:`_DISCRETIZE_STRATEGIES`.
+        n_bins: Number of bins (ignored in ``"domain"`` — inferred from
             ``len(bin_edges[col]) + 1``).
-        bin_edges: Para ``"domain"``, dict ``{col: [borde1, borde2, ...]}``
-            ordenado ascendentemente. Obligatorio si ``strategy == "domain"``.
-        exclude_cols: Columnas a no discretizar aunque aparezcan en
+        bin_edges: For ``"domain"``, dict ``{col: [edge1, edge2, ...]}``
+            sorted ascending. Mandatory if ``strategy == "domain"``.
+        exclude_cols: Columns not to discretize even if they appear in
             ``columns``.
-        random_state: Semilla para KMeans.
+        random_state: Seed for KMeans.
 
     Returns:
-        Tupla ``(df_with_bins, edges_report)`` donde:
+        Tuple ``(df_with_bins, edges_report)`` where:
 
-        - ``df_with_bins`` agrega ``{col}__bin`` por cada ``col`` (Int64,
-          rango ``[0, n_bins-1]``). La columna original se conserva.
-        - ``edges_report = {col: list[float]}`` con los bordes usados
-          (centros de KMeans en orden ascendente para la estrategia
-          ``"kmeans"``).
+        - ``df_with_bins`` adds ``{col}__bin`` per ``col`` (Int64,
+          range ``[0, n_bins-1]``). The original column is kept.
+        - ``edges_report = {col: list[float]}`` with the edges used
+          (KMeans centers in ascending order for the ``"kmeans"``
+          strategy).
 
     Raises:
-        ValueError: Si ``strategy`` no es valida, ``n_bins < 2``,
-            ``bin_edges`` falta para ``"domain"`` o alguna columna no existe.
+        ValueError: If ``strategy`` is invalid, ``n_bins < 2``,
+            ``bin_edges`` is missing for ``"domain"`` or some column does not exist.
     """
     if strategy not in _DISCRETIZE_STRATEGIES:
         raise ValueError(
-            f"strategy debe ser una de {_DISCRETIZE_STRATEGIES}; recibido {strategy!r}"
+            f"strategy must be one of {_DISCRETIZE_STRATEGIES}; got {strategy!r}"
         )
     if n_bins < 2:
-        raise ValueError(f"n_bins debe ser >= 2; recibido {n_bins}")
+        raise ValueError(f"n_bins must be >= 2; got {n_bins}")
     if strategy == "domain" and not bin_edges:
-        raise ValueError("strategy='domain' requiere bin_edges = {col: [edges]}")
+        raise ValueError("strategy='domain' requires bin_edges = {col: [edges]}")
 
     cols_list = [c for c in columns if c not in exclude_cols]
     missing = [c for c in cols_list if c not in df.columns]
     if missing:
-        raise ValueError(f"Columnas a discretizar ausentes: {missing}")
+        raise ValueError(f"Columns to discretize missing: {missing}")
 
     out = df
     edges_report: dict[str, list[float]] = {}
@@ -680,7 +680,7 @@ def discretize_features(
             assert bin_edges is not None  # nosec - guarded above
             if col not in bin_edges:
                 raise ValueError(
-                    f"strategy='domain' requiere bin_edges[{col!r}]; provistos: {list(bin_edges)}"
+                    f"strategy='domain' requires bin_edges[{col!r}]; provided: {list(bin_edges)}"
                 )
             edges_user = sorted(float(e) for e in bin_edges[col])
             cut_labels = [str(i) for i in range(len(edges_user) + 1)]
@@ -704,10 +704,10 @@ def discretize_features(
 
 
 def _bin_uniform(values: np.ndarray, n_bins: int) -> tuple[np.ndarray, list[float]]:
-    """Binning uniforme entre ``min`` y ``max`` con manejo de NaN.
+    """Uniform binning between ``min`` and ``max`` with NaN handling.
 
-    Funcion privada usada por :func:`discretize_features` y como fallback
-    cuando ``qcut`` falla por bordes duplicados.
+    Private function used by :func:`discretize_features` and as a fallback
+    when ``qcut`` fails due to duplicate edges.
     """
     finite_mask = np.isfinite(values)
     if finite_mask.sum() == 0:
@@ -736,43 +736,43 @@ def discretize_ndvi_phenology_domain(
     bins: tuple[float, ...] = _NDVI_PHENOLOGY_BINS,
     labels: tuple[str, ...] = _NDVI_PHENOLOGY_LABELS,
 ) -> tuple[pl.DataFrame, list[str]]:
-    """Discretiza NDVI con umbrales agronomicos (binning de dominio).
+    """Discretize NDVI with agronomic thresholds (domain binning).
 
-    Convenience wrapper de :func:`discretize_features` con ``strategy="domain"``
-    y los umbrales canonicos de Tucker (1979) / Pettorelli et al. (2005):
+    Convenience wrapper of :func:`discretize_features` with ``strategy="domain"``
+    and the canonical thresholds of Tucker (1979) / Pettorelli et al. (2005):
 
-    - ``< 0.0``: ``water`` (cuerpos de agua, sombras).
-    - ``[0.0, 0.2)``: ``bare`` (suelo desnudo, urbano).
-    - ``[0.2, 0.4)``: ``sparse`` (vegetacion rala, sembrios tempranos).
-    - ``[0.4, 0.6)``: ``moderate`` (cultivos en crecimiento).
-    - ``[0.6, 1.0]``: ``dense`` (canopy denso, pico de campania).
+    - ``< 0.0``: ``water`` (water bodies, shadows).
+    - ``[0.0, 0.2)``: ``bare`` (bare soil, urban).
+    - ``[0.2, 0.4)``: ``sparse`` (sparse vegetation, early crops).
+    - ``[0.4, 0.6)``: ``moderate`` (growing crops).
+    - ``[0.6, 1.0]``: ``dense`` (dense canopy, season peak).
 
     Args:
-        df: DataFrame Polars con la columna ``ndvi_col``.
-        ndvi_col: Nombre de la columna NDVI (puede ser ``NDVI_mean``,
+        df: Polars DataFrame with the ``ndvi_col`` column.
+        ndvi_col: Name of the NDVI column (may be ``NDVI_mean``,
             ``NDVI_p50``, etc.).
-        bins: Bordes internos crecientes (default umbrales Tucker /
-            Pettorelli).
-        labels: Etiquetas semantica (deben tener ``len(bins) - 1`` elementos
-            o se truncan/rellenan).
+        bins: Increasing internal edges (default Tucker /
+            Pettorelli thresholds).
+        labels: Semantic labels (must have ``len(bins) - 1`` elements
+            or they are truncated/padded).
 
     Returns:
-        Tupla ``(df_with_pheno, label_list)`` donde:
+        Tuple ``(df_with_pheno, label_list)`` where:
 
-        - ``df_with_pheno`` agrega ``{ndvi_col}__pheno`` (Utf8) y conserva
-          la original.
-        - ``label_list`` es la lista de labels en orden ascendente (util
-          para ordenar la categoria como ordinal si el caller lo necesita).
+        - ``df_with_pheno`` adds ``{ndvi_col}__pheno`` (Utf8) and keeps
+          the original.
+        - ``label_list`` is the list of labels in ascending order (useful
+          to order the category as ordinal if the caller needs it).
 
     Raises:
-        ValueError: Si ``ndvi_col`` no existe en ``df`` o si ``bins`` no
-            esta ordenado ascendentemente.
+        ValueError: If ``ndvi_col`` does not exist in ``df`` or if ``bins`` is
+            not sorted ascending.
     """
     if ndvi_col not in df.columns:
-        raise ValueError(f"ndvi_col {ndvi_col!r} no presente en df.columns")
+        raise ValueError(f"ndvi_col {ndvi_col!r} not present in df.columns")
     bins_list = list(bins)
     if any(bins_list[i] >= bins_list[i + 1] for i in range(len(bins_list) - 1)):
-        raise ValueError(f"bins debe ser ascendente; recibido {bins_list}")
+        raise ValueError(f"bins must be ascending; got {bins_list}")
     expected_n_labels = len(bins_list) - 1
     if len(labels) < expected_n_labels:
         labels_eff = list(labels) + [f"bin_{i}" for i in range(len(labels), expected_n_labels)]
@@ -796,7 +796,7 @@ def discretize_ndvi_phenology_domain(
 
 
 # ---------------------------------------------------------------------------
-# EXTRACTORES
+# EXTRACTORS
 # ---------------------------------------------------------------------------
 
 
@@ -806,28 +806,28 @@ def fit_pca(
     *,
     random_state: int = 42,
 ) -> dict[str, Any]:
-    """Ajusta PCA reteniendo componentes hasta acumular ``target_variance``.
+    """Fit PCA retaining components until accumulating ``target_variance``.
 
     Args:
-        X_scaled: Matriz ``(n_samples, n_features)`` previamente estandarizada
-            (PCA es sensible a la escala).
-        target_variance: Fraccion de varianza acumulada a retener (0, 1].
-        random_state: Semilla para reproducibilidad.
+        X_scaled: Matrix ``(n_samples, n_features)`` previously standardized
+            (PCA is sensitive to scale).
+        target_variance: Fraction of cumulative variance to retain (0, 1].
+        random_state: Seed for reproducibility.
 
     Returns:
-        Diccionario con keys ``{"n_components", "components",
+        Dictionary with keys ``{"n_components", "components",
         "explained_variance_ratio", "cumulative_variance", "transformer"}``.
 
     Raises:
-        ValueError: Si ``target_variance`` no esta en (0, 1] o
-            ``X_scaled`` esta vacio.
+        ValueError: If ``target_variance`` is not in (0, 1] or
+            ``X_scaled`` is empty.
     """
     if not 0.0 < target_variance <= 1.0:
         raise ValueError(
-            f"target_variance debe estar en (0, 1]; recibido {target_variance}"
+            f"target_variance must be in (0, 1]; got {target_variance}"
         )
     if X_scaled.size == 0 or X_scaled.shape[1] == 0:
-        raise ValueError("X_scaled vacio; no se puede ajustar PCA.")
+        raise ValueError("X_scaled is empty; cannot fit PCA.")
 
     matrix = _impute_with_column_mean(X_scaled)
     full_pca = PCA(n_components=None, random_state=random_state)
@@ -860,29 +860,29 @@ def fit_factor_analysis(
     *,
     random_state: int = 42,
 ) -> dict[str, Any]:
-    """Ajusta Factor Analysis con ``n_factors`` componentes latentes.
+    """Fit Factor Analysis with ``n_factors`` latent components.
 
     Args:
-        X_scaled: Matriz ``(n_samples, n_features)`` estandarizada.
-        n_factors: Numero de factores latentes a estimar.
-        random_state: Semilla.
+        X_scaled: Standardized matrix ``(n_samples, n_features)``.
+        n_factors: Number of latent factors to estimate.
+        random_state: Seed.
 
     Returns:
-        Diccionario con keys ``{"loadings", "noise_variance",
+        Dictionary with keys ``{"loadings", "noise_variance",
         "explained_variance_approx", "transformer"}``.
-        ``loadings`` tiene shape ``(n_features, n_factors)``.
+        ``loadings`` has shape ``(n_features, n_factors)``.
 
     Raises:
-        ValueError: Si ``n_factors`` excede ``min(n_samples, n_features)``.
+        ValueError: If ``n_factors`` exceeds ``min(n_samples, n_features)``.
     """
     if X_scaled.size == 0:
-        raise ValueError("X_scaled vacio; no se puede ajustar FactorAnalysis.")
+        raise ValueError("X_scaled is empty; cannot fit FactorAnalysis.")
     matrix = _impute_with_column_mean(X_scaled)
     n_samples, n_features = matrix.shape
     max_factors = max(1, min(n_samples - 1, n_features))
     if n_factors > max_factors:
         raise ValueError(
-            f"n_factors={n_factors} excede max permitido {max_factors} "
+            f"n_factors={n_factors} exceeds the max allowed {max_factors} "
             f"(min(n_samples-1, n_features))."
         )
 
@@ -915,20 +915,20 @@ def fit_umap_2d(
     min_dist: float = 0.1,
     random_state: int = 42,
 ) -> np.ndarray:
-    """Calcula un embedding UMAP 2D determinista para visualizacion.
+    """Compute a deterministic UMAP 2D embedding for visualization.
 
-    UMAP en este modulo es **prepro/EDA**, no feature engineering productivo
-    (decision D4 del plan).
+    UMAP in this module is **prepro/EDA**, not production feature engineering
+    (plan decision D4).
 
     Args:
-        X_scaled: Matriz ``(n_samples, n_features)`` estandarizada.
-        y: Vector de clases opcional (no afecta el embedding pero se acepta
-            para mantener simetria con downstream API y futuros modos
-            supervisados).
-        n_neighbors: Vecinos UMAP (default 15, McInnes et al. 2018).
-        min_dist: Distancia minima en el embedding.
-        random_state: Semilla. UMAP es determinista si ``random_state``
-            esta fijado y ``n_jobs=1``.
+        X_scaled: Standardized matrix ``(n_samples, n_features)``.
+        y: Optional class vector (does not affect the embedding but is accepted
+            to keep symmetry with the downstream API and future supervised
+            modes).
+        n_neighbors: UMAP neighbors (default 15, McInnes et al. 2018).
+        min_dist: Minimum distance in the embedding.
+        random_state: Seed. UMAP is deterministic if ``random_state`` is
+            fixed and ``n_jobs=1``.
 
     Returns:
         Embedding ``np.ndarray`` shape ``(n_samples, 2)``.
@@ -971,32 +971,32 @@ def compute_feature_importance(
     n_jobs: int = -1,
     exclude_cols: tuple[str, ...] = _DEFAULT_EXCLUDE,
 ) -> pl.DataFrame:
-    """Calcula importance por feature con RF (Gini) o XGB (gain).
+    """Compute per-feature importance with RF (Gini) or XGB (gain).
 
-    Hiperparametros exploratorios (NO production, decision D7 del plan):
+    Exploratory hyperparameters (NOT production, plan decision D7):
 
     - ``RandomForestClassifier(n_estimators=200, max_depth=None)``.
     - ``XGBClassifier(n_estimators=200, max_depth=6, learning_rate=0.1,
       tree_method="hist")``.
 
     Args:
-        X: DataFrame Polars wide-format.
-        y: Serie Polars con la clase.
-        model: ``"rf"`` o ``"xgb"``.
-        n_estimators: Numero de arboles.
-        random_state: Semilla.
-        n_jobs: Paralelismo (-1 = todos los cores).
-        exclude_cols: Columnas a excluir como features.
+        X: Polars wide-format DataFrame.
+        y: Polars Series with the class.
+        model: ``"rf"`` or ``"xgb"``.
+        n_estimators: Number of trees.
+        random_state: Seed.
+        n_jobs: Parallelism (-1 = all cores).
+        exclude_cols: Columns to exclude as features.
 
     Returns:
-        DataFrame Polars con columnas ``(feature, importance, rank)``
-        ordenado descendente por ``importance``.
+        Polars DataFrame with columns ``(feature, importance, rank)``
+        sorted descending by ``importance``.
 
     Raises:
-        ValueError: Si ``model`` no es ``"rf"`` o ``"xgb"``.
+        ValueError: If ``model`` is not ``"rf"`` or ``"xgb"``.
     """
     if model not in ("rf", "xgb"):
-        raise ValueError(f"model debe ser 'rf' o 'xgb'; recibido {model!r}")
+        raise ValueError(f"model must be 'rf' or 'xgb'; got {model!r}")
 
     matrix, feature_cols = _to_numpy(X, exclude_cols=exclude_cols)
     if matrix.shape[1] == 0:
@@ -1075,27 +1075,27 @@ def compare_before_after(
     random_state: int = 42,
     n_estimators: int = 100,
 ) -> pl.DataFrame:
-    """Compara estrategias de seleccion con CV usando folds PASTIS 1-5.
+    """Compare selection strategies with CV using PASTIS folds 1-5.
 
-    Decision D1: usa folds espaciales oficiales (Sainte-Fare-Garnot 2021), NO
-    random KFold. Si ``folds`` no contiene valores en ``{1..5}``, retorna NaN
-    sin lanzar (registra warning).
+    Decision D1: uses official spatial folds (Sainte-Fare-Garnot 2021), NOT
+    random KFold. If ``folds`` does not contain values in ``{1..5}``, returns
+    NaN without raising (logs a warning).
 
     Args:
-        X_raw: Frame con TODAS las features (baseline).
-        X_selected: Frame con features post-filtros (variance + correlacion).
-        y: Serie objetivo.
-        folds: Vector ``(n_samples,)`` con folds PASTIS 1-5.
-        extra_strategies: Mapping opcional ``{nombre: frame}`` con estrategias
-            adicionales (e.g. ``{"pca_0.95": pca_df, "selected+pca": combo}``).
-        random_state: Semilla del RF baseline.
-        n_estimators: Numero de arboles del RF instrumental.
+        X_raw: Frame with ALL the features (baseline).
+        X_selected: Frame with post-filter features (variance + correlation).
+        y: Target series.
+        folds: Vector ``(n_samples,)`` with PASTIS folds 1-5.
+        extra_strategies: Optional mapping ``{name: frame}`` with additional
+            strategies (e.g. ``{"pca_0.95": pca_df, "selected+pca": combo}``).
+        random_state: Seed of the baseline RF.
+        n_estimators: Number of trees of the instrumental RF.
 
     Returns:
-        DataFrame Polars con columnas ``(strategy, n_features, f1_macro_mean,
-        f1_macro_std, miou_mean, miou_std)``. Siempre 4 filas minimo:
-        ``raw``, ``variance+corr``, ``pca_0.95`` (placeholder NaN si no se
-        provee), ``selected+pca`` (placeholder NaN si no se provee).
+        Polars DataFrame with columns ``(strategy, n_features, f1_macro_mean,
+        f1_macro_std, miou_mean, miou_std)``. Always at least 4 rows:
+        ``raw``, ``variance+corr``, ``pca_0.95`` (NaN placeholder if not
+        provided), ``selected+pca`` (NaN placeholder if not provided).
     """
     y_arr = np.asarray(y.to_list())
     folds_arr = np.asarray(folds, dtype=np.int64)
@@ -1169,26 +1169,26 @@ def select_normalizer(
     *,
     strategy: Literal["linear", "nn"] = "linear",
 ) -> tuple[str, str]:
-    """Decide scaler por feature segun nombre, distribucion y familia de modelo.
+    """Decide scaler per feature by name, distribution and model family.
 
-    Reglas (en orden de prioridad):
+    Rules (in priority order):
 
-    1. ``feature_name`` empieza por ``LAI`` o ``biomass`` -> ``log1p``
-       (positivas, sesgadas a derecha).
-    2. ``feature_name`` empieza por ``NDVI/NDRE/NDWI/NDMI/NBR`` Y
-       ``|skew| > 1.0`` -> ``yeo-johnson`` (D10: acepta negativos).
+    1. ``feature_name`` starts with ``LAI`` or ``biomass`` -> ``log1p``
+       (positive, right-skewed).
+    2. ``feature_name`` starts with ``NDVI/NDRE/NDWI/NDMI/NBR`` AND
+       ``|skew| > 1.0`` -> ``yeo-johnson`` (D10: accepts negatives).
     3. ``|skew| > 1.0`` -> ``yeo-johnson``.
     4. ``strategy == "nn"`` -> ``minmax``.
     5. Default -> ``standard``.
 
     Args:
-        feature_name: Nombre del feature (case sensitive, prefix match).
-        distribution_stats: Diccionario con al menos ``{"skew": float}``.
-            Acepta tambien ``{"min", "max"}`` para refinamientos futuros.
-        strategy: Familia de modelo downstream (``"linear"`` o ``"nn"``).
+        feature_name: Feature name (case sensitive, prefix match).
+        distribution_stats: Dictionary with at least ``{"skew": float}``.
+            Also accepts ``{"min", "max"}`` for future refinements.
+        strategy: Downstream model family (``"linear"`` or ``"nn"``).
 
     Returns:
-        Tupla ``(scaler_name, justification_short)``.
+        Tuple ``(scaler_name, justification_short)``.
     """
     skew = float(distribution_stats.get("skew", 0.0))
 
@@ -1224,45 +1224,45 @@ def make_preprocessor(
     categorical_cols: tuple[str, ...] = (),
     categorical_encoder: Literal["onehot", "ordinal"] = "onehot",
 ) -> ColumnTransformer:
-    """Construye un :class:`ColumnTransformer` ruteado por :func:`select_normalizer`.
+    """Build a :class:`ColumnTransformer` routed by :func:`select_normalizer`.
 
-    Calcula skew por feature, decide el scaler con :func:`select_normalizer`
-    y agrupa las columnas que reciben el mismo scaler en un unico
-    ``transformer`` para minimizar la sobrecarga. Si ``categorical_cols``
-    es no vacio, agrega un bucket adicional para codificarlas con
-    :class:`~sklearn.preprocessing.OneHotEncoder` (default) o
-    :class:`~sklearn.preprocessing.OrdinalEncoder`, manteniendo retro-
-    compatibilidad con callers existentes (``categorical_cols=()``).
+    Computes skew per feature, decides the scaler with :func:`select_normalizer`
+    and groups the columns that receive the same scaler into a single
+    ``transformer`` to minimize overhead. If ``categorical_cols`` is
+    non-empty, adds an additional bucket to encode them with
+    :class:`~sklearn.preprocessing.OneHotEncoder` (default) or
+    :class:`~sklearn.preprocessing.OrdinalEncoder`, keeping backward
+    compatibility with existing callers (``categorical_cols=()``).
 
-    El resultado es serializable con :mod:`joblib` (requisito de Aaron para
-    carga desde GCS en el backend) y compatible con ``fit_transform`` sobre
-    matrices ``np.ndarray`` o ``pl.DataFrame.to_numpy()``.
+    The result is serializable with :mod:`joblib` (Aaron's requirement for
+    loading from GCS in the backend) and compatible with ``fit_transform`` over
+    ``np.ndarray`` matrices or ``pl.DataFrame.to_numpy()``.
 
     Args:
-        df: DataFrame Polars con las features que el preprocessor consumira.
-        strategy: ``"linear"`` o ``"nn"``.
-        exclude_cols: Columnas a omitir totalmente (ni numericas ni
-            categoricas).
-        categorical_cols: Columnas categoricas (Utf8/Categorical o Int de
-            baja cardinalidad). Si esta vacio (default), la signature opera
-            exactamente como la version original (US-018 fase 3).
-        categorical_encoder: ``"onehot"`` (default) usa
+        df: Polars DataFrame with the features the preprocessor will consume.
+        strategy: ``"linear"`` or ``"nn"``.
+        exclude_cols: Columns to omit entirely (neither numeric nor
+            categorical).
+        categorical_cols: Categorical columns (Utf8/Categorical or low-
+            cardinality Int). If empty (default), the signature operates
+            exactly like the original version (US-018 phase 3).
+        categorical_encoder: ``"onehot"`` (default) uses
             :class:`OneHotEncoder(handle_unknown="ignore", sparse_output=False)`,
-            ``"ordinal"`` usa
+            ``"ordinal"`` uses
             :class:`OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1)`.
 
     Returns:
-        :class:`ColumnTransformer` listo para ``fit_transform(X)``. Usa
-        ``remainder="drop"`` para no incluir columnas accidentales.
+        :class:`ColumnTransformer` ready for ``fit_transform(X)``. Uses
+        ``remainder="drop"`` to avoid including accidental columns.
 
     Notes:
-        - ``log1p`` se implementa con
-          :class:`~sklearn.preprocessing.PowerTransformer` ``box-cox`` (positiva)
-          fallback a Yeo-Johnson si hay no-positivos remanentes.
-        - Los indices de columna son **enteros** (no nombres), porque el
-          consumidor downstream pasa ``np.ndarray``.
-        - Las categoricas se identifican por nombre + se excluyen del
-          procesamiento numerico (se agregan a ``exclude_cols`` internamente).
+        - ``log1p`` is implemented with
+          :class:`~sklearn.preprocessing.PowerTransformer` ``box-cox`` (positive)
+          falling back to Yeo-Johnson if there are remaining non-positives.
+        - Column indices are **integers** (not names), because the
+          downstream consumer passes ``np.ndarray``.
+        - Categoricals are identified by name + excluded from numeric
+          processing (added to ``exclude_cols`` internally).
     """
     # The column layout the downstream ColumnTransformer will see is
     # ``df.drop(exclude_cols).to_numpy()``: it includes the categoricals at

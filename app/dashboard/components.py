@@ -1,13 +1,13 @@
-"""Componentes de render reutilizables del dashboard.
+"""Reusable dashboard render components.
 
-Agrupa los renderers genericos que comparten todas las secciones por Avance:
-fila de KPIs, encabezado de ficha, figura con narrativa, divisor de seccion,
-tablas y conclusiones. Tambien expone helpers para artefactos opcionales
-(figura o tabla parquet) que degradan con ``st.warning`` cuando el archivo no
-existe, en lugar de romper el render.
+Groups the generic renderers shared by all the per-Avance sections: KPI row,
+card header, figure with narrative, section divider, tables and conclusions.
+Also exposes helpers for optional artifacts (figure or parquet table) that
+degrade with ``st.warning`` when the file does not exist, instead of breaking
+the render.
 
-La fuente editorial de cada ficha es ``ml.report.notebook_content.NotebookCard``
-y las narrativas por figura viven en ``ml.report.figure_narratives``.
+The editorial source of each card is ``ml.report.notebook_content.NotebookCard``
+and the per-figure narratives live in ``ml.report.figure_narratives``.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ DATAFRAME_HEAD_ROWS = 200
 
 
 def render_kpi_row(card: NotebookCard) -> None:
-    """Renderiza una fila de KPI cards para la ficha dada."""
+    """Render a row of KPI cards for the given card."""
     if not card.kpis:
         return
     cards_html = "".join(
@@ -41,7 +41,7 @@ def render_kpi_row(card: NotebookCard) -> None:
 
 
 def render_section_divider(label: str, badge: str | None = None) -> None:
-    """Renderiza un divisor de seccion con label y badge opcional."""
+    """Render a section divider with label and optional badge."""
     badge_html = f'<span class="section-divider-badge">{badge}</span>' if badge else ""
     st.markdown(
         f'<div class="section-divider">{badge_html}<h3>{label}</h3></div>',
@@ -50,7 +50,7 @@ def render_section_divider(label: str, badge: str | None = None) -> None:
 
 
 def render_card_header(card: NotebookCard) -> None:
-    """Renderiza titulo, subtitulo, pill del notebook fuente y KPIs."""
+    """Render title, subtitle, source notebook pill and KPIs."""
     st.markdown(
         f'<h2 style="margin-top:0.5rem;color:#1E293B;font-weight:700;">{card.title}</h2>',
         unsafe_allow_html=True,
@@ -73,7 +73,7 @@ def render_card_header(card: NotebookCard) -> None:
 
 
 def render_figure_with_narrative(png_path: Path, narrative: FigureNarrative | None) -> None:
-    """Renderiza una figura PNG con su narrativa interpretativa al lado."""
+    """Render a PNG figure with its interpretive narrative alongside."""
     title = narrative.title if narrative is not None else png_path.stem.replace("_", " ").title()
 
     st.markdown(
@@ -107,11 +107,11 @@ def render_figure_with_narrative(png_path: Path, narrative: FigureNarrative | No
 
 
 def render_card_figures(card: NotebookCard, figures_root: Path) -> None:
-    """Renderiza las figuras de la ficha con narrativa por figura.
+    """Render the card's figures with a per-figure narrative.
 
     Args:
-        card: Ficha del notebook con ``figures_dir`` y ``notebook_id``.
-        figures_root: Raiz que contiene los subdirectorios de figuras.
+        card: Notebook card with ``figures_dir`` and ``notebook_id``.
+        figures_root: Root that contains the figure subdirectories.
     """
     pngs = list_figures(card, figures_root)
     csvs = list_csvs(figures_root / card.figures_dir) if card.figures_dir else []
@@ -146,7 +146,7 @@ def render_card_figures(card: NotebookCard, figures_root: Path) -> None:
 
 
 def render_card_conclusions(card: NotebookCard) -> None:
-    """Renderiza las conclusiones interpretadas como cards alternadas."""
+    """Render the interpreted conclusions as alternating cards."""
     if not card.conclusions:
         return
     render_section_divider(
@@ -169,11 +169,11 @@ def render_card_conclusions(card: NotebookCard) -> None:
 
 
 def render_card(card: NotebookCard, figures_root: Path) -> None:
-    """Renderiza una ficha completa: header + KPIs + figuras + conclusiones.
+    """Render a complete card: header + KPIs + figures + conclusions.
 
     Args:
-        card: Ficha del notebook a renderizar.
-        figures_root: Raiz de figuras (``paper/figures/``).
+        card: Notebook card to render.
+        figures_root: Figures root (``paper/figures/``).
     """
     render_card_header(card)
     render_card_figures(card, figures_root)
@@ -181,12 +181,12 @@ def render_card(card: NotebookCard, figures_root: Path) -> None:
 
 
 def render_optional_figure(png_path: Path, caption: str, missing_hint: str) -> None:
-    """Renderiza una figura si existe, con ``st.warning`` graceful si falta.
+    """Render a figure if it exists, with a graceful ``st.warning`` if missing.
 
     Args:
-        png_path: Ruta absoluta al PNG.
-        caption: Texto descriptivo bajo la imagen.
-        missing_hint: Sugerencia (comando ``make``) para regenerar el artefacto.
+        png_path: Absolute path to the PNG.
+        caption: Descriptive text below the image.
+        missing_hint: Hint (``make`` command) to regenerate the artifact.
     """
     if not png_path.exists():
         st.warning(f"Figura no disponible (`{png_path.name}`). {missing_hint}")
@@ -195,12 +195,12 @@ def render_optional_figure(png_path: Path, caption: str, missing_hint: str) -> N
 
 
 def render_parquet_table(parquet_path: Path, caption: str, missing_hint: str) -> None:
-    """Renderiza una tabla parquet con cache lazy y warning graceful.
+    """Render a parquet table with lazy cache and graceful warning.
 
     Args:
-        parquet_path: Ruta absoluta al parquet.
-        caption: Texto descriptivo bajo la tabla.
-        missing_hint: Sugerencia (comando ``make``) para regenerar el artefacto.
+        parquet_path: Absolute path to the parquet.
+        caption: Descriptive text below the table.
+        missing_hint: Hint (``make`` command) to regenerate the artifact.
     """
     if not parquet_path.exists():
         st.warning(f"Tabla no disponible (`{parquet_path.name}`). {missing_hint}")

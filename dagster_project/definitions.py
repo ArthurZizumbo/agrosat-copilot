@@ -1,13 +1,13 @@
-"""Punto de entrada Dagster — agrega assets, resources, jobs y schedules.
+"""Dagster entry point — aggregates assets, resources, jobs and schedules.
 
-Arranque: ``poetry run dagster dev -m dagster_project.definitions``.
+Startup: ``poetry run dagster dev -m dagster_project.definitions``.
 
-US-022b-B: registra resource ``mlflow`` (dagster-mlflow) para tracking del
-pipeline FarSLIP y el job ``farslip_full_pipeline_job`` que orquesta el flujo
-``sentinel2_crops_256 -> farslip_embeddings_italy ->
-farslip_embeddings_consolidated``. Los AssetSpec externos
-(``farslip_pairs_italy``, ``farslip_clip_italy_v1``) se anaden al lineage para
-visualizar el flujo del paper Wen et al. 2025 / Li et al. 2025 en la UI.
+US-022b-B: registers the ``mlflow`` resource (dagster-mlflow) for tracking the
+FarSLIP pipeline and the job ``farslip_full_pipeline_job`` that orchestrates the
+flow ``sentinel2_crops_256 -> farslip_embeddings_italy ->
+farslip_embeddings_consolidated``. The external AssetSpec
+(``farslip_pairs_italy``, ``farslip_clip_italy_v1``) are added to the lineage to
+visualize the flow of the paper Wen et al. 2025 / Li et al. 2025 in the UI.
 """
 
 from dagster import Definitions, load_assets_from_modules
@@ -34,8 +34,8 @@ all_assets = load_assets_from_modules(
 defs = Definitions(
     assets=[
         *all_assets,
-        # External AssetSpec — declaran lineage del paper FarSLIP sin
-        # materializacion (modelo MLflow + alias semantico de pairs).
+        # External AssetSpec — declare the FarSLIP paper lineage without
+        # materialization (MLflow model + semantic alias of pairs).
         farslip_pairs_italy_spec,
         farslip_clip_italy_v1_spec,
     ],

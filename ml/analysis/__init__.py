@@ -1,4 +1,4 @@
-"""Modulo de analisis exploratorio para US-010/011/012/018."""
+"""Exploratory analysis module for US-010/011/012/018."""
 
 from __future__ import annotations
 

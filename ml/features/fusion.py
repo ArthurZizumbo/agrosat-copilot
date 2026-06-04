@@ -1,39 +1,39 @@
-"""Fusión multisensor a nivel parcela (US-016).
+"""Multisensor fusion at parcel level (US-016).
 
-Este módulo construye el vector tabular fusionado que alimenta los baselines
-RF/XGBoost (US-019/020/021) y los heads tabulares de las arquitecturas de
-segmentación (EPIC 5). El vector concatena 6 bloques heterogéneos alineados
-por ``(parcel_id, year)`` con un layout determinista, más un séptimo bloque
-opcional (FarSLIP, 512-dim) que se incorpora vía ``LEFT JOIN`` cuando los
-embeddings se entreguen en ``data/farslip/embeddings_pastis.parquet``.
+This module builds the fused tabular vector that feeds the RF/XGBoost
+baselines (US-019/020/021) and the tabular heads of the segmentation
+architectures (EPIC 5). The vector concatenates 6 heterogeneous blocks aligned
+by ``(parcel_id, year)`` with a deterministic layout, plus an optional seventh
+block (FarSLIP, 512-dim) that is incorporated via ``LEFT JOIN`` when the
+embeddings are delivered to ``data/farslip/embeddings_pastis.parquet``.
 
-Layout de columnas (orden estable, downstream depende):
+Column layout (stable order, downstream depends on it):
 
 ::
 
     parcel_id (Utf8) | year (i16) |
-    ae_00 .. ae_63 (64)                                | bloque AlphaEarth
-    {idx}_{stat} (17 * 5 = 85)                         | bloque índices x stats
-    s1_vv_{stat} | s1_vh_{stat} (2 * 5 = 10)           | bloque Sentinel-1
+    ae_00 .. ae_63 (64)                                | AlphaEarth block
+    {idx}_{stat} (17 * 5 = 85)                         | indices x stats block
+    s1_vv_{stat} | s1_vh_{stat} (2 * 5 = 10)           | Sentinel-1 block
     srtm_elev_mean | srtm_slope_mean | srtm_aspect_dominant (3) |
     era5_tmean_m01..m12 | era5_prec_m01..m12 (24)       |
     geom_area_ha | geom_perimeter_m | geom_elongation (3) |
-    [farslip_000 .. farslip_511 (512)]                  | opcional
+    [farslip_000 .. farslip_511 (512)]                  | optional
 
-Decisiones técnicas (ver ``docs/us-planning/us-016.md`` §2):
+Technical decisions (see ``docs/us-planning/us-016.md`` §2):
 
-- Polars 1.x ``LazyFrame`` con ``collect(engine="streaming")`` final.
-- Stats temporales subset ``("mean", "std", "p25", "p50", "p95")`` (5 stats,
-  no los 9 stats completos de US-015) para mantener 85 cols por bloque
-  índices y privilegiar economía downstream.
-- Bloque FarSLIP es opcional vía ``LEFT JOIN``. Si ``include_farslip=True``
-  y ``farslip_path`` no existe, emite warning estructurado y omite el bloque
-  sin fallar la build.
-- Las columnas de geometría (``geom_area_ha``, ``geom_perimeter_m``,
-  ``geom_elongation``) se calculan con ``GeoSeries.to_crs("EPSG:3857")`` para
-  reportar unidades métricas reales (el cálculo Polsby-Popper de elongación
-  es adimensional y, por construcción, ≥ 1).
-- ``srtm_aspect_dominant`` se devuelve como string cardinal de 8 cuadrantes
+- Polars 1.x ``LazyFrame`` with final ``collect(engine="streaming")``.
+- Temporal stats subset ``("mean", "std", "p25", "p50", "p95")`` (5 stats,
+  not the full 9 stats of US-015) to keep 85 cols per indices block and
+  favor downstream economy.
+- The FarSLIP block is optional via ``LEFT JOIN``. If ``include_farslip=True``
+  and ``farslip_path`` does not exist, it emits a structured warning and omits
+  the block without failing the build.
+- The geometry columns (``geom_area_ha``, ``geom_perimeter_m``,
+  ``geom_elongation``) are computed with ``GeoSeries.to_crs("EPSG:3857")`` to
+  report real metric units (the Polsby-Popper elongation computation is
+  dimensionless and, by construction, >= 1).
+- ``srtm_aspect_dominant`` is returned as a cardinal string of 8 quadrants
   ``{N, NE, E, SE, S, SW, W, NW}``.
 """
 
@@ -177,75 +177,76 @@ def build_fused_features(
     phenology_text_frame: pl.DataFrame | None = None,
     spectral_signature_frame: pl.DataFrame | None = None,
 ) -> pl.DataFrame:
-    """Construye el vector de features fusionados por ``(parcel_id, year)``.
+    """Build the fused feature vector by ``(parcel_id, year)``.
 
     Args:
-        parcels: GeoDataFrame con columnas ``parcel_id`` (int), ``year`` (int)
-            y ``geometry`` (POLYGON en EPSG:4326). Opcionalmente ``crop_class``
-            y ``region``. El año debe coincidir con ``year``.
-        year: Año de referencia para AlphaEarth / S1 / ERA5.
-        blocks: Subconjunto de bloques a computar. Permite ablation.
-            Default ``BLOCK_NAMES`` (los 7 bloques, FarSLIP solo si
+        parcels: GeoDataFrame with columns ``parcel_id`` (int), ``year`` (int)
+            and ``geometry`` (POLYGON in EPSG:4326). Optionally ``crop_class``
+            and ``region``. The year must match ``year``.
+        year: Reference year for AlphaEarth / S1 / ERA5.
+        blocks: Subset of blocks to compute. Enables ablation.
+            Default ``BLOCK_NAMES`` (the 7 blocks, FarSLIP only if
             ``include_farslip=True``).
-        include_farslip: Si ``True`` intenta unir el bloque FarSLIP. Si
-            ``farslip_path`` no existe, emite warning y omite el bloque sin
-            fallar la build.
-        farslip_path: Ruta al parquet con embeddings FarSLIP. Default
-            ``data/farslip/embeddings_pastis.parquet`` (se resuelve via
-            :func:`resolve_dataset_path`, cae al legacy ``_italy`` si aplica).
-        include_phenology_text: Si ``True`` intenta unir el bloque
-            ``pheno_text_*`` (US-022b-D, Wen et al. 2025). Mismo patron
-            que FarSLIP: si el path no existe se omite sin fallar. Si
-            ``phenology_text_frame`` se pasa explicitamente se ignora el
-            path.
-        phenology_text_path: Ruta al parquet con los embeddings textuales
-            de la rama semantica (output de
+        include_farslip: If ``True`` attempts to join the FarSLIP block. If
+            ``farslip_path`` does not exist, emits a warning and omits the
+            block without failing the build.
+        farslip_path: Path to the parquet with FarSLIP embeddings. Default
+            ``data/farslip/embeddings_pastis.parquet`` (resolved via
+            :func:`resolve_dataset_path`, falls back to the legacy ``_italy``
+            if applicable).
+        include_phenology_text: If ``True`` attempts to join the
+            ``pheno_text_*`` block (US-022b-D, Wen et al. 2025). Same pattern
+            as FarSLIP: if the path does not exist it is omitted without
+            failing. If ``phenology_text_frame`` is passed explicitly the
+            path is ignored.
+        phenology_text_path: Path to the parquet with the text embeddings of
+            the semantic branch (output of
             :func:`ml.features.phenology_description.build_phenology_text_block`).
-            Default ``data/features/phenology_text_pastis.parquet`` (se
-            resuelve via :func:`resolve_dataset_path`, cae al legacy
-            ``_italy`` si aplica).
-        stats: Stats temporales aplicados a índices y S1. Default
-            :data:`FUSION_STATS`. Cambiar este parámetro rompe el contrato
-            de 85 columnas del bloque índices — utilizar solo en ablation.
-        lazy: Si ``True`` (default) los joins se hacen en ``LazyFrame`` con
-            ``collect(engine="streaming")`` final. Si ``False`` se usa eager
-            (útil para debugging).
-        ae_frame: Inyección opcional del bloque AlphaEarth ya muestreado
-            (testing y dependency injection desde script CLI / Dagster).
-        indices_frame: Inyección opcional del bloque índices*stats.
-        s1_frame: Inyección opcional del bloque Sentinel-1.
-        srtm_frame: Inyección opcional del bloque SRTM.
-        era5_frame: Inyección opcional del bloque ERA5 mensual.
-        phenology_text_frame: Inyección opcional del bloque
-            ``pheno_text_*`` (testing); cuando se pasa, ``phenology_text_path``
-            se ignora.
-        include_spectral_signature: Si ``True`` intenta unir el bloque
-            ``spectral_signature_*`` (US-023-preview P5). Mismo patron que
-            FarSLIP: si el path no existe se omite sin fallar. Si
-            ``spectral_signature_frame`` se pasa explicitamente se ignora
-            el path.
-        spectral_signature_path: Ruta al parquet con la firma espectral
-            (output de :class:`ml.features.spectral_signature.SpectralSignatureFeatures`).
-            Default ``data/features/spectral_signature_pastis.parquet`` (se
-            resuelve via :func:`resolve_dataset_path`, cae al legacy
-            ``_italy`` si aplica).
-        spectral_signature_frame: Inyección opcional del bloque
-            ``spectral_signature_*`` (testing); cuando se pasa,
-            ``spectral_signature_path`` se ignora.
+            Default ``data/features/phenology_text_pastis.parquet`` (resolved
+            via :func:`resolve_dataset_path`, falls back to the legacy
+            ``_italy`` if applicable).
+        stats: Temporal stats applied to indices and S1. Default
+            :data:`FUSION_STATS`. Changing this parameter breaks the 85-column
+            contract of the indices block — use only in ablation.
+        lazy: If ``True`` (default) the joins are done in ``LazyFrame`` with
+            final ``collect(engine="streaming")``. If ``False`` eager is used
+            (useful for debugging).
+        ae_frame: Optional injection of the already-sampled AlphaEarth block
+            (testing and dependency injection from CLI script / Dagster).
+        indices_frame: Optional injection of the indices*stats block.
+        s1_frame: Optional injection of the Sentinel-1 block.
+        srtm_frame: Optional injection of the SRTM block.
+        era5_frame: Optional injection of the monthly ERA5 block.
+        phenology_text_frame: Optional injection of the ``pheno_text_*`` block
+            (testing); when passed, ``phenology_text_path`` is ignored.
+        include_spectral_signature: If ``True`` attempts to join the
+            ``spectral_signature_*`` block (US-023-preview P5). Same pattern as
+            FarSLIP: if the path does not exist it is omitted without failing.
+            If ``spectral_signature_frame`` is passed explicitly the path is
+            ignored.
+        spectral_signature_path: Path to the parquet with the spectral
+            signature (output of
+            :class:`ml.features.spectral_signature.SpectralSignatureFeatures`).
+            Default ``data/features/spectral_signature_pastis.parquet``
+            (resolved via :func:`resolve_dataset_path`, falls back to the
+            legacy ``_italy`` if applicable).
+        spectral_signature_frame: Optional injection of the
+            ``spectral_signature_*`` block (testing); when passed,
+            ``spectral_signature_path`` is ignored.
 
     Returns:
-        ``pl.DataFrame`` con shape ``(N, 2 + 189)`` o ``(N, 2 + 701)`` si
-        FarSLIP fue incluido. Primera columna ``parcel_id`` (Utf8 canonico,
-        ver :func:`ml.utils.parcel_id.canonical_parcel_id`), segunda
-        ``year`` (i16). El resto en el orden documentado en el módulo.
+        ``pl.DataFrame`` with shape ``(N, 2 + 189)`` or ``(N, 2 + 701)`` if
+        FarSLIP was included. First column ``parcel_id`` (canonical Utf8, see
+        :func:`ml.utils.parcel_id.canonical_parcel_id`), second ``year``
+        (i16). The rest in the order documented in the module.
 
     Raises:
-        ValueError: si ``parcels`` no contiene las columnas requeridas, si
-            ``year`` no coincide con ``parcels['year']``, o si ``stats`` no
-            es subset de los stats soportados.
-        FileNotFoundError: si ``include_farslip=True`` y se pasó
-            explícitamente un ``farslip_path`` que no existe (warning
-            estructurado para el path por defecto, sin fallar).
+        ValueError: if ``parcels`` does not contain the required columns, if
+            ``year`` does not match ``parcels['year']``, or if ``stats`` is
+            not a subset of the supported stats.
+        FileNotFoundError: if ``include_farslip=True`` and an explicit
+            ``farslip_path`` that does not exist was passed (structured
+            warning for the default path, without failing).
     """
     _validate_parcels(parcels, year=year)
     _validate_stats(stats)
@@ -313,36 +314,36 @@ def build_fused_features(
 
 
 def _validate_parcels(parcels: gpd.GeoDataFrame, *, year: int) -> None:
-    """Valida que el GeoDataFrame de parcelas trae las columnas mínimas."""
+    """Validate that the parcels GeoDataFrame has the minimum columns."""
     if not isinstance(parcels, gpd.GeoDataFrame):  # pragma: no cover - guard
         raise ValueError(
-            f"`parcels` debe ser un geopandas.GeoDataFrame; recibido {type(parcels)!r}"
+            f"`parcels` must be a geopandas.GeoDataFrame; received {type(parcels)!r}"
         )
     missing = [c for c in ("parcel_id", "year") if c not in parcels.columns]
     if missing:
         raise ValueError(
-            f"`parcels` no contiene columnas requeridas: {missing}. "
-            "Esperadas al menos: ['parcel_id', 'year', 'geometry']."
+            f"`parcels` does not contain required columns: {missing}. "
+            "Expected at least: ['parcel_id', 'year', 'geometry']."
         )
     if parcels.geometry.name not in parcels.columns:
         raise ValueError(
-            "`parcels` no contiene columna de geometría activa. "
-            "Verifica que el GeoDataFrame tenga `geometry` o set_geometry()."
+            "`parcels` does not contain an active geometry column. "
+            "Verify that the GeoDataFrame has `geometry` or set_geometry()."
         )
     unique_years = set(int(y) for y in parcels["year"].unique().tolist())
     if unique_years and unique_years != {int(year)}:
         raise ValueError(
-            f"`year={year}` no coincide con los valores únicos en parcels['year']="
-            f"{sorted(unique_years)}. La fusión asume un único año por build."
+            f"`year={year}` does not match the unique values in parcels['year']="
+            f"{sorted(unique_years)}. The fusion assumes a single year per build."
         )
 
 
 def _validate_stats(stats: tuple[str, ...]) -> None:
-    """Valida que `stats` es un subset reconocido."""
+    """Validate that `stats` is a recognized subset."""
     supported = {"mean", "std", "p25", "p50", "p75", "p95", "min", "max"}
     invalid = [s for s in stats if s not in supported]
     if invalid:
-        raise ValueError(f"Stats no soportadas: {invalid}. Disponibles: {sorted(supported)}.")
+        raise ValueError(f"Unsupported stats: {invalid}. Available: {sorted(supported)}.")
 
 
 # ---------------------------------------------------------------------------
@@ -356,10 +357,10 @@ def _build_ae_block(
     year: int,
     injected: pl.DataFrame | None,
 ) -> pl.LazyFrame:
-    """Construye el bloque AlphaEarth (64 cols) por ``(parcel_id, year)``.
+    """Build the AlphaEarth block (64 cols) by ``(parcel_id, year)``.
 
-    Cuando ``injected`` es ``None`` y el helper GEE no devolvió datos, se
-    rellenan los 64 dims con ``None`` (downstream debe imputar si lo requiere).
+    When ``injected`` is ``None`` and the GEE helper returned no data, the 64
+    dims are filled with ``None`` (downstream must impute if required).
     """
     if injected is not None:
         df = injected
@@ -384,7 +385,7 @@ def _build_ae_block(
 
 
 def _empty_ae_frame(parcels: gpd.GeoDataFrame, *, year: int) -> pl.DataFrame:
-    """Devuelve un frame AE con los 64 dims rellenos en ``None``."""
+    """Return an AE frame with the 64 dims filled with ``None``."""
     pids = parcels["parcel_id"].astype("string").tolist()
     n = len(pids)
     cols: dict[str, list[object]] = {
@@ -409,11 +410,11 @@ def _build_indices_stats_block(
     stats: tuple[str, ...],
     injected: pl.DataFrame | None,
 ) -> pl.LazyFrame:
-    """Construye el bloque ``{idx}_{stat}`` (5 stats x 17 índices = 85 cols).
+    """Build the ``{idx}_{stat}`` block (5 stats x 17 indices = 85 cols).
 
-    El orden de columnas es ``idx`` outer + ``stat`` inner (NDVI_mean,
-    NDVI_std, ... NDVI_p95, NDWI_mean, ...). Cuando ``injected`` es ``None``
-    el helper rellena con ``None`` preservando el contrato exacto.
+    The column order is ``idx`` outer + ``stat`` inner (NDVI_mean,
+    NDVI_std, ... NDVI_p95, NDWI_mean, ...). When ``injected`` is ``None``
+    the helper fills with ``None`` preserving the exact contract.
     """
     expected_cols = tuple(f"{idx.lower()}_{stat}" for idx in INDEX_NAMES for stat in stats)
     if injected is not None:
@@ -437,7 +438,7 @@ def _empty_indices_frame(
     year: int,
     expected_cols: tuple[str, ...],
 ) -> pl.DataFrame:
-    """Frame índices*stats relleno con ``None``."""
+    """Indices*stats frame filled with ``None``."""
     pids = parcels["parcel_id"].astype("string").tolist()
     n = len(pids)
     cols: dict[str, list[object]] = {
@@ -462,7 +463,7 @@ def _build_s1_block(
     stats: tuple[str, ...],
     injected: pl.DataFrame | None,
 ) -> pl.LazyFrame:
-    """Bloque Sentinel-1 VV+VH x stats = 10 cols."""
+    """Sentinel-1 block VV+VH x stats = 10 cols."""
     expected_cols = tuple(f"s1_{pol}_{stat}" for pol in _S1_POLARIZATIONS for stat in stats)
     if injected is not None:
         df = injected
@@ -483,10 +484,10 @@ def _build_srtm_block(
     *,
     injected: pl.DataFrame | None,
 ) -> pl.LazyFrame:
-    """Bloque SRTM (elevación, slope, aspect dominante) = 3 cols.
+    """SRTM block (elevation, slope, dominant aspect) = 3 cols.
 
-    Las parcelas no tienen año asociado en SRTM (DEM estático); el helper
-    sintetiza ``year`` desde la GDF para preservar el join.
+    Parcels have no associated year in SRTM (static DEM); the helper
+    synthesizes ``year`` from the GDF to preserve the join.
     """
     expected_cols = ("srtm_elev_mean", "srtm_slope_mean", "srtm_aspect_dominant")
     year_val = int(parcels["year"].iloc[0]) if len(parcels) else 0
@@ -530,7 +531,7 @@ def _build_era5_block(
     year: int,
     injected: pl.DataFrame | None,
 ) -> pl.LazyFrame:
-    """Bloque ERA5 mensual = 24 cols (tmean_m01..12 + prec_m01..12)."""
+    """Monthly ERA5 block = 24 cols (tmean_m01..12 + prec_m01..12)."""
     expected_cols = tuple(
         [f"era5_tmean_m{m:02d}" for m in range(1, 13)]
         + [f"era5_prec_m{m:02d}" for m in range(1, 13)]
@@ -550,13 +551,12 @@ def _build_era5_block(
 
 
 def _build_geom_block(parcels: gpd.GeoDataFrame) -> pl.LazyFrame:
-    """Bloque geometría = 3 cols derivadas de la geometría EPSG:4326.
+    """Geometry block = 3 cols derived from the EPSG:4326 geometry.
 
-    Reproyecta a EPSG:3857 (Web Mercator) para obtener áreas y perímetros
-    en unidades métricas (aproximación adecuada para zonas templadas /
-    Italia). ``geom_elongation = perimetro^2 / (4 * pi * area)`` es el
-    inverso del Polsby-Popper compactness (1 = círculo perfecto, > 1
-    formas alargadas).
+    Reprojects to EPSG:3857 (Web Mercator) to obtain areas and perimeters in
+    metric units (suitable approximation for temperate zones / Italy).
+    ``geom_elongation = perimeter^2 / (4 * pi * area)`` is the inverse of the
+    Polsby-Popper compactness (1 = perfect circle, > 1 elongated shapes).
     """
     if len(parcels) == 0:
         return pl.DataFrame(
@@ -601,14 +601,14 @@ def _build_farslip_block(
     *,
     farslip_path: str | Path | None,
 ) -> pl.LazyFrame | None:
-    """Lee y prepara el bloque FarSLIP (512 cols) para ``LEFT JOIN``.
+    """Read and prepare the FarSLIP block (512 cols) for ``LEFT JOIN``.
 
-    Si el path no existe:
+    If the path does not exist:
 
-    - Si el caller pasó un path explícito, lanza ``FileNotFoundError`` para
-      no enmascarar errores de configuración.
-    - Si se usó el default y no existe, emite warning estructurado y
-      devuelve ``None`` (el bloque se omite sin fallar).
+    - If the caller passed an explicit path, raises ``FileNotFoundError`` to
+      avoid masking configuration errors.
+    - If the default was used and does not exist, emits a structured warning
+      and returns ``None`` (the block is omitted without failing).
     """
     explicit_path = farslip_path is not None
     resolved = (
@@ -620,8 +620,8 @@ def _build_farslip_block(
     if not resolved.exists():
         if explicit_path:
             raise FileNotFoundError(
-                f"FarSLIP embeddings parquet no encontrado: {resolved}. "
-                "Pasa `include_farslip=False` o verifica el path."
+                f"FarSLIP embeddings parquet not found: {resolved}. "
+                "Pass `include_farslip=False` or verify the path."
             )
         logger.warning(
             "farslip_block_skipped",
@@ -646,12 +646,14 @@ def _build_farslip_block(
             missing = [c for c in farslip_cols if c not in df.columns]
         if missing:
             raise ValueError(
-                f"FarSLIP parquet en {resolved} no trae las 512 columnas esperadas. "
-                f"Faltan {len(missing)} cols (ej. {missing[:3]}...). "
-                "Prefijos aceptados: 'farslip_NNN' (canonico) o 'farslip_emb_NNN' (legacy v1/v2)."
+                f"FarSLIP parquet at {resolved} does not bring the 512 expected columns. "
+                f"Missing {len(missing)} cols (e.g. {missing[:3]}...). "
+                "Accepted prefixes: 'farslip_NNN' (canonical) or 'farslip_emb_NNN' (legacy v1/v2)."
             )
     if "parcel_id" not in df.columns:
-        raise ValueError(f"FarSLIP parquet en {resolved} no contiene `parcel_id` para el join.")
+        raise ValueError(
+            f"FarSLIP parquet at {resolved} does not contain `parcel_id` for the join."
+        )
 
     # If the FarSLIP frame does not bring `year`, we infer the year from parcels.
     if "year" not in df.columns:
@@ -673,17 +675,18 @@ def _build_phenology_text_block_lf(
     phenology_text_path: str | Path | None,
     injected: pl.DataFrame | None,
 ) -> pl.LazyFrame | None:
-    """Prepara el bloque ``pheno_text_*`` (US-022b-D) para LEFT JOIN.
+    """Prepare the ``pheno_text_*`` block (US-022b-D) for LEFT JOIN.
 
-    Patron simetrico al bloque FarSLIP:
+    Symmetric pattern to the FarSLIP block:
 
-    - Si ``injected`` es no-``None``, se usa directamente (testing).
-    - Si el path no existe y se uso el default: warning + ``None`` (la
-      build sigue sin fallar — el bloque se omite).
-    - Si el path no existe y se paso explicitamente: ``FileNotFoundError``.
-    - Si las columnas ``pheno_text_NNN`` no llegan al esperado
-      :data:`PHENOLOGY_TEXT_EMBED_DIM`, se acepta el subset (no hay
-      contrato dimensional fijo — el text-encoder puede variar).
+    - If ``injected`` is not ``None``, it is used directly (testing).
+    - If the path does not exist and the default was used: warning + ``None``
+      (the build continues without failing — the block is omitted).
+    - If the path does not exist and was passed explicitly:
+      ``FileNotFoundError``.
+    - If the ``pheno_text_NNN`` columns do not reach the expected
+      :data:`PHENOLOGY_TEXT_EMBED_DIM`, the subset is accepted (there is no
+      fixed dimensional contract — the text-encoder can vary).
     """
     if injected is not None:
         df = injected
@@ -697,8 +700,8 @@ def _build_phenology_text_block_lf(
         if not resolved.exists():
             if explicit_path:
                 raise FileNotFoundError(
-                    f"Bloque pheno_text no encontrado en {resolved}. "
-                    "Pasa `include_phenology_text=False` o genera el parquet con "
+                    f"pheno_text block not found at {resolved}. "
+                    "Pass `include_phenology_text=False` or generate the parquet with "
                     "ml.features.phenology_description.build_phenology_text_block."
                 )
             logger.warning(
@@ -711,11 +714,11 @@ def _build_phenology_text_block_lf(
         df = pl.read_parquet(resolved)
 
     if "parcel_id" not in df.columns:
-        raise ValueError("Bloque pheno_text no contiene `parcel_id` para el join.")
+        raise ValueError("pheno_text block does not contain `parcel_id` for the join.")
     df = canonical_parcel_id(df)
     pheno_cols = tuple(c for c in df.columns if c.startswith("pheno_text_"))
     if not pheno_cols:
-        raise ValueError("Bloque pheno_text no contiene columnas con prefijo `pheno_text_`.")
+        raise ValueError("pheno_text block does not contain columns with prefix `pheno_text_`.")
     if "year" not in df.columns:
         year_val = int(parcels["year"].iloc[0]) if len(parcels) else 0
         df = df.with_columns(pl.lit(year_val, dtype=pl.Int16).alias("year"))
@@ -734,16 +737,17 @@ def _build_spectral_signature_block_lf(
     spectral_signature_path: str | Path | None,
     injected: pl.DataFrame | None,
 ) -> pl.LazyFrame | None:
-    """Prepara el bloque ``spectral_signature_*`` (US-023-preview P5) para LEFT JOIN.
+    """Prepare the ``spectral_signature_*`` block (US-023-preview P5) for LEFT JOIN.
 
-    Patron simetrico al bloque pheno_text:
+    Symmetric pattern to the pheno_text block:
 
-    - Si ``injected`` no es ``None``, se usa directamente (testing).
-    - Si el path no existe y se uso el default: warning + ``None`` (la
-      build sigue sin fallar — el bloque se omite).
-    - Si el path no existe y se paso explicitamente: ``FileNotFoundError``.
-    - Las columnas esperadas tienen prefijo ``spectral_signature_NNN``; el
-      conteo K depende del descriptor (default 3 para REP / 3 anclas).
+    - If ``injected`` is not ``None``, it is used directly (testing).
+    - If the path does not exist and the default was used: warning + ``None``
+      (the build continues without failing — the block is omitted).
+    - If the path does not exist and was passed explicitly:
+      ``FileNotFoundError``.
+    - The expected columns have prefix ``spectral_signature_NNN``; the K count
+      depends on the descriptor (default 3 for REP / 3 anchors).
     """
     if injected is not None:
         df = injected
@@ -757,9 +761,9 @@ def _build_spectral_signature_block_lf(
         if not resolved.exists():
             if explicit_path:
                 raise FileNotFoundError(
-                    f"Bloque spectral_signature no encontrado en {resolved}. "
-                    "Pasa `include_spectral_signature=False` o genera el "
-                    "parquet con ml.features.spectral_signature."
+                    f"spectral_signature block not found at {resolved}. "
+                    "Pass `include_spectral_signature=False` or generate the "
+                    "parquet with ml.features.spectral_signature."
                 )
             logger.warning(
                 "spectral_signature_block_skipped",
@@ -772,13 +776,13 @@ def _build_spectral_signature_block_lf(
 
     if "parcel_id" not in df.columns:
         raise ValueError(
-            "Bloque spectral_signature no contiene `parcel_id` para el join."
+            "spectral_signature block does not contain `parcel_id` for the join."
         )
     df = canonical_parcel_id(df)
     spec_cols = tuple(c for c in df.columns if c.startswith("spectral_signature_"))
     if not spec_cols:
         raise ValueError(
-            "Bloque spectral_signature no contiene columnas con prefijo "
+            "spectral_signature block does not contain columns with prefix "
             "`spectral_signature_`."
         )
     if "year" not in df.columns:
@@ -799,7 +803,7 @@ def _empty_generic_frame(
     year: int,
     columns: Sequence[str],
 ) -> pl.DataFrame:
-    """Frame genérico relleno con ``None`` para los nombres de columna dados."""
+    """Generic frame filled with ``None`` for the given column names."""
     pids = parcels["parcel_id"].astype("string").tolist()
     n = len(pids)
     cols: dict[str, list[object]] = {

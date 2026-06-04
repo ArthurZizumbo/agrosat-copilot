@@ -1,17 +1,17 @@
-"""US-023-preview P4 — ablation real pheno_text con Gemini Flash 3.5.
+"""US-023-preview P4 — real pheno_text ablation with Gemini Flash 3.5.
 
-Ejecucion productiva (no smoke). Construye subset estratificado >=1000
-parcelas balanceadas por clase, genera descripciones con Gemini Flash 3.5
-(temperature=0, cache por parcela), las codifica con sentence-transformers
-all-MiniLM-L6-v2 (384 dim) y persiste a data/features/phenology_text_italy.parquet.
+Production run (not smoke). Builds a stratified subset of >=1000 parcels
+balanced by class, generates descriptions with Gemini Flash 3.5
+(temperature=0, per-parcel cache), encodes them with sentence-transformers
+all-MiniLM-L6-v2 (384 dim) and persists to data/features/phenology_text_italy.parquet.
 
-Luego corre la ablation con XGBoost spatial CV 5-fold sobre 3 conjuntos:
-- full (185 features base sin geom_*)
+Then it runs the ablation with XGBoost spatial CV 5-fold over 3 sets:
+- full (185 base features without geom_*)
 - with_pheno_text (185 + 384)
 - pheno_text_only (384)
 
-Persiste resultados a reports/baseline/feature_ablation/ablation_table_pheno_text_v2.parquet,
-registra el costo Gemini y crea un MLflow run.
+Persists results to reports/baseline/feature_ablation/ablation_table_pheno_text_v2.parquet,
+logs the Gemini cost and creates an MLflow run.
 """
 
 from __future__ import annotations
@@ -67,7 +67,7 @@ def main() -> None:
     # Validate API key.
     key = os.environ.get("GEMINI_API_KEY", "")
     if not key.startswith("AIzaSy"):
-        raise SystemExit("GEMINI_API_KEY no cargada desde .env.local")
+        raise SystemExit("GEMINI_API_KEY not loaded from .env.local")
     log(f"GEMINI_API_KEY ok (len={len(key)})")
 
     # 1) Load dataset and build balanced subset.
@@ -85,7 +85,7 @@ def main() -> None:
     subset = pl.concat(parts).sort("parcel_id")
     log(f"subset balanceado: {subset.shape} ({subset['class_id'].n_unique()} clases)")
     if subset.height < 1000:
-        raise SystemExit(f"AC-P4-2 violado: subset {subset.height} < 1000")
+        raise SystemExit(f"AC-P4-2 violated: subset {subset.height} < 1000")
 
     # 2) Reconstruct NDVI curves from FFT.
     log("reconstruyendo curvas NDVI desde FFT...")
@@ -144,7 +144,7 @@ def main() -> None:
     cost_total = cost_in + cost_out
     log(f"costo Gemini estimado: in={tokens_in} tok (${cost_in:.4f}), out={tokens_out} tok (${cost_out:.4f}), total=${cost_total:.4f}")
     if cost_total > 5.0:
-        raise SystemExit(f"AC-P4-4 violado: ${cost_total:.4f} > $5.0")
+        raise SystemExit(f"AC-P4-4 violated: ${cost_total:.4f} > $5.0")
 
     # 4) Encode with sentence-transformers.
     log("encoding con sentence-transformers all-MiniLM-L6-v2...")

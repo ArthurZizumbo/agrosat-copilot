@@ -1,11 +1,11 @@
-"""Resolucion de figuras de segmentacion del Avance 4.
+"""Resolution of Avance 4 segmentation figures.
 
-Centraliza la logica de localizar la figura de un modelo por tipo
-(``curves``, ``per_class_iou``, ``confusion``, ``samples``), aceptando el
-nombre exacto, variantes con sufijo (``anysat`` -> ``anysat_fast``) y un mapa
-de fallback para las figuras de DeepLab/TSViT publicadas en ``paper/figures/
-us-025/`` con nombres propios. Mantener esto fuera del notebook evita repetir
-rutas y el mapa hardcodeado en cada celda de galeria.
+Centralizes the logic of locating a model's figure by type
+(``curves``, ``per_class_iou``, ``confusion``, ``samples``), accepting the
+exact name, suffixed variants (``anysat`` -> ``anysat_fast``) and a fallback
+map for the DeepLab/TSViT figures published in ``paper/figures/us-025/`` with
+their own names. Keeping this outside the notebook avoids repeating paths and
+the hardcoded map in each gallery cell.
 """
 
 from __future__ import annotations
@@ -32,16 +32,16 @@ _US025_MAP: dict[tuple[str, str], str] = {
 
 
 def find_figure(figures_dir: Path, key: str, model: str) -> Path | None:
-    """Localiza la figura ``key`` del ``model`` o ``None`` si no existe.
+    """Locate the ``key`` figure of the ``model`` or ``None`` if it does not exist.
 
     Args:
-        figures_dir: Directorio principal de figuras de segmentacion.
-        key: Tipo de figura (``"confusion"``, ``"samples"``, ...).
-        model: Slug del modelo (``"unet"``, ``"tsvit"``, ...).
+        figures_dir: Main segmentation figures directory.
+        key: Figure type (``"confusion"``, ``"samples"``, ...).
+        model: Model slug (``"unet"``, ``"tsvit"``, ...).
 
     Returns:
-        Path a la figura encontrada (nombre exacto, variante con sufijo o
-        fallback us-025), o ``None`` si ninguna existe.
+        Path to the found figure (exact name, suffixed variant or
+        us-025 fallback), or ``None`` if none exists.
     """
     exact = figures_dir / f"{key}_{model}.png"
     if exact.exists():
@@ -55,3 +55,38 @@ def find_figure(figures_dir: Path, key: str, model: str) -> Path | None:
         if fallback.exists():
             return fallback
     return None
+
+
+def show_model_figs(figures_dir: Path, model: str) -> bool:
+    """Show in the notebook the available figures of a model.
+
+    Iterates the four figure types (``curves``, ``per_class_iou``,
+    ``confusion``, ``samples``), resolves each one with ``find_figure`` and
+    renders it with a readable header. Intended to be called from a cell of
+    the integrator notebook (the logic lives here, not inline in the ``.ipynb``).
+
+    Args:
+        figures_dir: Main segmentation figures directory.
+        model: Model slug (``"unet"``, ``"anysat"``, ``"tsvit"``, ...).
+
+    Returns:
+        ``True`` if at least one figure was shown; ``False`` if the model
+        still has no exported figures.
+    """
+    from IPython.display import Image, Markdown, display
+
+    shown = False
+    for key, label in FIGURE_TYPES:
+        fpath = find_figure(figures_dir, key, model)
+        if fpath is not None:
+            display(Markdown(f"**{label}**"))
+            display(Image(filename=str(fpath)))
+            shown = True
+    if not shown:
+        display(
+            Markdown(
+                f"_Aun no hay figuras para `{model}` "
+                "(correr su notebook de entrenamiento)._"
+            )
+        )
+    return shown

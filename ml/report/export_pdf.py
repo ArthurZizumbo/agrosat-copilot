@@ -1,12 +1,11 @@
-"""CLI para exportar el reporte PDF del Avance 1 (EDA).
+"""CLI to export the Avance 1 (EDA) PDF report.
 
-Renderiza un template Jinja2 con cinco fichas (Sentinel-2 univariado,
-AlphaEarth Foundations, bivariado/temporal, PASTIS-R consolidado y
-conclusiones globales) y lo convierte a PDF mediante WeasyPrint. Cumple
-AC-8 y AC-9 de US-013: PDF generado + estructura coherente con los
-notebooks reales del Avance 1.
+Renders a Jinja2 template with five cards (univariate Sentinel-2, AlphaEarth
+Foundations, bivariate/temporal, consolidated PASTIS-R and global conclusions)
+and converts it to PDF via WeasyPrint. Satisfies AC-8 and AC-9 of US-013: PDF
+generated + structure consistent with the actual Avance 1 notebooks.
 
-Uso:
+Usage:
     python -m ml.report.export_pdf
     python -m ml.report.export_pdf --output paper/avance1_eda_report.pdf
 """
@@ -48,29 +47,29 @@ def _collect_card_figures(
     cards: tuple[NotebookCard, ...],
     figures_dir: Path,
 ) -> dict[str, list[Path]]:
-    """Agrupa las figuras por ``notebook_id`` segun la configuracion de cada ficha.
+    """Group the figures by ``notebook_id`` according to each card's configuration.
 
     Args:
-        cards: Tupla de fichas a procesar (orden de presentacion del reporte).
-        figures_dir: Directorio raiz que contiene los subdirectorios por ficha
+        cards: Tuple of cards to process (presentation order of the report).
+        figures_dir: Root directory containing the per-card subdirectories
             (``us-010``, ``us-011``, ``us-012``, ``avance1``, ...).
 
     Returns:
-        Diccionario ``{notebook_id: [paths_png]}`` con listas ordenadas. La
-        lista esta vacia para fichas sin ``figures_dir`` o sin PNGs disponibles.
+        Dictionary ``{notebook_id: [paths_png]}`` with sorted lists. The list
+        is empty for cards without ``figures_dir`` or without available PNGs.
     """
     return {card.notebook_id: list_figures(card, figures_dir) for card in cards}
 
 
 def _render_html(template_path: Path, context: dict[str, Any]) -> str:
-    """Renderiza el template Jinja2 con autoescape activo.
+    """Render the Jinja2 template with autoescape active.
 
     Args:
-        template_path: Path al template .html.j2.
-        context: Diccionario de variables que se inyectan al template.
+        template_path: Path to the .html.j2 template.
+        context: Dictionary of variables injected into the template.
 
     Returns:
-        HTML como string listo para WeasyPrint.
+        HTML as a string ready for WeasyPrint.
     """
     env = Environment(
         loader=FileSystemLoader(str(template_path.parent)),
@@ -83,24 +82,24 @@ def _render_html(template_path: Path, context: dict[str, Any]) -> str:
 
 
 def _html_to_pdf(html_str: str, output: Path, css_path: Path, base_url: Path) -> None:
-    """Convierte HTML a PDF mediante WeasyPrint.
+    """Convert HTML to PDF via WeasyPrint.
 
     Args:
-        html_str: HTML completo a renderizar.
-        output: Path destino del PDF.
-        css_path: Path al stylesheet CSS.
-        base_url: Path base para resolver imagenes referenciadas en el HTML.
+        html_str: Full HTML to render.
+        output: Destination path of the PDF.
+        css_path: Path to the CSS stylesheet.
+        base_url: Base path to resolve images referenced in the HTML.
 
     Raises:
-        RuntimeError: Si WeasyPrint no esta instalado o si faltan dependencias
-            nativas GTK/cairo/pango en Windows.
+        RuntimeError: If WeasyPrint is not installed or if native GTK/cairo/pango
+            dependencies are missing on Windows.
     """
     try:
         from weasyprint import CSS, HTML
     except ImportError as exc:
         raise RuntimeError(
-            "WeasyPrint no esta instalado. Ejecute 'poetry install --with paper' "
-            "para anadir el grupo paper que incluye weasyprint y jinja2."
+            "WeasyPrint is not installed. Run 'poetry install --with paper' "
+            "to add the paper group that includes weasyprint and jinja2."
         ) from exc
 
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -111,9 +110,9 @@ def _html_to_pdf(html_str: str, output: Path, css_path: Path, base_url: Path) ->
     except OSError as exc:
         gtk_url = "https://github.com/tschoonj/GTK-for-Windows-Runtime-Environment-Installer"
         raise RuntimeError(
-            "WeasyPrint fallo al renderizar el PDF. En Windows requiere GTK runtime "
-            f"(libpango/libcairo). Instale GTK3 ({gtk_url}) o ejecute dentro de WSL2/Linux "
-            f"donde las dependencias nativas estan disponibles. Error original: {exc}"
+            "WeasyPrint failed to render the PDF. On Windows it requires the GTK runtime "
+            f"(libpango/libcairo). Install GTK3 ({gtk_url}) or run inside WSL2/Linux "
+            f"where the native dependencies are available. Original error: {exc}"
         ) from exc
 
 
@@ -143,7 +142,7 @@ def main(
         help="Titulo de portada del reporte.",
     ),
 ) -> None:
-    """Genera el reporte PDF del Avance 1 a partir de las cinco fichas configuradas."""
+    """Generate the Avance 1 PDF report from the five configured cards."""
     figures_dir = figures_dir.resolve()
     template = template.resolve()
     output = output.resolve()

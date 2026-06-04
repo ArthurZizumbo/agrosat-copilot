@@ -1,6 +1,6 @@
-"""Secciones por Avance del dashboard.
+"""Per-Avance sections of the dashboard.
 
-Cada modulo expone un ``render_*_section()`` sin argumentos que el registro
-(``app.dashboard.registry``) asocia a una entrada del selector. Agregar un
-Avance nuevo se reduce a crear un modulo de contenido y registrar su renderer.
+Each module exposes an argument-less ``render_*_section()`` that the registry
+(``app.dashboard.registry``) associates with a selector entry. Adding a new
+Avance reduces to creating a content module and registering its renderer.
 """

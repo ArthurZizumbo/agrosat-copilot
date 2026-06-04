@@ -1,7 +1,7 @@
-"""Configuración central de la aplicación.
+"""Central application configuration.
 
-Carga variables de entorno vía Pydantic Settings. Nunca leer ``os.environ``
-directamente desde routers o services — siempre vía ``get_settings()``.
+Loads environment variables via Pydantic Settings. Never read ``os.environ``
+directly from routers or services — always via ``get_settings()``.
 """
 
 from functools import lru_cache
@@ -12,16 +12,16 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _DEV_DATABASE_URL = "postgresql+asyncpg://agrosat:agrosat@localhost:5432/agrosat"
 _DEV_REDIS_URL = "redis://localhost:6379/0"
-# Placeholder rechazado por validator si env != dev.
+# Placeholder rejected by the validator if env != dev.
 _JWT_PLACEHOLDER = "change-me-in-prod"
 
 
 class Settings(BaseSettings):
-    """Configuración tipada del backend AgroSatCopilot.
+    """Typed configuration of the AgroSatCopilot backend.
 
-    ``extra="forbid"`` detecta typos en ``.env.local`` (variable definida pero
-    no declarada aqui) y aborta el arranque. Agregar cualquier variable nueva
-    del ``.env.example`` que el backend deba leer.
+    ``extra="forbid"`` detects typos in ``.env.local`` (variable defined but not
+    declared here) and aborts startup. Add any new variable from
+    ``.env.example`` that the backend must read.
     """
 
     model_config = SettingsConfigDict(
@@ -36,8 +36,8 @@ class Settings(BaseSettings):
     app_name: str = "agrosatcopilot"
     debug: bool = False
 
-    # Conexiones — defaults locales del docker-compose. En staging/prod son
-    # obligatorios y se validan en ``_require_real_urls_in_cloud``.
+    # Connections — local docker-compose defaults. In staging/prod they are
+    # mandatory and validated in ``_require_real_urls_in_cloud``.
     database_url: str = Field(default=_DEV_DATABASE_URL)
     dbmate_database_url: str = Field(default="")
     redis_url: str = Field(default=_DEV_REDIS_URL)
@@ -99,7 +99,7 @@ class Settings(BaseSettings):
     rate_limit_chat_per_min: int = 10
     rate_limit_llm_switch_per_min: int = 5
 
-    # Terraform passthrough (no usadas en backend, declaradas para extra=forbid)
+    # Terraform passthrough (not used in backend, declared for extra=forbid)
     tf_var_project_id: str = ""
     tf_var_gcp_region: str = ""
     tf_var_azure_location: str = ""
@@ -109,7 +109,7 @@ class Settings(BaseSettings):
     dvc_remote_name: str = ""
     dvc_remote_url: str = ""
 
-    # Host ports (docker-compose, no usados por backend pero declarados)
+    # Host ports (docker-compose, not used by backend but declared)
     postgres_host_port: int = 5432
     redis_host_port: int = 6379
     api_host_port: int = 8000
@@ -121,33 +121,34 @@ class Settings(BaseSettings):
 
     @property
     def cors_allow_origins(self) -> list[str]:
-        """Lista parseada de origenes CORS desde la string CSV de .env.local."""
+        """Parsed list of CORS origins from the CSV string in .env.local."""
         return [o.strip() for o in self.cors_allowed_origins.split(",") if o.strip()]
 
     @model_validator(mode="after")
     def _require_real_urls_in_cloud(self) -> "Settings":
-        """Rechaza arrancar con defaults locales si ``env`` es staging/prod.
+        """Refuse to start with local defaults if ``env`` is staging/prod.
 
-        Defiende contra el caso en que un deploy real arranque sin ``.env.local``
-        valido y termine conectandose a Postgres con credenciales por defecto.
+        Defends against the case where a real deploy starts without a valid
+        ``.env.local`` and ends up connecting to Postgres with default
+        credentials.
         """
         if self.env != "dev":
             if self.database_url == _DEV_DATABASE_URL:
                 raise ValueError(
-                    f"DATABASE_URL es obligatorio cuando env={self.env!r} "
-                    "(no usar el default de desarrollo en cloud)."
+                    f"DATABASE_URL is required when env={self.env!r} "
+                    "(do not use the development default in cloud)."
                 )
             if self.redis_url == _DEV_REDIS_URL and not self.upstash_redis_rest_url:
                 raise ValueError(
-                    f"REDIS_URL o UPSTASH_REDIS_REST_URL es obligatorio cuando "
-                    f"env={self.env!r} (no usar el default de desarrollo en cloud)."
+                    f"REDIS_URL or UPSTASH_REDIS_REST_URL is required when "
+                    f"env={self.env!r} (do not use the development default in cloud)."
                 )
             if self.jwt_secret == _JWT_PLACEHOLDER:
-                raise ValueError(f"JWT_SECRET no puede ser el placeholder en env={self.env!r}.")
+                raise ValueError(f"JWT_SECRET cannot be the placeholder in env={self.env!r}.")
         return self
 
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    """Devuelve la instancia singleton de configuración."""
+    """Return the singleton configuration instance."""
     return Settings()

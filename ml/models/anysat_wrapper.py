@@ -1,18 +1,19 @@
-"""AnySat frozen + linear head para segmentacion densa (#6, Avance 4).
+"""AnySat frozen + linear head for dense segmentation (#6, Avance 4).
 
 AnySat (Astruc et al., 2024, IGN — "AnySat: An Earth Observation Model for Any
-Resolutions, Scales, and Modalities") es un foundation model multimodal/multi-
-temporal que se carga via ``torch.hub`` desde ``gastruc/anysat``. Aqui se usa el
-encoder **congelado** como extractor de features densas y se entrena unicamente
-una **cabeza lineal** (Conv 1x1) que proyecta esas features a las 20 clases
-PASTIS-R y las upsamplea a la resolucion objetivo. Es el setup mas barato del
-reparto (encoder congelado -> solo gradientes en la cabeza, ~2-3 h L4).
+Resolutions, Scales, and Modalities") is a multimodal/multi-temporal
+foundation model loaded via ``torch.hub`` from ``gastruc/anysat``. Here the
+encoder is used **frozen** as a dense feature extractor and only a **linear
+head** (Conv 1x1) is trained, which projects those features to the 20
+PASTIS-R classes and upsamples them to the target resolution. It is the
+cheapest setup of the split (frozen encoder -> gradients only in the head,
+~2-3 h L4).
 
-Diseno defensivo: la integracion con la API exacta de AnySat (``output='dense'``)
-queda aislada en :meth:`AnySatSegmenter._encode` y el encoder es **inyectable**,
-de modo que los tests corran con un encoder sinteptico sin descargar pesos. La
-carga real via ``torch.hub`` y la firma exacta del forward se validan en la celda
-dedicada del notebook Colab.
+Defensive design: the integration with AnySat's exact API (``output='dense'``)
+is isolated in :meth:`AnySatSegmenter._encode` and the encoder is
+**injectable**, so tests run with a synthetic encoder without downloading
+weights. The real load via ``torch.hub`` and the exact forward signature are
+validated in the dedicated cell of the Colab notebook.
 """
 
 from __future__ import annotations
@@ -40,20 +41,20 @@ def load_anysat_encoder(
     pretrained: bool = True,
     flash_attn: bool = False,
 ) -> nn.Module:
-    """Carga el encoder AnySat preentrenado via ``torch.hub`` (descarga remota).
+    """Load the pretrained AnySat encoder via ``torch.hub`` (remote download).
 
     Args:
-        repo: Repositorio ``torch.hub`` (default ``gastruc/anysat``).
-        model: Entrypoint del hub (default ``anysat``).
-        pretrained: Si carga los pesos preentrenados.
-        flash_attn: Si habilita FlashAttention (requiere soporte; default False
-            para portabilidad en L4/Colab).
+        repo: ``torch.hub`` repository (default ``gastruc/anysat``).
+        model: Hub entrypoint (default ``anysat``).
+        pretrained: Whether to load the pretrained weights.
+        flash_attn: Whether to enable FlashAttention (requires support; default
+            False for portability on L4/Colab).
 
     Returns:
-        El ``nn.Module`` encoder de AnySat.
+        AnySat's ``nn.Module`` encoder.
 
     Raises:
-        RuntimeError: si la carga via hub falla (sin internet, repo inaccesible).
+        RuntimeError: if the hub load fails (no internet, inaccessible repo).
     """
     try:
         encoder = torch.hub.load(
@@ -65,24 +66,24 @@ def load_anysat_encoder(
         )
     except Exception as exc:
         raise RuntimeError(
-            f"No se pudo cargar AnySat desde torch.hub ({repo}). "
-            "Requiere internet y el repo accesible. En Colab ejecutar la celda de "
-            "setup de AnySat antes de instanciar AnySatSegmenter."
+            f"Could not load AnySat from torch.hub ({repo}). "
+            "Requires internet and an accessible repo. In Colab run the AnySat "
+            "setup cell before instantiating AnySatSegmenter."
         ) from exc
     logger.info("anysat_encoder_loaded", repo=repo, pretrained=pretrained)
     return encoder
 
 
 class AnySatSegmenter(nn.Module):
-    """AnySat congelado + cabeza lineal Conv 1x1 para segmentacion densa.
+    """AnySat frozen + Conv 1x1 linear head for dense segmentation.
 
     Forward: ``image (B, T, C, H, W)`` (+ ``dates (B, T)``) -> ``logits
-    (B, num_classes, target_size, target_size)``. El encoder se ejecuta sin
-    gradientes (congelado); solo la cabeza ``head`` se entrena.
+    (B, num_classes, target_size, target_size)``. The encoder runs without
+    gradients (frozen); only the ``head`` is trained.
 
-    La cabeza usa ``nn.LazyConv2d`` cuando ``feature_dim`` es desconocido, de modo
-    que el numero de canales de las features densas de AnySat se infiere en el
-    primer forward (la cabeza se materializa entonces y es entrenable).
+    The head uses ``nn.LazyConv2d`` when ``feature_dim`` is unknown, so the
+    number of channels of AnySat's dense features is inferred at the first
+    forward (the head is then materialized and is trainable).
     """
 
     def __init__(
@@ -96,18 +97,18 @@ class AnySatSegmenter(nn.Module):
         encoder: nn.Module | Callable[..., Any] | None = None,
         freeze: bool = True,
     ) -> None:
-        """Inicializa el segmentador.
+        """Initialize the segmenter.
 
         Args:
-            num_classes: Numero de clases de salida (20 en PASTIS-R).
-            target_size: Lado espacial de los logits de salida.
-            patch_size: ``patch_size`` que AnySat usa para la granularidad densa.
-            modality: Clave de modalidad en el dict de entrada de AnySat (``s2``).
-            feature_dim: Dimension de las features densas de AnySat. Si ``None``
-                se infiere en el primer forward via ``LazyConv2d``.
-            encoder: Encoder inyectable (para tests). Si ``None`` se carga AnySat
-                via ``torch.hub`` con :func:`load_anysat_encoder`.
-            freeze: Si congela el encoder (default ``True``).
+            num_classes: Number of output classes (20 in PASTIS-R).
+            target_size: Spatial side of the output logits.
+            patch_size: ``patch_size`` AnySat uses for the dense granularity.
+            modality: Modality key in AnySat's input dict (``s2``).
+            feature_dim: Dimension of AnySat's dense features. If ``None``
+                it is inferred at the first forward via ``LazyConv2d``.
+            encoder: Injectable encoder (for tests). If ``None`` AnySat is loaded
+                via ``torch.hub`` with :func:`load_anysat_encoder`.
+            freeze: Whether to freeze the encoder (default ``True``).
         """
         super().__init__()
         self.num_classes = num_classes
@@ -127,19 +128,19 @@ class AnySatSegmenter(nn.Module):
             self.head = nn.LazyConv2d(num_classes, kernel_size=1)
 
     def _encode(self, image: torch.Tensor, dates: torch.Tensor | None) -> torch.Tensor:
-        """Ejecuta el encoder AnySat y devuelve un mapa de features denso.
+        """Run the AnySat encoder and return a dense feature map.
 
-        Aisla la firma concreta de AnySat. Construye el dict de modalidades,
-        invoca ``output='dense'`` y normaliza la salida a ``(B, D, h, w)``.
-        Acepta tambien encoders sinteticos (callables) que ya devuelven
-        ``(B, D, h, w)`` directamente (tests).
+        Isolates AnySat's concrete signature. Builds the modality dict,
+        invokes ``output='dense'`` and normalizes the output to ``(B, D, h, w)``.
+        Also accepts synthetic encoders (callables) that already return
+        ``(B, D, h, w)`` directly (tests).
 
         Args:
-            image: ``(B, T, C, H, W)`` serie temporal Sentinel-2 normalizada.
-            dates: ``(B, T)`` dia-del-anio por frame (o ``None``).
+            image: ``(B, T, C, H, W)`` normalized Sentinel-2 temporal series.
+            dates: ``(B, T)`` day-of-year per frame (or ``None``).
 
         Returns:
-            Mapa de features denso ``(B, D, h, w)``.
+            Dense feature map ``(B, D, h, w)``.
         """
         data: dict[str, Any] = {self.modality: image}
         if dates is not None:
@@ -159,19 +160,19 @@ class AnySatSegmenter(nn.Module):
 
     @staticmethod
     def _to_feature_map(feats: torch.Tensor) -> torch.Tensor:
-        """Normaliza la salida del encoder a un mapa espacial ``(B, D, h, w)``.
+        """Normalize the encoder output to a spatial map ``(B, D, h, w)``.
 
-        AnySat ``output='dense'`` puede devolver ``(B, N, D)`` (tokens) o ya
-        ``(B, D, h, w)``. Si llega como tokens cuadrados se reacomoda a mapa.
+        AnySat ``output='dense'`` may return ``(B, N, D)`` (tokens) or already
+        ``(B, D, h, w)``. If it arrives as square tokens it is reshaped to a map.
 
         Args:
-            feats: Salida cruda del encoder.
+            feats: Raw encoder output.
 
         Returns:
             Tensor ``(B, D, h, w)``.
 
         Raises:
-            ValueError: si la salida no es interpretable como mapa denso.
+            ValueError: if the output is not interpretable as a dense map.
         """
         if feats.dim() == 4:
             return feats  # (B, D, h, w)
@@ -181,37 +182,37 @@ class AnySatSegmenter(nn.Module):
             side = round(n**0.5)
             if side * side != n:
                 raise ValueError(
-                    f"Features densas no cuadradas (N={n}); ajustar patch_size o "
-                    "el manejo de tokens en _to_feature_map."
+                    f"Non-square dense features (N={n}); adjust patch_size or "
+                    "the token handling in _to_feature_map."
                 )
             return feats.transpose(1, 2).reshape(b, d, side, side)
-        raise ValueError(f"Forma de features densas no soportada: {tuple(feats.shape)}")
+        raise ValueError(f"Unsupported dense feature shape: {tuple(feats.shape)}")
 
     @torch.no_grad()
     def extract_features(
         self, image: torch.Tensor, dates: torch.Tensor | None = None
     ) -> torch.Tensor:
-        """Devuelve el mapa de features denso del encoder congelado ``(B, D, h, w)``.
+        """Return the dense feature map of the frozen encoder ``(B, D, h, w)``.
 
-        Pensado para cachear las features una sola vez y tunear unicamente la cabeza
-        lineal sin re-ejecutar el encoder (el cuello de botella en AnySat). No aplica
-        la cabeza ni el upsample; el llamador entrena su propia cabeza sobre el cache.
+        Designed to cache the features once and tune only the linear head
+        without re-running the encoder (the bottleneck in AnySat). It does not
+        apply the head or the upsample; the caller trains its own head over the cache.
 
         Args:
-            image: ``(B, T, C, H, W)`` serie Sentinel-2 normalizada.
-            dates: ``(B, T)`` dia-del-anio por frame (opcional).
+            image: ``(B, T, C, H, W)`` normalized Sentinel-2 series.
+            dates: ``(B, T)`` day-of-year per frame (optional).
 
         Returns:
-            Mapa de features denso ``(B, D, h, w)``.
+            Dense feature map ``(B, D, h, w)``.
         """
         return self._encode(image, dates)
 
     def forward(self, image: torch.Tensor, dates: torch.Tensor | None = None) -> torch.Tensor:
-        """Produce logits de segmentacion densos.
+        """Produce dense segmentation logits.
 
         Args:
-            image: ``(B, T, C, H, W)`` serie Sentinel-2 normalizada.
-            dates: ``(B, T)`` dia-del-anio por frame (opcional).
+            image: ``(B, T, C, H, W)`` normalized Sentinel-2 series.
+            dates: ``(B, T)`` day-of-year per frame (optional).
 
         Returns:
             Logits ``(B, num_classes, target_size, target_size)``.

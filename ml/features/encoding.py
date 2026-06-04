@@ -1,52 +1,52 @@
-"""Codificacion de variables categoricas y derivacion de atributos (US-018 ext, Avance 2).
+"""Categorical variable encoding and attribute derivation (US-018 ext, Avance 2).
 
-Modulo complementario a :mod:`ml.features.selection` que cierra el bloque
-"Construccion de features" del Avance 2 (rubrica 30 pts), cubriendo lo que el
-notebook WIP del equipo (``notebooks/feature_engineering/02a_fe_sentinel2.ipynb``)
-exploraba interactivamente con ``pandas.get_dummies`` y ``KBinsDiscretizer``.
+Module complementary to :mod:`ml.features.selection` that closes the
+"Feature construction" block of Avance 2 (30 pts rubric), covering what the
+team's WIP notebook (``notebooks/feature_engineering/02a_fe_sentinel2.ipynb``)
+explored interactively with ``pandas.get_dummies`` and ``KBinsDiscretizer``.
 
-Aqui la API publica es **Polars-first** (regla ``ml/CLAUDE.md NEVER pandas``):
-todas las funciones reciben y devuelven :class:`polars.DataFrame` /
-:class:`polars.Series`. ``numpy`` solo aparece de forma interna para los
-calculos numericos.
+Here the public API is **Polars-first** (rule ``ml/CLAUDE.md NEVER pandas``):
+all functions receive and return :class:`polars.DataFrame` /
+:class:`polars.Series`. ``numpy`` only appears internally for the
+numerical computations.
 
-API publica
------------
-- :func:`derive_crop_group_from_class_id` — colapsa las 20 clases PASTIS-R en
-  8 grupos agronomicos segun la taxonomia HCAT (Hierarchical Crop and
-  Agriculture Taxonomy) oficial de EuroCrops (Schneider et al. 2023). Usa el
-  override de ``PASTIS_R_GROUPINGS["agronomic_group"]`` del loader oficial
-  (US-001) si esta presente; en su defecto cae al mapeo HCAT inline.
-- :func:`derive_season_from_doy` — convierte day-of-year a etiqueta de
-  estacion (``winter/spring/summer/autumn``); util para sembrar
-  :func:`encode_ordinal` cuando el feature de entrada es ``peak_doy`` u otro
-  derivado fenologico.
-- :func:`encode_onehot` — wrapper sobre :meth:`polars.DataFrame.to_dummies`
-  con report de cardinalidad y soporte de ``drop_first``.
-- :func:`encode_ordinal` — aplica un mapping explicito por columna
-  (``dict[col, dict[valor, int]]``); valores desconocidos -> ``-1`` con
-  warning estructurado.
-- :func:`encode_target_mean` — target encoding bayesiano con smoothing
-  (Galli 2022 cap. 3) para categoricas de alta cardinalidad sin explotar el
-  ancho del DataFrame.
+Public API
+----------
+- :func:`derive_crop_group_from_class_id` — collapses the 20 PASTIS-R classes
+  into 8 agronomic groups according to the HCAT taxonomy (Hierarchical Crop and
+  Agriculture Taxonomy) official to EuroCrops (Schneider et al. 2023). Uses the
+  override of ``PASTIS_R_GROUPINGS["agronomic_group"]`` from the official loader
+  (US-001) if present; otherwise falls back to the inline HCAT mapping.
+- :func:`derive_season_from_doy` — converts day-of-year to a season label
+  (``winter/spring/summer/autumn``); useful to seed
+  :func:`encode_ordinal` when the input feature is ``peak_doy`` or another
+  phenology-derived feature.
+- :func:`encode_onehot` — wrapper over :meth:`polars.DataFrame.to_dummies`
+  with cardinality report and ``drop_first`` support.
+- :func:`encode_ordinal` — applies an explicit per-column mapping
+  (``dict[col, dict[value, int]]``); unknown values -> ``-1`` with
+  structured warning.
+- :func:`encode_target_mean` — Bayesian target encoding with smoothing
+  (Galli 2022 ch. 3) for high-cardinality categoricals without exploding the
+  DataFrame width.
 
-Decisiones clave
-----------------
-- Polars in / Polars out (ningun ``pandas`` import). Para one-hot se usa
-  ``df.to_dummies(columns=..., separator="__")``; para discretizacion la
-  cuenta queda en :func:`ml.features.selection.discretize_features`.
-- ``exclude_cols`` excluye siempre ``parcel_id`` y ``year`` por convencion
-  del proyecto (no son features candidatas a codificar).
-- Cuando ``drop_first=True`` en one-hot, se elimina la primera categoria
-  alfabeticamente (k -> k-1 columnas), siguiendo la convencion de modelos
-  lineales para evitar colinealidad de la matriz indicadora completa.
+Key decisions
+-------------
+- Polars in / Polars out (no ``pandas`` import). For one-hot it uses
+  ``df.to_dummies(columns=..., separator="__")``; for discretization the
+  binning lives in :func:`ml.features.selection.discretize_features`.
+- ``exclude_cols`` always excludes ``parcel_id`` and ``year`` by project
+  convention (they are not feature candidates to encode).
+- When ``drop_first=True`` in one-hot, the first category is removed
+  alphabetically (k -> k-1 columns), following the convention of linear
+  models to avoid collinearity of the full indicator matrix.
 
-Referencias
------------
-- Galli, S. (2022). *Python Feature Engineering Cookbook* (2nd ed.), cap. 3
-  "Encoding Categorical Variables". Smoothing bayesiano para target encoding.
+References
+----------
+- Galli, S. (2022). *Python Feature Engineering Cookbook* (2nd ed.), ch. 3
+  "Encoding Categorical Variables". Bayesian smoothing for target encoding.
 - Sainte-Fare-Garnot, V., Landrieu, L. (2021). *PASTIS dataset documentation*
-  — 20 clases agrupadas en ``agronomic_group`` (cereals, root_crops,
+  — 20 classes grouped into ``agronomic_group`` (cereals, root_crops,
   oilseeds_legumes, permanent_long_cycle, special_crops).
 """
 
@@ -152,7 +152,7 @@ _HCAT_GROUP_CODES: dict[str, str] = {
 
 
 def _filter_exclude(columns: list[str], exclude_cols: tuple[str, ...]) -> list[str]:
-    """Devuelve ``columns`` sin las que aparezcan en ``exclude_cols``."""
+    """Return ``columns`` without those appearing in ``exclude_cols``."""
     return [c for c in columns if c not in exclude_cols]
 
 
@@ -166,27 +166,27 @@ def derive_season_from_doy(
     *,
     hemisphere: Literal["north", "south"] = "north",
 ) -> pl.Series:
-    """Convierte day-of-year (1..366) a etiqueta de estacion.
+    """Convert day-of-year (1..366) to a season label.
 
-    Util para sembrar :func:`encode_ordinal` cuando el insumo es un feature
-    fenologico tipo ``peak_doy`` o ``sog_doy`` (provenientes de
+    Useful to seed :func:`encode_ordinal` when the input is a phenology
+    feature like ``peak_doy`` or ``sog_doy`` (coming from
     ``ml.features.temporal_features``).
 
     Args:
-        doy_series: Serie Polars con valores en ``[1, 366]``. Acepta floats;
-            se redondea hacia abajo. NaN se mapea a ``"unknown"``.
-        hemisphere: ``"north"`` (default) o ``"south"`` para invertir
-            estaciones en el hemisferio sur.
+        doy_series: Polars series with values in ``[1, 366]``. Accepts floats;
+            rounded down. NaN is mapped to ``"unknown"``.
+        hemisphere: ``"north"`` (default) or ``"south"`` to invert
+            seasons in the southern hemisphere.
 
     Returns:
-        Serie ``pl.Series`` Utf8 con valores en
-        ``{"winter", "spring", "summer", "autumn", "unknown"}`` y mismo
-        ``name`` que ``doy_series`` con sufijo ``__season``.
+        A ``pl.Series`` Utf8 with values in
+        ``{"winter", "spring", "summer", "autumn", "unknown"}`` and the same
+        ``name`` as ``doy_series`` with the suffix ``__season``.
 
     Notes:
-        Aproxima ``month = ceil(doy / 30.5)`` con clamp a ``[1, 12]``. La
-        precision es suficiente para estacionalidad agronomica (la diferencia
-        de 1-2 dias en los bordes de mes no cambia la estacion).
+        Approximates ``month = ceil(doy / 30.5)`` clamped to ``[1, 12]``. The
+        precision is sufficient for agronomic seasonality (the difference of
+        1-2 days at month boundaries does not change the season).
     """
     season_map = _SEASON_NORTH_BY_MONTH if hemisphere == "north" else _SEASON_SOUTH_BY_MONTH
     raw = doy_series.cast(pl.Float64).to_numpy()
@@ -206,39 +206,39 @@ def derive_crop_group_from_class_id(
     *,
     mapping: dict[int, str] | None = None,
 ) -> pl.Series:
-    """Colapsa las 20 clases PASTIS-R en 8 grupos agronomicos HCAT.
+    """Collapse the 20 PASTIS-R classes into 8 HCAT agronomic groups.
 
-    Los grupos siguen la taxonomia HCAT (Hierarchical Crop and Agriculture
-    Taxonomy) oficial de EuroCrops (Schneider et al. 2023, arXiv:2106.08151),
-    el estandar armonizado de tipos de cultivo de la Union Europea. Cada
-    grupo corresponde a un nodo HCAT3 real (codigos en
-    :data:`_HCAT_GROUP_CODES`). Usar HCAT en lugar de un agrupamiento
-    propio da trazabilidad academica al encoding categorico del Avance 2.
+    The groups follow the HCAT taxonomy (Hierarchical Crop and Agriculture
+    Taxonomy) official to EuroCrops (Schneider et al. 2023, arXiv:2106.08151),
+    the harmonized crop-type standard of the European Union. Each
+    group corresponds to a real HCAT3 node (codes in
+    :data:`_HCAT_GROUP_CODES`). Using HCAT instead of a custom grouping
+    gives academic traceability to the categorical encoding of Avance 2.
 
-    Cuando ``mapping`` es ``None``, intenta cargar
-    el mapeo HCAT inline :data:`_DEFAULT_CROP_GROUP_MAP` (8 grupos, estandar
-    UE).
+    When ``mapping`` is ``None``, it attempts to load
+    the inline HCAT mapping :data:`_DEFAULT_CROP_GROUP_MAP` (8 groups, EU
+    standard).
 
-    Nota sobre taxonomias: el repo mantiene dos agrupaciones distintas y
-    complementarias. (1) HCAT — 8 grupos taxonomicos oficiales de EuroCrops,
-    el default de esta funcion; da trazabilidad academica. (2)
-    ``PASTIS_R_GROUPINGS["agronomic_group"]`` del JSON de referencia — 5
-    super-clases por uso comercial, usadas por el baseline US-016. Para
-    obtener la agrupacion comercial de 5 clases en lugar de HCAT, pasar
-    ``mapping=PASTIS_R_GROUPINGS["agronomic_group"]`` explicitamente.
+    Note on taxonomies: the repo maintains two distinct and complementary
+    groupings. (1) HCAT — 8 official EuroCrops taxonomic groups,
+    the default of this function; gives academic traceability. (2)
+    ``PASTIS_R_GROUPINGS["agronomic_group"]`` from the reference JSON — 5
+    super-classes by commercial use, used by the US-016 baseline. To
+    obtain the 5-class commercial grouping instead of HCAT, pass
+    ``mapping=PASTIS_R_GROUPINGS["agronomic_group"]`` explicitly.
 
     Args:
-        class_id_series: Serie ``pl.Series`` Int con valores en ``[0, 19]``.
-        mapping: Override opcional ``{class_id: nombre_grupo}``. Si es
-            ``None`` se usa la taxonomia HCAT. Valores fuera del mapping se
-            etiquetan como ``"unknown"``.
+        class_id_series: Int ``pl.Series`` with values in ``[0, 19]``.
+        mapping: Optional override ``{class_id: group_name}``. If
+            ``None`` the HCAT taxonomy is used. Values outside the mapping are
+            labeled as ``"unknown"``.
 
     Returns:
-        Serie ``pl.Series`` Utf8 con grupo agronomico HCAT por fila; ``name``
-        del input + sufijo ``__group`` (o ``"crop_group"`` si el input no
-        tiene ``name``). Los 8 grupos son: ``cereal``, ``legume``,
+        A ``pl.Series`` Utf8 with the HCAT agronomic group per row; the input
+        ``name`` + suffix ``__group`` (or ``"crop_group"`` if the input has
+        no ``name``). The 8 groups are: ``cereal``, ``legume``,
         ``root_tuber``, ``industrial_nonfood``, ``vegetable``, ``grassland``,
-        ``orchard``, ``vineyard`` (mas ``background``/``void``).
+        ``orchard``, ``vineyard`` (plus ``background``/``void``).
     """
     if mapping is None:
         mapping = _DEFAULT_CROP_GROUP_MAP
@@ -273,24 +273,24 @@ def encode_ordinal(
     *,
     exclude_cols: tuple[str, ...] = _DEFAULT_EXCLUDE,
 ) -> tuple[pl.DataFrame, dict[str, Any]]:
-    """Aplica un mapping ordinal explicito por columna.
+    """Apply an explicit per-column ordinal mapping.
 
     Args:
-        df: DataFrame Polars wide-format.
-        mapping: ``{col_name: {valor_original: int_ordinal}}``. Cada columna
-            se reemplaza por su version codificada manteniendo el mismo
-            nombre. Valores no presentes en el mapping -> ``-1`` (con
-            warning estructurado por columna afectada).
-        exclude_cols: Columnas que NO se codifican aunque aparezcan en
-            ``mapping`` (defensa contra ``parcel_id``/``year``).
+        df: Wide-format Polars DataFrame.
+        mapping: ``{col_name: {original_value: int_ordinal}}``. Each column
+            is replaced by its encoded version keeping the same
+            name. Values not present in the mapping -> ``-1`` (with a
+            structured warning per affected column).
+        exclude_cols: Columns that are NOT encoded even if they appear in
+            ``mapping`` (defense against ``parcel_id``/``year``).
 
     Returns:
-        Tupla ``(df_encoded, report)`` donde ``report`` contiene
-        ``{col: {"mapping": dict, "unknown_count": int}}`` por columna
-        procesada.
+        Tuple ``(df_encoded, report)`` where ``report`` contains
+        ``{col: {"mapping": dict, "unknown_count": int}}`` per processed
+        column.
 
     Raises:
-        ValueError: Si alguna columna de ``mapping`` no existe en ``df``.
+        ValueError: If any column of ``mapping`` does not exist in ``df``.
     """
     missing = [c for c in mapping if c not in df.columns]
     if missing:
@@ -332,29 +332,29 @@ def encode_onehot(
     drop_first: bool = False,
     exclude_cols: tuple[str, ...] = _DEFAULT_EXCLUDE,
 ) -> tuple[pl.DataFrame, dict[str, list[str]]]:
-    """Codifica columnas categoricas con :meth:`polars.DataFrame.to_dummies`.
+    """Encode categorical columns with :meth:`polars.DataFrame.to_dummies`.
 
-    Wrapper Polars-nativo sobre la API one-hot del propio Polars. **NO usa
-    pandas** (regla ``ml/CLAUDE.md NEVER pandas``).
+    Polars-native wrapper over Polars' own one-hot API. **Does NOT use
+    pandas** (rule ``ml/CLAUDE.md NEVER pandas``).
 
     Args:
-        df: DataFrame Polars wide-format.
-        columns: Lista/tupla de columnas a codificar. Las que aparezcan en
-            ``exclude_cols`` se filtran defensivamente.
-        drop_first: Si ``True``, elimina la primera categoria (orden
-            alfabetico) de cada columna codificada. Reduce ``k`` columnas a
-            ``k - 1`` para evitar colinealidad en modelos lineales.
-        exclude_cols: Columnas a preservar sin codificar.
+        df: Wide-format Polars DataFrame.
+        columns: List/tuple of columns to encode. Those appearing in
+            ``exclude_cols`` are filtered defensively.
+        drop_first: If ``True``, removes the first category (alphabetical
+            order) of each encoded column. Reduces ``k`` columns to
+            ``k - 1`` to avoid collinearity in linear models.
+        exclude_cols: Columns to preserve without encoding.
 
     Returns:
-        Tupla ``(df_wide, report)`` donde:
+        Tuple ``(df_wide, report)`` where:
 
-        - ``df_wide`` reemplaza cada ``col`` por columnas
-          ``{col}__{categoria}`` (separator fijo ``"__"``).
-        - ``report = {col_original: [nuevas_columnas]}`` para trazabilidad.
+        - ``df_wide`` replaces each ``col`` with columns
+          ``{col}__{category}`` (fixed separator ``"__"``).
+        - ``report = {original_col: [new_columns]}`` for traceability.
 
     Raises:
-        ValueError: Si alguna columna de ``columns`` no existe en ``df``.
+        ValueError: If any column of ``columns`` does not exist in ``df``.
     """
     cols_list = [c for c in columns if c not in exclude_cols]
     missing = [c for c in cols_list if c not in df.columns]
@@ -397,42 +397,42 @@ def encode_target_mean(
     smoothing: float = 10.0,
     exclude_cols: tuple[str, ...] = _DEFAULT_EXCLUDE,
 ) -> tuple[pl.DataFrame, dict[str, Any]]:
-    """Aplica bayesian target mean encoding con smoothing (Galli 2022).
+    """Apply Bayesian target mean encoding with smoothing (Galli 2022).
 
-    Para cada categoria ``c`` en una columna a codificar:
+    For each category ``c`` in a column to encode:
 
     .. math::
 
         \\hat{y}_c = \\frac{n_c \\cdot \\bar{y}_c + m \\cdot \\bar{y}}{n_c + m}
 
-    donde ``n_c`` es el numero de muestras de la categoria, ``mean_c`` es
-    la media de ``target_col`` para esa categoria, ``mean_global`` es la
-    media global del target y ``m`` es el smoothing (``smoothing > 0``
-    desplaza categorias raras hacia la media global, evitando overfitting).
+    where ``n_c`` is the number of samples of the category, ``mean_c`` is
+    the mean of ``target_col`` for that category, ``mean_global`` is the
+    global mean of the target and ``m`` is the smoothing (``smoothing > 0``
+    shifts rare categories toward the global mean, avoiding overfitting).
 
     Args:
-        df: DataFrame Polars con la columna ``target_col`` presente.
-        target_col: Nombre de la columna objetivo (numerica). En
-            clasificacion multiclase, conviene binarizar antes (e.g.
-            ``one-vs-rest`` por clase) o usar la media del entero como
-            proxy ordinal de severidad.
-        columns: Categoricas a codificar. ``parcel_id``/``year`` excluidas
-            por defecto.
-        smoothing: Factor ``m`` del smoothing bayesiano. ``m=0`` -> media
-            por categoria pura; ``m -> inf`` -> media global. Galli 2022
-            recomienda ``m in [5, 20]`` para datasets de tamano medio.
-        exclude_cols: Columnas a no codificar.
+        df: Polars DataFrame with the ``target_col`` column present.
+        target_col: Name of the target column (numeric). In
+            multiclass classification, it is advisable to binarize first (e.g.
+            ``one-vs-rest`` per class) or to use the integer mean as an
+            ordinal severity proxy.
+        columns: Categoricals to encode. ``parcel_id``/``year`` excluded
+            by default.
+        smoothing: Bayesian smoothing factor ``m``. ``m=0`` -> pure
+            per-category mean; ``m -> inf`` -> global mean. Galli 2022
+            recommends ``m in [5, 20]`` for medium-sized datasets.
+        exclude_cols: Columns not to encode.
 
     Returns:
-        Tupla ``(df_encoded, report)`` donde:
+        Tuple ``(df_encoded, report)`` where:
 
-        - ``df_encoded`` agrega columnas ``{col}_target_enc`` (mantiene la
-          original para no perder informacion).
-        - ``report`` contiene:
+        - ``df_encoded`` adds columns ``{col}_target_enc`` (keeps the
+          original so as not to lose information).
+        - ``report`` contains:
           ``{"global_mean": float, "per_column": {col: {cat: encoded_value}}}``.
 
     Raises:
-        ValueError: Si ``target_col`` no existe en ``df`` o no es numerico.
+        ValueError: If ``target_col`` does not exist in ``df`` or is not numeric.
     """
     if target_col not in df.columns:
         raise ValueError(f"target_col {target_col!r} no presente en df.columns")

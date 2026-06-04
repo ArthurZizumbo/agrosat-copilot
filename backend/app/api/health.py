@@ -1,4 +1,4 @@
-"""Healthcheck endpoints para Cloud Run liveness/readiness probes."""
+"""Healthcheck endpoints for Cloud Run liveness/readiness probes."""
 
 from datetime import UTC, datetime
 
@@ -9,7 +9,7 @@ router = APIRouter(tags=["health"])
 
 
 class HealthResponse(BaseModel):
-    """Respuesta del endpoint de salud."""
+    """Response of the health endpoint."""
 
     status: str
     service: str
@@ -18,7 +18,7 @@ class HealthResponse(BaseModel):
 
 @router.get("/healthz", response_model=HealthResponse)
 async def healthz() -> HealthResponse:
-    """Liveness probe — responde 200 si el proceso está vivo."""
+    """Liveness probe — returns 200 if the process is alive."""
     return HealthResponse(
         status="ok",
         service="agrosat-api",
@@ -28,7 +28,7 @@ async def healthz() -> HealthResponse:
 
 @router.get("/readyz", response_model=HealthResponse)
 async def readyz() -> HealthResponse:
-    """Readiness probe — TODO: verificar Postgres + Redis cuando estén integrados."""
+    """Readiness probe — TODO: check Postgres + Redis once integrated."""
     return HealthResponse(
         status="ready",
         service="agrosat-api",

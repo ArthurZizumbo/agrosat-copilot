@@ -1,21 +1,21 @@
-"""Genera el fixture demo de serie temporal multibanda por parcela (US-015).
+"""Generate the demo fixture of a per-parcel multiband time series (US-015).
 
-Operativo permanente del proyecto: produce ``data/test_fixtures/parcel_demo_ts.nc``
-(<100 KB) consumido por
+Permanent project operative tool: produces
+``data/test_fixtures/parcel_demo_ts.nc`` (<100 KB) consumed by
 ``tests/ml/features/test_temporal_features.py::test_extract_demo_fixture_end_to_end``.
 
-Nota sobre el formato: el plan US-015 §3.1 menciona ``.zarr`` como sufijo
-previsto. Se conmuta a NetCDF3 (scipy backend, sin dependencia adicional)
-para evitar introducir ``zarr`` al stack. El contenido lógico y los attrs
-son idénticos; el cambio es puramente de serialización.
+Note on the format: the US-015 §3.1 plan mentions ``.zarr`` as the intended
+suffix. It is switched to NetCDF3 (scipy backend, no additional dependency)
+to avoid introducing ``zarr`` into the stack. The logical content and the
+attrs are identical; the change is purely about serialization.
 
-La serie sintética tiene 30 timesteps espaciados aproximadamente cada 12 días
-durante el año 2024 y 17 bandas (los 17 índices canónicos del proyecto). La
-banda NDVI sigue una gaussiana centrada en DOY 180 con peak 0.85 y σ=30 días
-+ ruido gaussiano σ=0.02 (seed=42). El resto de bandas usa curvas plausibles
-correlacionadas con NDVI.
+The synthetic series has 30 timesteps spaced approximately every 12 days
+during the year 2024 and 17 bands (the project's 17 canonical indices). The
+NDVI band follows a gaussian centered at DOY 180 with peak 0.85 and σ=30 days
++ gaussian noise σ=0.02 (seed=42). The remaining bands use plausible curves
+correlated with NDVI.
 
-Uso:
+Usage:
 
     poetry run python scripts/generate_demo_parcel_ts.py \\
         --output data/test_fixtures/parcel_demo_ts.nc
@@ -57,7 +57,7 @@ app = typer.Typer(add_completion=False, help="Genera el fixture demo de serie te
 
 
 def _build_dataarray(*, parcel_id: int, year: int, seed: int) -> xr.DataArray:
-    """Construye el DataArray sintético determinista."""
+    """Build the deterministic synthetic DataArray."""
     rng = np.random.default_rng(seed)
     n_steps = 30
     # Timesteps regularly spaced (~12 days) during the year.
@@ -125,7 +125,7 @@ def main(
     year: int = typer.Option(2024, help="Año del ciclo agrícola simulado."),
     seed: int = typer.Option(42, help="Semilla para reproducibilidad."),
 ) -> None:
-    """Genera el fixture demo y lo escribe a disco en formato Zarr."""
+    """Generate the demo fixture and write it to disk in Zarr format."""
     output.parent.mkdir(parents=True, exist_ok=True)
     if output.exists():
         if output.is_dir():

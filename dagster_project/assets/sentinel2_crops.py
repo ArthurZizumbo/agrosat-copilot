@@ -1,42 +1,42 @@
-"""Assets Dagster para US-017 — Crops Sentinel-2 256x256 px para FarSLIP.
+"""Dagster assets for US-017 — Sentinel-2 256x256 px crops for FarSLIP.
 
-Materializa el asset upstream ``sentinel2_crops_256`` particionado por ROI
-italiana (Pianura Padana, Toscana, Puglia). Para cada partition:
+Materializes the upstream asset ``sentinel2_crops_256`` partitioned by Italian
+ROI (Pianura Padana, Toscana, Puglia). For each partition:
 
-1. Lee parcelas con ``crop_class`` etiquetado desde el subset GSAA Italia.
-2. Genera crops 256x256 px (4 bandas B02/B03/B04/B08) centrados en el
-   centroide de cada parcela.
-3. Aplica QA mask Cloud Score+ (umbral 0.2) descartando crops nublados.
-4. Escribe COGs en ``data/farslip_pairs/{roi}/crops/*.tif`` y appendea el
-   manifest ``data/farslip_pairs/{roi}/manifest.parquet`` con metadata por
-   par (path, DOY, year, clase CAP, texto agronómico it/es/en, lat/lon).
+1. Reads parcels with labeled ``crop_class`` from the GSAA Italy subset.
+2. Generates 256x256 px crops (4 bands B02/B03/B04/B08) centered on the
+   centroid of each parcel.
+3. Applies a Cloud Score+ QA mask (threshold 0.2) discarding cloudy crops.
+4. Writes COGs to ``data/farslip_pairs/{roi}/crops/*.tif`` and appends the
+   manifest ``data/farslip_pairs/{roi}/manifest.parquet`` with per-pair
+   metadata (path, DOY, year, CAP class, agronomic text it/es/en, lat/lon).
 
-La lógica de negocio vive en ``ml.farslip.dataset.build_farslip_pairs`` —
-este asset es un wrapper de orquestación que:
+The business logic lives in ``ml.farslip.dataset.build_farslip_pairs`` —
+this asset is an orchestration wrapper that:
 
-- Pasa la ROI activa como única partition al builder (one-ROI-per-run).
-- Captura métricas para metadata Dagster (n_pairs, rango DOY, clases).
-- Propaga tags ``data_version`` y ``code_version`` (git SHA short) para
-  lineage MLflow aguas abajo (asset ``farslip_embeddings_italy``).
+- Passes the active ROI as the single partition to the builder (one-ROI-per-run).
+- Captures metrics for Dagster metadata (n_pairs, DOY range, classes).
+- Propagates ``data_version`` and ``code_version`` (git SHA short) tags for
+  downstream MLflow lineage (asset ``farslip_embeddings_italy``).
 
-Producción (NO disponible en CI ni dev local sin GEE creds):
-    Se inyectaría un ``GoogleEarthEngineResource`` y un ``GCSResource``
-    desde ``dagster_project/resources/`` para autenticar GEE/CDSE y para
-    persistir los COGs directamente a ``gs://agrosat-data/farslip-pairs/``
-    vía DVC remote. El builder soporta cualquiera de los dos backends.
+Production (NOT available in CI nor local dev without GEE creds):
+    A ``GoogleEarthEngineResource`` and a ``GCSResource`` would be injected
+    from ``dagster_project/resources/`` to authenticate GEE/CDSE and to
+    persist the COGs directly to ``gs://agrosat-data/farslip-pairs/`` via DVC
+    remote. The builder supports either backend.
 
-Smoke / dev local:
-    Si ``build_farslip_pairs`` devuelve ``n_pairs < 1000`` se emite
-    warning pero NO se falla la materialización — el fixture sintético
-    de tests vive en ``data/test_fixtures/farslip_synthetic/`` con 10
-    pares y debe poder ejecutar el asset sin romper Dagster.
+Smoke / local dev:
+    If ``build_farslip_pairs`` returns ``n_pairs < 1000`` a warning is emitted
+    but the materialization does NOT fail — the synthetic test fixture lives in
+    ``data/test_fixtures/farslip_synthetic/`` with 10 pairs and must be able to
+    run the asset without breaking Dagster.
 
-Integración MLflow (documentada, no implementada en US-017):
-    Se podría wrappear este asset con el decorator ``@mlflow_resource``
-    de ``dagster-mlflow`` para crear automáticamente un run por partición
-    y registrar ``data_version`` como tag. En US-017 los tags se emiten
-    como metadata Dagster; la promoción a MLflow ocurre en el trainer
-    (``ml/farslip/train.py``) que consume estos crops.
+MLflow integration (documented, not implemented in US-017):
+    This asset could be wrapped with the ``@mlflow_resource`` decorator of
+    ``dagster-mlflow`` to automatically create a run per partition and register
+    ``data_version`` as a tag. In US-017 the tags are emitted as Dagster
+    metadata; the promotion to MLflow happens in the trainer
+    (``ml/farslip/train.py``) that consumes these crops.
 """
 
 from pathlib import Path
@@ -51,24 +51,24 @@ from dagster import (
 
 from ml.utils.git_meta import git_sha
 
-#: Particiones estáticas — una ROI italiana por partition key.
-#: Mantener sincronizado con ``ml/farslip/cap_vocabulary.yaml`` y con la
-#: tabla GSAA Italia subset (R1 del riesgo: bajar a 2 ROIs si AC-3 falla).
+#: Static partitions — one Italian ROI per partition key.
+#: Keep in sync with ``ml/farslip/cap_vocabulary.yaml`` and with the GSAA Italy
+#: subset table (risk R1: drop to 2 ROIs if AC-3 fails).
 ITALY_REGIONS = StaticPartitionsDefinition(["pianura_padana", "toscana", "puglia"])
 
-#: Rutas relativas al cwd (consistente con assets US-016 features.py).
+#: Paths relative to the cwd (consistent with US-016 assets features.py).
 DATA_FARSLIP_PAIRS_DIR = Path("data/farslip_pairs")
 DEFAULT_VOCABULARY_PATH = Path("ml/farslip/cap_vocabulary.yaml")
 
-#: Tag de versión del dataset FarSLIP (DVC) — se promueve a tag DVC
-#: ``farslip-pairs-italy-v1`` al cierre de US-017.
+#: Version tag of the FarSLIP dataset (DVC) — promoted to the DVC tag
+#: ``farslip-pairs-italy-v1`` at the closing of US-017.
 DATA_VERSION_TAG = "farslip-pairs-italy-v1"
 
-#: Umbral mínimo de pares por ROI por debajo del cual se emite warning
-#: (smoke local con fixture sintético puede devolver muy pocos pares).
+#: Minimum threshold of pairs per ROI below which a warning is emitted
+#: (local smoke with synthetic fixture may return very few pairs).
 MIN_PAIRS_WARNING_THRESHOLD = 1000
 
-#: Parámetros del builder (paper FarSLIP §3.1 + AC-3 del planning).
+#: Builder parameters (FarSLIP paper §3.1 + AC-3 of the planning).
 N_PER_ROI = 10000
 CROP_SIZE_PX = 256
 QA_CLOUD_THRESHOLD = 0.2
@@ -86,25 +86,25 @@ SEED = 42
     ),
 )
 def sentinel2_crops_256(context: AssetExecutionContext) -> MaterializeResult:
-    """Materializa crops Sentinel-2 256x256 px por ROI italiana (one per run).
+    """Materialize Sentinel-2 256x256 px crops per Italian ROI (one per run).
 
     Args:
-        context: contexto Dagster. ``context.partition_key`` indica la ROI
-            activa (``pianura_padana`` | ``toscana`` | ``puglia``).
-            ``context.log`` emite a la UI de Dagster.
+        context: Dagster context. ``context.partition_key`` indicates the
+            active ROI (``pianura_padana`` | ``toscana`` | ``puglia``).
+            ``context.log`` emits to the Dagster UI.
 
     Returns:
-        ``MaterializeResult`` con metadata: ``n_pairs``, ``min_doy``,
+        ``MaterializeResult`` with metadata: ``n_pairs``, ``min_doy``,
         ``max_doy``, ``n_classes``, ``output_path``, ``roi``,
         ``data_version`` (DVC tag), ``code_version`` (git SHA short).
 
     Raises:
-        ImportError: si ``ml.farslip.dataset`` no está instalado todavía
-            (el módulo lo crea el subagente ml-engineer en paralelo;
-            cuando esté disponible este asset funcionará sin cambios).
+        ImportError: if ``ml.farslip.dataset`` is not installed yet (the
+            module is created by the ml-engineer subagent in parallel; when it
+            is available this asset will work without changes).
     """
-    # Import diferido para que la introspección de assets no requiera el
-    # módulo ml.farslip — útil en CI antes de que ml-engineer aterrice.
+    # Deferred import so that asset introspection does not require the
+    # ml.farslip module — useful in CI before ml-engineer lands.
     from ml.farslip.dataset import build_farslip_pairs  # type: ignore[import-not-found]
 
     roi = context.partition_key
@@ -140,10 +140,10 @@ def sentinel2_crops_256(context: AssetExecutionContext) -> MaterializeResult:
             MIN_PAIRS_WARNING_THRESHOLD,
         )
 
-    # Métricas derivadas (defensivas: el manifest puede venir vacío en smoke).
+    # Derived metrics (defensive: the manifest may be empty in smoke).
     if n_pairs > 0 and "crop_doy" in manifest.columns:
-        # Polars Series.min/max() devuelve PythonLiteral (Union amplio).
-        # Cast intermedio a str para satisfacer mypy SupportsInt.
+        # Polars Series.min/max() returns a PythonLiteral (broad Union).
+        # Intermediate cast to str to satisfy mypy SupportsInt.
         min_doy = int(str(manifest["crop_doy"].min()))
         max_doy = int(str(manifest["crop_doy"].max()))
     else:

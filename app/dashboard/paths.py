@@ -1,10 +1,10 @@
-"""Rutas canonicas a artefactos del repositorio.
+"""Canonical paths to repository artifacts.
 
-Centraliza las rutas a figuras, reportes y configuracion que consumen las
-secciones del dashboard, relativas a la raiz del repositorio. Para PASTIS-R
-se prefiere el subset compacto dissolved (commiteado al repo, funciona en
-Streamlit Cloud); si no existe se cae al metadata completo disponible solo en
-maquinas con DVC sincronizado.
+Centralizes the paths to figures, reports and configuration consumed by the
+dashboard sections, relative to the repository root. For PASTIS-R the compact
+dissolved subset is preferred (committed to the repo, works on Streamlit Cloud);
+if it does not exist it falls back to the full metadata available only on
+machines with DVC synced.
 """
 
 from __future__ import annotations

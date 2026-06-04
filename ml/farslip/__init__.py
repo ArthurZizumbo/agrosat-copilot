@@ -1,12 +1,12 @@
-"""Paquete FarSLIP — destilación parche-a-parche CLIP adaptada a Sentinel-2.
+"""FarSLIP package — CLIP patch-to-patch distillation adapted to Sentinel-2.
 
-Esta US-017 (alias US-016b en el plan v6) implementa el procedimiento descrito
-en Li et al. 2025 (arXiv:2511.14901) para adaptar un CLIP ViT-B/16 al dominio
-agrícola con crops 256x256 Sentinel-2 y vocabulario CAP italiano.
+This US-017 (alias US-016b in the v6 plan) implements the procedure described in
+Li et al. 2025 (arXiv:2511.14901) to adapt a CLIP ViT-B/16 to the agricultural
+domain with 256x256 Sentinel-2 crops and Italian CAP vocabulary.
 
-Re-exporta las clases publicas del modulo. Importar desde paths internos esta
-permitido para tests; los consumidores aguas abajo (US-016 / US-025) deben usar
-estos re-exports para sostener un contrato estable.
+Re-exports the public classes of the module. Importing from internal paths is
+allowed for tests; downstream consumers (US-016 / US-025) must use these
+re-exports to keep a stable contract.
 """
 
 from __future__ import annotations

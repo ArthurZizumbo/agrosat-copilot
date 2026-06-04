@@ -1,36 +1,35 @@
-"""Adaptador de series crudas BreizhCrops al vector de 185 features del proyecto.
+"""Adapter of raw BreizhCrops series to the project's 185-feature vector.
 
-BreizhCrops entrega series temporales Sentinel-2 en **bandas crudas** y en
-formato *long* (una fila por ``(parcel_id, t, band)``), mientras que el
-pipeline de features del proyecto (``ml.features.temporal_features``) opera
-sobre un ``xarray.DataArray`` con dims ``(time, band)`` cuyos labels de banda
-son los **17 indices espectrales** ya calculados, no las bandas crudas.
+BreizhCrops delivers Sentinel-2 time series in **raw bands** and in *long*
+format (one row per ``(parcel_id, t, band)``), whereas the project's feature
+pipeline (``ml.features.temporal_features``) operates over an
+``xarray.DataArray`` with dims ``(time, band)`` whose band labels are the
+**17 spectral indices** already computed, not the raw bands.
 
-Este modulo cierra esa brecha de forma identica a como PASTIS-R llega a sus
-185 features, reutilizando exactamente los mismos componentes canonicos:
+This module bridges that gap identically to how PASTIS-R reaches its 185
+features, reusing exactly the same canonical components:
 
-1. :func:`ml.features.spectral_indices.compute_index` para los 17 indices.
-2. :func:`ml.features.temporal_features.extract_temporal_features` para las
-   153 estadisticas + 24 columnas FFT + 8 fenologicas.
+1. :func:`ml.features.spectral_indices.compute_index` for the 17 indices.
+2. :func:`ml.features.temporal_features.extract_temporal_features` for the
+   153 statistics + 24 FFT columns + 8 phenological ones.
 
-De esta forma el espacio de features de BreizhCrops y PASTIS-R es el mismo
-(mismos nombres de columna, misma semantica), habilitando un transfer
-*tabular directo*: entrenar XGBoost en PASTIS-R y predecir sobre BreizhCrops
-sin reentrenar.
+This way the feature space of BreizhCrops and PASTIS-R is the same (same column
+names, same semantics), enabling a *direct tabular* transfer: train XGBoost on
+PASTIS-R and predict over BreizhCrops without retraining.
 
-Escala de reflectancia
-----------------------
-Las bandas BreizhCrops L2A llegan como DN (digital numbers, rango ~0-10000),
-igual que PASTIS-R crudo. ``compute_index`` espera reflectancia en [0, 1]
-(ver su docstring), por lo que dividimos por ``REFLECTANCE_SCALE`` (10000)
-antes de calcular indices. Es el mismo contrato que el EDA del Avance 1
-documento para Sentinel-2 DN.
+Reflectance scale
+-----------------
+The BreizhCrops L2A bands arrive as DN (digital numbers, range ~0-10000), just
+like raw PASTIS-R. ``compute_index`` expects reflectance in [0, 1] (see its
+docstring), so we divide by ``REFLECTANCE_SCALE`` (10000) before computing
+indices. It is the same contract that the Avance 1 EDA documented for
+Sentinel-2 DN.
 
-Salida
+Output
 ------
-:func:`build_breizhcrops_features` devuelve un ``pl.DataFrame`` con una fila
-por parcela y las mismas ~185 columnas de feature que el subset US-018 de
-PASTIS-R, mas ``parcel_id``, ``year``, ``class_id`` y ``class_name``.
+:func:`build_breizhcrops_features` returns a ``pl.DataFrame`` with one row per
+parcel and the same ~185 feature columns as the US-018 subset of PASTIS-R, plus
+``parcel_id``, ``year``, ``class_id`` and ``class_name``.
 """
 
 from __future__ import annotations
@@ -73,29 +72,30 @@ def pixel_series_to_index_dataarray(
     indices: tuple[str, ...] = DEFAULT_INDICES,
     reflectance_scale: float = REFLECTANCE_SCALE,
 ) -> xr.DataArray | None:
-    """Convierte el long-format de UNA parcela a un ``DataArray`` de indices.
+    """Convert the long-format of ONE parcel to an indices ``DataArray``.
 
-    Pivota las bandas crudas a una matriz ``(time, band_cruda)``, las escala a
-    reflectancia, calcula los 17 indices espectrales canonicos y devuelve un
-    ``xarray.DataArray`` con dims ``(time, band=indices)`` y los attrs
-    ``parcel_id`` / ``year`` que :func:`extract_temporal_features` exige.
+    Pivots the raw bands to a ``(time, raw_band)`` matrix, scales them to
+    reflectance, computes the 17 canonical spectral indices and returns an
+    ``xarray.DataArray`` with dims ``(time, band=indices)`` and the
+    ``parcel_id`` / ``year`` attrs that :func:`extract_temporal_features`
+    requires.
 
     Args:
-        parcel_long: Sub-DataFrame de una sola parcela con columnas
-            ``t, date, band, value`` (formato de
+        parcel_long: Sub-DataFrame of a single parcel with columns
+            ``t, date, band, value`` (format of
             :func:`ml.ingest.breizhcrops_loader.breizhcrops_pixel_series`).
-        parcel_id_int: Id entero de la parcela (attrs del DataArray; debe ser
-            ``int`` porque ``extract_temporal_features`` hace ``int(...)``).
-        year: Anio del ciclo agricola (attrs del DataArray).
-        bands: Orden canonico de bandas crudas Sentinel-2 esperado en
+        parcel_id_int: Integer id of the parcel (DataArray attrs; must be
+            ``int`` because ``extract_temporal_features`` does ``int(...)``).
+        year: Year of the agricultural cycle (DataArray attrs).
+        bands: Canonical order of raw Sentinel-2 bands expected in
             ``parcel_long`` (default :data:`PASTIS_S2_BANDS`).
-        indices: Indices espectrales a calcular (default los 17 canonicos).
-        reflectance_scale: Divisor DN -> reflectancia (default 10000).
+        indices: Spectral indices to compute (default the 17 canonical ones).
+        reflectance_scale: DN -> reflectance divisor (default 10000).
 
     Returns:
-        ``xarray.DataArray`` dims ``(time, band)`` con labels de banda = los
-        nombres de los indices, o ``None`` si la parcela no tiene al menos
-        2 pasos temporales validos (insuficiente para FFT / fenologia).
+        ``xarray.DataArray`` dims ``(time, band)`` with band labels = the
+        names of the indices, or ``None`` if the parcel does not have at least
+        2 valid temporal steps (insufficient for FFT / phenology).
     """
     # Pivot long -> wide (time x raw_band). One row per t, one col per band.
     wide = (
@@ -151,25 +151,25 @@ def build_breizhcrops_features(
     indices: tuple[str, ...] = DEFAULT_INDICES,
     reflectance_scale: float = REFLECTANCE_SCALE,
 ) -> pl.DataFrame:
-    """Construye el vector de 185 features por parcela desde el long-format.
+    """Build the 185-feature vector per parcel from the long-format.
 
-    Itera por parcela, reusa :func:`pixel_series_to_index_dataarray` +
-    :func:`extract_temporal_features` (el mismo pipeline que PASTIS-R) y
-    concatena los resultados anexando ``class_id`` y ``class_name``.
+    Iterates per parcel, reuses :func:`pixel_series_to_index_dataarray` +
+    :func:`extract_temporal_features` (the same pipeline as PASTIS-R) and
+    concatenates the results appending ``class_id`` and ``class_name``.
 
     Args:
-        pixel_series: DataFrame long-format de
+        pixel_series: Long-format DataFrame from
             :func:`ml.ingest.breizhcrops_loader.breizhcrops_pixel_series`
-            (columnas ``parcel_id, t, date, doy, band, value, class_id,
-            class_name``). Puede contener varias parcelas.
-        indices: Indices espectrales a calcular (default los 17 canonicos,
-            que producen las mismas 185 columnas que PASTIS-R).
-        reflectance_scale: Divisor DN -> reflectancia (default 10000).
+            (columns ``parcel_id, t, date, doy, band, value, class_id,
+            class_name``). May contain several parcels.
+        indices: Spectral indices to compute (default the 17 canonical ones,
+            which produce the same 185 columns as PASTIS-R).
+        reflectance_scale: DN -> reflectance divisor (default 10000).
 
     Returns:
-        ``pl.DataFrame`` con una fila por parcela y columnas ``parcel_id``
+        ``pl.DataFrame`` with one row per parcel and columns ``parcel_id``
         (Utf8), ``year``, ``class_id``, ``class_name`` + ~185 features.
-        Vacio (con esquema minimo) si ninguna parcela produce features.
+        Empty (with minimal schema) if no parcel produces features.
     """
     if pixel_series.height == 0:
         return pl.DataFrame(
@@ -254,15 +254,15 @@ def build_breizhcrops_features(
 
 
 def _yyyymmdd_to_datetime64(date_ints: np.ndarray) -> np.ndarray:
-    """Convierte enteros ``YYYYMMDD`` a ``datetime64[ns]``.
+    """Convert ``YYYYMMDD`` integers to ``datetime64[ns]``.
 
     Args:
-        date_ints: Array de enteros ``YYYYMMDD`` (campo ``date`` del
-            long-format BreizhCrops).
+        date_ints: Array of ``YYYYMMDD`` integers (the ``date`` field of the
+            BreizhCrops long-format).
 
     Returns:
-        Array ``datetime64[ns]`` del mismo largo. Las fechas invalidas (0)
-        se mapean al primer dia del rango valido para no romper el eje.
+        ``datetime64[ns]`` array of the same length. Invalid dates (0) are
+        mapped to the first day of the valid range to avoid breaking the axis.
     """
     out = np.empty(date_ints.size, dtype="datetime64[ns]")
     for i, d in enumerate(date_ints):
@@ -282,7 +282,7 @@ def _yyyymmdd_to_datetime64(date_ints: np.ndarray) -> np.ndarray:
 
 
 def _year_from_first_date(parcel_long: pl.DataFrame) -> int:
-    """Deriva el anio del ciclo de la primera fecha valida de la parcela."""
+    """Derive the cycle year from the parcel's first valid date."""
     dates = parcel_long.get_column("date").to_numpy()
     valid = dates[dates > 0]
     if valid.size == 0:

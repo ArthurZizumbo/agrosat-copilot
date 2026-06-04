@@ -1,22 +1,22 @@
-"""Exporta los parquets comparativos de los modelos del equipo us-025 (DeepLabv3+
-y TSViT) al formato que consume el integrador ``Avance4.Equipo17.ipynb``.
+"""Export the comparative parquets of the us-025 team models (DeepLabv3+
+and TSViT) to the format consumed by the integrator ``Avance4.Equipo17.ipynb``.
 
-El notebook de Aaron consolida ``reports/segmentation/metrics/
-model_comparison_avance4_<modelo>.parquet`` de cada integrante (celda de
-consolidacion: ``glob('model_comparison_avance4_*.parquet')`` + ``concat`` +
-``unique(subset=['model'])``). Este script genera los nuestros con el MISMO
-esquema que escribe :func:`ml.train.train_segmentation.run_training` (Aaron), a
-partir de las metricas reales medidas sobre el fold de validacion (fold 4, 482
-parches) en ``5a_deeplabv3plus.ipynb`` y ``5b_tsvit.ipynb``.
+Aaron's notebook consolidates ``reports/segmentation/metrics/
+model_comparison_avance4_<model>.parquet`` of each member (consolidation cell:
+``glob('model_comparison_avance4_*.parquet')`` + ``concat`` +
+``unique(subset=['model'])``). This script generates ours with the SAME schema
+that :func:`ml.train.train_segmentation.run_training` (Aaron) writes, from the
+real metrics measured on the validation fold (fold 4, 482 patches) in
+``5a_deeplabv3plus.ipynb`` and ``5b_tsvit.ipynb``.
 
-Asi nuestros 2 modelos aparecen como "disponibles" en la consolidacion (no
-"pendientes"), sin hardcodear filas en el notebook (data-driven, como el resto
-del equipo). ``tsvit`` y ``tsvit-pheno`` van como dos filas en el mismo parquet
-``_tsvit.parquet`` (la consolidacion las distingue por la columna ``model``).
+This way our 2 models appear as "available" in the consolidation (not
+"pending"), without hardcoding rows in the notebook (data-driven, like the rest
+of the team). ``tsvit`` and ``tsvit-pheno`` go as two rows in the same parquet
+``_tsvit.parquet`` (the consolidation distinguishes them by the ``model`` column).
 
-Operativo permanente (reproducible), no un script de smoke/debug.
+Permanent operational tool (reproducible), not a smoke/debug script.
 
-Uso::
+Usage::
 
     poetry run python scripts/export_avance4_metrics_us025.py
 """
@@ -81,7 +81,7 @@ _SCHEMA = {
 
 
 def main() -> int:
-    """Escribe los parquets de deeplabv3plus y tsvit (incluye tsvit-pheno)."""
+    """Write the deeplabv3plus and tsvit parquets (includes tsvit-pheno)."""
     out_dir = Path("reports/segmentation/metrics")
     out_dir.mkdir(parents=True, exist_ok=True)
 

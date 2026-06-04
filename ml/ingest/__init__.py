@@ -1,7 +1,7 @@
-"""Helpers de ingestión de datos satelitales y agronómicos (EPIC 2).
+"""Satellite and agronomic data ingestion helpers (EPIC 2).
 
-Re-exports de los samplers usados por feature engineering downstream
-(US-014/015/016) y la API canónica de bandas Sentinel-2 (PASTIS).
+Re-exports of the samplers used by downstream feature engineering
+(US-014/015/016) and the canonical Sentinel-2 bands API (PASTIS).
 """
 
 # The Google Earth Engine samplers depend on heavy packages (earthengine,

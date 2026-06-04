@@ -1,13 +1,12 @@
-"""CLI Typer para generar el subset PASTIS-R usado por US-018.
+"""Typer CLI to generate the PASTIS-R subset used by US-018.
 
-Construye un parquet ``data/test_fixtures/feature_selection_subset.parquet``
-con ``>= min_per_class * n_classes`` muestras x 187 columnas (153 stats +
-24 FFT + 8 fenologia + parcel_id + year + class_id + fold). Las muestras
-se estratifican por clase usando la etiqueta dominante de cada patch
-PASTIS-R y se etiquetan con el fold oficial (1..5) leido de
-``metadata.geojson``.
+Builds a parquet ``data/test_fixtures/feature_selection_subset.parquet`` with
+``>= min_per_class * n_classes`` samples x 187 columns (153 stats + 24 FFT +
+8 phenology + parcel_id + year + class_id + fold). The samples are stratified by
+class using the dominant label of each PASTIS-R patch and are labeled with the
+official fold (1..5) read from ``metadata.geojson``.
 
-Uso::
+Usage::
 
     poetry run python scripts/generate_feature_selection_subset.py \\
         --root data/PASTIS-R \\
@@ -15,11 +14,11 @@ Uso::
         --min-per-class 10 \\
         --max-samples 500
 
-Si ``data/PASTIS-R/`` no existe (laptops sin descarga), el script sale con
-codigo 0 y un warning estructurado: NO falla CI ni rompe entornos dev sin
-data pesada.
+If ``data/PASTIS-R/`` does not exist (laptops without download), the script exits
+with code 0 and a structured warning: it does NOT fail CI nor break dev
+environments without heavy data.
 
-Operativo permanente (NO viola anti-patron ``scripts/_*.py``).
+Permanent operational script (does NOT violate the ``scripts/_*.py`` anti-pattern).
 """
 
 from __future__ import annotations
@@ -48,7 +47,7 @@ app = typer.Typer(add_completion=False, help=__doc__)
 
 
 def _patch_dominant_class(semantic: np.ndarray) -> int:
-    """Devuelve la clase mayoritaria del patch (excluyendo background y void)."""
+    """Return the majority class of the patch (excluding background and void)."""
     flat = semantic.ravel().astype(np.int64)
     mask = (flat != 0) & (flat != 19)
     if mask.sum() == 0:
@@ -58,10 +57,10 @@ def _patch_dominant_class(semantic: np.ndarray) -> int:
 
 
 def _patch_to_dataarray(s2_patch: np.ndarray, dates: list[int]) -> xr.DataArray:
-    """Convierte un patch ``(T, 10, H, W)`` a DataArray ``(time, band)`` agregado.
+    """Convert a patch ``(T, 10, H, W)`` to an aggregated ``(time, band)`` DataArray.
 
-    Promedia espacialmente el patch para obtener una serie temporal por banda;
-    el caller anade los indices espectrales como bandas adicionales.
+    Spatially averages the patch to obtain a temporal series per band; the caller
+    adds the spectral indices as additional bands.
     """
     # Spatial mean over H, W -> (T, 10).
     spatial_mean = s2_patch.mean(axis=(2, 3)).astype(np.float32) / 10_000.0
@@ -77,14 +76,14 @@ def _patch_to_dataarray(s2_patch: np.ndarray, dates: list[int]) -> xr.DataArray:
 
 
 def _enrich_with_indices(s2_da: xr.DataArray, indices: tuple[str, ...]) -> xr.DataArray:
-    """Anade columnas de indices espectrales al DataArray de bandas Sentinel-2.
+    """Add spectral index columns to the Sentinel-2 bands DataArray.
 
     Args:
-        s2_da: DataArray ``(time, band)`` con 10 bandas Sentinel-2.
-        indices: Indices canonicos a calcular.
+        s2_da: DataArray ``(time, band)`` with 10 Sentinel-2 bands.
+        indices: Canonical indices to compute.
 
     Returns:
-        DataArray ``(time, band)`` con bandas originales + indices apilados.
+        DataArray ``(time, band)`` with original bands + stacked indices.
     """
     # Reshape to (time, band, y, x) required by compute_index (it needs
     # spatial dims even if they are 1x1).
@@ -135,7 +134,7 @@ def main(
     ),
     seed: int = typer.Option(42, "--seed", help="Semilla para muestreo"),
 ) -> None:
-    """Genera el subset PASTIS-R estratificado por clase para US-018."""
+    """Generate the class-stratified PASTIS-R subset for US-018."""
     if not root.exists():
         logger.warning(
             "pastis_root_missing",

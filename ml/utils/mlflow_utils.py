@@ -1,18 +1,18 @@
-"""Utilidades de tracking MLflow para experimentos del proyecto (US-019).
+"""MLflow tracking utilities for the project experiments (US-019).
 
-Centraliza la apertura de runs MLflow con los tags obligatorios
-``data_version`` y ``code_version`` (regla CLAUDE.md 10). Reutiliza
-:mod:`ml.utils.git_meta` para resolver el SHA git y el hash DVC en lugar
-de re-implementar la llamada a ``subprocess`` (DRY, decision D7).
+Centralizes opening MLflow runs with the mandatory tags
+``data_version`` and ``code_version`` (CLAUDE.md rule 10). Reuses
+:mod:`ml.utils.git_meta` to resolve the git SHA and the DVC hash instead
+of re-implementing the ``subprocess`` call (DRY, decision D7).
 
-Resolucion del tracking URI (decision D8/D14, AC-14):
+Tracking URI resolution (decision D8/D14, AC-14):
 
-1. ``override`` explicito pasado por el llamador.
-2. La variable de entorno ``MLFLOW_TRACKING_URI``.
-3. El servidor MLflow Docker local ``http://localhost:5010`` si responde
-   a ``/health`` dentro del timeout.
-4. ``file:./mlruns`` como fallback para que un dev sin Docker arriba (o el
-   CI) no quede bloqueado.
+1. Explicit ``override`` passed by the caller.
+2. The ``MLFLOW_TRACKING_URI`` environment variable.
+3. The local Docker MLflow server ``http://localhost:5010`` if it responds
+   to ``/health`` within the timeout.
+4. ``file:./mlruns`` as fallback so a dev without Docker running (or the
+   CI) is not blocked.
 """
 
 from __future__ import annotations
@@ -46,15 +46,15 @@ _HEALTH_TIMEOUT_S = 2.0
 
 
 def server_is_reachable(server_url: str, *, timeout: float = _HEALTH_TIMEOUT_S) -> bool:
-    """Hace un probe HTTP al endpoint ``/health`` del servidor MLflow.
+    """Probe via HTTP the ``/health`` endpoint of the MLflow server.
 
     Args:
-        server_url: URL base del servidor MLflow (sin ``/health``).
-        timeout: Timeout en segundos del request HTTP.
+        server_url: Base URL of the MLflow server (without ``/health``).
+        timeout: Timeout in seconds of the HTTP request.
 
     Returns:
-        ``True`` si ``/health`` responde con codigo 2xx dentro del
-        timeout; ``False`` ante cualquier error de red o timeout.
+        ``True`` if ``/health`` responds with a 2xx code within the
+        timeout; ``False`` on any network error or timeout.
     """
     health_url = f"{server_url.rstrip('/')}/health"
     try:
@@ -74,21 +74,21 @@ def resolve_tracking_uri(
     server_url: str = _DEFAULT_SERVER_URL,
     probe_server: bool = True,
 ) -> str:
-    """Resuelve el tracking URI de MLflow con fallback gradual.
+    """Resolve the MLflow tracking URI with gradual fallback.
 
-    Prioridad: ``override`` > ``$MLFLOW_TRACKING_URI`` > ``server_url`` (si
-    responde ``/health``) > ``file:./mlruns``.
+    Priority: ``override`` > ``$MLFLOW_TRACKING_URI`` > ``server_url`` (if it
+    responds to ``/health``) > ``file:./mlruns``.
 
     Args:
-        override: URI explicito; si se pasa, se usa sin mas comprobaciones.
-        server_url: URL del servidor MLflow Docker local a probar.
-        probe_server: Si ``True`` (default) hace un probe a ``/health``
-            antes de elegir ``server_url``; si el servidor no responde,
-            degrada al file store con un ``log.warning``. Si ``False`` no
-            se contacta al servidor (util para tests deterministas).
+        override: Explicit URI; if passed, it is used without further checks.
+        server_url: URL of the local Docker MLflow server to probe.
+        probe_server: If ``True`` (default) probes ``/health`` before
+            choosing ``server_url``; if the server does not respond,
+            degrades to the file store with a ``log.warning``. If ``False``
+            the server is not contacted (useful for deterministic tests).
 
     Returns:
-        El tracking URI resuelto como cadena.
+        The resolved tracking URI as a string.
     """
     if override:
         return override
@@ -122,29 +122,29 @@ def track_experiment(
     dvc_path: str | None = None,
     probe_server: bool = True,
 ) -> Iterator[ActiveRun]:
-    """Context manager que abre un run MLflow con tags de versionado.
+    """Context manager that opens an MLflow run with versioning tags.
 
-    Resuelve el tracking URI, fija el experimento, abre un run y le inyecta
-    los tags ``code_version`` (SHA git via :func:`git_sha`) y
-    ``data_version`` (hash DVC via :func:`dvc_data_version` si se pasa
-    ``dvc_path``, o ``"untracked"`` en caso contrario).
+    Resolves the tracking URI, sets the experiment, opens a run and injects
+    the tags ``code_version`` (git SHA via :func:`git_sha`) and
+    ``data_version`` (DVC hash via :func:`dvc_data_version` if ``dvc_path``
+    is passed, or ``"untracked"`` otherwise).
 
     Args:
-        experiment_name: Nombre del experimento MLflow (se crea si no
-            existe).
-        run_name: Nombre legible del run; ``None`` deja que MLflow genere
-            uno aleatorio.
-        tracking_uri: Override del tracking URI; si es ``None`` se delega
-            en :func:`resolve_tracking_uri`.
-        dvc_path: Ruta al dataset rastreado por DVC para resolver el
-            ``data_version``. Si es ``None`` el tag queda como
+        experiment_name: Name of the MLflow experiment (created if it does
+            not exist).
+        run_name: Human-readable name of the run; ``None`` lets MLflow
+            generate a random one.
+        tracking_uri: Override of the tracking URI; if ``None`` it is
+            delegated to :func:`resolve_tracking_uri`.
+        dvc_path: Path to the DVC-tracked dataset to resolve the
+            ``data_version``. If ``None`` the tag stays as
             ``"untracked"``.
-        probe_server: Se reenvia a :func:`resolve_tracking_uri`; ponerlo
-            en ``False`` en tests para no contactar al servidor Docker.
+        probe_server: Forwarded to :func:`resolve_tracking_uri`; set it
+            to ``False`` in tests to avoid contacting the Docker server.
 
     Yields:
-        El :class:`mlflow.ActiveRun` activo, para loggear params, metricas
-        y artefactos dentro del bloque ``with``.
+        The active :class:`mlflow.ActiveRun`, to log params, metrics
+        and artifacts within the ``with`` block.
     """
     resolved_uri = resolve_tracking_uri(tracking_uri, probe_server=probe_server)
     # MLflow 3.x puts the file store (file:./mlruns) in "maintenance mode" and raises

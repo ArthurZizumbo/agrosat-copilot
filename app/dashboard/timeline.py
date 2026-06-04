@@ -1,9 +1,9 @@
-"""Landing narrativo: Historia del proyecto (A0 -> A4).
+"""Narrative landing: Project history (A0 -> A4).
 
-Cuenta la evolucion del proyecto como una linea de tiempo de seis hitos, cada
-uno con sus metricas clave que mejoran de fase en fase (F1 baseline 0.32 ->
-0.41 fenologico -> mIoU segmentacion 0.625). Es la seccion por defecto del
-dashboard: orienta al lector antes de entrar al detalle por Avance.
+Tells the project's evolution as a timeline of six milestones, each with its
+key metrics that improve from phase to phase (F1 baseline 0.32 -> 0.41
+phenology -> segmentation mIoU 0.625). It is the dashboard's default section:
+it orients the reader before entering the per-Avance detail.
 """
 
 from __future__ import annotations
@@ -15,14 +15,14 @@ import streamlit as st
 
 @dataclass(frozen=True)
 class Milestone:
-    """Hito de la linea de tiempo del proyecto.
+    """Milestone of the project timeline.
 
     Attributes:
-        phase: Etiqueta corta de la fase (e.g. ``"A1"``).
-        label: Etiqueta del tab.
-        title: Titulo del hito.
-        body: Parrafo narrativo del hito.
-        kpis: Pares (label, value) con las metricas clave del hito.
+        phase: Short phase label (e.g. ``"A1"``).
+        label: Tab label.
+        title: Milestone title.
+        body: Narrative paragraph of the milestone.
+        kpis: (label, value) pairs with the milestone's key metrics.
     """
 
     phase: str
@@ -105,7 +105,7 @@ TIMELINE_TAB_LABELS: tuple[str, ...] = tuple(m.label for m in MILESTONES)
 
 
 def _render_milestone(milestone: Milestone) -> None:
-    """Renderiza un hito: tarjeta narrativa + KPIs de la fase."""
+    """Render a milestone: narrative card + phase KPIs."""
     st.markdown(
         f'<div class="timeline-milestone">'
         f'<div class="milestone-phase">{milestone.phase}</div>'
@@ -123,7 +123,7 @@ def _render_milestone(milestone: Milestone) -> None:
 
 
 def render_timeline_section() -> None:
-    """Renderiza la landing narrativa con la linea de tiempo A0 -> A4."""
+    """Render the narrative landing with the A0 -> A4 timeline."""
     st.markdown(
         '<h2 style="margin-top:0.5rem;color:#1E293B;font-weight:700;">'
         "Historia del proyecto - de los datos a la segmentacion</h2>",

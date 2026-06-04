@@ -1,30 +1,30 @@
-"""Ablation de bloques de features para el baseline (US-022b-C).
+"""Feature-block ablation for the baseline (US-022b-C).
 
-Construye la **matriz comparativa** del reencuadre fenologico:
+Builds the **comparative matrix** of the phenological reframing:
 
-- ``full`` — todas las features disponibles.
-- ``no_geom`` — descarta ``geom_area_ha``, ``geom_perimeter_m``,
-  ``geom_elongation`` (proxies geograficos, candidatos a leakage espacial).
-- ``no_geom_no_era5_srtm`` — adicionalmente descarta los bloques ERA5
-  (24 cols) y SRTM (3 cols), redundantes con AlphaEarth (que ya los
-  codifica internamente).
-- ``alphaearth_only`` — solo las 64 dimensiones ``ae_00..ae_63``.
-- ``phenology_only`` — solo los 8 features fenologicos + 24 FFT
+- ``full`` — all available features.
+- ``no_geom`` — drops ``geom_area_ha``, ``geom_perimeter_m``,
+  ``geom_elongation`` (geographic proxies, candidates for spatial leakage).
+- ``no_geom_no_era5_srtm`` — additionally drops the ERA5 blocks
+  (24 cols) and SRTM (3 cols), redundant with AlphaEarth (which already
+  encodes them internally).
+- ``alphaearth_only`` — only the 64 dimensions ``ae_00..ae_63``.
+- ``phenology_only`` — only the 8 phenological features + 24 FFT
   (NDVI/NDWI/EVI).
 
-Decisiones canonicas (plan ``docs/us-planning/us-022b.md`` §6.2):
+Canonical decisions (plan ``docs/us-planning/us-022b.md`` §6.2):
 
-- **D-ARQ-1**: NO reescribe ``fusion.py`` ni ``temporal_features.py`` — los
-  consume. Recibe el DataFrame ya fusionado o el parquet del baseline.
-- **Mismo spatial CV 5-fold** para todos los conjuntos (gracias al cache
-  por ``n_rows + k + buffer + seed`` de ``_build_cv_splits``).
-- **Reusa** ``ml.train.baseline.train_one_model`` (no reinventa training).
-- **delta_vs_full** se calcula como ``F1-macro(set) - F1-macro(full)``
-  para el mismo ``model_kind``. ``full`` es la referencia obligatoria; si
-  no esta en ``feature_sets`` se levanta ``ValueError``.
+- **D-ARQ-1**: does NOT rewrite ``fusion.py`` or ``temporal_features.py`` — it
+  consumes them. Receives the already-fused DataFrame or the baseline parquet.
+- **Same spatial CV 5-fold** for all sets (thanks to the cache
+  keyed by ``n_rows + k + buffer + seed`` of ``_build_cv_splits``).
+- **Reuses** ``ml.train.baseline.train_one_model`` (does not reinvent training).
+- **delta_vs_full** is computed as ``F1-macro(set) - F1-macro(full)``
+  for the same ``model_kind``. ``full`` is the mandatory reference; if
+  it is not in ``feature_sets`` a ``ValueError`` is raised.
 
-El export ``export_ablation_table`` produce CSV + Markdown listos para el
-notebook ``05_reencuadre_fenologico.ipynb`` y para el cierre del Avance 4.
+The ``export_ablation_table`` export produces CSV + Markdown ready for the
+notebook ``05_reencuadre_fenologico.ipynb`` and for the closing of Avance 4.
 """
 
 from __future__ import annotations
@@ -83,21 +83,21 @@ _META_COLS: frozenset[str] = frozenset(
 
 @dataclass(frozen=True)
 class FeatureAblationResult:
-    """Resultado de un (feature_set, model) en la matriz de ablation.
+    """Result of a (feature_set, model) in the ablation matrix.
 
     Attributes:
-        feature_set: Etiqueta del conjunto (``full``, ``no_geom``, ...).
-        model_kind: Modelo aplicado (``rf``, ``xgb``, ``tempcnn``,
+        feature_set: Set label (``full``, ``no_geom``, ...).
+        model_kind: Applied model (``rf``, ``xgb``, ``tempcnn``,
             ``inceptiontime``).
-        f1_macro: F1-macro out-of-fold del spatial CV.
-        f1_weighted: F1 ponderado.
-        miou: mIoU (Jaccard macro).
-        n_features: Numero de features efectivas (las que existian en el
-            DataFrame y eran numericas; las pedidas que no existian se
-            ignoran con warning).
-        delta_vs_full: ``f1_macro(set) - f1_macro(full)`` para el mismo
-            modelo. ``nan`` si el set es ``full`` mismo o si ``full`` no
-            esta presente.
+        f1_macro: Out-of-fold F1-macro of the spatial CV.
+        f1_weighted: Weighted F1.
+        miou: mIoU (macro Jaccard).
+        n_features: Number of effective features (those that existed in the
+            DataFrame and were numeric; the requested ones that did not exist are
+            ignored with a warning).
+        delta_vs_full: ``f1_macro(set) - f1_macro(full)`` for the same
+            model. ``nan`` if the set is ``full`` itself or if ``full`` is not
+            present.
     """
 
     feature_set: str
@@ -117,33 +117,33 @@ class FeatureAblationResult:
 def build_default_feature_sets(
     available_cols: Sequence[str],
 ) -> dict[str, tuple[str, ...]]:
-    """Construye los 5 conjuntos canonicos a partir de las columnas presentes.
+    """Builds the 5 canonical sets from the present columns.
 
     Args:
-        available_cols: Todas las columnas presentes en el DataFrame
-            fusionado (output de :func:`ml.features.fusion.build_fused_features`
-            o del subset US-018).
+        available_cols: All the columns present in the fused
+            DataFrame (output of :func:`ml.features.fusion.build_fused_features`
+            or the US-018 subset).
 
     Returns:
-        Mapping ``{nombre_set: (cols,)}`` con los 5 sets canonicos + sets
-        opcionales segun cols disponibles:
+        Mapping ``{set_name: (cols,)}`` with the 5 canonical sets + optional
+        sets depending on available cols:
 
-        - ``full``: todas las features numericas (excluyendo metadata).
-        - ``no_geom``: ``full`` sin ``geom_*``.
-        - ``no_geom_no_era5_srtm``: ``no_geom`` sin ``era5_*`` ni ``srtm_*``.
-        - ``alphaearth_only``: solo ``ae_*`` o ``dim_*`` (acepta ambos
-          nombres).
-        - ``phenology_only``: 8 cols fenologicas + 24 FFT
-          (``{idx}_fft_amp_k``, ``{idx}_fft_phase_k`` para
+        - ``full``: all numeric features (excluding metadata).
+        - ``no_geom``: ``full`` without ``geom_*``.
+        - ``no_geom_no_era5_srtm``: ``no_geom`` without ``era5_*`` nor ``srtm_*``.
+        - ``alphaearth_only``: only ``ae_*`` or ``dim_*`` (accepts both
+          names).
+        - ``phenology_only``: 8 phenological cols + 24 FFT
+          (``{idx}_fft_amp_k``, ``{idx}_fft_phase_k`` for
           ``idx in {NDVI, NDWI, EVI}``).
-        - ``with_farslip`` / ``farslip_only``: solo si hay cols
-          ``farslip_NNN`` (US-022-c / US-023-preview P2).
-        - ``with_pheno_text`` / ``pheno_text_only``: solo si hay cols
-          ``pheno_text_NNN`` (US-022b-D / US-023-preview P4).
-        - ``with_spectral_signature`` / ``spectral_signature_only``: solo
-          si hay cols ``spectral_signature_NNN`` (US-023-preview P5).
-        - ``geom_only``: solo si hay cols ``geom_*`` — test cuantitativo
-          de leakage espacial (US-023-preview P3).
+        - ``with_farslip`` / ``farslip_only``: only if there are
+          ``farslip_NNN`` cols (US-022-c / US-023-preview P2).
+        - ``with_pheno_text`` / ``pheno_text_only``: only if there are
+          ``pheno_text_NNN`` cols (US-022b-D / US-023-preview P4).
+        - ``with_spectral_signature`` / ``spectral_signature_only``: only
+          if there are ``spectral_signature_NNN`` cols (US-023-preview P5).
+        - ``geom_only``: only if there are ``geom_*`` cols — quantitative
+          test of spatial leakage (US-023-preview P3).
     """
     cols = [c for c in available_cols if c not in _META_COLS]
 
@@ -234,42 +234,42 @@ def run_feature_ablation(
     k_folds: int = 5,
     buffer_km: float = 1.0,
 ) -> list[FeatureAblationResult]:
-    """Ejecuta la ablation: entrena cada modelo sobre cada conjunto de features.
+    """Runs the ablation: trains each model on each feature set.
 
-    Para cada par ``(feature_set, model)`` entrena un baseline con el mismo
-    spatial CV 5-fold (cacheado) y registra F1-macro + F1-weighted + mIoU +
-    ``n_features``. El ``delta_vs_full`` se calcula al final, una vez que
-    todos los runs terminaron.
+    For each pair ``(feature_set, model)`` it trains a baseline with the same
+    cached spatial CV 5-fold and records F1-macro + F1-weighted + mIoU +
+    ``n_features``. The ``delta_vs_full`` is computed at the end, once
+    all the runs have finished.
 
     Args:
-        features_path: Ruta al parquet de features fusionadas. Si ``df`` se
-            pasa, se ignora.
-        df: DataFrame Polars ya cargado.
-        feature_sets: Mapping ``{nombre: (cols,)}`` con los conjuntos a
-            ablacionar. Debe incluir la clave ``"full"``. Si es ``None`` se
-            construyen con :func:`build_default_feature_sets`.
-        models: Modelos a aplicar. ``"rf"`` y ``"xgb"`` van a
-            :func:`ml.train.baseline.train_one_model`; ``"tempcnn"`` y
-            ``"inceptiontime"`` van a
-            :func:`ml.train.phenology_models.train_temporal_model` (solo
-            si el set incluye al menos un indice temporal reconstructible).
-        max_samples: Subsample uniforme determinista (CI/dev). ``None`` =
-            dataset completo.
-        seed: Semilla determinista.
-        k_folds: Numero de folds del CV espacial.
-        buffer_km: Buffer anti-leakage en km.
+        features_path: Path to the fused-features parquet. If ``df`` is
+            passed, it is ignored.
+        df: Already-loaded Polars DataFrame.
+        feature_sets: Mapping ``{name: (cols,)}`` with the sets to
+            ablate. It must include the ``"full"`` key. If ``None`` they are
+            built with :func:`build_default_feature_sets`.
+        models: Models to apply. ``"rf"`` and ``"xgb"`` go to
+            :func:`ml.train.baseline.train_one_model`; ``"tempcnn"`` and
+            ``"inceptiontime"`` go to
+            :func:`ml.train.phenology_models.train_temporal_model` (only
+            if the set includes at least one reconstructible temporal index).
+        max_samples: Deterministic uniform subsample (CI/dev). ``None`` =
+            full dataset.
+        seed: Deterministic seed.
+        k_folds: Number of spatial CV folds.
+        buffer_km: Anti-leakage buffer in km.
 
     Returns:
-        Lista de :class:`FeatureAblationResult`, una por cada par
-        ``(set, model)`` con muestras suficientes.
+        List of :class:`FeatureAblationResult`, one per pair
+        ``(set, model)`` with enough samples.
 
     Raises:
-        ValueError: si ``df`` y ``features_path`` son ambos ``None`` o si
-            ``feature_sets`` no contiene la clave ``"full"``.
+        ValueError: if ``df`` and ``features_path`` are both ``None`` or if
+            ``feature_sets`` does not contain the ``"full"`` key.
     """
     if df is None:
         if features_path is None:
-            raise ValueError("Debes pasar `features_path` o `df`.")
+            raise ValueError("You must pass `features_path` or `df`.")
         df = pl.read_parquet(Path(features_path))
 
     if max_samples is not None and max_samples > 0 and df.height > max_samples:
@@ -280,7 +280,7 @@ def run_feature_ablation(
         feature_sets = build_default_feature_sets(df.columns)
     if "full" not in feature_sets:
         raise ValueError(
-            "`feature_sets` debe incluir la clave 'full' (referencia para delta_vs_full)."
+            "`feature_sets` must include the 'full' key (reference for delta_vs_full)."
         )
 
     logger.info(
@@ -394,15 +394,15 @@ def export_ablation_table(
     results: Sequence[FeatureAblationResult],
     output_path: Path | str,
 ) -> tuple[Path, Path]:
-    """Persiste la tabla de ablation en CSV + Markdown.
+    """Persists the ablation table to CSV + Markdown.
 
     Args:
-        results: Lista de :class:`FeatureAblationResult`.
-        output_path: Ruta destino (sin extension o ``.csv``). Se generan
-            ``<stem>.csv`` y ``<stem>.md`` en el mismo directorio.
+        results: List of :class:`FeatureAblationResult`.
+        output_path: Destination path (without extension or ``.csv``).
+            ``<stem>.csv`` and ``<stem>.md`` are generated in the same directory.
 
     Returns:
-        Tupla ``(csv_path, md_path)`` con las rutas escritas.
+        Tuple ``(csv_path, md_path)`` with the written paths.
     """
     csv_path = Path(output_path).with_suffix(".csv")
     md_path = Path(output_path).with_suffix(".md")
@@ -457,9 +457,9 @@ def _train_single(
     buffer_km: float,
     seed: int,
 ) -> tuple[float, float, float, int]:
-    """Entrena un modelo y devuelve ``(f1_macro, f1_weighted, miou, n_feats)``.
+    """Trains a model and returns ``(f1_macro, f1_weighted, miou, n_feats)``.
 
-    Import diferido: rompe el ciclo ``baseline -> eval.metrics`` y
+    Deferred import: breaks the cycle ``baseline -> eval.metrics`` and
     ``eval.__init__ -> feature_ablation``.
     """
     if model_kind in ("rf", "xgb", "lgbm"):
@@ -496,4 +496,4 @@ def _train_single(
             float(temporal_result.miou),
             int(temporal_result.n_classes),
         )
-    raise ValueError(f"`model_kind` no soportado: {model_kind!r}.")
+    raise ValueError(f"`model_kind` not supported: {model_kind!r}.")

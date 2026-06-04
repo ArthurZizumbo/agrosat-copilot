@@ -1,33 +1,33 @@
-"""Agrupamiento jerarquico HCAT Level-1 de las 18 clases PASTIS-R.
+"""HCAT Level-1 hierarchical grouping of the 18 PASTIS-R classes.
 
-Las 18 clases agronomicas activas de PASTIS-R contienen clases hermanas
-inseparables a nivel parcela (varios trigos de invierno, varios cereales),
-que hunden el F1-macro al ser confundidas entre si. La taxonomia HCAT
-(Hierarchical Crop and Agriculture Taxonomy, version 3) agrupa las clases
-en niveles jerarquicos; su Level-1 colapsa las hermanas dentro del mismo
-grupo agronomico, lo que produce un F1-macro legitimo (no inflado) al
-agregar la confusion intra-grupo que no aporta valor de cultivo.
+The 18 active agronomic classes of PASTIS-R contain sibling classes that are
+inseparable at the parcel level (several winter wheats, several cereals),
+which sink the F1-macro when confused with each other. The HCAT taxonomy
+(Hierarchical Crop and Agriculture Taxonomy, version 3) groups the classes
+into hierarchical levels; its Level-1 collapses the siblings within the same
+agronomic group, which produces a legitimate (not inflated) F1-macro by
+aggregating the intra-group confusion that adds no crop value.
 
-Metodo de referencia
----------------------
+Reference method
+----------------
 - Russwurm, M., Korner, M. (2018). *Multi-Temporal Land Cover Classification
-  with Sequential Recurrent Encoders*. arXiv:1802.02080 — agrega clases
-  raras / hermanas para estabilizar la metrica multiclase desbalanceada.
+  with Sequential Recurrent Encoders*. arXiv:1802.02080 — aggregates rare /
+  sibling classes to stabilize the imbalanced multiclass metric.
 - H2Crop (2025), *A Hierarchical Crop Mapping framework* (arXiv:2506.06155),
-  que adopta la taxonomia HCAT v3 para reportar metricas por nivel
-  jerarquico (L1 grupos, L2 subgrupos, L3 cultivos).
+  which adopts the HCAT v3 taxonomy to report metrics per hierarchical level
+  (L1 groups, L2 subgroups, L3 crops).
 
-Este modulo define el mapeo explicito de las 18 clases PASTIS-R a los
-**6 grupos HCAT Level-1** (distinto de ``PASTIS_R_GROUPINGS['agronomic_group']``,
-que define 5 grupos), documentando el codigo HCAT de cada fusion para
-defendibilidad, y un evaluador apples-to-apples que entrena el mismo modelo
-sobre las mismas features con el esquema plano de 18 clases y con el esquema
-agrupado de 6 grupos.
+This module defines the explicit mapping of the 18 PASTIS-R classes to the
+**6 HCAT Level-1 groups** (different from ``PASTIS_R_GROUPINGS['agronomic_group']``,
+which defines 5 groups), documenting the HCAT code of each merge for
+defensibility, and an apples-to-apples evaluator that trains the same model
+on the same features with the flat 18-class scheme and with the grouped
+6-group scheme.
 
-Convencion Polars
+Polars convention
 -----------------
-Las funciones publicas reciben/devuelven :class:`polars.DataFrame`; ``numpy``
-aparece solo en el borde de ``sklearn``. Logging via ``structlog``.
+Public functions receive/return :class:`polars.DataFrame`; ``numpy``
+appears only at the ``sklearn`` boundary. Logging via ``structlog``.
 """
 
 from __future__ import annotations
@@ -123,37 +123,38 @@ HCAT_L1_GROUPS: dict[str, list[int]] = {
 
 
 def hcat_group_id_map() -> dict[str, int]:
-    """Devuelve el mapa ``nombre_grupo -> id`` segun el orden canonico.
+    """Return the map ``group_name -> id`` according to the canonical order.
 
-    Los ids empiezan en 1 (rango ``[1, 6]``), no en 0, a proposito: el
-    pipeline baseline (:data:`ml.train.baseline._DROP_CLASS_IDS`) descarta los
-    ``class_id`` 0 y 19 como clases de fondo. Reusamos ``class_id`` como
-    objetivo del esquema agrupado, asi que un grupo con id 0 seria eliminado
-    silenciosamente. Asignar 1..6 evita esa colision y deja que el
-    ``LabelEncoder`` interno los recodifique a ``[0, 6)`` de forma consistente.
+    The ids start at 1 (range ``[1, 6]``), not at 0, on purpose: the
+    baseline pipeline (:data:`ml.train.baseline._DROP_CLASS_IDS`) discards
+    ``class_id`` 0 and 19 as background classes. We reuse ``class_id`` as the
+    target of the grouped scheme, so a group with id 0 would be silently
+    removed. Assigning 1..6 avoids that collision and lets the internal
+    ``LabelEncoder`` recode them to ``[0, 6)`` consistently.
 
     Returns:
-        Diccionario ``{nombre_grupo: id}`` con ids en ``[1, 6]`` ordenados
-        alfabeticamente segun :data:`HCAT_L1_GROUP_ORDER`.
+        Dictionary ``{group_name: id}`` with ids in ``[1, 6]`` ordered
+        alphabetically according to :data:`HCAT_L1_GROUP_ORDER`.
     """
     return {group: idx for idx, group in enumerate(HCAT_L1_GROUP_ORDER, start=1)}
 
 
 def hcat6_dense_lut(ignore_index: int = 255) -> np.ndarray:
-    """LUT ``(20,)`` que mapea la etiqueta densa PASTIS (0-19) a grupo HCAT (0-5).
+    """LUT ``(20,)`` mapping the dense PASTIS label (0-19) to HCAT group (0-5).
 
-    Para segmentacion densa: las 18 clases de cultivo (1-18) se colapsan a los 6
-    grupos HCAT Level-1 (ids contiguos 0-5 segun :data:`HCAT_L1_GROUP_ORDER`),
-    mientras que el fondo (0) y el void (19) se mapean a ``ignore_index`` para que
-    no entren en las metricas de 6 grupos (asi son comparables con el baseline
-    tabular, que solo evalua cultivos).
+    For dense segmentation: the 18 crop classes (1-18) collapse to the 6
+    HCAT Level-1 groups (contiguous ids 0-5 per :data:`HCAT_L1_GROUP_ORDER`),
+    while the background (0) and the void (19) are mapped to ``ignore_index`` so
+    they do not enter the 6-group metrics (thus comparable with the tabular
+    baseline, which only evaluates crops).
 
     Args:
-        ignore_index: Valor para fondo y void (no agronomicos). Default 255.
+        ignore_index: Value for background and void (non-agronomic). Default 255.
 
     Returns:
-        Array ``int64`` de forma ``(20,)`` indexable por la clase densa: ``lut[c]``
-        da el grupo HCAT 0-5, o ``ignore_index`` para fondo/void.
+        ``int64`` array of shape ``(20,)`` indexable by the dense class:
+        ``lut[c]`` gives the HCAT group 0-5, or ``ignore_index`` for
+        background/void.
     """
     order = {group: idx for idx, group in enumerate(HCAT_L1_GROUP_ORDER)}  # 0-5
     lut = np.full(20, ignore_index, dtype=np.int64)
@@ -169,28 +170,28 @@ def add_hcat_l1_group(
     group_name_col: str = "hcat6_group_name",
     group_id_col: str = "hcat6_group_id",
 ) -> pl.DataFrame:
-    """Anexa el grupo HCAT Level-1 (nombre + id contiguo) a cada parcela.
+    """Append the HCAT Level-1 group (name + contiguous id) to each parcel.
 
-    Cada ``class_col`` se mapea a su grupo HCAT Level-1 segun
-    :data:`PASTIS_CLASS_TO_HCAT_L1`. Las clases no agronomicas (0, 19) o
-    cualquier id fuera del mapa quedan con grupo ``null`` y deben filtrarse
-    aguas arriba (el pipeline baseline ya lo hace).
+    Each ``class_col`` is mapped to its HCAT Level-1 group according to
+    :data:`PASTIS_CLASS_TO_HCAT_L1`. Non-agronomic classes (0, 19) or any id
+    outside the map are left with a ``null`` group and must be filtered
+    upstream (the baseline pipeline already does this).
 
     Args:
-        df: DataFrame Polars con la columna ``class_col`` (entera).
-        class_col: Nombre de la columna con el id de clase PASTIS-R.
-        group_name_col: Nombre de la columna de salida con el nombre de grupo.
-        group_id_col: Nombre de la columna de salida con el id contiguo.
+        df: Polars DataFrame with the ``class_col`` column (integer).
+        class_col: Name of the column with the PASTIS-R class id.
+        group_name_col: Name of the output column with the group name.
+        group_id_col: Name of the output column with the contiguous id.
 
     Returns:
-        El DataFrame con dos columnas adicionales: el nombre y el id del
-        grupo HCAT Level-1.
+        The DataFrame with two additional columns: the name and the id of
+        the HCAT Level-1 group.
 
     Raises:
-        ValueError: si ``class_col`` no esta en ``df``.
+        ValueError: if ``class_col`` is not in ``df``.
     """
     if class_col not in df.columns:
-        raise ValueError(f"`df` debe contener la columna `{class_col}`.")
+        raise ValueError(f"`df` must contain the column `{class_col}`.")
 
     id_map = hcat_group_id_map()
     name_expr = pl.col(class_col).replace_strict(
@@ -219,17 +220,17 @@ def per_label_f1_table(
     label_names: dict[int, str],
     support_label: str = "support",
 ) -> pl.DataFrame:
-    """Construye una tabla F1 + soporte por etiqueta a partir de OOF.
+    """Build an F1 + support per-label table from OOF predictions.
 
     Args:
-        y_true: Etiquetas verdaderas codificadas (1D).
-        y_pred: Etiquetas predichas codificadas (1D).
-        label_names: Mapa ``id codificado -> nombre legible``.
-        support_label: Nombre de la columna de soporte.
+        y_true: Encoded true labels (1D).
+        y_pred: Encoded predicted labels (1D).
+        label_names: Map ``encoded id -> readable name``.
+        support_label: Name of the support column.
 
     Returns:
-        DataFrame Polars con columnas ``label_id``, ``label_name``, ``f1`` y
-        ``support``, ordenado por ``label_id``.
+        Polars DataFrame with columns ``label_id``, ``label_name``, ``f1`` and
+        ``support``, sorted by ``label_id``.
     """
     from sklearn.metrics import f1_score
 
@@ -260,22 +261,22 @@ def per_label_f1_table(
 
 @dataclass(frozen=True)
 class GroupedVsFlatResult:
-    """Resultado de evaluar el mismo modelo en 18 clases y 6 grupos HCAT.
+    """Result of evaluating the same model on 18 classes and 6 HCAT groups.
 
     Attributes:
-        model: ``"rf"``, ``"xgb"`` o ``"lgbm"``.
-        n_samples: Numero de parcelas usadas (tras descartar 0/19).
-        n_features: Numero de columnas de feature usadas por el modelo.
-        flat_metrics: Las cinco metricas OOF del esquema plano de 18 clases.
-        grouped_metrics: Las cinco metricas OOF del esquema agrupado de 6.
-        flat_per_class: Tabla F1 + soporte por clase (18 filas).
-        grouped_per_group: Tabla F1 + soporte por grupo HCAT (6 filas).
-        flat_y_true: Etiquetas OOF verdaderas (codificadas) del esquema plano.
-        flat_y_pred: Predicciones OOF del esquema plano.
-        grouped_y_true: Etiquetas OOF verdaderas del esquema agrupado.
-        grouped_y_pred: Predicciones OOF del esquema agrupado.
-        flat_label_names: ``id codificado -> nombre de clase``.
-        grouped_label_names: ``id codificado -> nombre de grupo``.
+        model: ``"rf"``, ``"xgb"`` or ``"lgbm"``.
+        n_samples: Number of parcels used (after discarding 0/19).
+        n_features: Number of feature columns used by the model.
+        flat_metrics: The five OOF metrics of the flat 18-class scheme.
+        grouped_metrics: The five OOF metrics of the grouped 6-group scheme.
+        flat_per_class: F1 + support per-class table (18 rows).
+        grouped_per_group: F1 + support per-HCAT-group table (6 rows).
+        flat_y_true: True (encoded) OOF labels of the flat scheme.
+        flat_y_pred: OOF predictions of the flat scheme.
+        grouped_y_true: True OOF labels of the grouped scheme.
+        grouped_y_pred: OOF predictions of the grouped scheme.
+        flat_label_names: ``encoded id -> class name``.
+        grouped_label_names: ``encoded id -> group name``.
     """
 
     model: str
@@ -294,7 +295,7 @@ class GroupedVsFlatResult:
 
     @property
     def delta_f1_macro(self) -> float:
-        """Diferencia ``f1_macro`` agrupado menos plano."""
+        """Difference ``f1_macro`` grouped minus flat."""
         return float(self.grouped_metrics["f1_macro"] - self.flat_metrics["f1_macro"])
 
 
@@ -306,33 +307,33 @@ def evaluate_flat_vs_grouped(
     buffer_km: float = 1.0,
     random_state: int = 42,
 ) -> GroupedVsFlatResult:
-    """Evalua el mismo modelo y features en 18 clases planas y 6 grupos HCAT L1.
+    """Evaluate the same model and features on flat 18 classes and 6 HCAT L1 groups.
 
-    Diseno apples-to-apples: ambos esquemas corren sobre exactamente el mismo
-    DataFrame de features, el mismo CV espacial (mismas particiones por
-    ``random_state``, ``k_folds`` y ``buffer_km``) y el mismo modelo. La unica
-    diferencia es la columna objetivo: ``class_id`` de 18 clases para el
-    esquema plano, y el id del grupo HCAT Level-1 para el agrupado.
+    Apples-to-apples design: both schemes run on exactly the same feature
+    DataFrame, the same spatial CV (same partitions by ``random_state``,
+    ``k_folds`` and ``buffer_km``) and the same model. The only difference is
+    the target column: 18-class ``class_id`` for the flat scheme, and the HCAT
+    Level-1 group id for the grouped one.
 
-    Reutiliza el pipeline de ``ml.train.baseline``
-    (:func:`~ml.train.baseline.train_one_model` y
-    :func:`~ml.train.baseline.evaluate_with_spatial_cv`), por lo que hereda el
-    scaler anti-leakage por fold, la imputacion por mediana de train y el
-    ``sample_weight`` inverso a frecuencia.
+    Reuses the ``ml.train.baseline`` pipeline
+    (:func:`~ml.train.baseline.train_one_model` and
+    :func:`~ml.train.baseline.evaluate_with_spatial_cv`), so it inherits the
+    per-fold anti-leakage scaler, the train-median imputation and the
+    frequency-inverse ``sample_weight``.
 
     Args:
-        df: DataFrame con ``parcel_id``, ``class_id``, ``patch_id`` y features.
-        model: Modelo tabular a usar (``"rf"``, ``"xgb"`` o ``"lgbm"``).
-        k_folds: Folds del CV espacial.
-        buffer_km: Buffer anti-leakage en km.
-        random_state: Semilla determinista.
+        df: DataFrame with ``parcel_id``, ``class_id``, ``patch_id`` and features.
+        model: Tabular model to use (``"rf"``, ``"xgb"`` or ``"lgbm"``).
+        k_folds: Folds of the spatial CV.
+        buffer_km: Anti-leakage buffer in km.
+        random_state: Deterministic seed.
 
     Returns:
-        Un :class:`GroupedVsFlatResult` con metricas y tablas por clase/grupo
-        de ambos esquemas.
+        A :class:`GroupedVsFlatResult` with metrics and per-class/group tables
+        of both schemes.
 
     Raises:
-        ValueError: si ``df`` carece de ``class_id``.
+        ValueError: if ``df`` lacks ``class_id``.
     """
     from ml.ingest.pastis_loader import PASTIS_R_CLASSES
     from ml.train.baseline import (
@@ -342,7 +343,7 @@ def evaluate_flat_vs_grouped(
     )
 
     if "class_id" not in df.columns:
-        raise ValueError("`df` debe contener `class_id`.")
+        raise ValueError("`df` must contain `class_id`.")
 
     # --- Flat 18-class scheme ---------------------------------------------
     flat_result = train_one_model(

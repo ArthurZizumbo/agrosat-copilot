@@ -1,16 +1,16 @@
-"""Descarga AlphaEarth 2018 sobre las 85951 parcelas PASTIS-R.
+"""Download AlphaEarth 2018 over the 85951 PASTIS-R parcels.
 
-La campana agricola PASTIS-R cruza dos anios civiles (primera imagen S2
-~17-sep-2018, ultima ~oct-2019). El embedding anual AlphaEarth-2019 ya esta
-descargado (``alphaearth_parcels_parcels_2019_85951.parquet``); este script
-agrega el embedding 2018 (siembra/emergencia) para poder concatenar ambos
-(64+64 dims) y que el modelo vea el ciclo completo.
+The PASTIS-R growing season crosses two calendar years (first S2 image
+~17-sep-2018, last ~oct-2019). The annual AlphaEarth-2019 embedding is already
+downloaded (``alphaearth_parcels_parcels_2019_85951.parquet``); this script
+adds the 2018 embedding (sowing/emergence) so both can be concatenated
+(64+64 dims) and the model sees the full cycle.
 
-Usa la misma funcion de muestreo que produjo 2019
-(``sample_alphaearth_for_parcels``) con ``year=2018``, de modo que el cache se
-nombra ``alphaearth_parcels_parcels_2018_85951.parquet`` automaticamente.
+Uses the same sampling function that produced 2019
+(``sample_alphaearth_for_parcels``) with ``year=2018``, so the cache is named
+``alphaearth_parcels_parcels_2018_85951.parquet`` automatically.
 
-Uso:
+Usage:
     python scripts/download_alphaearth_2018_pastis.py
 """
 

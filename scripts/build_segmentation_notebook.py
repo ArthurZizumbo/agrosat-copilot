@@ -1,25 +1,25 @@
-"""Builder de los notebooks de segmentacion densa (Avance 4), uno por modelo.
+"""Builder of the dense segmentation notebooks (Avance 4), one per model.
 
-Genera un notebook independiente por arquitectura para poder correrlos en paralelo
-en sesiones de Colab separadas:
+Generates an independent notebook per architecture so they can be run in
+parallel in separate Colab sessions:
 
 - ``04d_segmentation_unet.ipynb``   -> U-Net ResNet-50
-- ``04e_segmentation_anysat.ipynb`` -> AnySat congelado + cabeza lineal
+- ``04e_segmentation_anysat.ipynb`` -> frozen AnySat + linear head
 
-Cada notebook es Colab-first (monta Drive, clona el repo, lee el dataset, entrena
-con reanudacion por checkpoint) y deja sus artefactos en carpetas claras del Drive
-compartido, para citarlos luego en el reporte:
+Each notebook is Colab-first (mounts Drive, clones the repo, reads the dataset,
+trains with checkpoint resume) and leaves its artifacts in clear folders of the
+shared Drive, to cite them later in the report:
 
-    reports/segmentation/metrics/      parquet de metricas por modelo
-    reports/segmentation/figures/      PNG de la matriz de confusion
-    reports/segmentation/checkpoints/  modelo final + checkpoint reanudable
+    reports/segmentation/metrics/      per-model metrics parquet
+    reports/segmentation/figures/      confusion matrix PNG
+    reports/segmentation/checkpoints/  final model + resumable checkpoint
 
-Uso::
+Usage::
 
     poetry run python scripts/build_segmentation_notebook.py --model unet
     poetry run python scripts/build_segmentation_notebook.py --model anysat
 
-Operativo permanente (NO viola el anti-patron ``scripts/_*.py``).
+Permanent operational script (does NOT violate the ``scripts/_*.py`` anti-pattern).
 """
 
 from __future__ import annotations
@@ -200,17 +200,17 @@ def _build_cells(
     subset: int = 0,
     suffix: str = "",
 ) -> list:
-    """Construye las celdas del notebook para una arquitectura concreta.
+    """Build the notebook cells for a specific architecture.
 
     Args:
-        model: ``unet`` o ``anysat``.
-        num_workers: Override de workers (``-1`` deja el default ``4 if colab``).
-        batch: Override de batch (``-1`` deja el del modelo).
-        epochs: Numero de epocas.
-        target_size: Resolucion espacial (256 por defecto; AnySat usa 64 por VRAM).
-        subset: Limite de patches por split (0 = todos).
-        suffix: Sufijo para los artefactos (parquet/checkpoints), util para correr
-            una variante en paralelo sin pisar la corrida principal.
+        model: ``unet`` or ``anysat``.
+        num_workers: Worker override (``-1`` keeps the default ``4 if colab``).
+        batch: Batch override (``-1`` keeps the model's default).
+        epochs: Number of epochs.
+        target_size: Spatial resolution (256 by default; AnySat uses 64 for VRAM).
+        subset: Limit of patches per split (0 = all).
+        suffix: Suffix for the artifacts (parquet/checkpoints), useful to run
+            a variant in parallel without overwriting the main run.
     """
     md = nbf.v4.new_markdown_cell
     code = nbf.v4.new_code_cell
@@ -534,12 +534,12 @@ def _build_cells(
 
 
 def _tuning_cells(model: str) -> list[dict]:
-    """Celdas de ajuste fino Optuna (>=30 trials) especificas del modelo.
+    """Model-specific Optuna fine-tuning cells (>=30 trials).
 
-    En AnySat el encoder esta congelado: se cachean sus features una vez y cada
-    trial entrena solo la cabeza lineal (segundos/trial). En la U-Net se reentrena
-    la red completa por trial sobre un subset reducido. Ambas exportan
-    ``tuning_<modelo>.parquet`` que consume el integrador.
+    In AnySat the encoder is frozen: its features are cached once and each
+    trial trains only the linear head (seconds/trial). In the U-Net the full
+    network is retrained per trial on a reduced subset. Both export
+    ``tuning_<model>.parquet`` consumed by the integrator.
     """
     md = nbf.v4.new_markdown_cell
     code = nbf.v4.new_code_cell
@@ -692,15 +692,15 @@ def main(
     subset: Annotated[int, typer.Option(help="Patches por split (0 = todos).")] = 0,
     suffix: Annotated[str, typer.Option(help="Sufijo de artefactos (correr en paralelo).")] = "",
 ) -> None:
-    """Genera el notebook de segmentacion densa de una arquitectura.
+    """Generate the dense segmentation notebook for one architecture.
 
     Args:
-        model: ``unet`` o ``anysat``.
-        out: Ruta destino del ``.ipynb`` (si vacia, se usa el default del modelo).
-        num_workers: Override de workers del DataLoader.
-        batch: Override de batch.
-        epochs: Numero de epocas.
-        suffix: Sufijo de los artefactos para no pisar otra corrida en paralelo.
+        model: ``unet`` or ``anysat``.
+        out: Destination path of the ``.ipynb`` (if empty, the model default is used).
+        num_workers: DataLoader worker override.
+        batch: Batch override.
+        epochs: Number of epochs.
+        suffix: Artifact suffix to avoid overwriting another parallel run.
     """
     if model not in _OUT_BY_MODEL:
         raise typer.BadParameter("`--model` debe ser 'unet' o 'anysat'.")

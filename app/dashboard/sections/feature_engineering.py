@@ -1,8 +1,8 @@
-"""Seccion Avance 2 - Ingenieria de Caracteristicas (FE).
+"""Avance 2 section - Feature Engineering (FE).
 
-Renderiza las cuatro fichas de feature engineering (Sentinel-2, PASTIS-R
-espectro-temporal, fusion AlphaEarth y conclusiones). El contenido editorial
-vive en ``ml.report.avance2_content`` (``FE_CARDS``).
+Renders the four feature engineering cards (Sentinel-2, PASTIS-R
+spectro-temporal, AlphaEarth fusion and conclusions). The editorial content
+lives in ``ml.report.avance2_content`` (``FE_CARDS``).
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ FE_TAB_LABELS: tuple[str, ...] = (
 
 
 def render_fe_section() -> None:
-    """Renderiza el bloque de Ingenieria de Caracteristicas: 4 fichas."""
+    """Render the Feature Engineering block: 4 cards."""
     assert len(FE_TAB_LABELS) == len(FE_CARDS), "Etiquetas FE desincronizadas"
 
     tabs = st.tabs(list(FE_TAB_LABELS))

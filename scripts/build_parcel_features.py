@@ -1,25 +1,25 @@
-"""CLI Typer operativa para construir el feature parquet fusionado (US-016).
+"""Operational Typer CLI to build the fused feature parquet (US-016).
 
-Operativo permanente del proyecto. Encadena:
+Permanent project operational script. Chains:
 
-1. :func:`ml.features.fusion.build_fused_features` — produce el frame
-   fusionado (189 cols sin FarSLIP / 701 con FarSLIP).
-2. :func:`ml.features.spatial_split.build_spatial_kfold` — genera K folds
-   espaciales con tessellation H3 + KMeans + buffer.
-3. :func:`ml.features.scaler.fit_scaler_on_train` — ajusta StandardScaler
-   sobre el split train del Fold-0 y lo persiste con joblib.
+1. :func:`ml.features.fusion.build_fused_features` — produces the fused
+   frame (189 cols without FarSLIP / 701 with FarSLIP).
+2. :func:`ml.features.spatial_split.build_spatial_kfold` — generates K spatial
+   folds with H3 tessellation + KMeans + buffer.
+3. :func:`ml.features.scaler.fit_scaler_on_train` — fits a StandardScaler
+   on the Fold-0 train split and persists it with joblib.
 
-Outputs (todos versionables con DVC):
+Outputs (all versionable with DVC):
 
 - ``data/features/features_fused_v1.parquet``
 - ``data/splits/spatial_kfold_v1/fold_{0..k-1}/{train,val,test}_parcel_ids.parquet``
 - ``artifacts/scaler_v1.pkl``
 
-Determinismo: dos ejecuciones consecutivas con la misma entrada producen
-parquet con el mismo MD5 (siempre que la fuente de parcels y los caches GEE
-sean estables).
+Determinism: two consecutive executions with the same input produce a
+parquet with the same MD5 (as long as the parcels source and the GEE caches
+are stable).
 
-Ejecución típica:
+Typical execution:
 
 ::
 
@@ -30,8 +30,8 @@ Ejecución típica:
         --scaler-out artifacts/scaler_v1.pkl \\
         --splits-out data/splits/spatial_kfold_v1/
 
-Salida exit-0: dump JSON estructurado con ``{rows, cols, splits,
-scaler_version, dvc_tracked}`` por stdout para consumo en CI.
+Exit-0 output: structured JSON dump with ``{rows, cols, splits,
+scaler_version, dvc_tracked}`` to stdout for CI consumption.
 """
 
 from __future__ import annotations
@@ -100,7 +100,7 @@ def build(
     random_state: int = typer.Option(42, help="Seed determinista."),
     scaler_version: str = typer.Option("v1", help="Tag de versión inyectado al scaler."),
 ) -> None:
-    """Pipeline: fusion multisensor -> spatial K-fold -> fit scaler train Fold-0."""
+    """Pipeline: multisensor fusion -> spatial K-fold -> fit scaler train Fold-0."""
     regions_list = [r.strip() for r in regions.split(",") if r.strip()]
     logger.info(
         "build_started",
@@ -211,18 +211,18 @@ def build(
 
 
 def _load_parcels(path: Path) -> gpd.GeoDataFrame:
-    """Carga parcels desde GeoParquet, parquet plano con WKT, o GeoJSON.
+    """Loads parcels from GeoParquet, flat parquet with WKT, or GeoJSON.
 
-    Soporta tres formatos en orden de prueba:
+    Supports three formats in order of attempt:
 
-    1. **GeoParquet** (con metadata `geo`): vía `gpd.read_parquet`.
-    2. **Parquet plano** con columna `geom` (WKT string): vía Polars + shapely
-       (mismo loader que `dagster_project/assets/features.py` para coherencia
-       con el fixture demo).
-    3. **GeoJSON/JSON**: vía `gpd.read_file`.
+    1. **GeoParquet** (with `geo` metadata): via `gpd.read_parquet`.
+    2. **Flat parquet** with a `geom` column (WKT string): via Polars + shapely
+       (same loader as `dagster_project/assets/features.py` for coherence
+       with the demo fixture).
+    3. **GeoJSON/JSON**: via `gpd.read_file`.
     """
     if not path.exists():
-        raise typer.BadParameter(f"Parcels path no encontrado: {path}")
+        raise typer.BadParameter(f"Parcels path not found: {path}")
     if path.suffix in (".geoparquet", ".parquet"):
         try:
             gdf = gpd.read_parquet(path)
@@ -234,7 +234,7 @@ def _load_parcels(path: Path) -> gpd.GeoDataFrame:
             geom_col = "geom" if "geom" in frame.columns else "geometry"
             if geom_col not in frame.columns:
                 raise typer.BadParameter(
-                    f"Parcels en {path} no contiene columna `geom` ni `geometry`."
+                    f"Parcels in {path} contains neither a `geom` nor a `geometry` column."
                 ) from None
             geoms = [wkt.loads(g) if isinstance(g, str) else g for g in frame[geom_col].tolist()]
             gdf = gpd.GeoDataFrame(
@@ -246,17 +246,17 @@ def _load_parcels(path: Path) -> gpd.GeoDataFrame:
         gdf = gpd.read_file(path)
     else:
         raise typer.BadParameter(
-            f"Formato no soportado: {path.suffix}. Usa .parquet o .geojson."
+            f"Unsupported format: {path.suffix}. Use .parquet or .geojson."
         )
     if "parcel_id" not in gdf.columns:
         raise typer.BadParameter(
-            f"Parcels en {path} no contiene la columna `parcel_id`."
+            f"Parcels in {path} does not contain the `parcel_id` column."
         )
     return gdf
 
 
 def _md5_of_file(path: Path) -> str:
-    """Devuelve el MD5 hex del archivo para verificar determinismo."""
+    """Returns the hex MD5 of the file to verify determinism."""
     h = hashlib.md5()
     with path.open("rb") as f:
         for chunk in iter(lambda: f.read(8192), b""):

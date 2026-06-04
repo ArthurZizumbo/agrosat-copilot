@@ -1,10 +1,10 @@
-"""Conclusiones individuales por integrante para cada avance.
+"""Individual per-member conclusions for each avance.
 
-Cada avance cierra con la lectura propia de los resultados obtenidos por los
-tres integrantes del Equipo 17, redactada a partir del contenido del notebook.
-No describen el reparto de tareas, sino la interpretacion de los hallazgos
-desde el angulo de cada rol. El texto vive aqui para reutilizarse tanto en los
-notebooks editados directamente como en los builders.
+Each avance closes with the personal reading of the results obtained by the
+three members of Equipo 17, written from the notebook content. They do not
+describe the task split, but the interpretation of the findings from each role's
+angle. The text lives here to be reused both in the directly-edited notebooks and
+in the builders.
 """
 
 from __future__ import annotations

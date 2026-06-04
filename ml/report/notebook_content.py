@@ -1,14 +1,14 @@
-"""Contenido estructurado de los notebooks de EDA del Avance 1.
+"""Structured content of the Avance 1 EDA notebooks.
 
-Provee la metadata (título, índice de secciones, conclusiones interpretadas
-y directorio de figuras) que consumen tanto el dashboard Streamlit como
-el template Jinja2 del reporte PDF. El texto vive aquí en lugar de embebido
-en la plantilla para que se renderice idéntico en ambos canales y para que
-sea testeable sin levantar weasyprint ni streamlit.
+Provides the metadata (title, section index, interpreted conclusions and
+figures directory) consumed by both the Streamlit dashboard and the Jinja2
+template of the PDF report. The text lives here instead of embedded in the
+template so it renders identically in both channels and so it is testable
+without launching weasyprint or streamlit.
 
-Las conclusiones son resúmenes interpretados (no genéricos) extraídos del
-markdown final de cada notebook, citando números reales del análisis y
-redactados para lectura del sponsor académico (no técnica densa).
+The conclusions are interpreted (not generic) summaries extracted from the
+final markdown of each notebook, citing real numbers from the analysis and
+written for the academic sponsor's reading (not dense technical prose).
 """
 
 from __future__ import annotations
@@ -21,12 +21,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 @dataclass(frozen=True)
 class KPI:
-    """Indicador clave de la ficha (renderizado igual en dashboard, PDF y notebook).
+    """Key indicator of the card (rendered identically in dashboard, PDF and notebook).
 
     Attributes:
-        label: Nombre corto del indicador.
-        value: Valor formateado (string para preservar separadores locales).
-        delta: Subtítulo o contexto del indicador.
+        label: Short name of the indicator.
+        value: Formatted value (string to preserve local separators).
+        delta: Subtitle or context of the indicator.
     """
 
     label: str
@@ -36,18 +36,18 @@ class KPI:
 
 @dataclass(frozen=True)
 class NotebookCard:
-    """Ficha homogénea por notebook del Avance 1.
+    """Homogeneous per-notebook card of Avance 1.
 
     Attributes:
-        notebook_id: Identificador corto en kebab-case (e.g. ``"sentinel2"``).
-        notebook_path: Path relativo al ``.ipynb`` fuente.
-        title: Título legible del notebook.
-        subtitle: Bajada de una línea con el alcance.
-        sections: Lista ordenada de nombres de secciones del notebook.
-        figures_dir: Subdirectorio bajo ``paper/figures/`` con las figuras.
-        figure_glob: Glob para filtrar PNGs en ``figures_dir``.
-        kpis: Indicadores principales de la ficha, mismos para los 3 canales.
-        conclusions: Bloques de conclusión en orden de presentación.
+        notebook_id: Short identifier in kebab-case (e.g. ``"sentinel2"``).
+        notebook_path: Path relative to the source ``.ipynb``.
+        title: Readable title of the notebook.
+        subtitle: One-line summary of the scope.
+        sections: Ordered list of the notebook's section names.
+        figures_dir: Subdirectory under ``paper/figures/`` with the figures.
+        figure_glob: Glob to filter PNGs in ``figures_dir``.
+        kpis: Main indicators of the card, the same for the 3 channels.
+        conclusions: Conclusion blocks in presentation order.
     """
 
     notebook_id: str
@@ -812,16 +812,16 @@ EDA_DISPLAY_CARDS: tuple[NotebookCard, ...] = (
 
 
 def list_figures(card: NotebookCard, figures_root: Path) -> list[Path]:
-    """Devuelve los PNG asociados a la ficha, ordenados alfabéticamente.
+    """Return the PNGs associated with the card, sorted alphabetically.
 
     Args:
-        card: Ficha del notebook.
-        figures_root: Raíz que contiene los subdirectorios por figura
+        card: Notebook card.
+        figures_root: Root that contains the per-figure subdirectories
             (e.g. ``paper/figures/``).
 
     Returns:
-        Lista de paths PNG. Vacía si la ficha no tiene figures_dir o si el
-        directorio no existe.
+        List of PNG paths. Empty if the card has no figures_dir or if the
+        directory does not exist.
     """
     if not card.figures_dir:
         return []

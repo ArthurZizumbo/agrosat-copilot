@@ -1,8 +1,8 @@
-"""DataLoaders y datasets de PyTorch para AgroSatCopilot.
+"""PyTorch DataLoaders and datasets for AgroSatCopilot.
 
-Este paquete aloja los wrappers ``torch.utils.data.Dataset`` que adaptan los
-artefactos en disco (PASTIS-R, AlphaEarth, etc.) al contrato de entrenamiento
-de los modelos de segmentacion densa (EPIC 5) y los ensembles (EPIC 6).
+This package hosts the ``torch.utils.data.Dataset`` wrappers that adapt the
+on-disk artifacts (PASTIS-R, AlphaEarth, etc.) to the training contract of
+the dense segmentation models (EPIC 5) and the ensembles (EPIC 6).
 """
 
 from __future__ import annotations
