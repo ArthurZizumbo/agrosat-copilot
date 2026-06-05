@@ -163,6 +163,55 @@ class DenseConfusionAccumulator:
             out[c] = float(iou[c].item())
         return out
 
+    def per_class_metrics(
+        self, class_names: dict[int, str] | None = None
+    ) -> list[dict[str, float | int | str]]:
+        """Devuelve precision/recall/F1/IoU y soporte por clase.
+
+        Util para el error-analysis per-clase (model card del Avance 6) y para
+        calibrar pesos de clase: identifica que cultivos minoritarios hunden el
+        F1-macro (recall bajo con soporte pequeno). Solo incluye clases con
+        soporte (> 0) en el ground truth, excluyendo ``ignore_index``.
+
+        Args:
+            class_names: Mapa ``{class_id: nombre}`` opcional para rotular.
+
+        Returns:
+            Lista de dicts con ``class_id, name, support, precision, recall,
+            f1, iou`` ordenada ascendentemente por ``class_id``. Vacia si no se
+            acumulo ningun pixel valido.
+        """
+        conf = self._confusion.double()
+        if conf.sum() <= 0:
+            return []
+        diag = torch.diag(conf)
+        row_sum = conf.sum(dim=1)
+        col_sum = conf.sum(dim=0)
+        union = row_sum + col_sum - diag
+        iou = torch.where(union > 0, diag / union, torch.zeros_like(diag))
+        precision = torch.where(col_sum > 0, diag / col_sum, torch.zeros_like(diag))
+        recall = torch.where(row_sum > 0, diag / row_sum, torch.zeros_like(diag))
+        denom = precision + recall
+        f1 = torch.where(denom > 0, 2 * precision * recall / denom, torch.zeros_like(diag))
+
+        names = class_names or {}
+        rows: list[dict[str, float | int | str]] = []
+        for c in range(self.num_classes):
+            if c == self.ignore_index or row_sum[c] <= 0:
+                continue
+            rows.append(
+                {
+                    "class_id": int(c),
+                    "name": names.get(c, str(c)),
+                    "support": int(row_sum[c].item()),
+                    "precision": float(precision[c].item()),
+                    "recall": float(recall[c].item()),
+                    "f1": float(f1[c].item()),
+                    "iou": float(iou[c].item()),
+                }
+            )
+        return rows
+
 
 def compute_dense_metrics(
     preds: torch.Tensor | np.ndarray,
