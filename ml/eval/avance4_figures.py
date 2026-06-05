@@ -1,23 +1,23 @@
-"""Homologa las 4 figuras de evaluacion de los modelos del Avance 4.
+"""Homologate the 4 evaluation figures of the Avance 4 models.
 
-El integrador ``notebooks/segmentation/Avance4.Equipo17.ipynb`` muestra por
-modelo cuatro figuras: curvas de entrenamiento, IoU por clase, matriz de
-confusion y ejemplos RGB/verdad/prediccion. No todos los integrantes exportaron
-las cuatro, asi que aqui se **regeneran las que faltan** a partir de los datos
-crudos que si existen:
+The integrator ``notebooks/segmentation/Avance4.Equipo17.ipynb`` shows four
+figures per model: training curves, IoU per class, confusion matrix and
+RGB/ground-truth/prediction examples. Not all team members exported the
+four, so here we **regenerate the missing ones** from the raw data that
+does exist:
 
-- **Curvas de entrenamiento** (``curves_<modelo>.png``): se leen del servidor
-  MLflow local (Docker, experimento ``agrosat-segmentation``) que guarda
-  ``train_loss`` y ``val_miou`` por epoca para los modelos us-025 (DeepLabv3+,
+- **Training curves** (``curves_<model>.png``): read from the local MLflow
+  server (Docker, experiment ``agrosat-segmentation``) which stores
+  ``train_loss`` and ``val_miou`` per epoch for the us-025 models (DeepLabv3+,
   TSViT). :func:`curves_from_mlflow`.
-- **Matriz de confusion** (``confusion_<modelo>.png``) e **IoU por clase**
-  (``per_class_iou_<modelo>.png``): requieren re-evaluar el checkpoint sobre el
-  fold de validacion (inferencia). :func:`confusion_and_per_class_from_ckpt`.
+- **Confusion matrix** (``confusion_<model>.png``) and **IoU per class**
+  (``per_class_iou_<model>.png``): require re-evaluating the checkpoint over
+  the validation fold (inference). :func:`confusion_and_per_class_from_ckpt`.
 
-Cada funcion escribe el PNG con el nombre que consume ``_find_fig`` del
-integrador, de modo que ``show_model_figs`` las recoja sin tocar el notebook.
+Each function writes the PNG with the name consumed by ``_find_fig`` of the
+integrator, so ``show_model_figs`` picks them up without touching the notebook.
 
-Operativo permanente (reproducible), no un script de smoke/debug.
+Permanent operational tool (reproducible), not a smoke/debug script.
 """
 
 from __future__ import annotations
@@ -43,30 +43,30 @@ __all__ = [
     "samples_grid",
 ]
 
-#: Mapeo modelo del integrador -> run de MLflow (experimento 7) con su historial.
-#: Cada run loggea ``train_loss`` y ``val_miou`` por epoca (step = epoca).
+#: Integrator model mapping -> MLflow run (experiment 7) with its history.
+#: Each run logs ``train_loss`` and ``val_miou`` per epoch (step = epoch).
 _MLFLOW_RUNS = {
     "deeplabv3plus": "alt-deeplabv3plus-mobilenet-v1",
-    "tsvit": "alt-tsvit-pheno-v1",  # la variante fenologica es la candidata del top-2
+    "tsvit": "alt-tsvit-pheno-v1",  # the phenological variant is the top-2 candidate
 }
 
 
 def _fetch_epoch_history(
     run_name: str, *, experiment: str, tracking_uri: str
 ) -> dict[str, np.ndarray]:
-    """Lee las metricas por epoca de un run MLflow por nombre.
+    """Read the per-epoch metrics of an MLflow run by name.
 
     Args:
-        run_name: Nombre del run (``mlflow.runName``).
-        experiment: Nombre del experimento MLflow.
-        tracking_uri: URI del servidor MLflow.
+        run_name: Run name (``mlflow.runName``).
+        experiment: MLflow experiment name.
+        tracking_uri: MLflow server URI.
 
     Returns:
-        Dict con las series por epoca disponibles: ``train_loss``, ``val_miou``,
-        ``val_f1_macro`` (las que el run haya logueado; ausentes -> array vacio).
+        Dict with the available per-epoch series: ``train_loss``, ``val_miou``,
+        ``val_f1_macro`` (whichever the run logged; absent -> empty array).
 
     Raises:
-        RuntimeError: si no se encuentra el run o no tiene ``train_loss``.
+        RuntimeError: if the run is not found or has no ``train_loss``.
     """
     import mlflow
     from mlflow.tracking import MlflowClient
@@ -75,7 +75,7 @@ def _fetch_epoch_history(
     client = MlflowClient(tracking_uri=tracking_uri)
     exp = client.get_experiment_by_name(experiment)
     if exp is None:
-        raise RuntimeError(f"Experimento MLflow {experiment!r} no existe en {tracking_uri}.")
+        raise RuntimeError(f"MLflow experiment {experiment!r} does not exist in {tracking_uri}.")
     runs = client.search_runs(
         [exp.experiment_id],
         filter_string=f"tags.mlflow.runName = '{run_name}'",
@@ -83,7 +83,7 @@ def _fetch_epoch_history(
     )
     finished = [r for r in runs if r.info.status == "FINISHED"]
     if not finished:
-        raise RuntimeError(f"Run {run_name!r} (FINISHED) no encontrado en {experiment!r}.")
+        raise RuntimeError(f"Run {run_name!r} (FINISHED) not found in {experiment!r}.")
     run_id = finished[0].info.run_id
 
     def _series(metric: str) -> np.ndarray:
@@ -96,7 +96,7 @@ def _fetch_epoch_history(
         "val_f1_macro": _series("val_f1_macro"),
     }
     if series["train_loss"].size == 0:
-        raise RuntimeError(f"Run {run_name!r} sin historial `train_loss` por epoca.")
+        raise RuntimeError(f"Run {run_name!r} without per-epoch `train_loss` history.")
     return series
 
 
@@ -108,34 +108,34 @@ def curves_from_mlflow(
     tracking_uri: str = "http://localhost:5010",
     run_name: str | None = None,
 ) -> Path:
-    """Genera la figura de curvas de entrenamiento de un modelo desde MLflow.
+    """Generate the training curves figure of a model from MLflow.
 
-    Layout 1x3 (Loss | mIoU | F1-Macro) leyendo del servidor MLflow local las
-    series que el run logueo por epoca (train_loss, val_miou, val_f1_macro). El
-    panel mIoU y F1 marcan el mejor epoch (el del checkpoint). Escribe
-    ``curves_<model>.png`` en ``out_dir`` con el nombre que consume el integrador.
+    Layout 1x3 (Loss | mIoU | F1-Macro) reading from the local MLflow server
+    the per-epoch series the run logged (train_loss, val_miou, val_f1_macro).
+    The mIoU and F1 panels mark the best epoch (the checkpoint's). Writes
+    ``curves_<model>.png`` in ``out_dir`` with the name consumed by the integrator.
 
     Args:
-        model: Clave del modelo en el integrador (``deeplabv3plus`` / ``tsvit``).
-        out_dir: Carpeta de salida de las figuras.
-        experiment: Experimento MLflow.
-        tracking_uri: URI del servidor MLflow (Docker local en :5010).
-        run_name: Override del nombre de run; si es ``None`` usa ``_MLFLOW_RUNS``.
+        model: Model key in the integrator (``deeplabv3plus`` / ``tsvit``).
+        out_dir: Output folder for the figures.
+        experiment: MLflow experiment.
+        tracking_uri: MLflow server URI (local Docker on :5010).
+        run_name: Run name override; if ``None`` uses ``_MLFLOW_RUNS``.
 
     Returns:
-        Ruta del PNG escrito.
+        Path of the written PNG.
 
     Raises:
-        KeyError: si ``model`` no esta en el mapeo y no se pasa ``run_name``.
+        KeyError: if ``model`` is not in the mapping and ``run_name`` is not passed.
     """
     name = run_name or _MLFLOW_RUNS[model]
     h = _fetch_epoch_history(name, experiment=experiment, tracking_uri=tracking_uri)
     train_loss, val_miou, val_f1 = h["train_loss"], h["val_miou"], h["val_f1_macro"]
 
-    # Layout 1x3 (Loss | mIoU | F1-macro), homologado con el estilo del equipo.
-    # Nuestros runs us-025 loguearon train_loss + val_miou + val_f1_macro por
-    # epoca (no train_miou/val_loss), asi que cada panel traza la(s) serie(s)
-    # realmente registradas, sin inventar curvas.
+    # Layout 1x3 (Loss | mIoU | F1-macro), aligned with the team style.
+    # Our us-025 runs logged train_loss + val_miou + val_f1_macro per
+    # epoch (not train_miou/val_loss), so each panel plots the series
+    # actually recorded, without inventing curves.
     fig, axes = plt.subplots(1, 3, figsize=(15, 4))
 
     axes[0].plot(
@@ -192,16 +192,16 @@ def per_class_iou_figure(
     class_names: dict[int, str] | None = None,
     out_dir: Path = Path("reports/segmentation/figures"),
 ) -> Path:
-    """Genera el barplot de IoU por clase y lo escribe como ``per_class_iou_<model>.png``.
+    """Generate the per-class IoU barplot and write it as ``per_class_iou_<model>.png``.
 
     Args:
-        per_class_iou: IoU por clase (dict ``{id: iou}``, lista o array).
-        model: Clave del modelo en el integrador.
-        class_names: Mapa ``{id: nombre}`` para rotular el eje; ``None`` usa ``C{id}``.
-        out_dir: Carpeta de salida.
+        per_class_iou: IoU per class (dict ``{id: iou}``, list or array).
+        model: Model key in the integrator.
+        class_names: Map ``{id: name}`` to label the axis; ``None`` uses ``C{id}``.
+        out_dir: Output folder.
 
     Returns:
-        Ruta del PNG escrito.
+        Path of the written PNG.
     """
     if isinstance(per_class_iou, dict):
         ids = sorted(per_class_iou)
@@ -233,20 +233,20 @@ def confusion_from_cm(
     ignore_index: int | None = None,
     out_dir: Path = Path("reports/segmentation/figures"),
 ) -> Path:
-    """Genera la matriz de confusion (normalizada por fila) desde una cm acumulada.
+    """Generate the confusion matrix (row-normalized) from an accumulated cm.
 
-    Reusa :func:`ml.eval.metrics.confusion_matrix_figure` (mismo estilo visual
-    que el resto del proyecto). Escribe ``confusion_<model>.png``.
+    Reuses :func:`ml.eval.metrics.confusion_matrix_figure` (same visual style
+    as the rest of the project). Writes ``confusion_<model>.png``.
 
     Args:
-        cm: Matriz de confusion ``(K, K)`` acumulada (filas=verdad, cols=pred).
-        model: Clave del modelo en el integrador.
-        class_names: Mapa ``{id: nombre}`` para rotular ejes.
-        ignore_index: Si se da, descarta esa fila/columna del plot.
-        out_dir: Carpeta de salida.
+        cm: Accumulated confusion matrix ``(K, K)`` (rows=truth, cols=pred).
+        model: Model key in the integrator.
+        class_names: Map ``{id: name}`` to label the axes.
+        ignore_index: If given, discards that row/column from the plot.
+        out_dir: Output folder.
 
     Returns:
-        Ruta del PNG escrito.
+        Path of the written PNG.
     """
     keep = np.ones(cm.shape[0], dtype=bool)
     if ignore_index is not None and 0 <= ignore_index < cm.shape[0]:
@@ -255,7 +255,7 @@ def confusion_from_cm(
     ids = [i for i in range(cm.shape[0]) if keep[i]]
     labels = [(class_names.get(i, f"C{i}") if class_names else f"C{i}") for i in ids]
 
-    # Normalizacion por fila (recall por clase); filas sin soporte quedan en 0.
+    # Row-wise normalization (per-class recall); rows without support stay at 0.
     row_sum = cm_k.sum(axis=1, keepdims=True)
     cm_norm = np.divide(cm_k, row_sum, out=np.zeros_like(cm_k), where=row_sum > 0)
 
@@ -289,23 +289,23 @@ def regen_deeplab_tsvit(
     device: str = "auto",
     out_dir: Path = Path("reports/segmentation/figures"),
 ) -> tuple[Path, Path]:
-    """Regenera per_class_iou + confusion de un modelo us-025 (deeplab/tsvit).
+    """Regenerate per_class_iou + confusion of a us-025 model (deeplab/tsvit).
 
-    Reusa el flujo de los notebooks 5*: ``load_segmentation_model`` +
-    ``evaluate_checkpoint`` sobre el fold de validacion.
+    Reuses the flow of the 5* notebooks: ``load_segmentation_model`` +
+    ``evaluate_checkpoint`` over the validation fold.
 
     Args:
-        model: ``"deeplabv3plus"`` o ``"tsvit"`` (clave del integrador).
-        checkpoint: Ruta al ``best.pt``.
-        num_classes: 18 (semantico) o 6 (HCAT).
-        ignore_index: Etiqueta ignorada (255 en us-025).
-        val_folds: Folds de validacion.
-        n_timesteps: T para el temporal.
+        model: ``"deeplabv3plus"`` or ``"tsvit"`` (integrator key).
+        checkpoint: Path to ``best.pt``.
+        num_classes: 18 (semantic) or 6 (HCAT).
+        ignore_index: Ignored label (255 in us-025).
+        val_folds: Validation folds.
+        n_timesteps: T for the temporal model.
         device: ``auto`` / ``cuda`` / ``cpu``.
-        out_dir: Carpeta de salida.
+        out_dir: Output folder.
 
     Returns:
-        Tupla ``(path_per_class, path_confusion)``.
+        Tuple ``(path_per_class, path_confusion)``.
     """
     from ml.data.pastis_seg_dataset import PASTISSegmentationDataset
     from ml.eval.segmentation_inference import evaluate_checkpoint, load_segmentation_model
@@ -345,28 +345,28 @@ def regen_isaac_model(
     device: str = "auto",
     out_dir: Path = Path("reports/segmentation/figures"),
 ) -> Path:
-    """Regenera la matriz de confusion de un modelo de Isaac (utae / segformer).
+    """Regenerate the confusion matrix of an Isaac model (utae / segformer).
 
-    Carga el checkpoint con la arquitectura correcta (U-TAE portado o SegFormer
-    HF), evalua el fold de validacion con el dataset multi-temporal (utae) o 2D
-    (segformer) y escribe ``confusion_<model>.png``.
+    Loads the checkpoint with the correct architecture (ported U-TAE or
+    SegFormer HF), evaluates the validation fold with the multi-temporal
+    dataset (utae) or 2D (segformer) and writes ``confusion_<model>.png``.
 
     Args:
-        model: ``"utae"`` o ``"segformer"``.
-        checkpoint: ``best_model.pt`` (utae) o carpeta/archivo del modelo.
-        pastis_root: Raiz de PASTIS-R.
-        num_classes: 20 (convencion de Isaac).
+        model: ``"utae"`` or ``"segformer"``.
+        checkpoint: ``best_model.pt`` (utae) or the model folder/file.
+        pastis_root: PASTIS-R root.
+        num_classes: 20 (Isaac's convention).
         ignore_index: 19 (void).
-        val_folds: Folds de validacion.
-        n_timesteps: T para utae.
+        val_folds: Validation folds.
+        n_timesteps: T for utae.
         device: ``auto`` / ``cuda`` / ``cpu``.
-        out_dir: Carpeta de salida.
+        out_dir: Output folder.
 
     Returns:
-        Ruta del PNG de confusion escrito.
+        Path of the written confusion PNG.
 
     Raises:
-        ValueError: si ``model`` no es ``utae`` ni ``segformer``.
+        ValueError: if ``model`` is neither ``utae`` nor ``segformer``.
     """
     import torch
 
@@ -404,8 +404,8 @@ def regen_isaac_model(
         import torchvision.transforms.functional as TF
         from transformers import SegformerForSemanticSegmentation
 
-        # SegFormer de Isaac (notebook 04i): 3 bandas RGB (mediana temporal,
-        # primeras 3 bandas S2 normalizadas con S2_MEAN/STD), img 256px.
+        # Isaac's SegFormer (notebook 04i): 3 RGB bands (temporal median,
+        # first 3 S2 bands normalized with S2_MEAN/STD), img 256px.
         seg_mean = np.array([1158.0, 1244.7, 1416.3], dtype=np.float32)[:, None, None]
         seg_std = np.array([671.7, 698.1, 761.3], dtype=np.float32)[:, None, None]
         seg_size = 256
@@ -461,7 +461,7 @@ def regen_isaac_model(
                     pred, t_mask, n_classes=num_classes, ignore_index=ignore_index
                 )
     else:
-        raise ValueError(f"model {model!r} no soportado; usa 'utae' o 'segformer'.")
+        raise ValueError(f"model {model!r} not supported; use 'utae' or 'segformer'.")
 
     return confusion_from_cm(
         cm, model, class_names=PASTIS_R_CLASSES, ignore_index=ignore_index, out_dir=out_dir
@@ -473,29 +473,29 @@ def optuna_convergence_figure(
     *,
     out_dir: Path = Path("reports/segmentation/figures"),
 ) -> Path:
-    """Grafica la convergencia de los estudios Optuna (un panel por modelo).
+    """Plot the convergence of the Optuna studies (one panel per model).
 
-    Por cada ``tuning_<modelo>.parquet`` traza el mIoU de cada trial COMPLETE
-    (puntos) y la curva *best-so-far* (escalonada), que muestra como Optuna fue
-    encontrando mejores hiperparametros a lo largo de los trials. Los trials
-    podados (PRUNED) se marcan distinto. Usa la columna ``value`` (mIoU val) o
-    ``miou_grouped`` segun el esquema del parquet.
+    For each ``tuning_<model>.parquet`` it plots the mIoU of every COMPLETE
+    trial (points) and the *best-so-far* curve (stepped), which shows how
+    Optuna found better hyperparameters across the trials. Pruned trials
+    (PRUNED) are marked differently. Uses the ``value`` column (mIoU val) or
+    ``miou_grouped`` depending on the parquet schema.
 
     Args:
-        metrics_dir: Carpeta con los ``tuning_<modelo>.parquet``.
-        out_dir: Carpeta de salida de la figura.
+        metrics_dir: Folder with the ``tuning_<model>.parquet`` files.
+        out_dir: Output folder for the figure.
 
     Returns:
-        Ruta del PNG ``optuna_convergence.png`` escrito.
+        Path of the written ``optuna_convergence.png`` PNG.
 
     Raises:
-        FileNotFoundError: si no hay ningun ``tuning_*.parquet``.
+        FileNotFoundError: if there is no ``tuning_*.parquet``.
     """
     import polars as pl
 
     parts = sorted(metrics_dir.glob("tuning_*.parquet"))
     if not parts:
-        raise FileNotFoundError(f"Sin tuning_*.parquet en {metrics_dir}.")
+        raise FileNotFoundError(f"No tuning_*.parquet in {metrics_dir}.")
 
     n = len(parts)
     ncols = min(2, n)
@@ -522,7 +522,7 @@ def optuna_convergence_figure(
         for px in pruned_x:
             ax.axvline(px, color="#cbd5e0", lw=0.6, alpha=0.6, zorder=1)
 
-        # best-so-far sobre los COMPLETE en orden de trial.
+        # best-so-far over the COMPLETE ones in trial order.
         if comp_y:
             order = np.argsort(comp_x)
             cx = np.asarray(comp_x)[order]
@@ -545,7 +545,7 @@ def optuna_convergence_figure(
         ax.set_ylabel("mIoU")
         ax.legend(fontsize=7, loc="lower right")
 
-    # Apaga los ejes sobrantes de la grilla.
+    # Turn off the leftover axes of the grid.
     for j in range(n, nrows * ncols):
         axes[j // ncols][j % ncols].axis("off")
 
@@ -571,26 +571,26 @@ def samples_grid(
     device: str = "auto",
     out_dir: Path = Path("reports/segmentation/figures"),
 ) -> Path:
-    """Grilla de ``n_examples`` parches (RGB | verdad | prediccion) + leyenda de clases.
+    """Grid of ``n_examples`` patches (RGB | truth | prediction) + class legend.
 
-    Para los modelos us-025 (deeplab/tsvit): carga el checkpoint, predice
-    ``n_examples`` parches del fold de validacion y arma una grilla
-    ``n_examples x 3`` con una leyenda de clases (nombres PASTIS) como pie de
-    imagen. Escribe ``samples_<model>.png``.
+    For the us-025 models (deeplab/tsvit): loads the checkpoint, predicts
+    ``n_examples`` patches from the validation fold and builds an
+    ``n_examples x 3`` grid with a class legend (PASTIS names) as the figure
+    caption. Writes ``samples_<model>.png``.
 
     Args:
-        model: ``"deeplabv3plus"`` o ``"tsvit"`` (clave del integrador).
-        checkpoint: Ruta al ``best.pt``.
-        num_classes: 18 (semantico) o 6 (HCAT).
-        ignore_index: Etiqueta ignorada.
-        val_folds: Folds de validacion.
-        n_timesteps: T para el temporal.
-        n_examples: Numero de parches a mostrar.
+        model: ``"deeplabv3plus"`` or ``"tsvit"`` (integrator key).
+        checkpoint: Path to ``best.pt``.
+        num_classes: 18 (semantic) or 6 (HCAT).
+        ignore_index: Ignored label.
+        val_folds: Validation folds.
+        n_timesteps: T for the temporal model.
+        n_examples: Number of patches to show.
         device: ``auto`` / ``cuda`` / ``cpu``.
-        out_dir: Carpeta de salida.
+        out_dir: Output folder.
 
     Returns:
-        Ruta del PNG escrito.
+        Path of the written PNG.
     """
     from matplotlib import colors
     from matplotlib.patches import Patch
@@ -616,7 +616,7 @@ def samples_grid(
         device=device,
     )
 
-    # Parches equiespaciados a lo largo del split (no los primeros 4 seguidos).
+    # Equispaced patches along the split (not the first 4 in a row).
     n = len(ds)  # type: ignore[arg-type]
     idxs = np.linspace(0, n - 1, num=min(n_examples, n), dtype=int).tolist()
 
@@ -642,7 +642,7 @@ def samples_grid(
         present.update(int(v) for v in np.unique(y.numpy()) if v != ignore_index)
         present.update(int(v) for v in np.unique(pred))
 
-    # Leyenda de clases presentes (pie de imagen).
+    # Legend of present classes (figure caption).
     handles = [
         Patch(color=cmap(norm(c)), label=f"{c}: {PASTIS_R_CLASSES.get(c, f'C{c}')}")
         for c in sorted(present)

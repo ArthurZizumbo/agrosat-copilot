@@ -1,18 +1,18 @@
-"""Muestrea Sentinel-1 GRD VV+VH sobre polígonos PASTIS-R en batches.
+"""Sample Sentinel-1 GRD VV+VH over PASTIS-R polygons in batches.
 
-El sampler de US-016 manda todos los polígonos en una sola request, lo que
-excede el límite GEE de 5 minutos de cómputo cuando hay ~2433 polígonos con
-~130 imágenes/parcela y despeckle Lee 7x7. Batched chunks de 200-500
-permiten que cada request termine en <2 min individual.
+The US-016 sampler sends all polygons in a single request, which exceeds the
+GEE 5-minute compute limit when there are ~2433 polygons with ~130
+images/parcel and Lee 7x7 despeckle. Batched chunks of 200-500 let each
+request finish in <2 min individually.
 
-Modo de uso típico (overnight ~9h sobre 2433 patches PASTIS-R):
+Typical usage (overnight ~9h over 2433 PASTIS-R patches):
 
     poetry run python scripts/generate_s1_pastis_batched.py \\
         --metadata data/PASTIS-R/metadata.geojson \\
         --year 2019 \\
         --batch-size 300
 
-Genera `data/cache/gee/s1_pastis_fr_full_<year>_both_lee_7x7_dB_enriched.parquet`.
+Generates `data/cache/gee/s1_pastis_fr_full_<year>_both_lee_7x7_dB_enriched.parquet`.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ app = typer.Typer(add_completion=False, help=__doc__)
 
 
 def _extract_pastis_geometries(metadata_geojson: Path, year: int) -> gpd.GeoDataFrame:
-    """Lee el metadata.geojson y devuelve un GeoDataFrame EPSG:4326."""
+    """Read the metadata.geojson and return an EPSG:4326 GeoDataFrame."""
     with metadata_geojson.open(encoding="utf-8") as fh:
         gj = json.load(fh)
     transformer = Transformer.from_crs("EPSG:2154", "EPSG:4326", always_xy=True)
@@ -86,7 +86,7 @@ def main(
         help="Polígonos por batch (S1 es caro por despeckle Lee 7x7; default 300)",
     ),
 ) -> None:
-    """Muestrea S1 sobre PASTIS-R en batches resilientes."""
+    """Sample S1 over PASTIS-R in resilient batches."""
     if not metadata.exists():
         logger.error("metadata_missing", path=str(metadata))
         raise typer.Exit(code=2)

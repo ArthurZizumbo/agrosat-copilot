@@ -1,14 +1,14 @@
-"""Genera AlphaEarth cache para TODOS los centroides PASTIS-R (2433 patches).
+"""Generates an AlphaEarth cache for ALL the PASTIS-R centroids (2433 patches).
 
-Operativo permanente. Lee `data/PASTIS-R/metadata.geojson` extrayendo centroides
-de Polygon y MultiPolygon (el helper de US-016 solo procesa MultiPolygon),
-reproyecta a EPSG:4326, y muestrea el embedding AlphaEarth annual 2019 con
-`sample_alphaearth_at_coords` en lotes de 500 puntos.
+Permanent operational tool. Reads `data/PASTIS-R/metadata.geojson` extracting
+centroids from Polygon and MultiPolygon (the US-016 helper only processes
+MultiPolygon), reprojects to EPSG:4326, and samples the AlphaEarth annual 2019
+embedding with `sample_alphaearth_at_coords` in batches of 500 points.
 
 Outputs:
     data/cache/gee/alphaearth_at_pastis_fr_full_2019_N.parquet
 
-Uso::
+Usage::
 
     poetry run python scripts/generate_alphaearth_pastis_full.py \\
         --year 2019 \\
@@ -33,9 +33,9 @@ app = typer.Typer(add_completion=False, help=__doc__)
 
 
 def _polygon_centroid_2154(geom: dict) -> tuple[float, float] | None:
-    """Calcula centroide en EPSG:2154 de un Polygon o MultiPolygon GeoJSON.
+    """Computes the EPSG:2154 centroid of a GeoJSON Polygon or MultiPolygon.
 
-    Devuelve None si la geometría es inválida.
+    Returns None if the geometry is invalid.
     """
     try:
         from shapely.geometry import shape
@@ -50,7 +50,7 @@ def _polygon_centroid_2154(geom: dict) -> tuple[float, float] | None:
 
 
 def _extract_all_centroids(metadata_geojson: Path) -> pl.DataFrame:
-    """Lee todos los features (Polygon + MultiPolygon) y reproyecta a EPSG:4326."""
+    """Reads all features (Polygon + MultiPolygon) and reprojects to EPSG:4326."""
     from pyproj import Transformer
 
     with metadata_geojson.open(encoding="utf-8") as fh:
@@ -103,7 +103,7 @@ def main(
         help="Tamaño de lote para reduceRegions de GEE",
     ),
 ) -> None:
-    """Muestrea AlphaEarth 64-dim para todos los centroides PASTIS-R."""
+    """Samples AlphaEarth 64-dim for all the PASTIS-R centroids."""
     if not metadata.exists():
         logger.error("metadata_missing", path=str(metadata))
         raise typer.Exit(code=2)

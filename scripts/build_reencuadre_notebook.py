@@ -1,30 +1,29 @@
-"""Constructor programatico de ``notebooks/baseline/05_reencuadre_fenologico.ipynb``.
+"""Programmatic builder of ``notebooks/baseline/05_reencuadre_fenologico.ipynb``.
 
-Genera el notebook entregable celda a celda. Sigue el patron de
-``scripts/build_baseline_notebook.py``: ejecutable end-to-end con papermill,
-commiteable con outputs poblados.
+Generates the deliverable notebook cell by cell. Follows the pattern of
+``scripts/build_baseline_notebook.py``: executable end-to-end with papermill,
+committable with populated outputs.
 
-US-023-preview (P1) movio la libreta desde ``notebooks/feature_engineering/`` a
-``notebooks/baseline/`` (decision D-6). Tambien se anaden las celdas de
-P2 (FarSLIP path canonico + ablation 7+ conjuntos), P3 (`geom_only`),
-P4 (`pheno_text` real Gemini Flash 3.5 o skip honesto), P5
-(`with_spectral_signature` con descriptor REP Frampton 2013) y P6 (QA
-contra ``notebooks/CLAUDE.md``).
+US-023-preview (P1) moved the notebook from ``notebooks/feature_engineering/`` to
+``notebooks/baseline/`` (decision D-6). It also adds the cells of P2 (FarSLIP
+canonical path + ablation 7+ sets), P3 (`geom_only`), P4 (`pheno_text` real
+Gemini Flash 3.5 or honest skip), P5 (`with_spectral_signature` with REP
+descriptor Frampton 2013) and P6 (QA against ``notebooks/CLAUDE.md``).
 
-Secciones del notebook:
-  1. Setup + glosario (Ablation, Spatial CV, OOF).
-  2. EDA del desbalance (grafica de soporte por clase).
-  3. Ablation de features XGBoost x 5 conjuntos (descarte geografico).
-  4. Comparativa de modelos sobre el conjunto ganador (XGBoost vs TempCNN
-     vs InceptionTime, todos contra la linea baseline).
-  5. F1 por clase + matriz de confusion del mejor modelo temporal.
-  6. Clustering sin coordenadas (KMeans + UMAP + curva NDVI por cluster).
-  7. Estrategia de desbalance.
-  8. Rama semantica fenologica (integracion, ejecucion real diferida).
-  9. Conclusiones.
-  10. Glosario tecnico.
+Notebook sections:
+  1. Setup + glossary (Ablation, Spatial CV, OOF).
+  2. EDA of the imbalance (per-class support chart).
+  3. XGBoost feature ablation x 5 sets (geographic discard).
+  4. Model comparison over the winning set (XGBoost vs TempCNN
+     vs InceptionTime, all against the baseline line).
+  5. Per-class F1 + confusion matrix of the best temporal model.
+  6. Clustering without coordinates (KMeans + UMAP + per-cluster NDVI curve).
+  7. Imbalance strategy.
+  8. Phenological semantic branch (integration, real execution deferred).
+  9. Conclusions.
+  10. Technical glossary.
 
-Uso:
+Usage:
     poetry run python scripts/build_reencuadre_notebook.py \
         --out notebooks/baseline/05_reencuadre_fenologico.ipynb
 """
@@ -55,7 +54,7 @@ def _params_code(source: str) -> nbf.NotebookNode:
 
 CELLS: list[nbf.NotebookNode] = [
     # --------------------------------------------------------------------
-    # Celda 1 - Titulo y descripcion
+    # Cell 1 - Title and description
     # --------------------------------------------------------------------
     _md(
         "# Reencuadre fenologico del baseline — descarte geografico, modelos temporales y rama semantica\n"
@@ -84,7 +83,7 @@ CELLS: list[nbf.NotebookNode] = [
         "CV, out-of-fold, F1-macro)."
     ),
     # --------------------------------------------------------------------
-    # Celda 2 - Parameters (tag papermill)
+    # Cell 2 - Parameters (papermill tag)
     # --------------------------------------------------------------------
     _params_code(
         "# Parametros papermill. Defaults pensados para corrida FULL en GPU local;\n"
@@ -105,12 +104,12 @@ CELLS: list[nbf.NotebookNode] = [
         "ARTIFACTS_DIR = 'reports/baseline/reencuadre_fenologico'  # datos crudos de las graficas\n"
         "CHECKPOINTS_DIR = 'models/checkpoints/phenology'  # .pt de los modelos entrenados\n"
         "MLFLOW_TRACKING_URI = ''     # vacio = sin MLflow; valor = URI persistente\n"
-        "FARSLIP_PARQUET_PATH = 'data/farslip/embeddings_italy.parquet'\n"
+        "FARSLIP_PARQUET_PATH = 'data/farslip/embeddings_pastis.parquet'\n"
         "RUN_TEMPORAL = True          # entrena TempCNN/InceptionTime\n"
         "RUN_SEMANTIC_BRANCH = False  # rama semantica: requiere Gemini API + budget\n"
     ),
     # --------------------------------------------------------------------
-    # Celda 3 - Bootstrap repo + configuracion notebook
+    # Cell 3 - Repo bootstrap + notebook configuration
     # --------------------------------------------------------------------
     _code(
         "from __future__ import annotations\n"
@@ -181,7 +180,7 @@ CELLS: list[nbf.NotebookNode] = [
         "log(f'bootstrap completo · device={_effective_device}', level='ok')\n"
     ),
     # --------------------------------------------------------------------
-    # Seccion 2 - EDA del desbalance
+    # Section 2 - EDA of the imbalance
     # --------------------------------------------------------------------
     _md(
         "## 2. Carga del dataset y el desbalance entre clases\n"
@@ -212,7 +211,7 @@ CELLS: list[nbf.NotebookNode] = [
     ),
     _code(
         "# Intenta inyectar el bloque FarSLIP (512-dim) si el parquet existe.\n"
-        "# US-023-preview P2: el parquet canonico vive en data/farslip/embeddings_italy.parquet\n"
+        "# US-023-preview P2: el parquet canonico vive en data/farslip/embeddings_pastis.parquet\n"
         "# (shape 30173 x 514) tras la promocion de v2. Si los `parcel_id` no son compatibles\n"
         "# con los del dataset baseline (string compuesto vs int64 hash), el join falla y\n"
         "# documentamos el skip honesto sin romper la corrida (R1 conocido).\n"
@@ -284,7 +283,7 @@ CELLS: list[nbf.NotebookNode] = [
         "plt.show()\n"
     ),
     # --------------------------------------------------------------------
-    # Seccion 3 - Ablation de features (descarte geografico)
+    # Section 3 - Feature ablation (geographic discard)
     # --------------------------------------------------------------------
     _md(
         "## 3. Ablation de features — ¿aportan las columnas geograficas?\n"
@@ -393,7 +392,7 @@ CELLS: list[nbf.NotebookNode] = [
         "argumento del paper Wen et al. 2025."
     ),
     # ----------------------------------------------------------------------
-    # Seccion 3.2 - P3 leakage espacial cuantitativo (geom_only).
+    # Section 3.2 - P3 quantitative spatial leakage (geom_only).
     # ----------------------------------------------------------------------
     _md(
         "### 3.2 Por que descartar `geom_*` — test cuantitativo de leakage\n"
@@ -479,7 +478,7 @@ CELLS: list[nbf.NotebookNode] = [
         "log(f'figura P3 escrita: {_paper_path_geom.relative_to(REPO)}', level='ok')\n"
     ),
     # ----------------------------------------------------------------------
-    # Seccion 3.3 - P4 ablation pheno_text Gemini Flash 3.5 (real o skip).
+    # Section 3.3 - P4 pheno_text ablation Gemini Flash 3.5 (real or skip).
     # ----------------------------------------------------------------------
     _md(
         "### 3.3 Bloque opcional `pheno_text_*` (Gemini Flash 3.5)\n"
@@ -497,7 +496,7 @@ CELLS: list[nbf.NotebookNode] = [
     ),
     _code(
         "import os as _os\n"
-        "_pheno_text_path = REPO / 'data/features/phenology_text_italy.parquet'\n"
+        "_pheno_text_path = REPO / 'data/features/phenology_text_pastis.parquet'\n"
         "_gemini_key_present = bool(_os.environ.get('GEMINI_API_KEY') or _os.environ.get('GOOGLE_API_KEY'))\n"
         "if _pheno_text_path.exists():\n"
         "    _pt_df = pl.read_parquet(_pheno_text_path)\n"
@@ -521,7 +520,7 @@ CELLS: list[nbf.NotebookNode] = [
         "log(f'P4 pheno_text: path_exists={_pheno_text_path.exists()} api_key={_gemini_key_present}', level='ok')\n"
     ),
     # ----------------------------------------------------------------------
-    # Seccion 3.4 - P5 firma espectral (REP Frampton 2013).
+    # Section 3.4 - P5 spectral signature (REP Frampton 2013).
     # ----------------------------------------------------------------------
     _md(
         "### 3.4 Bloque opcional `spectral_signature_*` (Red Edge Position, Frampton 2013)\n"
@@ -625,7 +624,7 @@ CELLS: list[nbf.NotebookNode] = [
         "log(f'figura P2+P4+P5 escrita: {_opt_path.relative_to(REPO)} (n_blocks={len(_optional_rows)})', level='ok')\n"
     ),
     # --------------------------------------------------------------------
-    # Seccion 4 - Comparativa de modelos sobre el set ganador
+    # Section 4 - Model comparison over the winning set
     # --------------------------------------------------------------------
     _md(
         "## 4. Comparativa de modelos — XGBoost vs TempCNN vs InceptionTime\n"
@@ -804,7 +803,7 @@ CELLS: list[nbf.NotebookNode] = [
         "se corre con dataset completo en GPU; este notebook sigue siendo la receta."
     ),
     # --------------------------------------------------------------------
-    # Seccion 5 - Diagnostico por clase del mejor modelo temporal
+    # Section 5 - Per-class diagnosis of the best temporal model
     # --------------------------------------------------------------------
     _md(
         "## 5. Diagnostico por clase del mejor modelo temporal\n"
@@ -896,7 +895,7 @@ CELLS: list[nbf.NotebookNode] = [
         "    log('Sin predicciones out-of-fold disponibles para el diagnostico por clase.', level='warn')\n"
     ),
     # --------------------------------------------------------------------
-    # Seccion 6 - Clustering sin coordenadas
+    # Section 6 - Clustering without coordinates
     # --------------------------------------------------------------------
     _md(
         "## 6. Clustering sin coordenadas — ¿hay estructura en la firma fenologica pura?\n"
@@ -1018,7 +1017,7 @@ CELLS: list[nbf.NotebookNode] = [
         "distinta), la fenologia ya los esta separando."
     ),
     # --------------------------------------------------------------------
-    # Seccion 7 - Estrategia de desbalance
+    # Section 7 - Imbalance strategy
     # --------------------------------------------------------------------
     _md(
         "## 7. Estrategia para el desbalance ~31x\n"
@@ -1050,7 +1049,7 @@ CELLS: list[nbf.NotebookNode] = [
         "))\n"
     ),
     # --------------------------------------------------------------------
-    # Seccion 8 - Rama semantica
+    # Section 8 - Semantic branch
     # --------------------------------------------------------------------
     _md(
         "## 8. Rama semantica fenologica — descripcion textual via LLM\n"
@@ -1099,7 +1098,7 @@ CELLS: list[nbf.NotebookNode] = [
         "    ))\n"
     ),
     # --------------------------------------------------------------------
-    # Seccion 9 - Conclusiones (NOTA: sin US-XXX, EPIC, AC-X, A4/A5, rubrica)
+    # Section 9 - Conclusions (NOTE: no US-XXX, EPIC, AC-X, A4/A5, rubric)
     # --------------------------------------------------------------------
     _md(
         "## 9. Conclusiones\n"
@@ -1171,7 +1170,7 @@ CELLS: list[nbf.NotebookNode] = [
         "))\n"
     ),
     # --------------------------------------------------------------------
-    # Seccion 10 - Glosario
+    # Section 10 - Glossary
     # --------------------------------------------------------------------
     _md(
         "## 10. Glosario\n"
@@ -1206,7 +1205,7 @@ CELLS: list[nbf.NotebookNode] = [
 
 
 def build_notebook(out_path: Path) -> None:
-    """Construye el notebook 05 y lo escribe en ``out_path``."""
+    """Build notebook 05 and write it to ``out_path``."""
     nb = nbf.v4.new_notebook()
     nb.cells = CELLS
     nb.metadata.update(
@@ -1230,7 +1229,7 @@ def main(
         help="Ruta destino del notebook .ipynb.",
     ),
 ) -> None:
-    """Reconstruye ``05_reencuadre_fenologico.ipynb`` desde cero."""
+    """Rebuild ``05_reencuadre_fenologico.ipynb`` from scratch."""
     build_notebook(out)
     typer.echo(f"Notebook escrito en {out}")
 

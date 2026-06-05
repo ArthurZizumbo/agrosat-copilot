@@ -1,32 +1,32 @@
-"""Rama semantica + loss contrastivo fenologico para TSViT (Wen et al. 2025).
+"""Semantic branch + phenology contrastive loss for TSViT (Wen et al. 2025).
 
-Implementa la **rama semantica** y la **alineacion contrastiva pixel-visual <->
-prototipo-de-clase** del metodo de Wen et al. (2025), "Phenology Description is
-All You Need!" (ISPRS J. Photogrammetry RS 228), ecuaciones 15-16. A diferencia
-del baseline tabular (que concatenaba el ``pheno_text`` como columnas extra y
-degradaba), el paper **no concatena**: alinea por contraste la feature visual de
-cada pixel con el prototipo semantico de SU clase (positivo) frente a los demas
-17 prototipos (negativos). Ablacion del paper (Tabla 2, zero-shot area 1): solo
-patches F1 26.8 -> patches + fenologia F1 53.4.
+Implements the **semantic branch** and the **contrastive visual-pixel <->
+class-prototype alignment** of the method by Wen et al. (2025), "Phenology
+Description is All You Need!" (ISPRS J. Photogrammetry RS 228), equations 15-16.
+Unlike the tabular baseline (which concatenated ``pheno_text`` as extra columns
+and degraded), the paper **does not concatenate**: it aligns by contrast the
+visual feature of each pixel with the semantic prototype of ITS class (positive)
+against the other 17 prototypes (negatives). Paper ablation (Table 2, zero-shot
+area 1): patches only F1 26.8 -> patches + phenology F1 53.4.
 
-Componentes:
+Components:
 
-1. :class:`PhenoSemanticBranch`: carga la matriz de 18 prototipos por clase
-   (384-dim) de :func:`ml.features.phenology_class_prototypes.\
-   load_class_prototype_embeddings`, los proyecta a un espacio comun
-   (``Linear 384 -> semantic_dim``) y los normaliza L2. Expone
-   :meth:`get_class_prototypes` que devuelve la matriz ``(num_classes, D)`` lista
-   para el contraste. La proyeccion al espacio comun reemplaza la rama de texto
-   con GCN del paper (§3.2); el GCN sobre keywords fenologicos queda como TODO
-   post-Avance (ver nota al final del modulo).
+1. :class:`PhenoSemanticBranch`: loads the matrix of 18 per-class prototypes
+   (384-dim) from :func:`ml.features.phenology_class_prototypes.\
+   load_class_prototype_embeddings`, projects them to a common space
+   (``Linear 384 -> semantic_dim``) and L2-normalizes them. Exposes
+   :meth:`get_class_prototypes` which returns the matrix ``(num_classes, D)``
+   ready for the contrast. The projection to the common space replaces the GCN
+   text branch of the paper (§3.2); the GCN over phenological keywords remains a
+   post-Avance TODO (see note at the end of the module).
 
-2. :func:`phenology_contrastive_loss`: InfoNCE simetrico estilo CLIP (ec. 15-16,
-   ``L_cl = (L_v + L_s)/2``) entre las features visuales por pixel (de
-   :meth:`ml.models.tsvit_wrapper.TSViT.forward` con ``return_visual_proj=True``)
-   y los prototipos por clase. Submuestrea pixeles validos para acotar memoria.
+2. :func:`phenology_contrastive_loss`: symmetric CLIP-style InfoNCE (eq. 15-16,
+   ``L_cl = (L_v + L_s)/2``) between the per-pixel visual features (from
+   :meth:`ml.models.tsvit_wrapper.TSViT.forward` with ``return_visual_proj=True``)
+   and the per-class prototypes. Subsamples valid pixels to bound memory.
 
-Atribucion: metodo de Wen et al. (2025), ISPRS J. Photogrammetry RS 228.
-Documentado en ``docs/licenses/DATA_LICENSE.md``.
+Attribution: method by Wen et al. (2025), ISPRS J. Photogrammetry RS 228.
+Documented in ``docs/licenses/DATA_LICENSE.md``.
 """
 
 from __future__ import annotations
@@ -49,44 +49,44 @@ __all__ = [
 
 logger = structlog.get_logger(__name__)
 
-#: Dimension de los prototipos de texto fenologico (``all-MiniLM-L6-v2``).
+#: Dimension of the phenological text prototypes (``all-MiniLM-L6-v2``).
 _PROTOTYPE_DIM = 384
 
-#: Maximo de pixeles validos muestreados por batch para el contraste. Acota la
-#: matriz de similitud (n_sampled x num_classes) y el grafo de autograd a algo
-#: que cabe en L4 24GB; el muestreo es estocastico por step (ver Wen §3.3).
+#: Maximum number of valid pixels sampled per batch for the contrast. Bounds the
+#: similarity matrix (n_sampled x num_classes) and the autograd graph to something
+#: that fits in L4 24GB; the sampling is stochastic per step (see Wen §3.3).
 _DEFAULT_MAX_PIXELS = 4096
 
 
 class PhenoSemanticBranch(nn.Module):
-    """Rama semantica: prototipos fenologicos por clase proyectados y L2-norm.
+    """Semantic branch: per-class phenology prototypes projected and L2-norm.
 
-    Carga la matriz de prototipos textuales por clase (``num_classes``, 384) y la
-    proyecta a un espacio comun de dimension ``semantic_dim`` mediante una capa
-    lineal aprendible, normalizando L2 la salida. La feature visual por pixel de
-    TSViT (``return_visual_proj=True``) vive en este mismo espacio, lo que
-    permite la alineacion contrastiva de la ecuacion 15-16 del paper.
+    Loads the matrix of per-class text prototypes (``num_classes``, 384) and
+    projects it to a common space of dimension ``semantic_dim`` via a learnable
+    linear layer, L2-normalizing the output. The per-pixel visual feature of
+    TSViT (``return_visual_proj=True``) lives in this same space, which enables
+    the contrastive alignment of equation 15-16 of the paper.
 
-    Los prototipos crudos se registran como buffer (no entrenable, viaja con el
-    ``state_dict`` y al dispositivo del modulo); solo la proyeccion es
-    aprendible. Esto preserva la semantica del encoder de texto congelado y deja
-    que el modelo aprenda unicamente como mapear esa semantica al espacio visual.
+    The raw prototypes are registered as a buffer (non-trainable, travels with
+    the ``state_dict`` and to the module device); only the projection is
+    learnable. This preserves the semantics of the frozen text encoder and lets
+    the model learn only how to map that semantics to the visual space.
 
     Args:
-        semantic_dim: Dimension del espacio comun de alineacion. Debe coincidir
-            con ``semantic_dim`` de :class:`ml.models.tsvit_wrapper.TSViT`
-            (384 por defecto, igual que los prototipos, lo que hace de la
-            proyeccion un refinamiento y no un cambio de dimensionalidad).
-        prototype_path: Ruta al parquet de prototipos por clase. Si es ``None``
-            usa el default de
+        semantic_dim: Dimension of the common alignment space. It must match
+            ``semantic_dim`` of :class:`ml.models.tsvit_wrapper.TSViT`
+            (384 by default, same as the prototypes, which makes the projection a
+            refinement and not a dimensionality change).
+        prototype_path: Path to the per-class prototypes parquet. If ``None``
+            uses the default of
             :func:`ml.features.phenology_class_prototypes.\
             load_class_prototype_embeddings`.
-        freeze_prototypes: Si ``True`` (defecto) los prototipos crudos son un
-            buffer no entrenable; si ``False`` se registran como parametro y se
-            afinan junto a la proyeccion.
+        freeze_prototypes: If ``True`` (default) the raw prototypes are a
+            non-trainable buffer; if ``False`` they are registered as a parameter
+            and fine-tuned together with the projection.
 
     Raises:
-        ValueError: Si la matriz de prototipos cargada no tiene dimension 384.
+        ValueError: If the loaded prototype matrix does not have dimension 384.
     """
 
     def __init__(
@@ -105,7 +105,7 @@ class PhenoSemanticBranch(nn.Module):
             )
         if prototypes_np.shape[1] != _PROTOTYPE_DIM:
             raise ValueError(
-                f"Los prototipos deben ser {_PROTOTYPE_DIM}-dim; se cargo "
+                f"The prototypes must be {_PROTOTYPE_DIM}-dim; loaded "
                 f"shape {prototypes_np.shape}."
             )
 
@@ -119,8 +119,8 @@ class PhenoSemanticBranch(nn.Module):
         else:
             self.raw_prototypes = nn.Parameter(prototypes)
 
-        # Proyeccion al espacio comun de alineacion (rama semantica del paper,
-        # §3.2; reemplaza el GCN de keywords por una lineal por simplicidad).
+        # Projection to the common alignment space (semantic branch of the paper,
+        # §3.2; replaces the keyword GCN with a linear layer for simplicity).
         self.proj = nn.Linear(_PROTOTYPE_DIM, semantic_dim)
 
         logger.info(
@@ -131,21 +131,21 @@ class PhenoSemanticBranch(nn.Module):
         )
 
     def get_class_prototypes(self) -> torch.Tensor:
-        """Devuelve los prototipos proyectados y L2-normalizados.
+        """Return the projected and L2-normalized prototypes.
 
         Returns:
-            Tensor ``(num_classes, semantic_dim)`` float, normalizado por fila
-            (norma L2 unitaria), en el dispositivo del modulo. Listo para usarse
-            como ``prototypes`` en :func:`phenology_contrastive_loss`.
+            Tensor ``(num_classes, semantic_dim)`` float, normalized per row
+            (unit L2 norm), on the module device. Ready to be used as
+            ``prototypes`` in :func:`phenology_contrastive_loss`.
         """
         projected = self.proj(self.raw_prototypes)  # (K, semantic_dim)
         return F.normalize(projected, p=2, dim=-1)
 
     def forward(self) -> torch.Tensor:
-        """Alias de :meth:`get_class_prototypes` (interfaz ``nn.Module``).
+        """Alias of :meth:`get_class_prototypes` (``nn.Module`` interface).
 
         Returns:
-            Prototipos proyectados y L2-normalizados ``(num_classes,
+            Projected and L2-normalized prototypes ``(num_classes,
             semantic_dim)``.
         """
         return self.get_class_prototypes()
@@ -161,52 +161,52 @@ def phenology_contrastive_loss(
     max_pixels: int = _DEFAULT_MAX_PIXELS,
     generator: torch.Generator | None = None,
 ) -> torch.Tensor:
-    """Loss contrastivo fenologico InfoNCE simetrico (Wen et al. 2025, ec 15-16).
+    """Symmetric InfoNCE phenology contrastive loss (Wen et al. 2025, eq 15-16).
 
-    Para cada pixel valido (``target != ignore_index``) alinea su feature visual
-    con el prototipo de SU clase (positivo) frente a los otros prototipos
-    (negativos). Se computan dos terminos InfoNCE simetricos estilo CLIP y se
-    promedian (``L_cl = (L_v + L_s)/2``):
+    For each valid pixel (``target != ignore_index``) it aligns its visual
+    feature with the prototype of ITS class (positive) against the other
+    prototypes (negatives). Two symmetric CLIP-style InfoNCE terms are computed
+    and averaged (``L_cl = (L_v + L_s)/2``):
 
-    - ``L_v`` (visual->semantico): para cada pixel, softmax sobre las
-      similitudes con los ``num_classes`` prototipos; el positivo es el
-      prototipo de su clase.
-    - ``L_s`` (semantico->visual): para cada clase **presente** en el batch
-      muestreado, softmax sobre las similitudes con todos los pixeles
-      muestreados; los positivos son los pixeles de esa clase (multi-positivo,
-      log-mean-exp de los positivos).
+    - ``L_v`` (visual->semantic): for each pixel, softmax over the similarities
+      with the ``num_classes`` prototypes; the positive is the prototype of its
+      class.
+    - ``L_s`` (semantic->visual): for each class **present** in the sampled
+      batch, softmax over the similarities with all the sampled pixels; the
+      positives are the pixels of that class (multi-positive, log-mean-exp of the
+      positives).
 
-    Las features visuales y los prototipos se L2-normalizan, la similitud es el
-    producto punto dividido por ``temperature``. Si los pixeles validos superan
-    ``max_pixels`` se submuestrean de forma estocastica para acotar la matriz de
-    similitud y el grafo de autograd (memoria de L4).
+    The visual features and the prototypes are L2-normalized, the similarity is
+    the dot product divided by ``temperature``. If the valid pixels exceed
+    ``max_pixels`` they are stochastically subsampled to bound the similarity
+    matrix and the autograd graph (L4 memory).
 
     Args:
-        visual_proj: Features visuales por pixel ``(B, D, H, W)`` (de TSViT con
+        visual_proj: Per-pixel visual features ``(B, D, H, W)`` (from TSViT with
             ``return_visual_proj=True``).
-        target: Clase por pixel ``(B, H, W)`` int. Los valores en ``[0,
-            num_classes)`` indexan ``prototypes``; ``ignore_index`` se descarta.
-        prototypes: Prototipos por clase ``(num_classes, D)``; idealmente ya
-            L2-normalizados (se renormalizan por robustez).
-        ignore_index: Valor de ``target`` a ignorar (Background/Void).
-        temperature: Temperatura ``tau`` del softmax InfoNCE (0.07, estandar
+        target: Per-pixel class ``(B, H, W)`` int. Values in ``[0,
+            num_classes)`` index ``prototypes``; ``ignore_index`` is discarded.
+        prototypes: Per-class prototypes ``(num_classes, D)``; ideally already
+            L2-normalized (renormalized for robustness).
+        ignore_index: Value of ``target`` to ignore (Background/Void).
+        temperature: Temperature ``tau`` of the InfoNCE softmax (0.07, standard
             CLIP/SimCLR).
-        max_pixels: Maximo de pixeles validos a muestrear por llamada.
-        generator: ``torch.Generator`` opcional para el muestreo determinista
-            (tests/smoke); si ``None`` usa el RNG global.
+        max_pixels: Maximum number of valid pixels to sample per call.
+        generator: Optional ``torch.Generator`` for deterministic sampling
+            (tests/smoke); if ``None`` uses the global RNG.
 
     Returns:
-        Loss escalar ``(L_v + L_s)/2``. Devuelve ``0.0`` (con grafo) si no hay
-        pixeles validos o si solo hay una clase presente (contraste indefinido).
+        Scalar loss ``(L_v + L_s)/2``. Returns ``0.0`` (with graph) if there are
+        no valid pixels or if only one class is present (undefined contrast).
     """
     if visual_proj.dim() != 4:
         raise ValueError(
-            f"visual_proj debe ser (B, D, H, W); se recibio {tuple(visual_proj.shape)}."
+            f"visual_proj must be (B, D, H, W); received {tuple(visual_proj.shape)}."
         )
     num_classes, dim = prototypes.shape
     device = visual_proj.device
 
-    # (B, D, H, W) -> (B*H*W, D) y target -> (B*H*W,)
+    # (B, D, H, W) -> (B*H*W, D) and target -> (B*H*W,)
     feats = visual_proj.permute(0, 2, 3, 1).reshape(-1, dim)  # (P, D)
     labels = target.reshape(-1).to(device)  # (P,)
 
@@ -217,7 +217,7 @@ def phenology_contrastive_loss(
     feats = feats[valid]
     labels = labels[valid].long()
 
-    # Submuestreo estocastico para acotar memoria.
+    # Stochastic subsampling to bound memory.
     n_valid = feats.shape[0]
     if n_valid > max_pixels:
         perm = torch.randperm(n_valid, device=device, generator=generator)
@@ -225,29 +225,29 @@ def phenology_contrastive_loss(
         feats = feats[idx]
         labels = labels[idx]
 
-    # Contraste indefinido con una sola clase presente.
+    # Contrast undefined with a single class present.
     if labels.unique().numel() < 2:
         return visual_proj.sum() * 0.0
 
     feats = F.normalize(feats, p=2, dim=-1)  # (S, D)
     protos = F.normalize(prototypes.to(device), p=2, dim=-1)  # (K, D)
 
-    # Logits pixel-prototipo: (S, K).
+    # Pixel-prototype logits: (S, K).
     logits = (feats @ protos.t()) / temperature
 
-    # --- L_v: visual -> semantico (clasificacion del pixel a su prototipo) ---
+    # --- L_v: visual -> semantic (classify the pixel to its prototype) ---
     loss_v = F.cross_entropy(logits, labels)
 
-    # --- L_s: semantico -> visual (cada prototipo presente atrae sus pixeles) -
-    # Transpuesta: (K, S). Para cada clase presente, los positivos son los
-    # pixeles de esa clase; se usa log-mean-exp de los positivos (multi-positivo
-    # estilo InfoNCE supervisado, robusto al numero variable de positivos).
+    # --- L_s: semantic -> visual (each present prototype attracts its pixels) -
+    # Transpose: (K, S). For each present class, the positives are the
+    # pixels of that class; log-mean-exp of the positives is used (multi-positive
+    # supervised-InfoNCE style, robust to the variable number of positives).
     logits_s = logits.t()  # (K, S)
-    log_prob_s = F.log_softmax(logits_s, dim=1)  # (K, S) sobre los pixeles
+    log_prob_s = F.log_softmax(logits_s, dim=1)  # (K, S) over the pixels
     present = torch.unique(labels)
     pos_mask = present.unsqueeze(1) == labels.unsqueeze(0)  # (K_present, S)
     log_prob_present = log_prob_s[present]  # (K_present, S)
-    # Media de log-prob sobre los pixeles positivos de cada clase presente.
+    # Mean log-prob over the positive pixels of each present class.
     pos_counts = pos_mask.sum(dim=1).clamp(min=1)  # (K_present,)
     pos_log_prob = (log_prob_present * pos_mask).sum(dim=1) / pos_counts
     loss_s = -pos_log_prob.mean()
@@ -255,10 +255,10 @@ def phenology_contrastive_loss(
     return 0.5 * (loss_v + loss_s)
 
 
-# TODO(post-Avance): rama de texto con GCN sobre keywords fenologicos (Wen et al.
-# 2025, §3.2). El paper construye un grafo sobre los terminos fenologicos
-# extraidos de las descripciones (siembra/emergencia/pico/senescencia/cosecha) y
-# propaga con una GCN antes de la proyeccion, en lugar de la lineal directa de
-# :class:`PhenoSemanticBranch`. Aqui se usa la proyeccion lineal por simplicidad
-# y por mantener el entrenamiento viable en la ventana L4; el GCN es una mejora
-# de fidelidad al paper que no bloquea el Avance (riesgo/beneficio diferido).
+# TODO(post-Avance): text branch with a GCN over phenological keywords (Wen et al.
+# 2025, §3.2). The paper builds a graph over the phenological terms extracted from
+# the descriptions (sowing/emergence/peak/senescence/harvest) and propagates with
+# a GCN before the projection, instead of the direct linear layer of
+# :class:`PhenoSemanticBranch`. Here the linear projection is used for simplicity
+# and to keep training viable within the L4 window; the GCN is a paper-fidelity
+# improvement that does not block the Avance (deferred risk/benefit trade-off).

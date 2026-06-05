@@ -1,23 +1,23 @@
-"""Builder del notebook integrador Avance 4 (Equipo 17): los 6 modelos de segmentacion.
+"""Builder of the Avance 4 integrator notebook (Equipo 17): the 6 segmentation models.
 
-Genera ``notebooks/segmentation/Avance4.Equipo17.ipynb`` de forma programatica y
-reproducible (mismo patron que ``scripts/build_avance3_notebook.py``). Es el
-entregable consolidado de la rubrica del Avance 4: consume los parquets
-comparativos que cada integrante exporta
-(``reports/segmentation/model_comparison_avance4_*.parquet``), construye la tabla
-de los 6 modelos ordenada por la metrica principal (mIoU), selecciona el top-2,
-documenta el ajuste fino (Optuna) y la eleccion del modelo individual final.
+Generates ``notebooks/segmentation/Avance4.Equipo17.ipynb`` programmatically and
+reproducibly (same pattern as ``scripts/build_avance3_notebook.py``). It is the
+consolidated deliverable of the Avance 4 rubric: it consumes the comparison
+parquets that each team member exports
+(``reports/segmentation/model_comparison_avance4_*.parquet``), builds the table of
+the 6 models sorted by the main metric (mIoU), selects the top-2, documents the
+fine-tuning (Optuna) and the choice of the final individual model.
 
-El notebook es un **esqueleto funcional**: degrada con elegancia mostrando solo
-los parquets disponibles (hoy: los modelos #1/#6 de Aaron). A medida que Arthur e
-Isaac exporten los suyos (#2-#5), la tabla se completa sin tocar el notebook.
+The notebook is a **functional skeleton**: it degrades gracefully showing only the
+available parquets (today: Aaron's models #1/#6). As Arthur and Isaac export theirs
+(#2-#5), the table is completed without touching the notebook.
 
-Uso::
+Usage::
 
     poetry run python scripts/build_avance4_notebook.py \\
         --out notebooks/segmentation/Avance4.Equipo17.ipynb
 
-Operativo permanente (NO viola el anti-patron ``scripts/_*.py``).
+Permanent operational script (does NOT violate the ``scripts/_*.py`` anti-pattern).
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ _DEFAULT_OUT = Path("notebooks/segmentation/Avance4.Equipo17.ipynb")
 
 
 def _build_cells() -> list:
-    """Construye la lista de celdas (markdown + code) del notebook integrador."""
+    """Build the list of cells (markdown + code) of the integrator notebook."""
     md = nbf.v4.new_markdown_cell
     code = nbf.v4.new_code_cell
     cells = []
@@ -316,10 +316,10 @@ def _build_cells() -> list:
 def main(
     out: Annotated[Path, typer.Option(help="Ruta del notebook de salida.")] = _DEFAULT_OUT,
 ) -> None:
-    """Genera el notebook integrador del Avance 4.
+    """Generate the Avance 4 integrator notebook.
 
     Args:
-        out: Ruta destino del ``.ipynb``.
+        out: Destination path of the ``.ipynb``.
     """
     nb = nbf.v4.new_notebook()
     nb["cells"] = _build_cells()

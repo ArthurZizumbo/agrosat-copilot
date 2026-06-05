@@ -1,29 +1,29 @@
-"""Prototipos fenologicos por clase para la rama semantica de TSViT.
+"""Per-class phenological prototypes for the semantic branch of TSViT.
 
-Implementa el insumo del metodo de Wen et al. (2025), "Phenology
-Description is All You Need!" (ISPRS J. Photogrammetry RS 228): en lugar de
-una descripcion por parcela, se construye **una curva NDVI media por clase**
-de cultivo y se genera con un LLM (Gemini 3.5 Flash) la descripcion
-fenologica textual de cada clase. Estas 18 descripciones cubren el 100% de
-las clases (a diferencia del subset por-parcela 60x18 que cubre ~0.72% de
-los pixeles densos), por lo que son el insumo correcto para alinear por
-contraste las features visuales de la segmentacion densa con el prototipo
-semantico de la clase de cada pixel (paper Fig. 1, Tabla 2).
+Implements the input of the method by Wen et al. (2025), "Phenology
+Description is All You Need!" (ISPRS J. Photogrammetry RS 228): instead of
+a per-parcel description, a **mean NDVI curve per crop class** is built
+and an LLM (Gemini 3.5 Flash) generates the textual phenological
+description of each class. These 18 descriptions cover 100% of
+the classes (unlike the per-parcel 60x18 subset that covers ~0.72% of
+the dense pixels), so they are the correct input to contrastively align
+the visual features of dense segmentation with the semantic prototype
+of each pixel's class (paper Fig. 1, Table 2).
 
-Flujo:
-    1. ``compute_class_mean_ndvi_curves``: barre los patches PASTIS-R
-       ``DATA_S2/S2_*.npy``, calcula NDVI por pixel, lo agrupa por la clase
-       semantica del pixel (``ANNOTATIONS/TARGET_*.npy`` canal 0) y promedia
-       sobre una rejilla temporal regular indexada por DOY (las fechas de
-       adquisicion son irregulares por patch, de ``metadata.geojson``).
-    2. ``generate_class_prototypes``: por cada una de las 18 clases, llama a
+Flow:
+    1. ``compute_class_mean_ndvi_curves``: scans the PASTIS-R patches
+       ``DATA_S2/S2_*.npy``, computes NDVI per pixel, groups it by the
+       pixel's semantic class (``ANNOTATIONS/TARGET_*.npy`` channel 0) and
+       averages over a regular temporal grid indexed by DOY (the acquisition
+       dates are irregular per patch, from ``metadata.geojson``).
+    2. ``generate_class_prototypes``: for each of the 18 classes, calls
        :func:`ml.features.phenology_description.generate_phenology_description`
-       con la curva media y el nombre de clase como ``crop_type_hint``, luego
-       codifica el texto a un embedding con ``all-MiniLM-L6-v2`` (384-dim,
-       el mismo encoder que el pheno_text por-parcela existente).
+       with the mean curve and the class name as ``crop_type_hint``, then
+       encodes the text into an embedding with ``all-MiniLM-L6-v2`` (384-dim,
+       the same encoder as the existing per-parcel pheno_text).
 
-El output es ``data/features/phenology_class_prototypes_pastis.parquet`` con
-18 filas ``class_id, class_name, ndvi_curve, description, emb_000..emb_383``.
+The output is ``data/features/phenology_class_prototypes_pastis.parquet`` with
+18 rows ``class_id, class_name, ndvi_curve, description, emb_000..emb_383``.
 """
 
 from __future__ import annotations
@@ -48,33 +48,33 @@ _DEFAULT_OUTPUT = (
     _REPO_ROOT / "data" / "features" / "phenology_class_prototypes_pastis.parquet"
 )
 
-#: Indices de banda en los .npy PASTIS-R (orden estandar S2 de 10 bandas:
-#: B2,B3,B4,B5,B6,B7,B8,B8A,B11,B12). NDVI usa B4 (rojo) y B8 (NIR).
+#: Band indices in the PASTIS-R .npy files (standard 10-band S2 order:
+#: B2,B3,B4,B5,B6,B7,B8,B8A,B11,B12). NDVI uses B4 (red) and B8 (NIR).
 _BAND_B4 = 2
 _BAND_B8 = 6
 
-#: Numero de bins temporales regulares (DOY 1..365) sobre los que se
-#: promedia la curva. 37 coincide con la rejilla de 10 dias del paper Wen.
+#: Number of regular temporal bins (DOY 1..365) over which the curve is
+#: averaged. 37 matches the 10-day grid of the Wen paper.
 _N_TIME_BINS = 37
 
-#: Clases utiles: 1..18 (se excluye 0 Background y 19 Void). El prototipo se
-#: genera solo para los 18 cultivos del benchmark.
+#: Useful classes: 1..18 (excludes 0 Background and 19 Void). The prototype is
+#: generated only for the 18 benchmark crops.
 _CROP_CLASS_IDS: tuple[int, ...] = tuple(range(1, 19))
 
-#: Encoder de texto -> embedding 384-dim. Mismo modelo que el pheno_text
-#: por-parcela existente, para mantener coherencia del espacio semantico.
+#: Text encoder -> 384-dim embedding. Same model as the existing per-parcel
+#: pheno_text, to keep coherence of the semantic space.
 _SENTENCE_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 _EMB_DIM = 384
 
 
 def load_class_names(path: Path = _CLASS_MAP_PATH) -> dict[int, str]:
-    """Carga el mapa ``class_id -> nombre`` de las 18 clases PASTIS.
+    """Loads the ``class_id -> name`` map of the 18 PASTIS classes.
 
     Args:
-        path: Ruta al ``pastis_class_mapping.json``.
+        path: Path to ``pastis_class_mapping.json``.
 
     Returns:
-        Diccionario ``{1: "Meadow", 2: "Soft winter wheat", ...}``.
+        Dictionary ``{1: "Meadow", 2: "Soft winter wheat", ...}``.
     """
     data = json.loads(path.read_text(encoding="utf-8"))
     classes = data["classes"]
@@ -86,24 +86,24 @@ def load_class_names(path: Path = _CLASS_MAP_PATH) -> dict[int, str]:
 
 
 def _patch_dates_doy(metadata_path: Path) -> dict[int, np.ndarray]:
-    """Devuelve ``{patch_id: array de DOY (T,)}`` desde ``metadata.geojson``.
+    """Returns ``{patch_id: DOY array (T,)}`` from ``metadata.geojson``.
 
-    Las fechas vienen como enteros ``YYYYMMDD`` en el campo ``dates-S2``
-    (dict indexado por timestep). Se convierten a dia-del-anio (1..366).
+    The dates come as ``YYYYMMDD`` integers in the ``dates-S2`` field
+    (dict indexed by timestep). They are converted to day-of-year (1..366).
 
     Args:
-        metadata_path: Ruta a ``metadata.geojson``.
+        metadata_path: Path to ``metadata.geojson``.
 
     Returns:
-        Mapa de patch_id a vector de DOY alineado con el eje temporal del
-        ``.npy`` correspondiente.
+        Map from patch_id to a DOY vector aligned with the temporal axis of
+        the corresponding ``.npy``.
 
-    Nota:
-        Se parsea como JSON plano (``json.load``), NO con
-        ``geopandas.read_file``: solo se necesitan las fechas
-        (``properties.dates-S2``), no las geometrias Polygon. Cargar las
-        2433 geometrias con geopandas es ~100x mas lento y puede colgar el
-        proceso; el JSON crudo se lee en ~0.1s.
+    Note:
+        It is parsed as flat JSON (``json.load``), NOT with
+        ``geopandas.read_file``: only the dates are needed
+        (``properties.dates-S2``), not the Polygon geometries. Loading the
+        2433 geometries with geopandas is ~100x slower and may hang the
+        process; the raw JSON is read in ~0.1s.
     """
     geojson = json.loads(metadata_path.read_text(encoding="utf-8"))
     out: dict[int, np.ndarray] = {}
@@ -113,7 +113,7 @@ def _patch_dates_doy(metadata_path: Path) -> dict[int, np.ndarray]:
         dates_raw = props["dates-S2"]
         if isinstance(dates_raw, str):
             dates_raw = json.loads(dates_raw)
-        # Orden por indice del timestep (claves "0".."T-1").
+        # Order by timestep index (keys "0".."T-1").
         ymd = [int(dates_raw[str(i)]) for i in range(len(dates_raw))]
         doy = np.array([_ymd_to_doy(v) for v in ymd], dtype=np.int32)
         out[pid] = doy
@@ -121,7 +121,7 @@ def _patch_dates_doy(metadata_path: Path) -> dict[int, np.ndarray]:
 
 
 def _ymd_to_doy(ymd: int) -> int:
-    """Convierte un entero ``YYYYMMDD`` a dia-del-anio (1..366)."""
+    """Converts a ``YYYYMMDD`` integer to day-of-year (1..366)."""
     from datetime import date
 
     year = ymd // 10000
@@ -136,28 +136,28 @@ def compute_class_mean_ndvi_curves(
     n_time_bins: int = _N_TIME_BINS,
     max_patches: int | None = None,
 ) -> dict[int, np.ndarray]:
-    """Calcula la curva NDVI media por clase sobre una rejilla DOY regular.
+    """Computes the mean NDVI curve per class over a regular DOY grid.
 
-    Para cada patch carga ``S2_<pid>.npy`` ``(T,10,H,W)`` y la mascara
-    semantica ``TARGET_<pid>.npy`` canal 0 ``(H,W)``. Calcula NDVI por
-    pixel-tiempo, acumula la suma y el conteo por clase en cada bin DOY, y al
-    final divide para obtener la media. Las reflectancias int16 se escalan a
-    [0,1] dividiendo por 10000 (escala S2 L2A).
+    For each patch it loads ``S2_<pid>.npy`` ``(T,10,H,W)`` and the
+    semantic mask ``TARGET_<pid>.npy`` channel 0 ``(H,W)``. It computes NDVI
+    per pixel-time, accumulates the sum and the count per class in each DOY
+    bin, and at the end divides to obtain the mean. The int16 reflectances are
+    scaled to [0,1] by dividing by 10000 (S2 L2A scale).
 
     Args:
-        pastis_root: Raiz del dataset PASTIS-R.
-        n_time_bins: Numero de bins DOY regulares (1..365).
-        max_patches: Si se indica, limita el barrido (para smoke/tests).
+        pastis_root: Root of the PASTIS-R dataset.
+        n_time_bins: Number of regular DOY bins (1..365).
+        max_patches: If given, limits the scan (for smoke/tests).
 
     Returns:
-        ``{class_id: curva (n_time_bins,)}`` con NaN en bins sin observacion.
+        ``{class_id: curve (n_time_bins,)}`` with NaN in bins without observation.
     """
     s2_dir = pastis_root / "DATA_S2"
     ann_dir = pastis_root / "ANNOTATIONS"
     dates_by_patch = _patch_dates_doy(pastis_root / "metadata.geojson")
 
     bin_edges = np.linspace(1, 366, n_time_bins + 1)
-    # Acumuladores por clase: suma y conteo en cada bin temporal.
+    # Per-class accumulators: sum and count in each temporal bin.
     sums = {c: np.zeros(n_time_bins, dtype=np.float64) for c in _CROP_CLASS_IDS}
     counts = {c: np.zeros(n_time_bins, dtype=np.int64) for c in _CROP_CLASS_IDS}
 
@@ -171,22 +171,22 @@ def compute_class_mean_ndvi_curves(
         if doy is None:
             continue
         s2 = np.load(s2_path).astype(np.float32) / 10000.0  # (T,10,H,W)
-        target = np.load(ann_dir / f"TARGET_{pid}.npy")[0]  # (H,W) semantica
+        target = np.load(ann_dir / f"TARGET_{pid}.npy")[0]  # (H,W) semantic
         b4 = s2[:, _BAND_B4]  # (T,H,W)
         b8 = s2[:, _BAND_B8]
         denom = b8 + b4
         with np.errstate(divide="ignore", invalid="ignore"):
             ndvi = np.where(denom > 1e-6, (b8 - b4) / denom, np.nan)  # (T,H,W)
-        # NDVI valido en [-1, 1]; valores fuera de rango son artefactos de
-        # nubes/sombras o denominador casi-cero (no enmascarados en PASTIS).
+        # NDVI valid in [-1, 1]; out-of-range values are artifacts of
+        # clouds/shadows or a near-zero denominator (not masked in PASTIS).
         ndvi = np.where(np.abs(ndvi) <= 1.0, ndvi, np.nan)
         bin_idx = np.clip(np.digitize(doy, bin_edges) - 1, 0, n_time_bins - 1)
         for c in _CROP_CLASS_IDS:
             class_mask = target == c  # (H,W)
             if not class_mask.any():
                 continue
-            # NDVI medio de la clase en cada timestep -> (T,)
-            ndvi_class = ndvi[:, class_mask]  # (T, n_pix_clase)
+            # Mean NDVI of the class at each timestep -> (T,)
+            ndvi_class = ndvi[:, class_mask]  # (T, n_pix_class)
             per_t = np.nanmean(ndvi_class, axis=1)  # (T,)
             valid = np.isfinite(per_t)
             np.add.at(sums[c], bin_idx[valid], per_t[valid])
@@ -207,15 +207,15 @@ def compute_class_mean_ndvi_curves(
 
 
 def _encode_descriptions(descriptions: Sequence[str]) -> np.ndarray:
-    """Codifica una lista de descripciones a embeddings 384-dim L2-norm.
+    """Encodes a list of descriptions into L2-norm 384-dim embeddings.
 
-    Usa ``all-MiniLM-L6-v2`` (mismo encoder que el pheno_text por-parcela).
+    Uses ``all-MiniLM-L6-v2`` (same encoder as the per-parcel pheno_text).
 
     Args:
-        descriptions: Lista de textos.
+        descriptions: List of texts.
 
     Returns:
-        Matriz ``(len, 384)`` float32, L2-normalizada por fila.
+        ``(len, 384)`` float32 matrix, L2-normalized per row.
     """
     from sentence_transformers import SentenceTransformer
 
@@ -236,22 +236,22 @@ def generate_class_prototypes(
     n_time_bins: int = _N_TIME_BINS,
     max_patches: int | None = None,
 ) -> Path:
-    """Genera los 18 prototipos fenologicos por clase y los persiste.
+    """Generates the 18 per-class phenological prototypes and persists them.
 
-    Pipeline completo: curva NDVI media por clase -> descripcion Gemini por
-    clase (prompt 3-bloques Wen et al. Fig. 2, con el nombre de clase como
-    ``crop_type_hint``) -> embedding 384-dim. Cobertura 100% de las 18
-    clases.
+    Full pipeline: mean NDVI curve per class -> per-class Gemini description
+    (3-block prompt Wen et al. Fig. 2, with the class name as
+    ``crop_type_hint``) -> 384-dim embedding. 100% coverage of the 18
+    classes.
 
     Args:
-        pastis_root: Raiz PASTIS-R.
-        output_path: Parquet de salida (18 filas).
-        model: Modelo LLM para las descripciones.
-        n_time_bins: Bins DOY de la curva media.
-        max_patches: Limita el barrido NDVI (smoke/tests).
+        pastis_root: PASTIS-R root.
+        output_path: Output parquet (18 rows).
+        model: LLM model for the descriptions.
+        n_time_bins: DOY bins of the mean curve.
+        max_patches: Limits the NDVI scan (smoke/tests).
 
     Returns:
-        ``Path`` del parquet escrito con columnas ``class_id, class_name,
+        ``Path`` of the written parquet with columns ``class_id, class_name,
         ndvi_curve (list), description, emb_000..emb_383``.
     """
     from ml.features.phenology_description import (
@@ -262,7 +262,7 @@ def generate_class_prototypes(
     curves = compute_class_mean_ndvi_curves(
         pastis_root, n_time_bins=n_time_bins, max_patches=max_patches
     )
-    # DOY representativo de cada bin (centro), para pasar al generador.
+    # Representative DOY of each bin (center), to pass to the generator.
     bin_edges = np.linspace(1, 366, n_time_bins + 1)
     bin_doy = ((bin_edges[:-1] + bin_edges[1:]) / 2).astype(np.int32)
 
@@ -309,17 +309,17 @@ def generate_class_prototypes(
 def load_class_prototype_embeddings(
     path: Path = _DEFAULT_OUTPUT,
 ) -> tuple[np.ndarray, list[int]]:
-    """Carga la matriz de prototipos ``(18, 384)`` y sus class_ids.
+    """Loads the prototype matrix ``(18, 384)`` and its class_ids.
 
-    Helper para el entrenamiento de TSViT: el modelo indexa esta matriz por
-    la clase de cada pixel para obtener el prototipo semantico objetivo de la
-    alineacion contrastiva.
+    Helper for TSViT training: the model indexes this matrix by
+    each pixel's class to obtain the target semantic prototype of the
+    contrastive alignment.
 
     Args:
-        path: Parquet de prototipos.
+        path: Prototypes parquet.
 
     Returns:
-        ``(prototypes (18,384) float32, class_ids ordenados)``.
+        ``(prototypes (18,384) float32, sorted class_ids)``.
     """
     df = pl.read_parquet(path)
     emb_cols = [f"emb_{j:03d}" for j in range(_EMB_DIM)]

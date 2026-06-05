@@ -1,18 +1,18 @@
-"""Metodos de EDA y feature engineering derivados de la literatura academica.
+"""EDA and feature engineering methods derived from academic literature.
 
-Este modulo traduce a codigo reproducible Polars/sklearn siete metodos
-extraidos de la lectura completa de cuatro papers de teledeteccion agricola.
-Cada funcion publica cita su fuente (autor + arXiv ID / DOI) en el docstring.
+This module translates into reproducible Polars/sklearn code seven methods
+extracted from the full reading of four agricultural remote sensing papers.
+Each public function cites its source (author + arXiv ID / DOI) in the docstring.
 
-Papers de referencia
---------------------
+Reference papers
+----------------
 - Paper A: Russwurm, M., Korner, M. (2018). *Multi-Temporal Land Cover
   Classification with Sequential Recurrent Encoders*. ISPRS International
-  Journal of Geo-Information 7(4):129. arXiv:1802.02080. (Provisto por el
+  Journal of Geo-Information 7(4):129. arXiv:1802.02080. (Provided by the
   sponsor.)
 - Paper B: Tarasiou, M., Guler, R.A., Zafeiriou, S. (2021). *Context-self
   contrastive pretraining for crop type semantic segmentation*. IEEE TGRS.
-  arXiv:2104.04310. (Provisto por el sponsor.)
+  arXiv:2104.04310. (Provided by the sponsor.)
 - Paper C: *Phenology-Aware Transformer (PVM)* (2025). Remote Sensing
   17(14):2346. DOI 10.3390/rs17142346.
 - Paper D: Qin, R. et al. (2025). *Spatiotemporal masked pre-training for
@@ -20,13 +20,12 @@ Papers de referencia
   (STCLN)*. International Journal of Applied Earth Observation and
   Geoinformation.
 
-Convencion Polars
+Polars convention
 -----------------
-Todas las funciones publicas reciben/devuelven :class:`polars.DataFrame` o
-estructuras nativas de Python; ``numpy`` aparece unicamente de forma interna
-en el borde tecnico de ``scipy``/``sklearn`` o al operar sobre los tensores
-``.npy`` crudos de PASTIS-R. Se usa ``structlog`` para logging estructurado,
-nunca ``print``.
+All public functions receive/return :class:`polars.DataFrame` or native
+Python structures; ``numpy`` appears only internally at the technical boundary
+of ``scipy``/``sklearn`` or when operating on the raw PASTIS-R ``.npy``
+tensors. ``structlog`` is used for structured logging, never ``print``.
 """
 
 from __future__ import annotations
@@ -53,11 +52,11 @@ __all__ = [
 
 
 # ---------------------------------------------------------------------------
-# Constantes
+# Constants
 # ---------------------------------------------------------------------------
 
-#: Nombres canonicos de las 4 fases fenologicas (Paper C, PVM crop-growth
-#: calendar). El orden coincide con el indice ``growth_stage`` 0..3.
+#: Canonical names of the 4 phenological stages (Paper C, PVM crop-growth
+#: calendar). The order matches the ``growth_stage`` index 0..3.
 _PHENOLOGY_STAGE_NAMES: tuple[str, ...] = (
     "dormant",
     "green_up",
@@ -65,27 +64,27 @@ _PHENOLOGY_STAGE_NAMES: tuple[str, ...] = (
     "senescence",
 )
 
-#: Tolerancia en dias para considerar que un dia del ano esta "cubierto" por
-#: una observacion satelital (Paper A, analisis de revisita irregular).
+#: Tolerance in days to consider that a day of the year is "covered" by
+#: a satellite observation (Paper A, irregular revisit analysis).
 _DOY_COVERAGE_TOLERANCE_DAYS: int = 15
 
 
 # ---------------------------------------------------------------------------
-# Helpers privados
+# Private helpers
 # ---------------------------------------------------------------------------
 
 
 def _to_numpy(values: Sequence[Any] | np.ndarray) -> np.ndarray:
-    """Convierte una secuencia o array a ``np.ndarray`` 1D.
+    """Convert a sequence or array to a 1D ``np.ndarray``.
 
-    Borde tecnico para entrar a ``scipy``/``sklearn``. Si ``values`` ya es
-    un ``np.ndarray`` se devuelve sin copia.
+    Technical boundary to enter ``scipy``/``sklearn``. If ``values`` is
+    already an ``np.ndarray`` it is returned without copy.
 
     Args:
-        values: Secuencia de Python o ``np.ndarray``.
+        values: Python sequence or ``np.ndarray``.
 
     Returns:
-        ``np.ndarray`` resultante (no necesariamente 1D si la entrada es
+        Resulting ``np.ndarray`` (not necessarily 1D if the input is
         multidimensional).
     """
     if isinstance(values, np.ndarray):
@@ -94,30 +93,30 @@ def _to_numpy(values: Sequence[Any] | np.ndarray) -> np.ndarray:
 
 
 def _neighbourhood_varies(window: np.ndarray) -> bool:
-    """Indica si una ventana NxN contiene mas de un valor distinto.
+    """Indicate whether an NxN window contains more than one distinct value.
 
-    Helper de :func:`boundary_pixel_mask`. Un pixel es frontera (Paper B,
-    Tarasiou et al. 2021) cuando no todas las ground truths de su vecindario
-    comparten el mismo valor.
+    Helper of :func:`boundary_pixel_mask`. A pixel is a boundary (Paper B,
+    Tarasiou et al. 2021) when not all the ground truths of its neighborhood
+    share the same value.
 
     Args:
-        window: Sub-array 2D de la mascara semantica.
+        window: 2D sub-array of the semantic mask.
 
     Returns:
-        ``True`` si la ventana tiene al menos dos valores distintos.
+        ``True`` if the window has at least two distinct values.
     """
     return bool(np.unique(window).size > 1)
 
 
 def _doy_from_yyyymmdd(date_int: int) -> int:
-    """Convierte un entero ``YYYYMMDD`` a day-of-year (1..366).
+    """Convert a ``YYYYMMDD`` integer to day-of-year (1..366).
 
     Args:
-        date_int: Fecha como entero ``YYYYMMDD`` (formato ``dates-S2`` de
-            PASTIS-R).
+        date_int: Date as a ``YYYYMMDD`` integer (PASTIS-R ``dates-S2``
+            format).
 
     Returns:
-        Day-of-year en ``[1, 366]``. Si la fecha es invalida devuelve ``0``.
+        Day-of-year in ``[1, 366]``. If the date is invalid returns ``0``.
     """
     try:
         date_str = f"{int(date_int):08d}"
@@ -138,39 +137,39 @@ def boundary_pixel_mask(
     *,
     neighbourhood: int = 3,
 ) -> np.ndarray:
-    """Marca pixeles de frontera de parcela sobre una mascara semantica.
+    """Mark parcel boundary pixels over a semantic mask.
 
-    Implementa la definicion de frontera de Tarasiou et al. 2021 (Context-self
-    contrastive pretraining, arXiv:2104.04310): un pixel es frontera cuando
-    **no todas** las ground truths de su vecindario ``NxN`` comparten el mismo
-    valor. El paper muestra (Fig. 2) que la varianza espectral de una parcela
-    proviene casi enteramente de estos pixeles de borde.
+    Implements the boundary definition of Tarasiou et al. 2021 (Context-self
+    contrastive pretraining, arXiv:2104.04310): a pixel is a boundary when
+    **not all** the ground truths of its ``NxN`` neighborhood share the same
+    value. The paper shows (Fig. 2) that the spectral variance of a parcel
+    comes almost entirely from these edge pixels.
 
     Args:
-        semantic: Mascara semantica 2D ``(H, W)`` con ids de clase por pixel
-            (canal ``TARGET[0]`` de PASTIS-R).
-        neighbourhood: Lado de la ventana cuadrada (default 3 -> vecindario
-            3x3). Debe ser impar y >= 3.
+        semantic: 2D semantic mask ``(H, W)`` with per-pixel class ids
+            (PASTIS-R ``TARGET[0]`` channel).
+        neighbourhood: Side of the square window (default 3 -> 3x3
+            neighborhood). Must be odd and >= 3.
 
     Returns:
-        Array booleano ``(H, W)`` con ``True`` en los pixeles de frontera.
+        Boolean array ``(H, W)`` with ``True`` at the boundary pixels.
 
     Raises:
-        ValueError: Si ``semantic`` no es 2D o ``neighbourhood`` es par o < 3.
+        ValueError: If ``semantic`` is not 2D or ``neighbourhood`` is even or < 3.
     """
     arr = np.asarray(semantic)
     if arr.ndim != 2:
-        raise ValueError(f"semantic debe ser 2D (H, W); recibido ndim={arr.ndim}")
+        raise ValueError(f"semantic must be 2D (H, W); got ndim={arr.ndim}")
     if neighbourhood < 3 or neighbourhood % 2 == 0:
         raise ValueError(
-            f"neighbourhood debe ser impar y >= 3; recibido {neighbourhood}"
+            f"neighbourhood must be odd and >= 3; got {neighbourhood}"
         )
 
     h, w = arr.shape
     radius = neighbourhood // 2
     mask = np.zeros((h, w), dtype=bool)
 
-    # Padding por replicacion del borde para no introducir falsos contornos.
+    # Edge-replication padding to avoid introducing false contours.
     padded = np.pad(arr, radius, mode="edge")
     for i in range(h):
         for j in range(w):
@@ -198,36 +197,37 @@ def boundary_interior_stats(
     band_index: int = 6,
     neighbourhood: int = 3,
 ) -> pl.DataFrame:
-    """Estadisticos espectrales por grupo interior / frontera / exterior.
+    """Spectral statistics per interior / boundary / exterior group.
 
-    Reproduce el analisis de la Figura 2 de Tarasiou et al. 2021
-    (arXiv:2104.04310): clasifica cada pixel de un patch PASTIS-R en uno de
-    tres grupos a partir de la mascara semantica y reporta descriptivos de la
-    banda elegida. El paper demuestra que los pixeles interiores son
-    homogeneos y que la dispersion espectral vive en la frontera.
+    Reproduces the analysis of Figure 2 of Tarasiou et al. 2021
+    (arXiv:2104.04310): classifies each pixel of a PASTIS-R patch into one of
+    three groups from the semantic mask and reports descriptive statistics of
+    the chosen band. The paper demonstrates that interior pixels are
+    homogeneous and that the spectral dispersion lives at the boundary.
 
-    Definicion de grupos:
-        - ``exterior``: pixeles de fondo (clase 0).
-        - ``boundary``: pixeles cuyo vecindario ``NxN`` no es homogeneo
-          (ver :func:`boundary_pixel_mask`).
-        - ``interior``: pixeles de parcela (clase > 0) no fronterizos.
+    Group definition:
+        - ``exterior``: background pixels (class 0).
+        - ``boundary``: pixels whose ``NxN`` neighborhood is not homogeneous
+          (see :func:`boundary_pixel_mask`).
+        - ``interior``: parcel pixels (class > 0) that are not boundary.
 
     Args:
-        patch: Diccionario de patch PASTIS-R tal como lo devuelve
-            ``ml.ingest.pastis_loader.load_pastis_patch`` (keys ``s2`` con
-            shape ``(T, 10, H, W)`` y ``semantic`` con shape ``(H, W)``).
-        band_index: Indice de banda Sentinel-2 a analizar (default 6 = B08
-            NIR, la banda usada en la Fig. 2 del paper).
-        neighbourhood: Lado de la ventana para detectar fronteras (default 3).
+        patch: PASTIS-R patch dictionary as returned by
+            ``ml.ingest.pastis_loader.load_pastis_patch`` (keys ``s2`` with
+            shape ``(T, 10, H, W)`` and ``semantic`` with shape ``(H, W)``).
+        band_index: Sentinel-2 band index to analyze (default 6 = B08
+            NIR, the band used in Fig. 2 of the paper).
+        neighbourhood: Side of the window to detect boundaries (default 3).
 
     Returns:
-        :class:`polars.DataFrame` con una fila por grupo y columnas
-        ``group, mean, std, p25, p50, p75, count``. La banda se promedia
-        temporalmente sobre el eje ``T`` antes de calcular los descriptivos.
+        :class:`polars.DataFrame` with one row per group and columns
+        ``group, mean, std, p25, p50, p75, count``. The band is averaged
+        temporally over the ``T`` axis before computing the descriptive
+        statistics.
 
     Raises:
-        ValueError: Si ``patch`` carece de ``s2``/``semantic`` o ``band_index``
-            esta fuera de rango.
+        ValueError: If ``patch`` lacks ``s2``/``semantic`` or ``band_index``
+            is out of range.
     """
     schema: dict[str, Any] = {
         "group": pl.Utf8,
@@ -248,16 +248,16 @@ def boundary_interior_stats(
     s2_arr = np.asarray(s2, dtype=np.float64)
     if s2_arr.ndim != 4:
         raise ValueError(
-            f"patch['s2'] debe ser 4D (T, bands, H, W); recibido ndim={s2_arr.ndim}"
+            f"patch['s2'] must be 4D (T, bands, H, W); got ndim={s2_arr.ndim}"
         )
     n_bands = s2_arr.shape[1]
     if not 0 <= band_index < n_bands:
         raise ValueError(
-            f"band_index={band_index} fuera de rango [0, {n_bands - 1}]"
+            f"band_index={band_index} out of range [0, {n_bands - 1}]"
         )
 
     semantic_arr = np.asarray(semantic)
-    # Promedio temporal de la banda elegida -> mapa 2D (H, W).
+    # Temporal average of the chosen band -> 2D map (H, W).
     band_map = s2_arr[:, band_index, :, :].mean(axis=0)
 
     boundary = boundary_pixel_mask(semantic_arr, neighbourhood=neighbourhood)
@@ -320,29 +320,29 @@ def compute_boundary_ratio(
     *,
     neighbourhood: int = 3,
 ) -> dict[int, float]:
-    """Calcula la fraccion de pixeles frontera por instancia de parcela.
+    """Compute the fraction of boundary pixels per parcel instance.
 
-    Feature nuevo por parcela motivado por Tarasiou et al. 2021
-    (arXiv:2104.04310): dado que el pixel de borde concentra la senal
-    discriminante, la razon ``pixeles_frontera / pixeles_totales`` de una
-    parcela es un descriptor de su geometria (parcelas pequenas o irregulares
-    tienen ratio alto; parcelas grandes y compactas ratio bajo).
+    New per-parcel feature motivated by Tarasiou et al. 2021
+    (arXiv:2104.04310): since the edge pixel concentrates the discriminant
+    signal, the ratio ``boundary_pixels / total_pixels`` of a parcel is a
+    descriptor of its geometry (small or irregular parcels have a high ratio;
+    large and compact parcels a low ratio).
 
-    Se documenta aqui (y no en ``ml/features/selection.py``) porque depende
-    directamente de :func:`boundary_pixel_mask` y opera sobre el tensor
-    crudo del patch PASTIS-R, no sobre el DataFrame wide-format de features
-    que consume ``selection.py``.
+    Documented here (and not in ``ml/features/selection.py``) because it
+    depends directly on :func:`boundary_pixel_mask` and operates on the raw
+    PASTIS-R patch tensor, not on the wide-format feature DataFrame consumed
+    by ``selection.py``.
 
     Args:
-        patch: Diccionario de patch PASTIS-R (``ml.ingest.pastis_loader.
-            load_pastis_patch``) con keys ``semantic`` y ``instance``
-            (canales ``TARGET[0]`` y ``TARGET[1]``).
-        neighbourhood: Lado de la ventana para detectar fronteras (default 3).
+        patch: PASTIS-R patch dictionary (``ml.ingest.pastis_loader.
+            load_pastis_patch``) with keys ``semantic`` and ``instance``
+            (channels ``TARGET[0]`` and ``TARGET[1]``).
+        neighbourhood: Side of the window to detect boundaries (default 3).
 
     Returns:
-        Diccionario ``{instance_id: boundary_ratio}`` con un float en
-        ``[0, 1]`` por instancia de parcela. La instancia 0 (fondo) se
-        excluye. Vacio si el patch no trae ``instance``.
+        Dictionary ``{instance_id: boundary_ratio}`` with a float in
+        ``[0, 1]`` per parcel instance. Instance 0 (background) is
+        excluded. Empty if the patch does not carry ``instance``.
     """
     semantic = patch.get("semantic")
     instance = patch.get("instance")
@@ -358,7 +358,7 @@ def compute_boundary_ratio(
     for inst_id in np.unique(instance_arr):
         iid = int(inst_id)
         if iid == 0:
-            continue  # fondo
+            continue  # background
         inst_mask = instance_arr == inst_id
         total = int(inst_mask.sum())
         if total == 0:
@@ -380,29 +380,29 @@ def compute_boundary_ratio(
 
 
 def temporal_sampling_stats(dates: list[int]) -> dict[str, float | int]:
-    """Caracteriza la irregularidad de la revisita satelital.
+    """Characterize the irregularity of the satellite revisit.
 
-    Analisis derivado de Russwurm & Korner 2018 (arXiv:1802.02080), que
-    documenta como Sentinel-2 entrega adquisiciones con espaciado no uniforme
-    (huecos por cobertura nubosa) y trata estos huecos como ruido temporal.
-    Esta funcion cuantifica esa irregularidad para una serie concreta.
+    Analysis derived from Russwurm & Korner 2018 (arXiv:1802.02080), which
+    documents how Sentinel-2 delivers acquisitions with non-uniform spacing
+    (gaps due to cloud cover) and treats these gaps as temporal noise.
+    This function quantifies that irregularity for a specific series.
 
     Args:
-        dates: Lista de fechas de adquisicion como enteros ``YYYYMMDD``
-            (formato ``dates-S2`` de PASTIS-R). El orden interno no importa;
-            se ordena antes de calcular gaps.
+        dates: List of acquisition dates as ``YYYYMMDD`` integers
+            (PASTIS-R ``dates-S2`` format). The internal order does not matter;
+            it is sorted before computing gaps.
 
     Returns:
-        Diccionario con:
-            - ``n_obs``: numero de observaciones.
-            - ``mean_gap_days``: gap medio entre adquisiciones consecutivas.
-            - ``max_gap_days``: gap maximo.
-            - ``min_gap_days``: gap minimo.
-            - ``std_gap_days``: desviacion estandar de los gaps.
-            - ``doy_coverage``: fraccion del ano (0..1) con al menos una
-              observacion dentro de +/- 15 dias.
-        Si ``dates`` tiene menos de 2 fechas validas, los campos de gap son
-        ``0.0`` y ``doy_coverage`` se calcula con las fechas disponibles.
+        Dictionary with:
+            - ``n_obs``: number of observations.
+            - ``mean_gap_days``: mean gap between consecutive acquisitions.
+            - ``max_gap_days``: maximum gap.
+            - ``min_gap_days``: minimum gap.
+            - ``std_gap_days``: standard deviation of the gaps.
+            - ``doy_coverage``: fraction of the year (0..1) with at least one
+              observation within +/- 15 days.
+        If ``dates`` has fewer than 2 valid dates, the gap fields are
+        ``0.0`` and ``doy_coverage`` is computed with the available dates.
     """
     valid = [int(d) for d in dates if int(d) > 0]
     n_obs = len(valid)
@@ -417,11 +417,11 @@ def temporal_sampling_stats(dates: list[int]) -> dict[str, float | int]:
     if n_obs == 0:
         return base
 
-    # Day-of-year de cada adquisicion para la cobertura anual.
+    # Day-of-year of each acquisition for the annual coverage.
     doys = sorted(d for d in (_doy_from_yyyymmdd(v) for v in valid) if d > 0)
 
     if n_obs >= 2:
-        # Gaps en dias calendario absolutos (no DOY, para cruzar anios).
+        # Gaps in absolute calendar days (not DOY, to cross years).
         ordered = sorted(valid)
         days = np.array(
             [
@@ -440,7 +440,7 @@ def temporal_sampling_stats(dates: list[int]) -> dict[str, float | int]:
         base["min_gap_days"] = float(np.min(gaps))
         base["std_gap_days"] = float(np.std(gaps))
 
-    # Cobertura: fraccion de los 365 dias del ano con observacion a <=15 dias.
+    # Coverage: fraction of the 365 days of the year with an observation at <=15 days.
     if doys:
         doy_arr = np.array(doys, dtype=np.int64)
         all_days = np.arange(1, 366)
@@ -469,32 +469,32 @@ def confusion_symmetry_analysis(
     *,
     class_names: dict[int, str] | None = None,
 ) -> pl.DataFrame:
-    """Descompone la matriz de confusion en componentes simetrica/asimetrica.
+    """Decompose the confusion matrix into symmetric/asymmetric components.
 
-    Russwurm & Korner 2018 (arXiv:1802.02080) distinguen dos tipos de
-    confusion entre clases: las **simetricas** (p. ej. triticale<->centeno)
-    delatan similitud espectral/fenologica, mientras que las **asimetricas**
-    apuntan a factores externos (desbalance de clases, errores de
-    anotacion). Para cada par de clases ``(i, j)`` esta funcion calcula:
+    Russwurm & Korner 2018 (arXiv:1802.02080) distinguish two types of
+    confusion between classes: the **symmetric** ones (e.g. triticale<->rye)
+    reveal spectral/phenological similarity, while the **asymmetric** ones
+    point to external factors (class imbalance, annotation errors). For each
+    pair of classes ``(i, j)`` this function computes:
 
-        - componente simetrica: ``min(C[i, j], C[j, i])``.
-        - componente asimetrica: ``abs(C[i, j] - C[j, i])``.
+        - symmetric component: ``min(C[i, j], C[j, i])``.
+        - asymmetric component: ``abs(C[i, j] - C[j, i])``.
 
     Args:
-        y_true: Vector de etiquetas verdaderas.
-        y_pred: Vector de etiquetas predichas (misma longitud que ``y_true``).
-        class_names: Mapeo opcional ``{class_id: nombre}`` para etiquetar el
-            resultado de forma legible.
+        y_true: Vector of true labels.
+        y_pred: Vector of predicted labels (same length as ``y_true``).
+        class_names: Optional mapping ``{class_id: name}`` to label the
+            result in a readable way.
 
     Returns:
-        :class:`polars.DataFrame` con columnas ``class_a, class_b, symmetric,
-        asymmetric, interpretation`` ordenado por confusion total
-        (``symmetric + asymmetric``) descendente. ``interpretation`` es
-        ``"spectral_similarity"`` cuando la componente simetrica domina, o
-        ``"external_factor"`` en caso contrario.
+        :class:`polars.DataFrame` with columns ``class_a, class_b, symmetric,
+        asymmetric, interpretation`` sorted by total confusion
+        (``symmetric + asymmetric``) descending. ``interpretation`` is
+        ``"spectral_similarity"`` when the symmetric component dominates, or
+        ``"external_factor"`` otherwise.
 
     Raises:
-        ValueError: Si ``y_true`` e ``y_pred`` tienen longitudes distintas.
+        ValueError: If ``y_true`` and ``y_pred`` have different lengths.
     """
     schema: dict[str, Any] = {
         "class_a": pl.Utf8,
@@ -507,7 +507,7 @@ def confusion_symmetry_analysis(
     yp = _to_numpy(y_pred).astype(np.int64).ravel()
     if yt.size != yp.size:
         raise ValueError(
-            f"y_true y_pred deben tener igual longitud; {yt.size} != {yp.size}"
+            f"y_true and y_pred must have equal length; {yt.size} != {yp.size}"
         )
     if yt.size == 0:
         return pl.DataFrame(schema=schema)
@@ -574,31 +574,31 @@ def aggregate_rare_classes(
     min_count: int = 400,
     other_label: int = -1,
 ) -> tuple[pl.Series, dict[Any, Any]]:
-    """Colapsa clases poco frecuentes en una unica etiqueta agregada.
+    """Collapse infrequent classes into a single aggregated label.
 
-    Russwurm & Korner 2018 (arXiv:1802.02080) reportan una distribucion de
-    clases muy desbalanceada (maiz 919k px vs guisantes 6k px) y agregan las
-    clases poco frecuentes aplicando un umbral de conteo ("classes occurring
-    >= 400 times"), reduciendo ~200 etiquetas a 17. Esta funcion replica esa
-    estrategia: las clases con menos de ``min_count`` ocurrencias se reasignan
-    a ``other_label``.
+    Russwurm & Korner 2018 (arXiv:1802.02080) report a very imbalanced class
+    distribution (maize 919k px vs peas 6k px) and aggregate the infrequent
+    classes applying a count threshold ("classes occurring >= 400 times"),
+    reducing ~200 labels to 17. This function replicates that strategy: the
+    classes with fewer than ``min_count`` occurrences are reassigned to
+    ``other_label``.
 
     Args:
-        y: Serie Polars con las etiquetas de clase (entera).
-        min_count: Umbral minimo de ocurrencias para conservar una clase
-            como categoria propia (default 400, valor del paper).
-        other_label: Etiqueta destino para las clases agregadas (default -1).
+        y: Polars Series with the class labels (integer).
+        min_count: Minimum occurrence threshold to keep a class as its own
+            category (default 400, the paper's value).
+        other_label: Target label for the aggregated classes (default -1).
 
     Returns:
-        Tupla ``(remapped_series, report)`` donde:
-            - ``remapped_series`` es la serie con las clases raras colapsadas
-              (mismo ``name`` que ``y``).
-            - ``report`` contiene ``{original_class: count}`` por cada clase
-              original mas la key ``"aggregated"`` con la lista de clases
-              colapsadas y ``"min_count"`` con el umbral usado.
+        Tuple ``(remapped_series, report)`` where:
+            - ``remapped_series`` is the series with the rare classes collapsed
+              (same ``name`` as ``y``).
+            - ``report`` contains ``{original_class: count}`` for each original
+              class plus the key ``"aggregated"`` with the list of collapsed
+              classes and ``"min_count"`` with the threshold used.
     """
-    # value_counts devuelve columnas [<name>, "count"]; la primera columna
-    # contiene los valores distintos, la segunda su frecuencia.
+    # value_counts returns columns [<name>, "count"]; the first column
+    # contains the distinct values, the second their frequency.
     vc = y.value_counts(sort=True)
     value_col = vc.columns[0]
     count_map: dict[int, int] = {
@@ -621,8 +621,8 @@ def aggregate_rare_classes(
     ]
     remapped_series = pl.Series(y.name or "class", remapped, dtype=pl.Int64)
 
-    # El report mezcla claves int (conteo por clase) con claves str
-    # ("aggregated", "min_count", "other_label"), por eso el tipo es dict[Any, Any].
+    # The report mixes int keys (per-class count) with str keys
+    # ("aggregated", "min_count", "other_label"), hence the type is dict[Any, Any].
     report: dict[Any, Any] = {int(c): int(n) for c, n in count_map.items()}
     report["aggregated"] = aggregated
     report["min_count"] = int(min_count)
@@ -648,47 +648,47 @@ def phenology_calendar_features(
     doy_col: str = "peak_doy",
     n_stages: int = 4,
 ) -> pl.DataFrame:
-    """Deriva una etapa de crecimiento categorica desde un day-of-year.
+    """Derive a categorical growth stage from a day-of-year.
 
-    Inspirado en el "crop-growth calendar" del Phenology-Aware Transformer
-    (PVM, Remote Sensing 17(14):2346, 2025): el modelo codifica las etapas
-    fenologicas (siembra/crecimiento/pico/cosecha) como un vector indexado por
-    day-of-year y pondera la atencion temporal con esas pistas. Aqui se
-    construye una version EDA del concepto: el day-of-year de una metrica
-    fenologica se discretiza en ``n_stages`` etapas calendario.
+    Inspired by the "crop-growth calendar" of the Phenology-Aware Transformer
+    (PVM, Remote Sensing 17(14):2346, 2025): the model encodes the phenology
+    stages (sowing/growth/peak/harvest) as a vector indexed by day-of-year and
+    weights the temporal attention with those cues. Here an EDA version of the
+    concept is built: the day-of-year of a phenology metric is discretized into
+    ``n_stages`` calendar stages.
 
     Args:
-        temporal_df: DataFrame de features temporales que ya contiene la
-            columna ``doy_col`` (tipicamente ``peak_doy``, ``sog_doy`` o
-            ``senescence_doy`` producidas por
+        temporal_df: Temporal feature DataFrame that already contains the
+            ``doy_col`` column (typically ``peak_doy``, ``sog_doy`` or
+            ``senescence_doy`` produced by
             ``ml.features.temporal_features.extract_temporal_features``).
-        doy_col: Nombre de la columna de day-of-year a discretizar
+        doy_col: Name of the day-of-year column to discretize
             (default ``"peak_doy"``).
-        n_stages: Numero de etapas fenologicas (default 4 ->
-            ``dormant/green_up/peak/senescence``). El ano se parte en
-            ``n_stages`` intervalos iguales de DOY.
+        n_stages: Number of phenology stages (default 4 ->
+            ``dormant/green_up/peak/senescence``). The year is split into
+            ``n_stages`` equal DOY intervals.
 
     Returns:
-        DataFrame original con dos columnas nuevas:
-            - ``growth_stage`` (Int64): indice de etapa en ``[0, n_stages-1]``.
-            - ``growth_stage_name`` (Utf8): nombre legible de la etapa.
-        Las filas con ``doy_col`` nulo reciben ``growth_stage = -1`` y
+        Original DataFrame with two new columns:
+            - ``growth_stage`` (Int64): stage index in ``[0, n_stages-1]``.
+            - ``growth_stage_name`` (Utf8): readable stage name.
+        Rows with null ``doy_col`` receive ``growth_stage = -1`` and
         ``growth_stage_name = "unknown"``.
 
     Raises:
-        ValueError: Si ``doy_col`` no existe en ``temporal_df`` o
+        ValueError: If ``doy_col`` does not exist in ``temporal_df`` or
             ``n_stages < 2``.
     """
     if doy_col not in temporal_df.columns:
         raise ValueError(
-            f"doy_col {doy_col!r} no presente en temporal_df.columns; "
-            f"disponibles: {temporal_df.columns}"
+            f"doy_col {doy_col!r} not present in temporal_df.columns; "
+            f"available: {temporal_df.columns}"
         )
     if n_stages < 2:
-        raise ValueError(f"n_stages debe ser >= 2; recibido {n_stages}")
+        raise ValueError(f"n_stages must be >= 2; got {n_stages}")
 
-    # Nombres de etapa: usa los canonicos cuando n_stages == 4, de lo
-    # contrario genera etiquetas genericas stage_0..stage_{n-1}.
+    # Stage names: use the canonical ones when n_stages == 4, otherwise
+    # generate generic labels stage_0..stage_{n-1}.
     if n_stages == len(_PHENOLOGY_STAGE_NAMES):
         stage_names = list(_PHENOLOGY_STAGE_NAMES)
     else:
@@ -736,39 +736,39 @@ def cloud_gap_robustness(
     mask_fractions: tuple[float, ...] = (0.0, 0.2, 0.4, 0.6),
     seed: int = 42,
 ) -> pl.DataFrame:
-    """Mide la deriva de features al simular huecos de nubes en la serie.
+    """Measure feature drift when simulating cloud gaps in the series.
 
-    Inspirado en el spatiotemporal masking de Qin et al. 2025 (STCLN, Int. J.
-    Applied Earth Obs. Geoinf.): el preentrenamiento enmascara parches
-    temporales de la serie de imagenes para aprender representaciones
-    robustas. Aqui se usa la misma idea como herramienta de EDA: se eliminan
-    fracciones crecientes de timesteps de una parcela, se re-ejecuta el
-    extractor de features temporales y se cuantifica cuanto se desplazan los
-    valores respecto al baseline sin enmascarar.
+    Inspired by the spatiotemporal masking of Qin et al. 2025 (STCLN, Int. J.
+    Applied Earth Obs. Geoinf.): the pretraining masks temporal patches of the
+    image series to learn robust representations. Here the same idea is used as
+    an EDA tool: increasing fractions of a parcel's timesteps are removed, the
+    temporal feature extractor is re-run, and how much the values shift with
+    respect to the unmasked baseline is quantified.
 
     Args:
-        temporal_extractor_callable: Funcion que recibe una serie temporal de
-            parcela (``xarray.DataArray`` con dims ``(time, band)``) y
-            devuelve un :class:`polars.DataFrame` de features (tipicamente
+        temporal_extractor_callable: Function that receives a parcel temporal
+            series (``xarray.DataArray`` with dims ``(time, band)``) and
+            returns a :class:`polars.DataFrame` of features (typically
             ``ml.features.temporal_features.extract_temporal_features``).
-        parcel_timeseries: Serie temporal de la parcela aceptada por
-            ``temporal_extractor_callable``. Debe exponer una dimension
-            ``time`` indexable via ``.isel(time=...)`` (contrato xarray).
-        mask_fractions: Fracciones de timesteps a eliminar. Debe incluir
-            ``0.0`` (baseline) como primer elemento para que la deriva sea
-            relativa a la serie completa.
-        seed: Semilla del generador aleatorio (reproducibilidad).
+        parcel_timeseries: Parcel temporal series accepted by
+            ``temporal_extractor_callable``. Must expose a ``time`` dimension
+            indexable via ``.isel(time=...)`` (xarray contract).
+        mask_fractions: Fractions of timesteps to remove. Must include
+            ``0.0`` (baseline) as the first element so the drift is
+            relative to the full series.
+        seed: Seed of the random generator (reproducibility).
 
     Returns:
-        :class:`polars.DataFrame` con columnas ``mask_fraction,
-        n_timesteps_kept, feature_name, value, drift_from_baseline``. Una fila
-        por (fraccion, feature numerico). ``drift_from_baseline`` es el valor
-        absoluto de la diferencia respecto al run con ``mask_fraction == 0``.
+        :class:`polars.DataFrame` with columns ``mask_fraction,
+        n_timesteps_kept, feature_name, value, drift_from_baseline``. One row
+        per (fraction, numeric feature). ``drift_from_baseline`` is the
+        absolute value of the difference with respect to the run with
+        ``mask_fraction == 0``.
 
     Notes:
-        Si una fraccion deja menos de 2 timesteps, esa fraccion se omite (el
-        extractor temporal requiere >= 2 puntos para interpolar). Solo se
-        rastrean columnas numericas distintas de ``parcel_id``/``year``.
+        If a fraction leaves fewer than 2 timesteps, that fraction is skipped
+        (the temporal extractor requires >= 2 points to interpolate). Only
+        numeric columns other than ``parcel_id``/``year`` are tracked.
     """
     schema: dict[str, Any] = {
         "mask_fraction": pl.Float64,
@@ -779,7 +779,7 @@ def cloud_gap_robustness(
     }
     rng = np.random.default_rng(seed)
 
-    # Numero total de timesteps de la serie.
+    # Total number of timesteps of the series.
     try:
         n_total = int(parcel_timeseries.sizes["time"])
     except (AttributeError, KeyError, TypeError):

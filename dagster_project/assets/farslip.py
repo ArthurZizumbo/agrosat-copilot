@@ -1,41 +1,41 @@
-"""Assets Dagster para US-017 — Bulk extraction de embeddings FarSLIP.
+"""Dagster assets for US-017 — Bulk extraction of FarSLIP embeddings.
 
-Materializa el asset downstream ``farslip_embeddings_italy`` particionado
-por ROI italiana. Para cada partition:
+Materializes the downstream asset ``farslip_embeddings_italy`` partitioned
+by Italian ROI. For each partition:
 
-1. Lee el manifest ``data/farslip_pairs/{roi}/manifest.parquet`` (output
-   del asset upstream ``sentinel2_crops_256``) con Polars.
-2. Instancia el ``FarSLIPExtractor`` cargando pesos student desde
-   ``gs://agrosat-models/farslip/farslip-clip-italy-v1/`` (cache local en
+1. Reads the manifest ``data/farslip_pairs/{roi}/manifest.parquet`` (output
+   of the upstream asset ``sentinel2_crops_256``) with Polars.
+2. Instantiates the ``FarSLIPExtractor`` loading student weights from
+   ``gs://agrosat-models/farslip/farslip-clip-italy-v1/`` (local cache in
    ``~/.cache/agrosat/farslip/``).
-3. Itera los crops en batches (default 32) y extrae embeddings 512-dim.
-4. Persiste a ``data/farslip_embeddings/{roi}/{year}/embeddings.parquet``
-   con schema ``{crop_id: str, embedding: list[float32], crop_doy: int,
+3. Iterates the crops in batches (default 32) and extracts 512-dim embeddings.
+4. Persists to ``data/farslip_embeddings/{roi}/{year}/embeddings.parquet``
+   with schema ``{crop_id: str, embedding: list[float32], crop_doy: int,
    cap_class: str}``.
 
-Lineage declarada vía ``deps=[sentinel2_crops_256]`` para que Dagster
-materialice automáticamente el upstream si no está fresco.
+Lineage declared via ``deps=[sentinel2_crops_256]`` so that Dagster
+automatically materializes the upstream if it is not fresh.
 
-Producción (NO disponible en CI ni dev local sin GCS creds):
-    Se inyectaría un ``GCSResource`` desde ``dagster_project/resources/``
-    para autenticar la descarga de pesos del Model Registry MLflow y
-    para persistir embeddings a ``gs://agrosat-features/farslip/`` vía
-    DVC remote. En US-017 el extractor gestiona GCS internamente
-    (cache local) — la inyección formal del resource queda para US-025.
+Production (NOT available in CI nor local dev without GCS creds):
+    A ``GCSResource`` would be injected from ``dagster_project/resources/``
+    to authenticate the download of weights from the MLflow Model Registry and
+    to persist embeddings to ``gs://agrosat-features/farslip/`` via
+    DVC remote. In US-017 the extractor manages GCS internally
+    (local cache) — the formal injection of the resource is left for US-025.
 
-Smoke / dev local:
-    Si ``FarSLIPExtractor`` falla porque GCS no es accesible (creds
-    ausentes, offline) la materialización devuelve un ``MaterializeResult``
-    con ``status="skipped_no_gcs"`` y warning — NO falla. Esto permite que
-    `make check` y la CI sin secrets GCS pasen el smoke de Dagster.
+Smoke / local dev:
+    If ``FarSLIPExtractor`` fails because GCS is not accessible (creds
+    absent, offline) the materialization returns a ``MaterializeResult``
+    with ``status="skipped_no_gcs"`` and a warning — it does NOT fail. This allows
+    `make check` and CI without GCS secrets to pass the Dagster smoke.
 
-Integración MLflow (documentada, no implementada en US-017):
-    El extractor lee el run ``farslip-clip-italy-v1`` del Model Registry
-    y aplica los tags ``data_version=farslip-pairs-italy-v1`` +
-    ``code_version=<git_sha>`` a los embeddings persistidos. Se podría
-    materializar también un MLflow run por asset para tracking explícito
-    del bulk extraction; en US-017 se difiere a US-025 cuando el cabezal
-    SegFormer consuma estos embeddings.
+MLflow integration (documented, not implemented in US-017):
+    The extractor reads the ``farslip-clip-italy-v1`` run from the Model Registry
+    and applies the tags ``data_version=farslip-pairs-italy-v1`` +
+    ``code_version=<git_sha>`` to the persisted embeddings. An MLflow run per
+    asset could also be materialized for explicit tracking
+    of the bulk extraction; in US-017 it is deferred to US-025 when the
+    SegFormer head consumes these embeddings.
 """
 
 from pathlib import Path
@@ -56,43 +56,43 @@ from dagster_project.assets.sentinel2_crops import (
 from ml.utils.gcs_errors import is_gcs_auth_error
 from ml.utils.git_meta import git_sha
 
-#: Dep externa al modelo destilado (US-022b-B B-5). Se importa por AssetKey en
-#: vez de symbol para evitar import circular con farslip_pipeline.py.
+#: External dep on the distilled model (US-022b-B B-5). Imported by AssetKey
+#: instead of symbol to avoid a circular import with farslip_pipeline.py.
 _FARSLIP_MODEL_KEY = AssetKey("farslip_clip_italy_v1")
 
-#: Rutas relativas al cwd. Persistencia particionada por ROI y año (anio
-#: derivado del manifest, no hardcoded — Q4 fix).
+#: Paths relative to the cwd. Persistence partitioned by ROI and year (year
+#: derived from the manifest, not hardcoded — Q4 fix).
 DATA_FARSLIP_EMBEDDINGS_DIR = Path("data/farslip_embeddings")
 
-#: URI del student FarSLIP en GCS (MLflow artifact + DVC tag).
-#: En CI sin creds GCS el extractor cae a cache local o lanza
-#: DefaultCredentialsError; en ese caso el asset reporta skipped.
+#: URI of the FarSLIP student in GCS (MLflow artifact + DVC tag).
+#: In CI without GCS creds the extractor falls back to local cache or raises
+#: DefaultCredentialsError; in that case the asset reports skipped.
 DEFAULT_WEIGHTS_URI = "gs://agrosat-models/farslip/farslip-clip-italy-v1/"
 
-#: Tag de version del banco de embeddings (DVC).
+#: Version tag of the embeddings bank (DVC).
 DATA_VERSION_TAG = "farslip-embeddings-italy-v1"
 
-#: Dimension del embedding student (CLIP ViT-B/16 projection head).
+#: Dimension of the student embedding (CLIP ViT-B/16 projection head).
 EMBEDDING_DIM = 512
 
-#: Tamano de batch para bulk extraction (cabe holgado en L4 24 GB).
+#: Batch size for bulk extraction (fits comfortably in L4 24 GB).
 EXTRACTION_BATCH_SIZE = 32
 
-#: Anio fallback si el manifest no expone ``crop_year``. Solo se usa cuando
-#: el manifest carece de la columna; los anios reales del manifest priman.
+#: Fallback year if the manifest does not expose ``crop_year``. Only used when
+#: the manifest lacks the column; the real years from the manifest take priority.
 FALLBACK_YEAR = 2024
 
 
 def _skipped_result(context: AssetExecutionContext, reason: str, roi: str) -> MaterializeResult:
-    """Construye un MaterializeResult de skip uniforme para fallos esperados.
+    """Builds a uniform skip MaterializeResult for expected failures.
 
     Args:
-        context: contexto Dagster para emitir warning.
-        reason: razon del skip (se incluye en metadata + log).
-        roi: partition key de la ROI activa.
+        context: Dagster context to emit a warning.
+        reason: skip reason (included in metadata + log).
+        roi: partition key of the active ROI.
 
     Returns:
-        MaterializeResult con ``status="skipped_no_gcs"`` y metadata util.
+        MaterializeResult with ``status="skipped_no_gcs"`` and useful metadata.
     """
     context.log.warning(
         "farslip_embeddings_italy roi=%s SKIPPED: %s",
@@ -126,20 +126,20 @@ def _skipped_result(context: AssetExecutionContext, reason: str, roi: str) -> Ma
     ),
 )
 def farslip_embeddings_italy(context: AssetExecutionContext) -> MaterializeResult:
-    """Materializa embeddings FarSLIP 512-dim por ROI italiana.
+    """Materializes 512-dim FarSLIP embeddings per Italian ROI.
 
     Args:
-        context: contexto Dagster. ``context.partition_key`` indica la ROI.
+        context: Dagster context. ``context.partition_key`` indicates the ROI.
 
     Returns:
-        ``MaterializeResult`` con metadata ``n_embeddings``,
+        ``MaterializeResult`` with metadata ``n_embeddings``,
         ``embedding_dim=512``, ``output_path``, ``roi``, ``year``,
-        ``data_version`` (DVC tag), ``code_version`` (git SHA short).
-        Si GCS no es accesible: metadata ``status="skipped_no_gcs"``.
+        ``data_version`` (DVC tag), ``code_version`` (short git SHA).
+        If GCS is not accessible: metadata ``status="skipped_no_gcs"``.
 
     Raises:
-        FileNotFoundError: si el manifest upstream no existe (mensaje
-            indica al usuario materializar primero ``sentinel2_crops_256``).
+        FileNotFoundError: if the upstream manifest does not exist (message
+            tells the user to materialize ``sentinel2_crops_256`` first).
     """
     import polars as pl
 
@@ -147,8 +147,8 @@ def farslip_embeddings_italy(context: AssetExecutionContext) -> MaterializeResul
     manifest_path = DATA_FARSLIP_PAIRS_DIR / roi / "manifest.parquet"
     if not manifest_path.exists():
         raise FileNotFoundError(
-            f"manifest upstream ausente: {manifest_path}. Materializa primero "
-            "sentinel2_crops_256 con partition_key={roi}."
+            f"upstream manifest missing: {manifest_path}. Materialize "
+            "sentinel2_crops_256 first with partition_key={roi}."
         )
 
     context.log.info(
@@ -157,7 +157,7 @@ def farslip_embeddings_italy(context: AssetExecutionContext) -> MaterializeResul
         manifest_path,
     )
 
-    # Polars (NON-NEGOTIABLE: no pandas). LazyFrame para volúmenes grandes.
+    # Polars (NON-NEGOTIABLE: no pandas). LazyFrame for large volumes.
     manifest = pl.read_parquet(manifest_path)
     n_crops = manifest.height
 
@@ -168,7 +168,7 @@ def farslip_embeddings_italy(context: AssetExecutionContext) -> MaterializeResul
         )
         return _skipped_result(context, "manifest empty", roi)
 
-    # Carga del extractor — cae limpiamente si GCS no es accesible.
+    # Load the extractor — fails cleanly if GCS is not accessible.
     try:
         from ml.extractors.farslip_extractor import (  # type: ignore[import-not-found]
             FarSLIPExtractor,
@@ -186,12 +186,12 @@ def farslip_embeddings_italy(context: AssetExecutionContext) -> MaterializeResul
             return _skipped_result(
                 context, f"GCS auth failed: {type(exc).__name__}", roi
             )
-        # AttributeError, KeyError, ValueError reales burbujean — son bugs.
+        # Real AttributeError, KeyError, ValueError bubble up — they are bugs.
         raise
 
-    # Year derivado del manifest (Q4 fix): si la columna existe, agrupamos
-    # por crop_year y escribimos una particion por (roi, year). Si no
-    # existe, caemos a FALLBACK_YEAR documentado.
+    # Year derived from the manifest (Q4 fix): if the column exists, we group
+    # by crop_year and write one partition per (roi, year). If it does not
+    # exist, we fall back to the documented FALLBACK_YEAR.
     has_year_col = "crop_year" in manifest.columns
     if has_year_col:
         years_present = sorted(set(int(y) for y in manifest["crop_year"].to_list()))
@@ -201,11 +201,11 @@ def farslip_embeddings_italy(context: AssetExecutionContext) -> MaterializeResul
             "manifest sin crop_year; usando FALLBACK_YEAR=%d", FALLBACK_YEAR
         )
 
-    # Bulk extraction en batches. Q9 fix: acumulamos tensores de embeddings
-    # en una sola estructura columnar (np.ndarray + list[str/int]) y al final
-    # serializamos con pl.DataFrame({...}) en bulk — sin list[dict] intermedio
-    # ni Python overhead por fila. Para 30k pares x 512 floats esto baja de
-    # ~60 MB de Python dicts a ~60 MB de arrays nativos (alocados 1 sola vez).
+    # Bulk extraction in batches. Q9 fix: we accumulate embedding tensors
+    # in a single columnar structure (np.ndarray + list[str/int]) and at the end
+    # serialize with pl.DataFrame({...}) in bulk — without an intermediate
+    # list[dict] nor per-row Python overhead. For 30k pairs x 512 floats this drops
+    # from ~60 MB of Python dicts to ~60 MB of native arrays (allocated only once).
     import numpy as np
 
     output_paths_by_year: dict[int, Path] = {}
@@ -225,10 +225,10 @@ def farslip_embeddings_italy(context: AssetExecutionContext) -> MaterializeResul
         else [FALLBACK_YEAR] * n_crops
     )
 
-    # Buffers por anio: indices del manifest cuyo crop_year coincide.
+    # Buffers per year: manifest indices whose crop_year matches.
     indices_by_year: dict[int, list[int]] = {y: [] for y in years_present}
     embeddings_buffer: list[np.ndarray] = []
-    valid_indices: list[int] = []  # indices del manifest que produjeron embedding
+    valid_indices: list[int] = []  # manifest indices that produced an embedding
 
     for start in range(0, n_crops, EXTRACTION_BATCH_SIZE):
         end = min(start + EXTRACTION_BATCH_SIZE, n_crops)
@@ -247,7 +247,7 @@ def farslip_embeddings_italy(context: AssetExecutionContext) -> MaterializeResul
             )
             continue
 
-        # Single tensor -> single numpy array (1 copia CPU, no list[float]).
+        # Single tensor -> single numpy array (1 CPU copy, not list[float]).
         batch_np = embeddings.detach().cpu().numpy().astype(np.float32)
         embeddings_buffer.append(batch_np)
         for offset in range(end - start):
@@ -270,7 +270,7 @@ def farslip_embeddings_italy(context: AssetExecutionContext) -> MaterializeResul
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / "embeddings.parquet"
 
-        # Indices globales del manifest para este anio.
+        # Global manifest indices for this year.
         manifest_idxs = [valid_indices[li] for li in local_idxs]
         year_df = pl.DataFrame(
             {
@@ -306,12 +306,12 @@ def farslip_embeddings_italy(context: AssetExecutionContext) -> MaterializeResul
         "embedding_dim": MetadataValue.int(EMBEDDING_DIM),
         "batch_size": MetadataValue.int(EXTRACTION_BATCH_SIZE),
         "data_version": MetadataValue.text(DATA_VERSION_TAG),
-        # B-5 US-022b: tag del modelo destilado (MLflow Registry @Production).
+        # B-5 US-022b: tag of the distilled model (MLflow Registry @Production).
         "model_version": MetadataValue.text("farslip-student-italy-v1"),
         "code_version": MetadataValue.text(code_version),
     }
     if output_paths_by_year:
-        # Path "principal" = primer year (mantiene compat con tests).
+        # "Main" path = first year (keeps compat with tests).
         first_year = sorted(output_paths_by_year.keys())[0]
         metadata["output_path"] = MetadataValue.path(
             str(output_paths_by_year[first_year].resolve())

@@ -1,21 +1,21 @@
-"""Vectoriza las máscaras instance de PASTIS-R a polígonos por parcela.
+"""Vectorizes the PASTIS-R instance masks into per-parcel polygons.
 
-Operativo permanente. Para cada patch (2433 total) lee `TARGET_<id>.npy`,
-extrae las máscaras instance (canal 1) y semantic (canal 0), vectoriza
-cada parcela (instance_id único) con `rasterio.features.shapes`,
-georreferencia el polígono usando el bbox del patch en `metadata.geojson`
-(EPSG:2154) y reproyecta a EPSG:4326.
+Permanent operational tool. For each patch (2433 total) it reads
+`TARGET_<id>.npy`, extracts the instance (channel 1) and semantic (channel 0)
+masks, vectorizes each parcel (unique instance_id) with
+`rasterio.features.shapes`, georeferences the polygon using the patch bbox in
+`metadata.geojson` (EPSG:2154) and reprojects to EPSG:4326.
 
-Genera un GeoParquet con una fila por parcela:
+Generates a GeoParquet with one row per parcel:
     parcel_id (str: "<patch_id>_<instance_id>"), patch_id, instance_id,
     class_id, class_name, fold, area_m2, n_pixels, geometry (EPSG:4326).
 
-Filtros aplicados:
-- Descarta clase 0 (Background) y clase 19 (Void label).
-- Descarta parcelas con n_pixels < --min-pixels (default 10).
-- Descarta geometrías inválidas tras buffer(0) defensivo.
+Filters applied:
+- Discards class 0 (Background) and class 19 (Void label).
+- Discards parcels with n_pixels < --min-pixels (default 10).
+- Discards invalid geometries after a defensive buffer(0).
 
-Uso::
+Usage::
 
     poetry run python scripts/vectorize_pastis_parcels.py \\
         --min-pixels 10 \\
@@ -49,20 +49,20 @@ def _vectorize_patch(
     target_arr: np.ndarray,
     min_pixels: int,
 ) -> list[dict]:
-    """Vectoriza un patch en parcelas-polígono individuales (en EPSG:2154).
+    """Vectorizes a patch into individual parcel-polygons (in EPSG:2154).
 
     Args:
-        patch_id: Identificador del patch PASTIS-R.
-        fold: Fold oficial (1-5) heredado del patch.
-        bbox_2154: ``(minx, miny, maxx, maxy)`` del patch en EPSG:2154.
-        target_arr: Array ``(3, H, W)`` cargado de ``TARGET_<id>.npy``.
-            Canal 0 = semantic, Canal 1 = instance.
-        min_pixels: Filtro mínimo de píxeles por parcela.
+        patch_id: PASTIS-R patch identifier.
+        fold: Official fold (1-5) inherited from the patch.
+        bbox_2154: ``(minx, miny, maxx, maxy)`` of the patch in EPSG:2154.
+        target_arr: Array ``(3, H, W)`` loaded from ``TARGET_<id>.npy``.
+            Channel 0 = semantic, Channel 1 = instance.
+        min_pixels: Minimum pixel filter per parcel.
 
     Returns:
-        Lista de dicts con `parcel_id`, `patch_id`, `instance_id`, `class_id`,
-        `class_name`, `fold`, `area_m2`, `n_pixels`, `geometry` (shapely en
-        EPSG:2154 todavía; reproyección se hace al final en bulk).
+        List of dicts with `parcel_id`, `patch_id`, `instance_id`, `class_id`,
+        `class_name`, `fold`, `area_m2`, `n_pixels`, `geometry` (shapely still in
+        EPSG:2154; reprojection is done at the end in bulk).
     """
     semantic = target_arr[0]
     instance = target_arr[1]
@@ -77,25 +77,25 @@ def _vectorize_patch(
     for inst_id in unique_instances:
         inst_id_int = int(inst_id)
         if inst_id_int == 0:
-            # 0 = background sin parcela asignada en este píxel.
+            # 0 = background with no parcel assigned in this pixel.
             continue
         mask = (instance == inst_id_int).astype(np.uint8)
         n_pixels = int(mask.sum())
         if n_pixels < min_pixels:
             continue
 
-        # Clase semántica dominante (puede haber 1-2 píxeles minoritarios por
-        # bordes; tomamos la más frecuente).
+        # Dominant semantic class (there may be 1-2 minority pixels at the
+        # edges; we take the most frequent one).
         sem_in_parcel = semantic[mask.astype(bool)]
         if sem_in_parcel.size == 0:
             continue
         cls_values, cls_counts = np.unique(sem_in_parcel, return_counts=True)
         class_id = int(cls_values[np.argmax(cls_counts)])
         if class_id in (0, 19):
-            # Background o Void.
+            # Background or Void.
             continue
 
-        # Vectorizar la máscara. shapes() devuelve generador de
+        # Vectorize the mask. shapes() returns a generator of
         # (geom_dict, value).
         try:
             shapes_iter = list(
@@ -107,10 +107,10 @@ def _vectorize_patch(
         if not shapes_iter:
             continue
 
-        # Si hay varios polígonos disjuntos para el mismo instance_id
-        # (raro pero posible por enmascarado fragmentado), tomamos el más
-        # grande. Alternativa: unirlos como MultiPolygon, pero downstream
-        # GEE prefiere polígonos simples.
+        # If there are several disjoint polygons for the same instance_id
+        # (rare but possible due to fragmented masking), we take the largest
+        # one. Alternative: join them as a MultiPolygon, but downstream
+        # GEE prefers simple polygons.
         best_geom = None
         best_area = -1.0
         for geom_dict, _val in shapes_iter:
@@ -173,7 +173,7 @@ def main(
         help="Si > 0, procesa solo los primeros N patches (smoke test)",
     ),
 ) -> None:
-    """Vectoriza las máscaras instance de PASTIS-R a polígonos por parcela."""
+    """Vectorizes the PASTIS-R instance masks into per-parcel polygons."""
     if not metadata.exists():
         logger.error("metadata_missing", path=str(metadata))
         raise typer.Exit(code=2)
@@ -266,7 +266,7 @@ def main(
         logger.error("no_parcels_extracted")
         raise typer.Exit(code=3)
 
-    # Build GeoDataFrame en EPSG:2154 y reproyectar a EPSG:4326 en bulk.
+    # Build GeoDataFrame in EPSG:2154 and reproject to EPSG:4326 in bulk.
     gdf_2154 = gpd.GeoDataFrame(all_records, geometry="geometry", crs="EPSG:2154")
     logger.info("reprojecting_to_4326", n=len(gdf_2154))
     gdf_4326 = gdf_2154.to_crs("EPSG:4326")
@@ -281,7 +281,7 @@ def main(
         file_size_mb=round(file_size_mb, 1),
     )
 
-    # Stats útiles para validación.
+    # Useful stats for validation.
     class_counts = gdf_4326["class_id"].value_counts().sort_index().to_dict()
     fold_counts = gdf_4326["fold"].value_counts().sort_index().to_dict()
     px_stats = {

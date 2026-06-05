@@ -1,23 +1,23 @@
-"""Resource MLflow para tracking de assets Dagster (US-022b-B).
+"""MLflow resource for tracking Dagster assets (US-022b-B).
 
-Wrappea ``dagster_mlflow.mlflow_tracking`` con la configuracion estandar del
-proyecto: endpoint persistente Cloud Run (US-022b-A) en vez del local
-``http://localhost:5010`` que servia para el baseline.
+Wraps ``dagster_mlflow.mlflow_tracking`` with the project's standard
+configuration: persistent Cloud Run endpoint (US-022b-A) instead of the local
+``http://localhost:5010`` that served for the baseline.
 
-Uso (asset):
+Usage (asset):
 
     @asset(required_resource_keys={"mlflow"})
     def my_asset(context):
         context.resources.mlflow.log_param("data_version", "...")
         context.resources.mlflow.log_metric("n_embeddings", 30000)
 
-El resource gestiona automaticamente el ciclo del run (start/end) si se
-configura un ``experiment_name``. Si ``MLFLOW_TRACKING_URI`` no esta
-disponible (CI sin endpoint, dev offline), el resource cae a un stub local
-``file:./mlruns`` para no romper tests — los assets siguen reportando logs
-estructurados; solo se pierde la persistencia remota.
+The resource automatically manages the run lifecycle (start/end) if an
+``experiment_name`` is configured. If ``MLFLOW_TRACKING_URI`` is not
+available (CI without endpoint, offline dev), the resource falls back to a local
+stub ``file:./mlruns`` so as not to break tests — the assets keep reporting
+structured logs; only the remote persistence is lost.
 
-Referencia: ``dagster_mlflow.mlflow_tracking`` (dagster-mlflow ^0.29).
+Reference: ``dagster_mlflow.mlflow_tracking`` (dagster-mlflow ^0.29).
 """
 
 from __future__ import annotations
@@ -27,24 +27,24 @@ import os
 from dagster import ResourceDefinition
 from dagster_mlflow import mlflow_tracking
 
-#: URI por defecto cuando no hay endpoint persistente configurado.
-#: En produccion (US-022b-A) se debe sobreescribir via ``MLFLOW_TRACKING_URI``
-#: apuntando al servicio Cloud Run scale-to-zero.
+#: Default URI when no persistent endpoint is configured.
+#: In production (US-022b-A) it must be overridden via ``MLFLOW_TRACKING_URI``
+#: pointing to the Cloud Run scale-to-zero service.
 _DEFAULT_LOCAL_URI = "file:./mlruns"
 
-#: Nombre del experimento MLflow para el pipeline FarSLIP.
+#: MLflow experiment name for the FarSLIP pipeline.
 FARSLIP_EXPERIMENT = "farslip-clip-italy"
 
-#: Run name canonico para el modelo destilado (B-5 tag MLflow Registry).
+#: Canonical run name for the distilled model (B-5 MLflow Registry tag).
 FARSLIP_RUN_NAME = "farslip-clip-italy-v1"
 
 
 def get_mlflow_tracking_uri() -> str:
-    """Resuelve el URI MLflow desde env var con fallback a file local.
+    """Resolves the MLflow URI from env var with fallback to local file.
 
     Returns:
-        URI del MLflow tracking server. Prioriza ``MLFLOW_TRACKING_URI``;
-        si no existe usa ``file:./mlruns`` (modo offline reproducible).
+        URI of the MLflow tracking server. Prioritizes ``MLFLOW_TRACKING_URI``;
+        if it does not exist it uses ``file:./mlruns`` (reproducible offline mode).
     """
     return os.environ.get("MLFLOW_TRACKING_URI", _DEFAULT_LOCAL_URI)
 
@@ -54,22 +54,22 @@ def build_mlflow_resource(
     run_name: str | None = None,
     extra_tags: dict[str, str] | None = None,
 ) -> ResourceDefinition:
-    """Construye un ``mlflow_tracking`` configurado para US-022b-B.
+    """Builds an ``mlflow_tracking`` configured for US-022b-B.
 
     Args:
-        experiment_name: nombre del experimento (default ``farslip-clip-italy``).
-        run_name: nombre del run (default None — MLflow autogenera).
-        extra_tags: tags adicionales a propagar al run (e.g. ``data_version``).
+        experiment_name: experiment name (default ``farslip-clip-italy``).
+        run_name: run name (default None — MLflow autogenerates).
+        extra_tags: additional tags to propagate to the run (e.g. ``data_version``).
 
     Returns:
-        ``ResourceDefinition`` configurada lista para inyectar en ``Definitions``.
+        Configured ``ResourceDefinition`` ready to inject into ``Definitions``.
 
     Notes:
-        El resource gestiona ciclo del run via el hook
-        ``end_mlflow_on_run_finished`` de ``dagster-mlflow``. Si el asset
-        necesita control granular del run (multiple runs por materializacion),
-        usar la API low-level ``mlflow.start_run(...)`` directamente desde
-        el cuerpo del asset.
+        The resource manages the run lifecycle via the
+        ``end_mlflow_on_run_finished`` hook of ``dagster-mlflow``. If the asset
+        needs granular control of the run (multiple runs per materialization),
+        use the low-level API ``mlflow.start_run(...)`` directly from
+        the asset body.
     """
     config: dict[str, object] = {
         "experiment_name": experiment_name,
@@ -83,13 +83,13 @@ def build_mlflow_resource(
     return mlflow_tracking.configured(config)
 
 
-#: Resource por defecto para el pipeline FarSLIP (US-022b-B).
-#: Se inyecta en ``Definitions.resources`` bajo la key ``"mlflow"``.
+#: Default resource for the FarSLIP pipeline (US-022b-B).
+#: Injected into ``Definitions.resources`` under the key ``"mlflow"``.
 farslip_mlflow_resource = build_mlflow_resource(
     experiment_name=FARSLIP_EXPERIMENT,
     run_name=FARSLIP_RUN_NAME,
     extra_tags={
-        # Tags B-5 del plan US-022b: data + code + model versions.
+        # B-5 tags of the US-022b plan: data + code + model versions.
         "us": "US-022b",
         "epic": "E4",
         "pipeline": "farslip",

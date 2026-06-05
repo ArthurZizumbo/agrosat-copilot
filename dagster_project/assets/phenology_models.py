@@ -1,24 +1,23 @@
-"""Assets Dagster — US-022b-C entrenamiento de modelos temporales.
+"""Dagster assets — US-022b-C training of temporal models.
 
-Declara los assets que entrenan TempCNN e InceptionTime sobre la FE
-fenologica del subset US-018 con spatial CV 5-fold, reusando
+Declares the assets that train TempCNN and InceptionTime over the phenology FE
+of the US-018 subset with 5-fold spatial CV, reusing
 :func:`ml.train.phenology_models.train_temporal_model`.
 
-El training NO se ejecuta automaticamente desde un schedule (decision de
-infra US-022b-A: training a la carta via ``make reencuadre-notebook-full``
-o invocacion manual del asset). Los assets se materializan cuando el
-usuario lo pide explicitamente desde la UI o desde la CLI. Esto evita
-gastar GPU por accidente.
+The training does NOT run automatically from a schedule (infra decision of
+US-022b-A: on-demand training via ``make reencuadre-notebook-full`` or manual
+invocation of the asset). The assets are materialized when the user explicitly
+requests it from the UI or the CLI. This avoids spending GPU by accident.
 
-Mapeo a criterios de aceptacion (docs/us-planning/us-022b.md §3.3):
+Mapping to acceptance criteria (docs/us-planning/us-022b.md §3.3):
 
-- **C-3**: ``phenology_model_tempcnn`` + ``phenology_model_inceptiontime``
-  entrenan los dos modelos con la misma spatial CV.
-- **C-4**: ``temporal_models_comparison`` consolida las metricas y
-  reporta delta vs baseline tabular en ``reports/baseline/phenology_models.csv``.
-- **MLflow**: cada asset registra params (model_kind, n_epochs, batch_size,
-  device, n_parcels, n_classes), metricas por epoch, OOF metrics y el
-  state_dict del modelo del ultimo fold como artifact.
+- **C-3**: ``phenology_model_tempcnn`` + ``phenology_model_inceptiontime`` train
+  the two models with the same spatial CV.
+- **C-4**: ``temporal_models_comparison`` consolidates the metrics and reports
+  the delta vs tabular baseline in ``reports/baseline/phenology_models.csv``.
+- **MLflow**: each asset records params (model_kind, n_epochs, batch_size,
+  device, n_parcels, n_classes), per-epoch metrics, OOF metrics and the
+  state_dict of the last-fold model as an artifact.
 
 Lineage:
 
@@ -37,7 +36,7 @@ from pathlib import Path
 import polars as pl
 from dagster import AssetExecutionContext, MaterializeResult, MetadataValue, asset
 
-#: Path canonico del subset de features (US-018 + US-015).
+#: Canonical path of the features subset (US-018 + US-015).
 _FEATURES_PATH = (
     Path(__file__).resolve().parents[2]
     / "data"
@@ -45,8 +44,8 @@ _FEATURES_PATH = (
     / "feature_selection_parcels_subset.parquet"
 )
 
-#: Path canonico de la tabla comparativa que produce
-#: ``temporal_models_comparison`` y que consume el notebook 05.
+#: Canonical path of the comparison table produced by
+#: ``temporal_models_comparison`` and consumed by notebook 05.
 _REPORTS_PATH = (
     Path(__file__).resolve().parents[2] / "reports" / "baseline" / "phenology_models.csv"
 )
@@ -61,10 +60,10 @@ def _train_one(
     device: str,
     seed: int,
 ) -> dict[str, float | int | str]:
-    """Helper interno: entrena un modelo temporal y devuelve un dict serializable.
+    """Internal helper: train a temporal model and return a serializable dict.
 
-    Importacion lazy de ``train_temporal_model`` para evitar levantar torch
-    cuando solo se valida el grafo de assets (`dagster definitions validate`).
+    Lazy import of ``train_temporal_model`` to avoid bringing up torch when only
+    the asset graph is validated (`dagster definitions validate`).
     """
     from ml.train.phenology_models import train_temporal_model
 
@@ -75,7 +74,7 @@ def _train_one(
         batch_size=batch_size,
         seed=seed,
         device=device,
-        # mlflow_uri se inyecta desde el resource mlflow si esta presente.
+        # mlflow_uri is injected from the mlflow resource if present.
         mlflow_uri=None,
     )
     context.log.info(
@@ -112,7 +111,7 @@ def _train_one(
 def phenology_model_tempcnn(
     context: AssetExecutionContext,
 ) -> MaterializeResult:
-    """Entrena TempCNN sobre la FE fenologica con spatial CV 5-fold."""
+    """Train TempCNN over the phenology FE with 5-fold spatial CV."""
     metrics = _train_one(
         context,
         model_kind="tempcnn",
@@ -151,7 +150,7 @@ def phenology_model_tempcnn(
 def phenology_model_inceptiontime(
     context: AssetExecutionContext,
 ) -> MaterializeResult:
-    """Entrena InceptionTime sobre la FE fenologica con spatial CV 5-fold."""
+    """Train InceptionTime over the phenology FE with 5-fold spatial CV."""
     metrics = _train_one(
         context,
         model_kind="inceptiontime",
@@ -191,13 +190,12 @@ def phenology_model_inceptiontime(
 def temporal_models_comparison(
     context: AssetExecutionContext,
 ) -> MaterializeResult:
-    """Persiste la tabla comparativa de modelos temporales en CSV.
+    """Persist the temporal-model comparison table to CSV.
 
-    Esta version del asset reentrenamiento es deliberadamente sencilla: vuelve
-    a invocar ``train_temporal_model`` para los dos modelos y consolida.
-    Para evitar reentrenar en cada materializacion, una version posterior
-    podra leer las metricas de MLflow via ``mlflow.search_runs``; por ahora
-    la simplicidad gana.
+    This retraining version of the asset is deliberately simple: it invokes
+    ``train_temporal_model`` again for the two models and consolidates. To avoid
+    retraining on each materialization, a later version may read the metrics from
+    MLflow via ``mlflow.search_runs``; for now simplicity wins.
     """
     rows = []
     for model_kind in ("tempcnn", "inceptiontime"):

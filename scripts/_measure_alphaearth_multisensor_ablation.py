@@ -1,18 +1,19 @@
-"""Mide el aporte incremental de AlphaEarth (2018/2019) + ERA5/SRTM/S1 al baseline.
+"""Measure the incremental contribution of AlphaEarth (2018/2019) + ERA5/SRTM/S1 to the baseline.
 
-Contexto: el baseline tabular (F1-macro 0.4094) corre sobre 185 features
-espectrales/fenologicas SIN AlphaEarth ni los bloques patch-level (ERA5, SRTM,
-S1), que existen como dato real pero nunca se unieron al subset de entrenamiento
-(ver docs/audit/us-023-preview-v2-audit.md). Este script une cada familia en
-memoria y ejecuta la ablation con CV espacial (buffer 1 km) reusando
-``run_feature_ablation``, para medir cuanto sube el F1 cada bloque. NO persiste
-ningun parquet: solo imprime la tabla para decidir si materializar.
+Context: the tabular baseline (F1-macro 0.4094) runs over 185 spectral/phenology
+features WITHOUT AlphaEarth nor the patch-level blocks (ERA5, SRTM, S1), which
+exist as real data but were never joined to the training subset (see
+docs/audit/us-023-preview-v2-audit.md). This script joins each family in memory
+and runs the ablation with spatial CV (1 km buffer) reusing
+``run_feature_ablation``, to measure how much each block raises the F1. It does
+NOT persist any parquet: it only prints the table to decide whether to
+materialize.
 
-Claves de join:
-- AlphaEarth (2018, 2019): por ``parcel_id`` (string PASTIS, overlap 100%).
-- ERA5 / SRTM / S1: por ``patch_id`` (nivel patch ~1 km^2, propaga a parcelas).
+Join keys:
+- AlphaEarth (2018, 2019): by ``parcel_id`` (PASTIS string, 100% overlap).
+- ERA5 / SRTM / S1: by ``patch_id`` (patch level ~1 km^2, propagates to parcels).
 
-Uso:
+Usage:
     python scripts/measure_alphaearth_multisensor_ablation.py
 """
 
@@ -40,12 +41,12 @@ ERA5 = REPO_ROOT / "data/cache/gee/era5_monthly_pastis_fr_full_2019_C.parquet"
 SRTM = REPO_ROOT / "data/cache/gee/srtm_pastis_fr_full.parquet"
 S1 = REPO_ROOT / "data/cache/gee/s1_pastis_fr_full_2019_both_lee_7x7_dB_enriched.parquet"
 
-#: Metadatos a NO arrastrar de los bloques patch-level (evita leakage / duplicados).
+#: Metadata to NOT carry over from the patch-level blocks (avoids leakage / duplicates).
 _META_DROP = ("year", "patch_id", "class_id", "class_name", "fold", "n_pixels", "instance_id", "area_m2")
 
 
 def _ae_block(path: Path, prefix: str) -> pl.DataFrame:
-    """Carga un parquet AlphaEarth y renombra ``dim_NN -> {prefix}NN`` (parcel-level)."""
+    """Load an AlphaEarth parquet and rename ``dim_NN -> {prefix}NN`` (parcel-level)."""
     df = pl.read_parquet(path)
     dims = [c for c in df.columns if c.startswith("dim_")]
     ren = {c: f"{prefix}{c.split('_')[1]}" for c in dims}
@@ -53,9 +54,9 @@ def _ae_block(path: Path, prefix: str) -> pl.DataFrame:
 
 
 def _patch_block(path: Path, keep_prefixes: tuple[str, ...]) -> pl.DataFrame:
-    """Carga un bloque patch-level y deja solo ``patch_id`` + features numericas."""
+    """Load a patch-level block and keep only ``patch_id`` + numeric features."""
     df = pl.read_parquet(path)
-    # parcel_id aqui ES el patch_id entero -> renombrar a patch_id para el join
+    # parcel_id here IS the integer patch_id -> rename to patch_id for the join
     df = df.rename({"parcel_id": "patch_id"})
     feat = [c for c in df.columns if c.startswith(keep_prefixes)]
     return df.select(["patch_id", *feat])
@@ -66,14 +67,14 @@ def main(max_samples: int | None) -> int:
     base_feats = [c for c in sub.columns if c not in (*_META_DROP, "parcel_id")]
     log.info("subset_loaded", rows=sub.height, base_features=len(base_feats))
 
-    # --- AlphaEarth parcel-level (join por parcel_id) ---
+    # --- AlphaEarth parcel-level (join by parcel_id) ---
     ae19 = _ae_block(AE19, "ae19_")
     ae18 = _ae_block(AE18, "ae18_")
     df = sub.join(ae19, on="parcel_id", how="left").join(ae18, on="parcel_id", how="left")
     ae19_cols = [c for c in df.columns if c.startswith("ae19_")]
     ae18_cols = [c for c in df.columns if c.startswith("ae18_")]
 
-    # --- Bloques patch-level (join por patch_id) ---
+    # --- Patch-level blocks (join by patch_id) ---
     era5 = _patch_block(ERA5, ("era5",))
     srtm = _patch_block(SRTM, ("srtm",))
     s1 = _patch_block(S1, ("s1_",))
@@ -90,9 +91,9 @@ def main(max_samples: int | None) -> int:
         total_cols=df.width,
     )
 
-    # --- feature_sets incrementales (cada uno DEBE incluir las 185 base salvo el baseline) ---
+    # --- incremental feature_sets (each MUST include the 185 base except the baseline) ---
     feature_sets = {
-        "full": tuple(base_feats),                                    # 0.4094 esperado (replica)
+        "full": tuple(base_feats),                                    # 0.4094 expected (replica)
         "base_plus_ae19": tuple(base_feats + ae19_cols),
         "base_plus_ae18": tuple(base_feats + ae18_cols),
         "base_plus_ae18_ae19": tuple(base_feats + ae19_cols + ae18_cols),

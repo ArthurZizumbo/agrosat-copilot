@@ -1,8 +1,8 @@
-"""Definiciones de assets Dagster para AgroSatCopilot.
+"""Dagster asset definitions for AgroSatCopilot.
 
-Convenio: cada asset declara explícitamente sus dependencias (lineage) para que
-Dagster pueda materializar el DAG. Los datasets versionados con DVC se exponen
-como assets con un IOManager que valida el hash ``data_version``.
+Convention: each asset explicitly declares its dependencies (lineage) so that
+Dagster can materialize the DAG. The DVC-versioned datasets are exposed as
+assets with an IOManager that validates the ``data_version`` hash.
 """
 
 from dagster_project.assets.farslip import farslip_embeddings_italy

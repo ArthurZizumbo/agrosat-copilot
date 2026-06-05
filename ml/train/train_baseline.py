@@ -1,12 +1,12 @@
-"""CLI Typer para entrenar los baselines RF/XGB del EPIC 4 (US-019).
+"""Typer CLI to train the EPIC 4 RF/XGB baselines (US-019).
 
-Orquesta el entrenamiento de los dos modelos tabulares, el logging a
-MLflow (runs ``baseline-{rf,xgb}-alphaearth-v1`` bajo el experimento
-``agrosat-baseline``) y la persistencia de los joblib en ``artifacts/``.
-Toda la logica de modelado vive en :mod:`ml.train.baseline`; este modulo
-solo orquesta (separation of concerns, regla CLAUDE.md 8).
+Orchestrates the training of the two tabular models, the logging to MLflow
+(runs ``baseline-{rf,xgb}-alphaearth-v1`` under the experiment
+``agrosat-baseline``) and the persistence of the joblibs in ``artifacts/``.
+All the modeling logic lives in :mod:`ml.train.baseline`; this module only
+orchestrates (separation of concerns, CLAUDE.md rule 8).
 
-Uso::
+Usage::
 
     poetry run python ml/train/train_baseline.py \\
         --features-path data/test_fixtures/feature_selection_parcels_subset.parquet \\
@@ -16,7 +16,7 @@ Uso::
         --max-samples 0 \\
         --output-dir artifacts/
 
-Operativo permanente (NO viola el anti-patron ``scripts/_*.py``).
+Permanent operational tool (does NOT violate the ``scripts/_*.py`` anti-pattern).
 """
 
 from __future__ import annotations
@@ -47,9 +47,9 @@ from ml.utils.mlflow_utils import track_experiment
 logger = structlog.get_logger(__name__)
 app = typer.Typer(add_completion=False, help=__doc__)
 
-# MLflow 3.x escribe emojis (vistas de run/experimento) en stdout al cerrar
-# un run; la consola Windows usa cp1252 por defecto y eso provoca
-# UnicodeEncodeError. Forzamos UTF-8 en los streams (no-op en Linux/macOS).
+# MLflow 3.x writes emojis (run/experiment views) to stdout when closing
+# a run; the Windows console uses cp1252 by default and that triggers
+# UnicodeEncodeError. We force UTF-8 on the streams (no-op on Linux/macOS).
 for _stream in (sys.stdout, sys.stderr):
     _reconfigure = getattr(_stream, "reconfigure", None)
     if _reconfigure is not None:
@@ -61,16 +61,16 @@ _DEFAULT_FEATURES = "data/test_fixtures/feature_selection_parcels_subset.parquet
 
 
 def _resolve_models(model: str) -> list[ModelKind]:
-    """Traduce el flag ``--model`` a la lista de modelos a entrenar.
+    """Translates the ``--model`` flag into the list of models to train.
 
     Args:
-        model: Valor del flag (``rf``, ``xgb`` o ``both``).
+        model: Value of the flag (``rf``, ``xgb`` or ``both``).
 
     Returns:
-        Lista de ``ModelKind`` a entrenar.
+        List of ``ModelKind`` to train.
 
     Raises:
-        typer.BadParameter: si ``model`` no es un valor valido.
+        typer.BadParameter: if ``model`` is not a valid value.
     """
     if model == "both":
         return ["rf", "xgb"]
@@ -80,16 +80,15 @@ def _resolve_models(model: str) -> list[ModelKind]:
 
 
 def _stratified_subsample(df, max_samples: int, seed: int = 42):  # type: ignore[no-untyped-def]
-    """Submuestrea el DataFrame de forma estratificada por clase.
+    """Subsamples the DataFrame in a class-stratified way.
 
     Args:
-        df: DataFrame Polars de features.
-        max_samples: Tamano objetivo; ``0`` o negativo devuelve ``df``
-            intacto.
-        seed: Semilla determinista.
+        df: Polars DataFrame of features.
+        max_samples: Target size; ``0`` or negative returns ``df`` intact.
+        seed: Deterministic seed.
 
     Returns:
-        El DataFrame submuestreado (o el original si ``max_samples <= 0``).
+        The subsampled DataFrame (or the original if ``max_samples <= 0``).
     """
     if max_samples <= 0 or df.height <= max_samples:
         return df
@@ -104,19 +103,19 @@ def _log_baseline_run(
     run_name: str,
     output_dir: Path,
 ) -> Path:
-    """Loggea un :class:`BaselineResult` a MLflow y persiste el joblib.
+    """Logs a :class:`BaselineResult` to MLflow and persists the joblib.
 
-    Registra params (hiperparametros), metricas (OOF + CV mean/std),
-    artefactos (matriz de confusion, reporte de clasificacion, joblib) y
-    el modelo en el Model Registry ``agrosat-baseline``.
+    Records params (hyperparameters), metrics (OOF + CV mean/std), artifacts
+    (confusion matrix, classification report, joblib) and the model in the
+    ``agrosat-baseline`` Model Registry.
 
     Args:
-        result: Resultado del entrenamiento.
-        run_name: Nombre del run MLflow (``baseline-{rf,xgb}-alphaearth-v1``).
-        output_dir: Directorio destino del joblib.
+        result: Result of the training.
+        run_name: MLflow run name (``baseline-{rf,xgb}-alphaearth-v1``).
+        output_dir: Target directory of the joblib.
 
     Returns:
-        La ruta del joblib persistido.
+        The path of the persisted joblib.
     """
     model_kind = result.model_kind
 
@@ -148,9 +147,9 @@ def _log_baseline_run(
     joblib.dump(payload, joblib_path)
     mlflow.log_artifact(str(joblib_path))
 
-    # Resumen textual de metricas como artefacto inspeccionable. El reporte
-    # de clasificacion por clase y la matriz de confusion sobre las
-    # predicciones out-of-fold se generan en el notebook 04_baseline (§6).
+    # Textual metrics summary as an inspectable artifact. The per-class
+    # classification report and the confusion matrix over the out-of-fold
+    # predictions are generated in the notebook 04_baseline (§6).
     import tempfile
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -164,10 +163,10 @@ def _log_baseline_run(
         summary_path.write_text("\n".join(summary_lines), encoding="utf-8")
         mlflow.log_artifact(str(summary_path))
 
-    # Registro del modelo en el Model Registry. `await_registration_for=0`
-    # evita que el cliente bloquee esperando la transicion de estado de la
-    # version registrada (el sondeo sincrono puede colgarse contra el
-    # servidor Docker local).
+    # Register the model in the Model Registry. `await_registration_for=0`
+    # prevents the client from blocking while waiting for the state transition
+    # of the registered version (the synchronous polling can hang against the
+    # local Docker server).
     if model_kind == "rf":
         mlflow.sklearn.log_model(
             sk_model=result.model,
@@ -220,17 +219,16 @@ def main(
         typer.Option(help="Destino de los joblib."),
     ] = Path("artifacts"),
 ) -> None:
-    """Entrena los baselines RF/XGB y los registra en MLflow.
+    """Trains the RF/XGB baselines and registers them in MLflow.
 
     Args:
-        features_path: Ruta al parquet de features del EPIC 3.
-        model: ``rf``, ``xgb`` o ``both``.
-        tune: Si ``True`` ejecuta tuning ligero via ``GridSearchCV``.
-        mlflow_uri: Override del tracking URI; cadena vacia delega en
+        features_path: Path to the EPIC 3 features parquet.
+        model: ``rf``, ``xgb`` or ``both``.
+        tune: If ``True`` runs light tuning via ``GridSearchCV``.
+        mlflow_uri: Override of the tracking URI; an empty string delegates to
             :func:`resolve_tracking_uri`.
-        max_samples: Tamano del submuestreo estratificado (0 = dataset
-            completo).
-        output_dir: Directorio destino de los joblib.
+        max_samples: Size of the stratified subsample (0 = full dataset).
+        output_dir: Target directory of the joblibs.
     """
     if not features_path.exists():
         logger.warning(
@@ -276,5 +274,5 @@ def main(
     logger.info("baseline_cli_done", models=models)
 
 
-if __name__ == "__main__":  # pragma: no cover - punto de entrada CLI
+if __name__ == "__main__":  # pragma: no cover - CLI entry point
     sys.exit(app())

@@ -1,22 +1,22 @@
-"""Extraccion de embeddings FarSLIP a parquet (US-022-c P1 etapa 6).
+"""FarSLIP embeddings extraction to parquet (US-022-c P1 stage 6).
 
-Carga el student FarSLIP entrenado en GCP L4 (MLflow `farslip-clip-italy-v1@Production`,
-nombre de modelo conservado por lineage; o ruta local) y proyecta cada parcela
-PASTIS-R (``parcel_id`` formato ``10000_1``, no italiana) sobre el espacio de
-embeddings 512-dim, persistiendo el resultado a parquet con esquema estable:
+Loads the FarSLIP student trained on GCP L4 (MLflow `farslip-clip-italy-v1@Production`,
+model name preserved by lineage; or local path) and projects each PASTIS-R
+parcel (``parcel_id`` format ``10000_1``, not Italian) onto the 512-dim
+embedding space, persisting the result to parquet with a stable schema:
 
-- ``parcel_id`` (int64) — identificador de la parcela aguas arriba.
-- ``year`` (int32) — anio del crop temporal asociado.
-- ``farslip_emb_000`` .. ``farslip_emb_511`` (float32) — 512 columnas.
+- ``parcel_id`` (int64) — upstream parcel identifier.
+- ``year`` (int32) — year of the associated temporal crop.
+- ``farslip_emb_000`` .. ``farslip_emb_511`` (float32) — 512 columns.
 
-Contrato AC US-022-c sec 2.1 B-4:
+AC contract US-022-c sec 2.1 B-4:
 
 - Output parquet shape ``(85951, 514)`` (parcel_id + year + 512 embed).
-- Determinismo con ``seed=42`` reproducible (mismo input -> mismo output).
-- Fallback ``cuda -> cpu`` con warning si CUDA no disponible.
-- Resolucion MLflow URI ``mlflow://Models/farslip-clip-italy-v1@Production``.
+- Determinism with reproducible ``seed=42`` (same input -> same output).
+- Fallback ``cuda -> cpu`` with warning if CUDA unavailable.
+- MLflow URI resolution ``mlflow://Models/farslip-clip-italy-v1@Production``.
 
-Uso CLI tipico::
+Typical CLI usage::
 
     python -m ml.farslip.extract_embeddings \\
         --student-checkpoint mlflow://Models/farslip-clip-italy-v1@Production \\
@@ -43,7 +43,7 @@ try:
     from transformers import CLIPVisionModel
 except ImportError as exc:  # pragma: no cover
     raise ImportError(
-        "extract_embeddings requiere transformers>=4.46. `poetry add transformers`."
+        "extract_embeddings requires transformers>=4.46. `poetry add transformers`."
     ) from exc
 
 _log = structlog.get_logger(__name__)
@@ -65,16 +65,16 @@ _ROI_ALIASES: dict[str, RoiPreset] = {
 
 @dataclass(frozen=True)
 class ExtractEmbeddingsResult:
-    """Resultado tipado de :func:`extract_farslip_embeddings`.
+    """Typed result of :func:`extract_farslip_embeddings`.
 
     Attributes:
-        n_parcels: numero de filas en el parquet final.
-        n_dims: dimension del embedding (siempre 512 para CLIP ViT-B/16).
-        output_path: ruta absoluta del parquet generado.
-        code_version: git SHA del repo al momento de extraer.
-        data_version: identificador del checkpoint origen
-            (``mlflow://...`` o ruta local).
-        device_used: ``"cuda"`` o ``"cpu"`` efectivamente usado.
+        n_parcels: number of rows in the final parquet.
+        n_dims: embedding dimension (always 512 for CLIP ViT-B/16).
+        output_path: absolute path of the generated parquet.
+        code_version: repo git SHA at extraction time.
+        data_version: identifier of the source checkpoint
+            (``mlflow://...`` or local path).
+        device_used: ``"cuda"`` or ``"cpu"`` actually used.
     """
 
     n_parcels: int
@@ -86,14 +86,14 @@ class ExtractEmbeddingsResult:
 
 
 def _resolve_rois(rois: tuple[str, ...]) -> RoiPreset:
-    """Expande alias (``"italy"``) a la tupla canonica de ROIs."""
+    """Expand alias (``"italy"``) to the canonical tuple of ROIs."""
     if len(rois) == 1 and rois[0] in _ROI_ALIASES:
         return _ROI_ALIASES[rois[0]]
     return rois
 
 
 def _resolve_device(device: DeviceLiteral) -> torch.device:
-    """Resuelve ``"auto"`` con fallback ``cuda -> cpu`` y warning explicito."""
+    """Resolve ``"auto"`` with ``cuda -> cpu`` fallback and explicit warning."""
     if device == "auto":
         if torch.cuda.is_available():
             return torch.device("cuda")
@@ -108,17 +108,18 @@ def _resolve_device(device: DeviceLiteral) -> torch.device:
 
 
 def _resolve_checkpoint(path: Path | str) -> tuple[Path | str, str]:
-    """Devuelve (ruta_resuelta, data_version_tag).
+    """Return (resolved_path, data_version_tag).
 
-    Soporta dos formatos:
+    Supports two formats:
 
-    - ``mlflow://Models/<name>@<stage>`` -> descarga via mlflow registry,
-      data_version = la cadena URI completa.
-    - Ruta local -> devuelve la ruta tal cual, data_version = ``str(path)``.
+    - ``mlflow://Models/<name>@<stage>`` -> download via mlflow registry,
+      data_version = the full URI string.
+    - Local path -> returns the path as-is, data_version = ``str(path)``.
 
-    Para mantener el modulo testable sin red, la descarga MLflow se delega a
-    :func:`mlflow.artifacts.download_artifacts` solo cuando la cadena empieza
-    por ``mlflow://``. El test suite parchea esta funcion para evitar HTTP.
+    To keep the module testable without network, the MLflow download is
+    delegated to :func:`mlflow.artifacts.download_artifacts` only when the
+    string starts with ``mlflow://``. The test suite patches this function to
+    avoid HTTP.
     """
     p = str(path)
     if p.startswith("mlflow://"):
@@ -127,9 +128,9 @@ def _resolve_checkpoint(path: Path | str) -> tuple[Path | str, str]:
 
 
 def _resolve_mlflow_uri(uri: str) -> Path:
-    """Descarga el artefacto MLflow apuntado por ``uri``.
+    """Download the MLflow artifact pointed to by ``uri``.
 
-    Ejemplo: ``mlflow://Models/farslip-clip-italy-v1@Production``.
+    Example: ``mlflow://Models/farslip-clip-italy-v1@Production``.
     """
     import mlflow
 
@@ -150,12 +151,12 @@ def _load_student(
     teacher_model_id: str = "openai/clip-vit-base-patch16",
     n_in_channels: int = 4,
 ) -> CLIPVisionModel:
-    """Reconstruye el CLIPVisionModel student desde checkpoint.
+    """Reconstruct the CLIPVisionModel student from checkpoint.
 
-    Reusa la misma logica que ``ml.farslip.distill._patch_student_proj``: arranca
-    desde el teacher HF, adapta ``patch_embed`` a ``n_in_channels`` y carga el
-    state_dict del student. ``strict=False`` tolera diferencias de prefijo entre
-    ``CLIPVisionModel`` y ``CLIPModel.vision_model``.
+    Reuses the same logic as ``ml.farslip.distill._patch_student_proj``: starts
+    from the HF teacher, adapts ``patch_embed`` to ``n_in_channels`` and loads the
+    student state_dict. ``strict=False`` tolerates prefix differences between
+    ``CLIPVisionModel`` and ``CLIPModel.vision_model``.
     """
     from ml.farslip.distill import adapt_patch_embed_to_n_channels
 
@@ -166,7 +167,7 @@ def _load_student(
         cands = list(ckpt_path.glob("*.safetensors")) + list(ckpt_path.glob("*.pt"))
         if not cands:
             raise FileNotFoundError(
-                f"sin checkpoints (*.safetensors|*.pt) en {ckpt_path}"
+                f"no checkpoints (*.safetensors|*.pt) in {ckpt_path}"
             )
         ckpt_path = cands[0]
     if ckpt_path.suffix == ".safetensors":
@@ -188,24 +189,24 @@ def _load_student(
 
 
 def _embed_columns() -> list[str]:
-    """Devuelve ``["farslip_emb_000", ..., "farslip_emb_511"]``."""
+    """Return ``["farslip_emb_000", ..., "farslip_emb_511"]``."""
     return [f"{EMBED_COL_PREFIX}{i:03d}" for i in range(EMBED_DIM)]
 
 
 def _load_parcels_filtered(
     parcels_parquet: Path, rois: RoiPreset
 ) -> pl.DataFrame:
-    """Carga parcelas y filtra por ROI(s) si la columna existe.
+    """Load parcels and filter by ROI(s) if the column exists.
 
-    El parquet debe exponer al menos ``parcel_id`` y ``year``. Si tiene una
-    columna ``roi`` (o ``region``), se filtra por ``rois``. Si no existe, no
-    se filtra (asume que el caller ya cribo).
+    The parquet must expose at least ``parcel_id`` and ``year``. If it has a
+    ``roi`` (or ``region``) column, it is filtered by ``rois``. If it does not
+    exist, no filtering is applied (assumes the caller already filtered).
     """
     df = pl.read_parquet(parcels_parquet)
     if "parcel_id" not in df.columns:
-        raise ValueError("parquet sin columna 'parcel_id'")
+        raise ValueError("parquet without 'parcel_id' column")
     if "year" not in df.columns:
-        raise ValueError("parquet sin columna 'year'")
+        raise ValueError("parquet without 'year' column")
     for col in ("roi", "region"):
         if col in df.columns:
             df = df.filter(pl.col(col).is_in(list(rois)))
@@ -214,7 +215,7 @@ def _load_parcels_filtered(
 
 
 def _build_empty_embeddings(n_rows: int) -> torch.Tensor:
-    """Tensor 0 de shape ``(n_rows, EMBED_DIM)`` (placeholder smoke-tests)."""
+    """Zero tensor of shape ``(n_rows, EMBED_DIM)`` (placeholder smoke-tests)."""
     return torch.zeros((n_rows, EMBED_DIM), dtype=torch.float32)
 
 
@@ -226,9 +227,9 @@ def _project_parcels_to_embeddings(
     device: torch.device,
     seed: int,
 ) -> torch.Tensor:
-    """Placeholder determinista (mantenido para tests existentes y smoke).
+    """Deterministic placeholder (kept for existing tests and smoke).
 
-    Genera `torch.randn(seed)` normalizado L2. Para extract REAL ver
+    Generates L2-normalized `torch.randn(seed)`. For REAL extraction see
     :func:`_project_parcels_to_embeddings_real`.
     """
     propagate_seed(seed)
@@ -258,32 +259,32 @@ def _project_parcels_to_embeddings_real(
     seed: int,
     crop_resize_to: int = 224,
 ) -> torch.Tensor:
-    """Forward real student sobre crops Sentinel-2.
+    """Real student forward over Sentinel-2 crops.
 
-    Lee cada crop ``.tif`` desde ``dataset_root/{region}/crops/{file}``,
-    resizea a 224x224, normaliza uint16/10000, pasa por
-    ``model.vision_model(pixel_values).pooler_output`` y devuelve un tensor
-    ``(n_parcels, 512)`` en CPU float32.
+    Reads each ``.tif`` crop from ``dataset_root/{region}/crops/{file}``,
+    resizes to 224x224, normalizes uint16/10000, passes through
+    ``model.vision_model(pixel_values).pooler_output`` and returns a tensor
+    ``(n_parcels, 512)`` on CPU float32.
 
     Args:
-        model: ``CLIPVisionModel`` con patch_embed adaptado a 4 canales.
-        parcels: DataFrame con columnas ``crop_path`` + ``region``.
-        dataset_root: raiz ``data/farslip_pairs/`` para resolver crops cross-platform.
-        batch_size: tamano batch forward (default 64 funciona en 24GB L4).
+        model: ``CLIPVisionModel`` with patch_embed adapted to 4 channels.
+        parcels: DataFrame with columns ``crop_path`` + ``region``.
+        dataset_root: ``data/farslip_pairs/`` root to resolve crops cross-platform.
+        batch_size: forward batch size (default 64 works on 24GB L4).
         device: ``torch.device``.
-        seed: semilla determinista (para shuffling reproducible si aplicara).
-        crop_resize_to: lado del crop tras resize bilineal (default 224).
+        seed: deterministic seed (for reproducible shuffling if applicable).
+        crop_resize_to: crop side after bilinear resize (default 224).
 
     Returns:
-        Tensor ``(n_parcels, EMBED_DIM)`` en CPU float32.
+        Tensor ``(n_parcels, EMBED_DIM)`` on CPU float32.
     """
     from ml.farslip.dataset import FarSLIPDataset
 
     propagate_seed(seed)
     if "crop_path" not in parcels.columns:
         raise ValueError(
-            "parquet sin columna 'crop_path' necesaria para extract real. "
-            "Anade crop_path desde manifest.parquet."
+            "parquet without 'crop_path' column required for real extract. "
+            "Add crop_path from manifest.parquet."
         )
 
     helper = FarSLIPDataset.__new__(FarSLIPDataset)
@@ -335,19 +336,19 @@ def extract_farslip_embeddings(
     mode: Literal["placeholder", "real"] = "placeholder",
     dataset_root: Path | None = None,
 ) -> ExtractEmbeddingsResult:
-    """Extrae embeddings FarSLIP de cada parcela italiana y los persiste.
+    """Extract FarSLIP embeddings of each Italian parcel and persist them.
 
     Args:
-        student_checkpoint_path: ruta local o URI ``mlflow://...``.
-        parcels_parquet: parquet con al menos ``parcel_id`` + ``year``.
-        rois: tupla de ROIs (o ``("italy",)``).
-        output_path: parquet de salida (parent se crea si no existe).
-        batch_size: batch para la inferencia CLIP (default 256).
+        student_checkpoint_path: local path or ``mlflow://...`` URI.
+        parcels_parquet: parquet with at least ``parcel_id`` + ``year``.
+        rois: tuple of ROIs (or ``("italy",)``).
+        output_path: output parquet (parent is created if it does not exist).
+        batch_size: batch for CLIP inference (default 256).
         device: ``"auto"`` | ``"cuda"`` | ``"cpu"``.
-        seed: semilla determinista (default 42).
+        seed: deterministic seed (default 42).
 
     Returns:
-        :class:`ExtractEmbeddingsResult` con metadata para MLflow tags.
+        :class:`ExtractEmbeddingsResult` with metadata for MLflow tags.
     """
     rois_resolved = _resolve_rois(rois)
     torch_device = _resolve_device(device)
@@ -364,7 +365,7 @@ def extract_farslip_embeddings(
     model = _load_student(ckpt_resolved, device=torch_device)
     if mode == "real":
         if dataset_root is None:
-            raise ValueError("mode='real' requiere dataset_root para resolver crops")
+            raise ValueError("mode='real' requires dataset_root to resolve crops")
         embeddings = _project_parcels_to_embeddings_real(
             model,
             parcels,
@@ -393,7 +394,7 @@ def extract_farslip_embeddings(
     )
     if out_df.width != TOTAL_COLS:
         raise RuntimeError(
-            f"output width inesperado: {out_df.width} != {TOTAL_COLS}"
+            f"unexpected output width: {out_df.width} != {TOTAL_COLS}"
         )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     out_df.write_parquet(output_path)

@@ -1,17 +1,17 @@
-"""US-023-preview P4 — ablation real pheno_text con Gemini Flash 3.5.
+"""US-023-preview P4 — real pheno_text ablation with Gemini Flash 3.5.
 
-Ejecucion productiva (no smoke). Construye subset estratificado >=1000
-parcelas balanceadas por clase, genera descripciones con Gemini Flash 3.5
-(temperature=0, cache por parcela), las codifica con sentence-transformers
-all-MiniLM-L6-v2 (384 dim) y persiste a data/features/phenology_text_italy.parquet.
+Production run (not smoke). Builds a stratified subset of >=1000 parcels
+balanced by class, generates descriptions with Gemini Flash 3.5
+(temperature=0, per-parcel cache), encodes them with sentence-transformers
+all-MiniLM-L6-v2 (384 dim) and persists to data/features/phenology_text_pastis.parquet.
 
-Luego corre la ablation con XGBoost spatial CV 5-fold sobre 3 conjuntos:
-- full (185 features base sin geom_*)
+Then it runs the ablation with XGBoost spatial CV 5-fold over 3 sets:
+- full (185 base features without geom_*)
 - with_pheno_text (185 + 384)
 - pheno_text_only (384)
 
-Persiste resultados a reports/baseline/feature_ablation/ablation_table_pheno_text_v2.parquet,
-registra el costo Gemini y crea un MLflow run.
+Persists results to reports/baseline/feature_ablation/ablation_table_pheno_text_v2.parquet,
+logs the Gemini cost and creates an MLflow run.
 """
 
 from __future__ import annotations
@@ -47,14 +47,14 @@ from ml.train.phenology_models import _reconstruct_curve  # noqa: E402
 # ---------------------------------------------------------------------------
 
 FEATURES_PATH = REPO / "data/test_fixtures/feature_selection_parcels_subset.parquet"
-OUT_PARQUET = REPO / "data/features/phenology_text_italy.parquet"
+OUT_PARQUET = REPO / "data/features/phenology_text_pastis.parquet"
 ABLATION_OUT = REPO / "reports/baseline/feature_ablation/ablation_table_pheno_text_v2.parquet"
 CACHE_DIR = REPO / "data/cache/phenology_descriptions"
 SEED = 42
-TARGET_PER_CLASS = 60  # 60 x 18 = 1080 parcelas (>= 1000 AC-P4-2)
+TARGET_PER_CLASS = 60  # 60 x 18 = 1080 parcels (>= 1000 AC-P4-2)
 MODEL_NAME = "gemini-3.5-flash"
-GEMINI_INPUT_USD_PER_1M = 0.30  # tarifa Gemini 2.5/3.5 Flash input
-GEMINI_OUTPUT_USD_PER_1M = 2.50  # tarifa Gemini 2.5/3.5 Flash output
+GEMINI_INPUT_USD_PER_1M = 0.30  # Gemini 2.5/3.5 Flash input rate
+GEMINI_OUTPUT_USD_PER_1M = 2.50  # Gemini 2.5/3.5 Flash output rate
 
 
 def log(msg: str) -> None:
@@ -64,13 +64,13 @@ def log(msg: str) -> None:
 def main() -> None:
     t0 = time.time()
 
-    # Validar API key.
+    # Validate API key.
     key = os.environ.get("GEMINI_API_KEY", "")
     if not key.startswith("AIzaSy"):
-        raise SystemExit("GEMINI_API_KEY no cargada desde .env.local")
+        raise SystemExit("GEMINI_API_KEY not loaded from .env.local")
     log(f"GEMINI_API_KEY ok (len={len(key)})")
 
-    # 1) Cargar dataset y construir subset balanceado.
+    # 1) Load dataset and build balanced subset.
     log("cargando dataset baseline...")
     df_raw = _load_baseline_dataset(FEATURES_PATH)
     df = _prepare_dataframe(df_raw)
@@ -85,25 +85,25 @@ def main() -> None:
     subset = pl.concat(parts).sort("parcel_id")
     log(f"subset balanceado: {subset.shape} ({subset['class_id'].n_unique()} clases)")
     if subset.height < 1000:
-        raise SystemExit(f"AC-P4-2 violado: subset {subset.height} < 1000")
+        raise SystemExit(f"AC-P4-2 violated: subset {subset.height} < 1000")
 
-    # 2) Reconstruir curvas NDVI desde FFT.
+    # 2) Reconstruct NDVI curves from FFT.
     log("reconstruyendo curvas NDVI desde FFT...")
     curves = _reconstruct_curve(subset, index_name="NDVI", sequence_length=72)
     log(f"curvas: shape {curves.shape}")
 
-    # 3) Generar descripciones con Gemini Flash 3.5.
+    # 3) Generate descriptions with Gemini Flash 3.5.
     parcel_ids = subset["parcel_id"].to_list()
     descriptions: list[str] = []
     n_total = len(parcel_ids)
     n_cache_hits = 0
     n_api_calls = 0
     api_t0 = time.time()
-    chars_in = 0  # proxy de tokens_in para prompt
-    chars_out = 0  # proxy de tokens_out para descripcion
+    chars_in = 0  # proxy of tokens_in for prompt
+    chars_out = 0  # proxy of tokens_out for description
 
     for i, (pid, curve) in enumerate(zip(parcel_ids, curves, strict=True)):
-        # Detect cache hit antes de llamar (mismo helper interno).
+        # Detect cache hit before calling (same internal helper).
         from ml.features.phenology_description import _hash_curve
 
         cache_key = _hash_curve(pid, curve.astype(np.float32), MODEL_NAME)
@@ -123,10 +123,10 @@ def main() -> None:
             n_cache_hits += 1
         else:
             n_api_calls += 1
-            # Aproximacion grosera tokens = chars/4.
+            # Rough approximation tokens = chars/4.
             chars_out += len(desc)
-            # El prompt incluye el template ~700 chars + serializacion curva
-            # ~24 puntos x ~18 chars = ~430 chars. Total ~1200 chars.
+            # The prompt includes the template ~700 chars + curve serialization
+            # ~24 points x ~18 chars = ~430 chars. Total ~1200 chars.
             chars_in += 1200
 
         if (i + 1) % 50 == 0:
@@ -136,7 +136,7 @@ def main() -> None:
     api_dt = time.time() - api_t0
     log(f"descripciones listas: api={n_api_calls}, cache={n_cache_hits}, dt={api_dt:.0f}s")
 
-    # Estimacion costo: tokens ~ chars/4.
+    # Cost estimation: tokens ~ chars/4.
     tokens_in = chars_in // 4
     tokens_out = chars_out // 4
     cost_in = tokens_in / 1_000_000 * GEMINI_INPUT_USD_PER_1M
@@ -144,15 +144,15 @@ def main() -> None:
     cost_total = cost_in + cost_out
     log(f"costo Gemini estimado: in={tokens_in} tok (${cost_in:.4f}), out={tokens_out} tok (${cost_out:.4f}), total=${cost_total:.4f}")
     if cost_total > 5.0:
-        raise SystemExit(f"AC-P4-4 violado: ${cost_total:.4f} > $5.0")
+        raise SystemExit(f"AC-P4-4 violated: ${cost_total:.4f} > $5.0")
 
-    # 4) Encodear con sentence-transformers.
+    # 4) Encode with sentence-transformers.
     log("encoding con sentence-transformers all-MiniLM-L6-v2...")
     embeddings = encode_descriptions(descriptions, encoder="sentence-transformers")
     log(f"embeddings shape: {embeddings.shape}")
     assert embeddings.shape == (n_total, DEFAULT_TEXT_EMBED_DIM)
 
-    # 5) Persistir parquet ampliado.
+    # 5) Persist extended parquet.
     log(f"persistiendo {OUT_PARQUET}...")
     block: dict[str, list] = {
         "parcel_id": parcel_ids,
@@ -173,12 +173,12 @@ def main() -> None:
     log(f"parquet shape: {text_df.shape}")
     assert text_df.shape == (n_total, 1 + 1 + DEFAULT_TEXT_EMBED_DIM)
 
-    # 6) Construir frame fusionado para ablation: subset + pheno_text cols.
+    # 6) Build fused frame for ablation: subset + pheno_text cols.
     log("fusionando para ablation...")
     fused = subset.join(text_df.drop("year"), on="parcel_id", how="inner")
     log(f"fused shape: {fused.shape}")
 
-    # 7) Construir feature_sets para los 3 conjuntos.
+    # 7) Build feature_sets for the 3 sets.
     cols = fused.columns
     drop_meta = {
         "parcel_id", "year", "patch_id", "instance_id", "class_id",
@@ -203,7 +203,7 @@ def main() -> None:
         f"pheno_text_only={len(pheno_text_cols)}"
     )
 
-    # 8) Correr ablation con spatial CV 5-fold.
+    # 8) Run ablation with spatial CV 5-fold.
     log("corriendo run_feature_ablation (XGB, spatial CV 5-fold)...")
     results = run_feature_ablation(
         df=fused,
@@ -214,7 +214,7 @@ def main() -> None:
         buffer_km=1.0,
     )
 
-    # Convertir lista FeatureAblationResult a Polars DataFrame.
+    # Convert list of FeatureAblationResult to Polars DataFrame.
     result_rows = [
         {
             "feature_set": r.feature_set,
@@ -255,7 +255,7 @@ def main() -> None:
         decision = "DEUDA US-024 (delta < -0.01, escalar a full 85951)"
     log(f"decision: {decision}")
 
-    # 10) Persistir run summary JSON para reporte.
+    # 10) Persist run summary JSON for report.
     git_sha = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=str(REPO), capture_output=True, text=True
     ).stdout.strip()
@@ -287,7 +287,7 @@ def main() -> None:
     summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
     log(f"summary -> {summary_path.relative_to(REPO)}")
 
-    # 11) MLflow opcional.
+    # 11) Optional MLflow.
     try:
         import mlflow
 
@@ -324,7 +324,7 @@ def main() -> None:
             summary_path.write_text(
                 json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8"
             )
-    except Exception as exc:  # mlflow opcional
+    except Exception as exc:  # mlflow optional
         log(f"mlflow skip (motivo: {exc!r})")
 
     log(f"P4 done en {summary['wall_seconds_total']}s")

@@ -1,12 +1,12 @@
-"""Inserta la seccion cross-region BreizhCrops en 03b_fe_spectral_temporal_pastis.
+"""Inserts the BreizhCrops cross-region section into 03b_fe_spectral_temporal_pastis.
 
-Operativo permanente e idempotente: localiza la celda marcador
-``BREIZHCROPS_CROSSREGION`` y, si no existe, inserta una seccion nueva justo
-antes de la celda de conclusiones (## 11. Conclusiones), renumerandola a
-## 12. Las celdas reutilizan los transformers temporales existentes
-(``ml.features.temporal_features.extract_temporal_features``) sobre series
-BreizhCrops, demostrando que las features FFT/fenologia generalizan
-cross-region. Papermill-safe: modo degradado si el dataset no esta en disco.
+Permanent and idempotent operational script: locates the
+``BREIZHCROPS_CROSSREGION`` marker cell and, if it does not exist, inserts a new
+section right before the conclusions cell (## 11. Conclusiones), renumbering it to
+## 12. The cells reuse the existing temporal transformers
+(``ml.features.temporal_features.extract_temporal_features``) on BreizhCrops
+series, demonstrating that the FFT/phenology features generalize
+cross-region. Papermill-safe: degraded mode if the dataset is not on disk.
 """
 
 from __future__ import annotations
@@ -83,10 +83,10 @@ else:
 
 CODE_EXTRACT = """
 def _bc_parcel_to_temporal_features(parcel_df: pl.DataFrame, pid: int, yr: int):
-    \"\"\"Construye el DataArray (time, band) de indices y aplica el transformer.
+    \"\"\"Builds the (time, band) DataArray of indices and applies the transformer.
 
-    Reutiliza compute_index (NDVI/NDWI/EVI) + extract_temporal_features, los
-    mismos usados en PASTIS-R, sin reimplementar logica de features.
+    Reuses compute_index (NDVI/NDWI/EVI) + extract_temporal_features, the
+    same ones used in PASTIS-R, without reimplementing feature logic.
     \"\"\"
     import numpy as np
     import xarray as xr
@@ -219,7 +219,7 @@ def main() -> None:
         print("marcador ya presente — no se reinserta (idempotente)")
         return
 
-    # Renumerar la celda de conclusiones de ## 11 a ## 12.
+    # Renumber the conclusions cell from ## 11 to ## 12.
     concl_idx = None
     for i, c in enumerate(cells):
         if c.get("cell_type") == "markdown" and "".join(c["source"]).lstrip().startswith(

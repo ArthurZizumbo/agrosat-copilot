@@ -1,8 +1,8 @@
-"""Utilidades de visualización para EDA Sentinel-2.
+"""Visualization utilities for Sentinel-2 EDA.
 
-- `stretch_2_98`: stretch percentil 2-98 por banda para visualización RGB.
-- `folium_rois`: mapa folium con las 4 ROIs desde `config/rois.yaml`.
-- `plot_band_grid`: grid de histogramas por banda.
+- `stretch_2_98`: 2-98 percentile stretch per band for RGB visualization.
+- `folium_rois`: folium map with the 4 ROIs from `config/rois.yaml`.
+- `plot_band_grid`: grid of histograms per band.
 """
 
 from __future__ import annotations
@@ -15,15 +15,15 @@ import polars as pl
 
 
 def stretch_2_98(arr: np.ndarray) -> np.ndarray:
-    """Aplica stretch percentil 2-98 banda por banda.
+    """Apply a 2-98 percentile stretch band by band.
 
-    Acepta arrays 2D `(H, W)` o 3D `(C, H, W)` / `(H, W, C)`.
+    Accepts 2D arrays `(H, W)` or 3D `(C, H, W)` / `(H, W, C)`.
 
     Args:
-        arr: Array numérico a estirar.
+        arr: Numeric array to stretch.
 
     Returns:
-        Array `float32` con valores en [0, 1].
+        `float32` array with values in [0, 1].
     """
     arr = np.asarray(arr, dtype=np.float32)
     if arr.ndim == 2:
@@ -31,7 +31,7 @@ def stretch_2_98(arr: np.ndarray) -> np.ndarray:
         out = (arr - lo) / max(hi - lo, 1e-6)
         return np.clip(out, 0.0, 1.0)
     if arr.ndim == 3:
-        # Detectar layout (C, H, W) vs (H, W, C) por el tamaño del eje
+        # Detect layout (C, H, W) vs (H, W, C) by the axis size
         if arr.shape[0] <= 12 and arr.shape[0] < arr.shape[-1]:
             channels = arr.shape[0]
             out = np.empty_like(arr, dtype=np.float32)
@@ -45,18 +45,18 @@ def stretch_2_98(arr: np.ndarray) -> np.ndarray:
                 lo, hi = np.percentile(arr[..., c], [2.0, 98.0])
                 out[..., c] = np.clip((arr[..., c] - lo) / max(hi - lo, 1e-6), 0.0, 1.0)
             return out
-    raise ValueError(f"Array shape no soportado: {arr.shape}")
+    raise ValueError(f"Unsupported array shape: {arr.shape}")
 
 
 def folium_rois(rois_yaml: Path, output_path: Path) -> Any:
-    """Genera un mapa folium con todas las ROIs declaradas en YAML.
+    """Generate a folium map with all ROIs declared in the YAML.
 
     Args:
-        rois_yaml: Ruta al `config/rois.yaml`.
-        output_path: Ruta para guardar el HTML final.
+        rois_yaml: Path to `config/rois.yaml`.
+        output_path: Path to save the final HTML.
 
     Returns:
-        Objeto `folium.Map` ya guardado en disco.
+        `folium.Map` object already saved to disk.
     """
     import folium  # type: ignore[import-untyped]
     import yaml
@@ -71,7 +71,7 @@ def folium_rois(rois_yaml: Path, output_path: Path) -> Any:
         m.save(str(output_path))
         return m
 
-    # Centrar en bbox global aproximado
+    # Center on approximate global bbox
     lats: list[float] = []
     lons: list[float] = []
     for r in rois:
@@ -118,15 +118,15 @@ def plot_band_grid(
     value_col: str = "value",
     bands: list[str] | None = None,
 ) -> None:
-    """Genera un grid 2x5 de histogramas, uno por banda Sentinel-2.
+    """Generate a 2x5 grid of histograms, one per Sentinel-2 band.
 
     Args:
-        df: DataFrame long-format con columnas `band_col, value_col`.
-        output_path: Ruta al PNG de salida.
-        dpi: Resolución (default 200).
-        band_col: Nombre columna banda.
-        value_col: Nombre columna valor.
-        bands: Subset de bandas (default 10 PASTIS).
+        df: Long-format DataFrame with columns `band_col, value_col`.
+        output_path: Path to the output PNG.
+        dpi: Resolution (default 200).
+        band_col: Band column name.
+        value_col: Value column name.
+        bands: Band subset (default 10 PASTIS).
     """
     import matplotlib.pyplot as plt
 
@@ -171,7 +171,7 @@ def plot_band_grid(
 
 
 def _categorical_palette(n: int) -> list[tuple[float, float, float, float]]:
-    """Paleta tab20 ciclica con `n` colores RGBA."""
+    """Cyclic tab20 palette with `n` RGBA colors."""
     import matplotlib.pyplot as plt
 
     cmap = plt.get_cmap("tab20")
@@ -185,17 +185,17 @@ def tsne_scatter(
     out_path: Path,
     dpi: int = 200,
 ) -> Any:
-    """Scatter 2D coloreado por clase con leyenda agrupada.
+    """2D scatter colored by class with grouped legend.
 
     Args:
-        emb_2d: Array shape `(n, 2)` con coords t-SNE.
-        labels: Array shape `(n,)` con etiquetas categoricas.
-        title: Titulo del plot.
-        out_path: Ruta de salida PNG.
-        dpi: Resolucion.
+        emb_2d: Array shape `(n, 2)` with t-SNE coords.
+        labels: Array shape `(n,)` with categorical labels.
+        title: Plot title.
+        out_path: Output PNG path.
+        dpi: Resolution.
 
     Returns:
-        Figura matplotlib (ya guardada en disco si out_path se provee).
+        Matplotlib figure (already saved to disk if out_path is provided).
     """
     import matplotlib.pyplot as plt
 
@@ -233,9 +233,9 @@ def umap_scatter(
     out_path: Path,
     dpi: int = 200,
 ) -> Any:
-    """Scatter 2D UMAP coloreado por clase.
+    """2D UMAP scatter colored by class.
 
-    Mismos parametros que `tsne_scatter`. Estilo identico para comparabilidad.
+    Same parameters as `tsne_scatter`. Identical style for comparability.
     """
     import matplotlib.pyplot as plt
 
@@ -272,19 +272,19 @@ def correlation_heatmap(
     threshold: float = 0.7,
     dpi: int = 200,
 ) -> Any:
-    """Heatmap de la matriz de correlacion 64x64.
+    """Heatmap of the 64x64 correlation matrix.
 
-    Acepta el output long-format de `correlation_matrix()` y reconstruye la
-    matriz simetrica para graficar.
+    Accepts the long-format output of `correlation_matrix()` and rebuilds the
+    symmetric matrix to plot.
 
     Args:
-        corr_df: DataFrame long con columnas `dim_i, dim_j, pearson|spearman`.
-        out_path: Ruta PNG.
-        threshold: Linea de referencia (anota celdas con |corr| > threshold).
-        dpi: Resolucion.
+        corr_df: Long DataFrame with columns `dim_i, dim_j, pearson|spearman`.
+        out_path: PNG path.
+        threshold: Reference line (annotates cells with |corr| > threshold).
+        dpi: Resolution.
 
     Returns:
-        Figura matplotlib.
+        Matplotlib figure.
     """
     import matplotlib.pyplot as plt
 
@@ -330,22 +330,22 @@ def qq_grid(
     ncols: int = 8,
     dpi: int = 200,
 ) -> Any:
-    """Grid de QQ plots aproximados por dimension.
+    """Grid of approximate QQ plots per dimension.
 
-    Como el QQ exacto requiere los valores raw, este grid grafica curva normal
-    de comparacion `(z_score, value_aprox)` derivada de los estadisticos
-    (mean, std). Para visualizacion exacta usar `scipy.stats.probplot` en el
-    notebook con los arrays raw.
+    Since the exact QQ requires the raw values, this grid plots a comparison
+    normal curve `(z_score, value_aprox)` derived from the statistics
+    (mean, std). For exact visualization use `scipy.stats.probplot` in the
+    notebook with the raw arrays.
 
     Args:
-        stats_df: Output de `qq_test_dims()` con columnas `dim, mean, std,
+        stats_df: Output of `qq_test_dims()` with columns `dim, mean, std,
             skewness, kurtosis, shapiro_pvalue`.
-        out_path: Ruta PNG.
-        ncols: Columnas del grid (default 8 -> 64 dims = 8x8).
-        dpi: Resolucion.
+        out_path: PNG path.
+        ncols: Grid columns (default 8 -> 64 dims = 8x8).
+        dpi: Resolution.
 
     Returns:
-        Figura matplotlib.
+        Matplotlib figure.
     """
     import matplotlib.pyplot as plt
 
@@ -373,7 +373,7 @@ def qq_grid(
         ax.tick_params(axis="both", labelsize=5)
     for j in range(n, len(axes_flat)):
         axes_flat[j].set_visible(False)
-    fig.suptitle("QQ plots aproximados vs N(0,1) por dimension AlphaEarth", fontsize=11)
+    fig.suptitle("QQ plots aproximados vs N(0,1) por dimensión AlphaEarth", fontsize=11)
     fig.tight_layout(rect=(0, 0, 1, 0.97))
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
@@ -391,24 +391,24 @@ def pairplot_by_class(
     top_classes: int = 10,
     dpi: int = 200,
 ) -> Any:
-    """Pairplot seaborn condicionado por clase con cap de clases y subsampling.
+    """Seaborn pairplot conditioned by class with class cap and subsampling.
 
-    Cap clases a `top_classes` por frecuencia para no saturar seaborn. Aplica
-    `.to_pandas()` como adapter borde unicamente para `seaborn.pairplot`, que
-    no acepta Polars.
+    Caps classes to `top_classes` by frequency to avoid saturating seaborn.
+    Applies `.to_pandas()` as an edge adapter solely for `seaborn.pairplot`,
+    which does not accept Polars.
 
     Args:
-        df: DataFrame Polars con `features` y `class_col`.
-        features: Columnas a usar como ejes del pairplot.
-        class_col: Columna categorica para `hue`.
-        out_path: Ruta PNG de salida.
-        subsample_per_class: Maximo de filas por clase a graficar.
-        seed: Semilla para muestreo.
-        top_classes: Numero maximo de clases (las mas frecuentes) a conservar.
-        dpi: Resolucion del PNG (default 200).
+        df: Polars DataFrame with `features` and `class_col`.
+        features: Columns to use as pairplot axes.
+        class_col: Categorical column for `hue`.
+        out_path: Output PNG path.
+        subsample_per_class: Maximum rows per class to plot.
+        seed: Sampling seed.
+        top_classes: Maximum number of classes (the most frequent) to keep.
+        dpi: PNG resolution (default 200).
 
     Returns:
-        Objeto `seaborn.PairGrid` ya guardado en disco.
+        `seaborn.PairGrid` object already saved to disk.
     """
     import matplotlib.pyplot as plt
 
@@ -476,18 +476,18 @@ def vif_barplot(
     threshold_drop: float = 10.0,
     dpi: int = 200,
 ) -> Any:
-    """Barplot horizontal de VIF con lineas de threshold a 5 y 10.
+    """Horizontal VIF barplot with threshold lines at 5 and 10.
 
     Args:
-        vif_df: Output de `correlations.vif_table()` con columnas
+        vif_df: Output of `correlations.vif_table()` with columns
             `feature, vif, status`.
-        out_path: Ruta PNG.
-        threshold_warn: Linea de alerta amarilla (default 5).
-        threshold_drop: Linea critica roja (default 10).
-        dpi: Resolucion.
+        out_path: PNG path.
+        threshold_warn: Yellow warning line (default 5).
+        threshold_drop: Red critical line (default 10).
+        dpi: Resolution.
 
     Returns:
-        Figura matplotlib (cerrada tras savefig).
+        Matplotlib figure (closed after savefig).
     """
     import matplotlib.pyplot as plt
 
@@ -499,7 +499,7 @@ def vif_barplot(
         plt.close(fig)
         return fig
 
-    # Reemplazar inf por un sentinel grande para graficar
+    # Replace inf with a large sentinel for plotting
     sub = vif_df.with_columns(
         pl.when(pl.col("vif").is_infinite()).then(1e3).otherwise(pl.col("vif")).alias("vif_plot")
     ).sort("vif_plot", descending=False)
@@ -534,16 +534,16 @@ def dual_axis_precip_ndvi(
     out_path: Path,
     dpi: int = 200,
 ) -> Any:
-    """Plot doble eje: barras precip ERA5 + linea NDVI maximo anual por ROI.
+    """Dual-axis plot: ERA5 precip bars + annual max NDVI line per ROI.
 
     Args:
-        df_era5: DataFrame Polars con `year, roi_name, precip_mm`.
-        df_ndvi: DataFrame Polars con `year, roi_name, ndvi_max`.
-        out_path: Ruta PNG.
-        dpi: Resolucion.
+        df_era5: Polars DataFrame with `year, roi_name, precip_mm`.
+        df_ndvi: Polars DataFrame with `year, roi_name, ndvi_max`.
+        out_path: PNG path.
+        dpi: Resolution.
 
     Returns:
-        Figura matplotlib.
+        Matplotlib figure.
     """
     import matplotlib.pyplot as plt
 
@@ -594,7 +594,7 @@ def dual_axis_precip_ndvi(
     ax.set_ylabel("Precipitacion anual (mm)")
     ax2.set_ylabel("NDVI maximo anual")
     ax.set_title("ERA5 precip anual vs NDVI maximo por ROI")
-    # Leyenda combinada
+    # Combined legend
     h1, l1 = ax.get_legend_handles_labels()
     h2, l2 = ax2.get_legend_handles_labels()
     ax.legend(h1 + h2, l1 + l2, loc="best", fontsize=8)
@@ -610,17 +610,17 @@ def acf_grid_by_class(
     ncols: int = 3,
     dpi: int = 200,
 ) -> Any:
-    """Grid de plots ACF agregados por clase (media + IC 95%).
+    """Grid of ACF plots aggregated by class (mean + 95% CI).
 
     Args:
-        acf_df: Output de `correlations.acf_pacf_per_parcel()` con columnas
+        acf_df: Output of `correlations.acf_pacf_per_parcel()` with columns
             `parcel_id, class_name, lag, acf, pacf`.
-        out_path: Ruta PNG.
-        ncols: Columnas del grid (default 3).
-        dpi: Resolucion.
+        out_path: PNG path.
+        ncols: Grid columns (default 3).
+        dpi: Resolution.
 
     Returns:
-        Figura matplotlib.
+        Matplotlib figure.
     """
     import matplotlib.pyplot as plt
 
@@ -654,7 +654,7 @@ def acf_grid_by_class(
         mean = sub["acf_mean"].to_numpy()
         std = sub["acf_std"].to_numpy()
         n = sub["n"].to_numpy()
-        # IC95 aproximado con normal: mean +/- 1.96 * std / sqrt(n)
+        # Approximate 95% CI with normal: mean +/- 1.96 * std / sqrt(n)
         denom = np.sqrt(np.maximum(n, 1))
         ci = 1.96 * std / denom
         ax.bar(lags, mean, color="#1f77b4", alpha=0.85)
@@ -678,18 +678,18 @@ def dtw_centroids_plot(
     out_path: Path,
     dpi: int = 200,
 ) -> Any:
-    """Plot de los centroides DTW del `TimeSeriesKMeans` ajustado.
+    """Plot of the DTW centroids of the fitted `TimeSeriesKMeans`.
 
     Args:
-        km_model: Modelo `tslearn.clustering.TimeSeriesKMeans` ajustado con
-            `cluster_centers_` accesible. Si es None, se pinta placeholder.
-        df_ts: DataFrame Polars con `parcel_id, class_name, cluster_id` para
-            anotar tamano de cada cluster.
-        out_path: Ruta PNG.
-        dpi: Resolucion.
+        km_model: Fitted `tslearn.clustering.TimeSeriesKMeans` model with
+            `cluster_centers_` accessible. If None, a placeholder is drawn.
+        df_ts: Polars DataFrame with `parcel_id, class_name, cluster_id` to
+            annotate the size of each cluster.
+        out_path: PNG path.
+        dpi: Resolution.
 
     Returns:
-        Figura matplotlib.
+        Matplotlib figure.
     """
     import matplotlib.pyplot as plt
 
@@ -736,16 +736,16 @@ def cross_region_scatter(
     annotate_top_k: int = 10,
     dpi: int = 200,
 ) -> Any:
-    """Scatter `importance_italia` vs `importance_francia` con linea identidad.
+    """Scatter `importance_italia` vs `importance_francia` with identity line.
 
     Args:
-        consistency_df: Output de `cross_region_consistency()`.
-        out_path: Ruta PNG.
-        annotate_top_k: Cuantas dims top etiquetar con su nombre.
-        dpi: Resolucion.
+        consistency_df: Output of `cross_region_consistency()`.
+        out_path: PNG path.
+        annotate_top_k: How many top dims to label with their name.
+        dpi: Resolution.
 
     Returns:
-        Figura matplotlib.
+        Matplotlib figure.
     """
     import matplotlib.pyplot as plt
 
@@ -767,7 +767,7 @@ def cross_region_scatter(
     max_val = float(np.nanmax([x.max() if x.size else 0, y.max() if y.size else 0]))
     ax.plot([0, max_val], [0, max_val], "k--", lw=0.8, alpha=0.6, label="Identidad")
 
-    # Anotar top-K por suma de importance
+    # Annotate top-K by sum of importance
     sorted_idx = np.argsort(-(x + y))[:annotate_top_k]
     for i in sorted_idx:
         ax.annotate(

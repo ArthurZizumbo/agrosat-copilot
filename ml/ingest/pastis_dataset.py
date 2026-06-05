@@ -1,21 +1,21 @@
-"""Dataset PyTorch denso para segmentacion semantica sobre PASTIS-R (EPIC 5).
+"""Dense PyTorch dataset for semantic segmentation over PASTIS-R (EPIC 5).
 
-Este modulo es el **pipeline denso compartido** que reutilizan las 6 arquitecturas
-de segmentacion del Avance 4 (U-Net, DeepLabv3+, SegFormer, U-TAE, TSViT, AnySat).
-Construye tensores listos para entrenamiento a partir de los patches PASTIS-R
-crudos cargados por :func:`ml.ingest.pastis_loader.load_pastis_patch`.
+This module is the **shared dense pipeline** reused by the 6 segmentation
+architectures of Avance 4 (U-Net, DeepLabv3+, SegFormer, U-TAE, TSViT, AnySat).
+It builds training-ready tensors from the raw PASTIS-R patches loaded by
+:func:`ml.ingest.pastis_loader.load_pastis_patch`.
 
-Convenciones del equipo (comparabilidad de los 6 modelos):
+Team conventions (comparability of the 6 models):
 
 - ``num_classes = 20`` (0 = background ... 19 = void).
-- ``ignore_index = 19`` (void) en loss y metricas.
-- Resolucion ``256x256`` (resize bilinear imagen / nearest label).
-- Reduccion temporal ``median`` para modelos 2D (U-Net/DeepLabv3+/SegFormer);
-  modo ``none`` (serie recortada a ``fixed_t`` frames) para modelos temporales
+- ``ignore_index = 19`` (void) in loss and metrics.
+- Resolution ``256x256`` (bilinear resize image / nearest label).
+- Temporal reduction ``median`` for 2D models (U-Net/DeepLabv3+/SegFormer);
+  ``none`` mode (series trimmed to ``fixed_t`` frames) for temporal models
   (U-TAE/TSViT/AnySat).
 
-Normalizacion por banda con las estadisticas oficiales ``NORM_S2_patch.json``
-promediadas sobre los folds de entrenamiento (sin leakage del fold de test).
+Per-band normalization with the official ``NORM_S2_patch.json`` statistics
+averaged over the training folds (no leakage from the test fold).
 """
 
 from __future__ import annotations
@@ -49,13 +49,13 @@ __all__ = [
 ]
 
 PASTIS_NUM_CLASSES: int = 20
-"""Numero de clases semanticas PASTIS-R (0 background, 1-18 cultivos, 19 void)."""
+"""Number of PASTIS-R semantic classes (0 background, 1-18 crops, 19 void)."""
 
 PASTIS_IGNORE_INDEX: int = 19
-"""Clase ``void`` ignorada en loss y metricas (convencion compartida del equipo)."""
+"""``void`` class ignored in loss and metrics (shared team convention)."""
 
 PASTIS_TARGET_SIZE: int = 256
-"""Resolucion espacial objetivo tras resize (los patches nativos son 128x128)."""
+"""Target spatial resolution after resize (native patches are 128x128)."""
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _DEFAULT_ROOT = _REPO_ROOT / "data" / "PASTIS-R"
@@ -68,19 +68,20 @@ def load_norm_stats(
     root: Path | None = None,
     folds: tuple[int, ...] = (1, 2, 3, 4, 5),
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Carga y promedia las estadisticas de normalizacion por banda de PASTIS-R.
+    """Load and average the per-band normalization statistics of PASTIS-R.
 
-    Lee ``NORM_S2_patch.json`` (un dict ``{Fold_k: {mean: [10], std: [10]}}``) y
-    promedia las medias y desviaciones de los folds indicados. Para evitar
-    leakage espacial se deben pasar **solo los folds de entrenamiento**.
+    Reads ``NORM_S2_patch.json`` (a dict ``{Fold_k: {mean: [10], std: [10]}}``)
+    and averages the means and deviations of the indicated folds. To avoid
+    spatial leakage **only the training folds** must be passed.
 
     Args:
-        root: Raiz del dataset PASTIS-R (default ``data/PASTIS-R/``).
-        folds: Folds de entrenamiento sobre los que promediar (1..5).
+        root: Root of the PASTIS-R dataset (default ``data/PASTIS-R/``).
+        folds: Training folds over which to average (1..5).
 
     Returns:
-        Tupla ``(mean, std)`` de arrays ``float32`` de forma ``(10,)``. Si el
-        archivo no existe devuelve ``mean=0``, ``std=1`` (modo degradado, no-op).
+        Tuple ``(mean, std)`` of ``float32`` arrays of shape ``(10,)``. If the
+        file does not exist it returns ``mean=0``, ``std=1`` (degraded mode,
+        no-op).
     """
     root = root or _DEFAULT_ROOT
     norm_path = root / "NORM_S2_patch.json"
@@ -105,7 +106,7 @@ def load_norm_stats(
 
     mean = np.mean(np.stack(means, axis=0), axis=0)
     std = np.mean(np.stack(stds, axis=0), axis=0)
-    # Evita division por cero en bandas degeneradas.
+    # Avoid division by zero in degenerate bands.
     std = np.where(std <= 0.0, 1.0, std)
     return mean.astype(np.float32), std.astype(np.float32)
 
@@ -116,21 +117,21 @@ def pastis_fold_split(
     val_folds: tuple[int, ...] = (4,),
     test_folds: tuple[int, ...] = (5,),
 ) -> dict[str, list[str]]:
-    """Construye el split train/val/test usando los 5 folds oficiales de PASTIS-R.
+    """Build the train/val/test split using the 5 official PASTIS-R folds.
 
-    Los folds vienen predefinidos en ``metadata.geojson`` (campo ``Fold``) y son
-    espacialmente disjuntos por diseno del dataset, por lo que evitan el leakage
-    espacial que prohibe la regla ML del proyecto (sin random split).
+    The folds come predefined in ``metadata.geojson`` (``Fold`` field) and are
+    spatially disjoint by dataset design, so they avoid the spatial leakage that
+    the project ML rule forbids (no random split).
 
     Args:
-        root: Raiz del dataset PASTIS-R.
-        train_folds: Folds asignados a entrenamiento.
-        val_folds: Folds asignados a validacion.
-        test_folds: Folds asignados a test.
+        root: Root of the PASTIS-R dataset.
+        train_folds: Folds assigned to training.
+        val_folds: Folds assigned to validation.
+        test_folds: Folds assigned to test.
 
     Returns:
-        Diccionario ``{"train": [...], "val": [...], "test": [...]}`` con listas
-        de ``patch_id`` (str). Listas vacias si ``metadata.geojson`` no existe.
+        Dictionary ``{"train": [...], "val": [...], "test": [...]}`` with lists of
+        ``patch_id`` (str). Empty lists if ``metadata.geojson`` does not exist.
     """
     root = root or _DEFAULT_ROOT
     index = pastis_patch_index(root / "metadata.geojson")
@@ -151,16 +152,16 @@ def pastis_fold_split(
 
 
 def _resize_spatial(x: torch.Tensor, size: int, *, label: bool) -> torch.Tensor:
-    """Reescala el plano espacial ``(..., H, W)`` a ``(..., size, size)``.
+    """Resize the spatial plane ``(..., H, W)`` to ``(..., size, size)``.
 
     Args:
-        x: Tensor ``(C, H, W)`` (imagen) o ``(H, W)`` (label).
-        size: Lado objetivo.
-        label: Si ``True`` usa interpolacion ``nearest`` (preserva ids de clase);
-            si ``False`` usa ``bilinear`` (imagen continua).
+        x: Tensor ``(C, H, W)`` (image) or ``(H, W)`` (label).
+        size: Target side.
+        label: If ``True`` uses ``nearest`` interpolation (preserves class ids);
+            if ``False`` uses ``bilinear`` (continuous image).
 
     Returns:
-        Tensor reescalado con el mismo numero de dimensiones que la entrada.
+        Resized tensor with the same number of dimensions as the input.
     """
     if label:
         grid = x.float().unsqueeze(0).unsqueeze(0)  # (1, 1, H, W)
@@ -172,16 +173,16 @@ def _resize_spatial(x: torch.Tensor, size: int, *, label: bool) -> torch.Tensor:
 
 
 def _yyyymmdd_to_doy(date_int: int) -> int:
-    """Convierte una fecha ``YYYYMMDD`` a dia-del-anio (1-366).
+    """Convert a ``YYYYMMDD`` date to day-of-year (1-366).
 
-    Los modelos temporales (U-TAE, TSViT, AnySat) esperan posiciones temporales
-    como dia-del-anio, no el entero ``YYYYMMDD`` crudo que distribuye PASTIS-R.
+    The temporal models (U-TAE, TSViT, AnySat) expect temporal positions as
+    day-of-year, not the raw ``YYYYMMDD`` integer that PASTIS-R distributes.
 
     Args:
-        date_int: Fecha como entero ``YYYYMMDD`` (ej. ``20190101``).
+        date_int: Date as a ``YYYYMMDD`` integer (e.g. ``20190101``).
 
     Returns:
-        Dia del anio en ``[1, 366]``; ``0`` si la fecha es invalida o <= 0.
+        Day of year in ``[1, 366]``; ``0`` if the date is invalid or <= 0.
     """
     if date_int <= 0:
         return 0
@@ -193,16 +194,15 @@ def _yyyymmdd_to_doy(date_int: int) -> int:
 
 
 def _select_frames(n_t: int, fixed_t: int) -> list[int]:
-    """Devuelve indices temporales para recortar/padear la serie a ``fixed_t``.
+    """Return temporal indices to trim/pad the series to ``fixed_t``.
 
     Args:
-        n_t: Numero de frames disponibles en el patch.
-        fixed_t: Numero objetivo de frames.
+        n_t: Number of frames available in the patch.
+        fixed_t: Target number of frames.
 
     Returns:
-        Lista de longitud ``fixed_t`` con indices en ``[0, n_t)`` (espaciado
-        uniforme si ``n_t >= fixed_t``; con repeticion del ultimo si ``n_t <
-        fixed_t``).
+        List of length ``fixed_t`` with indices in ``[0, n_t)`` (uniform spacing
+        if ``n_t >= fixed_t``; repeating the last one if ``n_t < fixed_t``).
     """
     if n_t >= fixed_t:
         return np.linspace(0, n_t - 1, fixed_t).round().astype(int).tolist()
@@ -210,18 +210,18 @@ def _select_frames(n_t: int, fixed_t: int) -> list[int]:
 
 
 def _load_pastis_metadata_index(root: Path) -> dict[str, dict[str, Any]]:
-    """Parsea ``metadata.geojson`` una sola vez y devuelve fechas y fold por patch.
+    """Parse ``metadata.geojson`` only once and return dates and fold per patch.
 
-    Evita re-parsear el geojson (~19 MB) en cada ``__getitem__``, que es
-    prohibitivo leyendo desde un Drive montado. Se invoca solo cuando el dataset
-    necesita las fechas (modo temporal) o el fold (``return_meta``).
+    Avoids re-parsing the geojson (~19 MB) in each ``__getitem__``, which is
+    prohibitive when reading from a mounted Drive. It is invoked only when the
+    dataset needs the dates (temporal mode) or the fold (``return_meta``).
 
     Args:
-        root: Raiz del dataset PASTIS-R.
+        root: Root of the PASTIS-R dataset.
 
     Returns:
-        Diccionario ``{patch_id: {"dates": [int], "fold": int | None}}``. Vacio
-        si ``metadata.geojson`` no existe.
+        Dictionary ``{patch_id: {"dates": [int], "fold": int | None}}``. Empty if
+        ``metadata.geojson`` does not exist.
     """
     meta_path = root / "metadata.geojson"
     if not meta_path.exists():
@@ -246,18 +246,18 @@ def _load_pastis_metadata_index(root: Path) -> dict[str, dict[str, Any]]:
 
 
 class PASTISDataset(Dataset):
-    """Dataset denso PASTIS-R para segmentacion semantica multitemporal.
+    """Dense PASTIS-R dataset for multitemporal semantic segmentation.
 
-    Cada item es un diccionario de tensores listo para alimentar un modelo de
-    segmentacion. El modo ``temporal_reduction`` determina la forma de la imagen:
+    Each item is a dictionary of tensors ready to feed a segmentation model. The
+    ``temporal_reduction`` mode determines the image shape:
 
-    - ``"median"`` / ``"mean"``: composite temporal 2D ``image (10, S, S)``,
-      apropiado para CNN 2D (U-Net, DeepLabv3+, SegFormer).
-    - ``"none"``: serie recortada a ``fixed_t`` frames ``image (fixed_t, 10, S, S)``
-      mas ``dates (fixed_t,)``, apropiado para modelos temporales (U-TAE, TSViT,
+    - ``"median"`` / ``"mean"``: 2D temporal composite ``image (10, S, S)``,
+      suitable for 2D CNNs (U-Net, DeepLabv3+, SegFormer).
+    - ``"none"``: series trimmed to ``fixed_t`` frames ``image (fixed_t, 10, S, S)``
+      plus ``dates (fixed_t,)``, suitable for temporal models (U-TAE, TSViT,
       AnySat).
 
-    En todos los modos ``semantic`` es ``(S, S)`` ``long`` con ids 0..19.
+    In all modes ``semantic`` is ``(S, S)`` ``long`` with ids 0..19.
     """
 
     def __init__(
@@ -273,20 +273,20 @@ class PASTISDataset(Dataset):
         ignore_index: int = PASTIS_IGNORE_INDEX,
         return_meta: bool = False,
     ) -> None:
-        """Inicializa el dataset.
+        """Initialize the dataset.
 
         Args:
-            patch_ids: Lista de identificadores de patch (de
+            patch_ids: List of patch identifiers (from
                 :func:`pastis_fold_split`).
-            root: Raiz del dataset PASTIS-R.
-            target_size: Lado espacial objetivo tras resize.
-            temporal_reduction: ``median``, ``mean`` o ``none``.
-            fixed_t: Numero de frames cuando ``temporal_reduction="none"``.
-            norm: Tupla ``(mean, std)`` precomputada; si ``None`` se cargan los
-                stats de todos los folds (pasar los de train para evitar leakage).
-            num_classes: Numero de clases (default 20).
-            ignore_index: Clase a ignorar (default 19, void).
-            return_meta: Si ``True`` incluye ``patch_id`` y ``fold`` en el item.
+            root: Root of the PASTIS-R dataset.
+            target_size: Target spatial side after resize.
+            temporal_reduction: ``median``, ``mean`` or ``none``.
+            fixed_t: Number of frames when ``temporal_reduction="none"``.
+            norm: Precomputed ``(mean, std)`` tuple; if ``None`` the stats of all
+                folds are loaded (pass the train ones to avoid leakage).
+            num_classes: Number of classes (default 20).
+            ignore_index: Class to ignore (default 19, void).
+            return_meta: If ``True`` includes ``patch_id`` and ``fold`` in the item.
         """
         self.patch_ids = [str(p) for p in patch_ids]
         self.root = root or _DEFAULT_ROOT
@@ -297,41 +297,41 @@ class PASTISDataset(Dataset):
         self.ignore_index = ignore_index
         self.return_meta = return_meta
         mean, std = norm if norm is not None else load_norm_stats(self.root)
-        # (10, 1, 1) para broadcasting sobre (T, 10, H, W) o (10, H, W).
+        # (10, 1, 1) for broadcasting over (T, 10, H, W) or (10, H, W).
         self._mean = mean.reshape(_N_BANDS, 1, 1)
         self._std = std.reshape(_N_BANDS, 1, 1)
-        # Parsea metadata.geojson una sola vez (no en cada __getitem__) cuando
-        # hace falta: fechas para el modo temporal, fold para return_meta.
+        # Parse metadata.geojson only once (not in each __getitem__) when
+        # needed: dates for the temporal mode, fold for return_meta.
         needs_meta = temporal_reduction == "none" or return_meta
         self._meta_index = _load_pastis_metadata_index(self.root) if needs_meta else {}
 
     def __len__(self) -> int:
-        """Numero de patches en el dataset."""
+        """Number of patches in the dataset."""
         return len(self.patch_ids)
 
     def _normalize(self, s2: np.ndarray) -> np.ndarray:
-        """Normaliza por banda ``(T, 10, H, W)`` con ``(mean, std)`` del init."""
+        """Normalize per band ``(T, 10, H, W)`` with the ``(mean, std)`` from init."""
         return (s2 - self._mean[None]) / self._std[None]
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
-        """Carga, normaliza y reescala un patch a tensores de entrenamiento.
+        """Load, normalize and resize a patch into training tensors.
 
         Args:
-            idx: Indice del patch en ``patch_ids``.
+            idx: Index of the patch in ``patch_ids``.
 
         Returns:
-            Diccionario con ``image``, ``semantic`` y, opcionalmente, ``dates``
-            (modo temporal) y ``patch_id``/``fold`` (si ``return_meta``).
+            Dictionary with ``image``, ``semantic`` and, optionally, ``dates``
+            (temporal mode) and ``patch_id``/``fold`` (if ``return_meta``).
         """
         pid = self.patch_ids[idx]
-        # Carga directa de los .npy (1 archivo por patch), sin re-parsear el
-        # metadata.geojson de ~19 MB en cada item.
+        # Direct load of the .npy files (1 file per patch), without re-parsing
+        # the ~19 MB metadata.geojson in each item.
         s2 = np.load(self.root / "DATA_S2" / f"S2_{pid}.npy").astype(np.float32)
         s2 = self._normalize(s2)  # (T, 10, 128, 128)
 
         tgt_path = self.root / "ANNOTATIONS" / f"TARGET_{pid}.npy"
         if tgt_path.exists():
-            semantic = np.load(tgt_path)[0]  # canal 0 = etiqueta semantica
+            semantic = np.load(tgt_path)[0]  # channel 0 = semantic label
         else:
             semantic = np.zeros(s2.shape[-2:], dtype=np.uint8)
         label = torch.from_numpy(semantic.astype(np.int64))
@@ -348,8 +348,8 @@ class PASTISDataset(Dataset):
             n_t = s2.shape[0]
             frames = _select_frames(n_t, self.fixed_t)
             series = torch.from_numpy(s2[frames])  # (fixed_t, 10, 128, 128) = (N, C, H, W)
-            # La serie ya esta en formato (N, C, H, W); se reescala el plano
-            # espacial directamente (cada frame como un item del "batch").
+            # The series is already in (N, C, H, W) format; the spatial plane
+            # is rescaled directly (each frame as an item of the "batch").
             series = F.interpolate(
                 series,
                 size=(self.target_size, self.target_size),
@@ -359,7 +359,7 @@ class PASTISDataset(Dataset):
             item["image"] = series  # (fixed_t, 10, S, S)
             dates = self._meta_index.get(pid, {}).get("dates") or [0] * n_t
             sel_dates = [int(dates[i]) if i < len(dates) else 0 for i in frames]
-            # Los modelos temporales esperan dia-del-anio, no el YYYYMMDD crudo.
+            # Temporal models expect day-of-year, not the raw YYYYMMDD.
             sel_doy = [_yyyymmdd_to_doy(d) for d in sel_dates]
             item["dates"] = torch.tensor(sel_doy, dtype=torch.int64)
 

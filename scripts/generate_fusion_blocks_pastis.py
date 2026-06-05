@@ -1,19 +1,19 @@
-"""Genera los bloques S1, SRTM, ERA5 y geometría de la matriz de fusión sobre PASTIS-R.
+"""Generate the S1, SRTM, ERA5 and geometry blocks of the fusion matrix over PASTIS-R.
 
-Operativo permanente. Lee `data/PASTIS-R/metadata.geojson`, reproyecta las
-geometrías de Polygon y MultiPolygon a EPSG:4326, llama los samplers existentes
-de `ml.ingest.gee_sampler` (S1, SRTM, ERA5) y persiste los parquets cacheados
-para que el notebook 03c pueda construir la matriz fusion 189-dim sin re-hacer
-las requests a GEE.
+Permanent operative. Reads `data/PASTIS-R/metadata.geojson`, reprojects the
+Polygon and MultiPolygon geometries to EPSG:4326, calls the existing samplers of
+`ml.ingest.gee_sampler` (S1, SRTM, ERA5) and persists the cached parquets so the
+03c notebook can build the 189-dim fusion matrix without re-doing the requests to
+GEE.
 
-Outputs en `data/cache/gee/`:
+Outputs in `data/cache/gee/`:
     s1_pastis_fr_full_2019_both_lee_7x7_dB.parquet
     srtm_pastis_fr_full.parquet
     era5_pastis_fr_full_2019_C.parquet
 
-Geometría se calcula localmente con shapely+pyproj (no requiere GEE).
+Geometry is computed locally with shapely+pyproj (does not require GEE).
 
-Uso::
+Usage::
 
     poetry run python scripts/generate_fusion_blocks_pastis.py --year 2019
 """
@@ -45,9 +45,9 @@ app = typer.Typer(add_completion=False, help=__doc__)
 def _extract_pastis_geodataframe(
     metadata_geojson: Path, year: int
 ) -> gpd.GeoDataFrame:
-    """Extrae todas las geometrías PASTIS (Polygon + MultiPolygon) reproyectadas a EPSG:4326.
+    """Extract all PASTIS geometries (Polygon + MultiPolygon) reprojected to EPSG:4326.
 
-    Devuelve un GeoDataFrame con columnas `parcel_id`, `year`, `geometry`.
+    Returns a GeoDataFrame with columns `parcel_id`, `year`, `geometry`.
     """
     with metadata_geojson.open(encoding="utf-8") as fh:
         gj = json.load(fh)
@@ -105,7 +105,7 @@ def main(
     skip_srtm: bool = typer.Option(False, "--skip-srtm", help="Saltar muestreo SRTM"),
     skip_era5: bool = typer.Option(False, "--skip-era5", help="Saltar muestreo ERA5"),
 ) -> None:
-    """Genera los bloques S1, SRTM, ERA5 de fusion para PASTIS-R completo."""
+    """Generate the S1, SRTM, ERA5 fusion blocks for the full PASTIS-R."""
     if not metadata.exists():
         logger.error("metadata_missing", path=str(metadata))
         raise typer.Exit(code=2)

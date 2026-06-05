@@ -1,6 +1,6 @@
-"""Jobs Dagster — selecciones de assets ejecutables como una unidad.
+"""Dagster jobs — selections of assets executable as a unit.
 
-Cada job es una ``AssetSelection`` materializable via ``make`` o desde la UI.
+Each job is an ``AssetSelection`` materializable via ``make`` or from the UI.
 """
 
 from dagster_project.jobs.farslip import farslip_full_pipeline_job

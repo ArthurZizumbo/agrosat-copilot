@@ -1,31 +1,31 @@
-"""Muestreo Sentinel-2 por parcela en anclas fenologicas (US-023-preview-v2 P5).
+"""Per-parcel Sentinel-2 sampling at phenology anchors (US-023-preview-v2 P5).
 
-Materializa ``data/features/s2_anchors_pastis.parquet`` que consume
-:class:`ml.features.spectral_signature.SpectralSignatureFeatures`. Para cada
-parcela PASTIS-R (``parcel_id`` formato ``10000_1``, no italiano) toma las
-bandas B04..B08 en 3 ventanas temporales ancladas al DOY de Start-of-Growing
-(SOG), peak NDVI y senescence, calculadas aguas arriba en el subset fenologico
-US-018 (o re-leidas desde un parquet de anclas).
+Materializes ``data/features/s2_anchors_pastis.parquet`` consumed by
+:class:`ml.features.spectral_signature.SpectralSignatureFeatures`. For each
+PASTIS-R parcel (``parcel_id`` format ``10000_1``, not Italian) it takes the
+B04..B08 bands in 3 temporal windows anchored to the Start-of-Growing (SOG),
+peak NDVI and senescence DOY, computed upstream in the US-018 phenology subset
+(or re-read from an anchors parquet).
 
-Patron de uso::
+Usage pattern::
 
     poetry run python -m ml.ingest.s2_anchor_sampler \\
         --parcels-path data/features/parcels_pastis_2023.parquet \\
         --year 2023 \\
         --output data/features/s2_anchors_pastis.parquet
 
-El esquema de salida es deterministico y compatible con
-``SpectralSignatureFeatures._extract_anchor_bands`` (busca columnas
-``{anchor}_{band}`` en minusculas). Cada parcela produce 15 columnas
-espectrales (3 anclas x 5 bandas) + ``parcel_id`` + ``year``.
+The output schema is deterministic and compatible with
+``SpectralSignatureFeatures._extract_anchor_bands`` (which looks for
+``{anchor}_{band}`` columns in lowercase). Each parcel produces 15 spectral
+columns (3 anchors x 5 bands) + ``parcel_id`` + ``year``.
 
-Cache local en ``data/cache/gee/s2_anchors_{md5_parcels}_{year}.parquet``
-para iteracion barata. Reusa :func:`ml.ingest.gee_sampler.init_ee` para
-autenticacion EE coherente con los samplers existentes.
+Local cache in ``data/cache/gee/s2_anchors_{md5_parcels}_{year}.parquet``
+for cheap iteration. Reuses :func:`ml.ingest.gee_sampler.init_ee` for EE
+authentication consistent with the existing samplers.
 
-Modo degradado: si ``earthengine-api`` no esta disponible o GEE falla, el
-modulo escribe un parquet con esquema valido y filas pobladas con ``NaN``
-para no romper la cadena downstream.
+Degraded mode: if ``earthengine-api`` is not available or GEE fails, the
+module writes a parquet with a valid schema and rows populated with ``NaN``
+so the downstream chain is not broken.
 """
 
 from __future__ import annotations
@@ -48,48 +48,48 @@ _log = structlog.get_logger(__name__)
 
 
 DEFAULT_BANDS: tuple[str, ...] = ("B4", "B5", "B6", "B7", "B8")
-"""Bandas Sentinel-2 muestreadas por defecto.
+"""Sentinel-2 bands sampled by default.
 
 B4 (red, 665 nm), B5/B6/B7 (red-edge 704/740/783 nm), B8 (NIR 835 nm).
-Estas son las requeridas por la Red Edge Position de Frampton et al. 2013
-y por los momentos red-edge documentados en
+These are the ones required by the Red Edge Position of Frampton et al. 2013
+and by the red-edge moments documented in
 :mod:`ml.features.spectral_signature`.
 
-Notacion sin padding (`B4` y NO `B04`): es la que expone la coleccion GEE
-`COPERNICUS/S2_SR_HARMONIZED` actual. Runs previos con `B04` producian
-`Image.select: Band pattern 'B04' did not match any bands` y dejaban
-`s2_anchors_pastis.parquet` con todas las bandas a NULL. Documentado en
-US-023-preview v2 (fix con smoke confirmado: 5.6 s / 100 parcelas).
+Notation without padding (`B4` and NOT `B04`): this is what the current GEE
+collection `COPERNICUS/S2_SR_HARMONIZED` exposes. Previous runs with `B04`
+produced `Image.select: Band pattern 'B04' did not match any bands` and left
+`s2_anchors_pastis.parquet` with all bands NULL. Documented in
+US-023-preview v2 (fix with confirmed smoke test: 5.6 s / 100 parcels).
 """
 
 DEFAULT_ANCHORS: tuple[str, ...] = ("sog", "peak", "senescence")
-"""Anclas fenologicas canonicas: Start-Of-Growing, peak NDVI, senescence."""
+"""Canonical phenology anchors: Start-Of-Growing, peak NDVI, senescence."""
 
 ANCHOR_WINDOW_DAYS: int = 5
-"""Ventana +/- N dias alrededor del DOY del ancla.
+"""Window +/- N days around the anchor DOY.
 
-S2 revisita Italia cada ~5 dias por orbita, asi que +/- 5 dias garantiza
-al menos una imagen disponible incluso con descarte por nubes.
+S2 revisits Italy every ~5 days per orbit, so +/- 5 days guarantees
+at least one available image even with cloud rejection.
 """
 
 DEFAULT_CACHE_DIR: Path = Path("data/cache/gee")
 DEFAULT_OUTPUT_PATH: Path = Path("data/features/s2_anchors_pastis.parquet")
 
-#: Estimacion conservadora del costo GEE por parcela en USD (free tier oculta
-#: el costo real; este numero sirve para reportar al MLflow log un orden de
-#: magnitud). Asume 3 anclas x 5 bandas x 1 reduceRegions ~ 0.0003 USD.
+#: Conservative estimate of the GEE cost per parcel in USD (free tier hides
+#: the real cost; this number serves to report an order of magnitude to the
+#: MLflow log). Assumes 3 anchors x 5 bands x 1 reduceRegions ~ 0.0003 USD.
 COST_PER_PARCEL_USD: float = 0.0003
 
 
 def _band_col_name(anchor: str, band: str) -> str:
-    """Devuelve el nombre de columna canonico ``{anchor}_b0N``.
+    """Return the canonical column name ``{anchor}_b0N``.
 
-    Independiente de si la banda GEE viene como ``B4`` (sin padding, formato
-    `COPERNICUS/S2_SR_HARMONIZED`) o como ``B04`` (formato legacy), siempre
-    persiste como ``b0N`` con padding a dos digitos. El consumidor
-    :class:`ml.features.spectral_signature.SpectralSignatureFeatures` busca
-    ``{anchor}_b05`` (no ``b5``); mantener ``b0N`` aqui evita que el cambio
-    de notacion GEE rompa el join downstream.
+    Regardless of whether the GEE band arrives as ``B4`` (without padding,
+    `COPERNICUS/S2_SR_HARMONIZED` format) or as ``B04`` (legacy format), it is
+    always persisted as ``b0N`` padded to two digits. The consumer
+    :class:`ml.features.spectral_signature.SpectralSignatureFeatures` looks for
+    ``{anchor}_b05`` (not ``b5``); keeping ``b0N`` here prevents the GEE
+    notation change from breaking the downstream join.
     """
     digits = "".join(ch for ch in band if ch.isdigit())
     return f"{anchor}_b{int(digits):02d}"
@@ -98,7 +98,7 @@ def _band_col_name(anchor: str, band: str) -> str:
 def _build_schema(
     anchors: tuple[str, ...], bands: tuple[str, ...]
 ) -> dict[str, Any]:
-    """Construye el esquema Polars del output (orden estable)."""
+    """Build the Polars schema of the output (stable order)."""
     schema: dict[str, Any] = {
         "parcel_id": pl.Utf8,
         "year": pl.Int16,
@@ -110,10 +110,10 @@ def _build_schema(
 
 
 def _parcels_md5(parcels: gpd.GeoDataFrame) -> str:
-    """Hash MD5 corto (10 chars) sobre parcel_id + bbox del GeoDataFrame.
+    """Short MD5 hash (10 chars) over parcel_id + GeoDataFrame bbox.
 
-    Reproducible: misma entrada -> mismo hash. Usado para nombrar el cache
-    local en ``data/cache/gee/``.
+    Reproducible: same input -> same hash. Used to name the local cache
+    in ``data/cache/gee/``.
     """
     if "parcel_id" in parcels.columns:
         ids = parcels["parcel_id"].astype(str).tolist()
@@ -132,20 +132,20 @@ def _resolve_anchors_table(
     parcels: gpd.GeoDataFrame,
     phenology_anchors_path: Path | None,
 ) -> pl.DataFrame:
-    """Devuelve tabla ``parcel_id, sog_doy, peak_doy, senescence_doy``.
+    """Return table ``parcel_id, sog_doy, peak_doy, senescence_doy``.
 
-    Orden de preferencia:
+    Order of preference:
 
-    1. Columnas ``sog_doy``, ``peak_doy``, ``senescence_doy`` ya presentes
-       en ``parcels``.
-    2. Parquet externo ``phenology_anchors_path`` con la misma estructura.
-    3. Fallback estatico: SOG=105, peak=180, senescence=260 (Italia
-       continental, cultivos arables herbaceos).
+    1. Columns ``sog_doy``, ``peak_doy``, ``senescence_doy`` already present
+       in ``parcels``.
+    2. External parquet ``phenology_anchors_path`` with the same structure.
+    3. Static fallback: SOG=105, peak=180, senescence=260 (continental
+       Italy, herbaceous arable crops).
     """
     needed = {"sog_doy", "peak_doy", "senescence_doy"}
     pcols = set(parcels.columns)
     if needed.issubset(pcols):
-        # Convertir geopandas -> polars seleccionando solo cols necesarias.
+        # Convert geopandas -> polars selecting only the necessary cols.
         rows = [
             {
                 "parcel_id": str(r["parcel_id"]),
@@ -195,7 +195,7 @@ def _resolve_anchors_table(
 
 
 def _doy_to_dates(year: int, doy: int, window_days: int) -> tuple[str, str]:
-    """Convierte ``(year, doy)`` a rango ``[start, end)`` ``YYYY-MM-DD``."""
+    """Convert ``(year, doy)`` to range ``[start, end)`` ``YYYY-MM-DD``."""
     from datetime import datetime, timedelta
 
     center = datetime(year, 1, 1) + timedelta(days=int(doy) - 1)
@@ -216,18 +216,18 @@ def _sample_anchor_batch(
     window_days: int,
     scale: int,
 ) -> list[dict[str, Any]]:
-    """Sampla un chunk de parcelas en un solo ancla.
+    """Sample a chunk of parcels at a single anchor.
 
-    Construye una ``ee.FeatureCollection`` con cada poligono + ``parcel_id``
-    y agrega un ``reduceRegions(mean)`` sobre la mediana de la coleccion S2
-    en la ventana ``[doy - window_days, doy + window_days]``.
+    Builds an ``ee.FeatureCollection`` with each polygon + ``parcel_id``
+    and adds a ``reduceRegions(mean)`` over the median of the S2 collection
+    in the window ``[doy - window_days, doy + window_days]``.
 
-    Devuelve lista de dicts ``{parcel_id, <anchor>_b04, ...}``. Si la
-    consulta GEE falla, devuelve filas con ``None`` para todas las bandas.
+    Returns a list of dicts ``{parcel_id, <anchor>_b04, ...}``. If the
+    GEE query fails, returns rows with ``None`` for all bands.
     """
     rows: list[dict[str, Any]] = []
-    # Group parcelas del chunk por DOY del ancla (parcelas con mismo DOY
-    # comparten una sola consulta server-side).
+    # Group the chunk's parcels by anchor DOY (parcels with the same DOY
+    # share a single server-side query).
     anchors_chunk = anchors_table.filter(
         pl.col("parcel_id").is_in(parcels_chunk["parcel_id"].astype(str).tolist())
     )
@@ -238,7 +238,7 @@ def _sample_anchor_batch(
         r["parcel_id"]: int(r[doy_col]) for r in anchors_chunk.iter_rows(named=True)
     }
 
-    # Agrupa parcelas por DOY identico — una consulta por DOY unico.
+    # Group parcels by identical DOY — one query per unique DOY.
     by_doy: dict[int, list[Any]] = {}
     for _, row in parcels_chunk.iterrows():
         pid = str(row["parcel_id"])
@@ -281,7 +281,7 @@ def _sample_anchor_batch(
                 n=len(items),
                 error=str(exc),
             )
-            # Filas con None para esta DOY group.
+            # Rows with None for this DOY group.
             for pid, _ in items:
                 row_out: dict[str, Any] = {"parcel_id": pid}
                 for band in bands:
@@ -303,7 +303,7 @@ def _sample_anchor_batch(
 
 
 def _is_nan(val: Any) -> bool:
-    """True si ``val`` es NaN/inf."""
+    """True if ``val`` is NaN/inf."""
     try:
         f = float(val)
         return bool(np.isnan(f) or np.isinf(f))
@@ -319,17 +319,17 @@ def _merge_anchor_rows(
     anchors: tuple[str, ...],
     bands: tuple[str, ...],
 ) -> pl.DataFrame:
-    """Fusiona filas por anclas en un solo DataFrame ordenado por parcel_id.
+    """Merge per-anchor rows into a single DataFrame sorted by parcel_id.
 
-    Garantiza determinismo: el output siempre se ordena ascendente por
-    ``parcel_id``, independientemente del orden en que GEE devolvio los
+    Guarantees determinism: the output is always sorted ascending by
+    ``parcel_id``, regardless of the order in which GEE returned the
     batches.
     """
     schema = _build_schema(anchors, bands)
     by_pid: dict[str, dict[str, Any]] = {
         pid: {"parcel_id": pid, "year": int(year)} for pid in parcel_ids
     }
-    # Inicializa todas las cols a None.
+    # Initialize all cols to None.
     for pid in parcel_ids:
         for anchor in anchors:
             for band in bands:
@@ -350,7 +350,7 @@ def _merge_anchor_rows(
 def _count_completeness(
     df: pl.DataFrame, anchors: tuple[str, ...], bands: tuple[str, ...]
 ) -> tuple[int, int]:
-    """Cuenta parcelas con TODAS las bandas pobladas vs parcialmente.
+    """Count parcels with ALL bands populated vs partially.
 
     Returns:
         ``(n_with_all_bands, n_with_partial)``.
@@ -381,40 +381,40 @@ def sample_s2_anchors_for_parcels(
     scale: int = 10,
     anchors: tuple[str, ...] = DEFAULT_ANCHORS,
 ) -> Path:
-    """Muestrea S2 en los DOY de SOG/peak/senescence por parcela.
+    """Sample S2 at the SOG/peak/senescence DOY per parcel.
 
-    Para cada parcela en ``parcels`` (debe traer ``parcel_id`` (Utf8),
-    ``year``, ``geometry`` y opcionalmente ``sog_doy/peak_doy/senescence_doy``
-    pre-calculados), hace ``reduceRegions(mean)`` sobre una ventana
-    ``+/- window_days`` alrededor del DOY del ancla y persiste como columnas
-    ``{anchor}_b04, {anchor}_b05, ..., {anchor}_b08`` en formato consumible
-    por :meth:`SpectralSignatureFeatures._extract_anchor_bands`.
+    For each parcel in ``parcels`` (must carry ``parcel_id`` (Utf8),
+    ``year``, ``geometry`` and optionally pre-computed
+    ``sog_doy/peak_doy/senescence_doy``), runs ``reduceRegions(mean)`` over a
+    ``+/- window_days`` window around the anchor DOY and persists it as columns
+    ``{anchor}_b04, {anchor}_b05, ..., {anchor}_b08`` in a format consumable
+    by :meth:`SpectralSignatureFeatures._extract_anchor_bands`.
 
     Args:
-        parcels: GeoDataFrame con ``parcel_id``, ``geometry`` POLYGON
-            EPSG:4326 y opcionalmente columnas ``*_doy``.
-        year: Anio a samplear.
-        output_path: Parquet de salida (parent se crea si no existe).
-        bands: Bandas S2 a samplear (default ``("B04",...,"B08")``).
-        phenology_anchors_path: Parquet opcional con anclas pre-calculadas.
-            Si ``None`` y ``parcels`` no trae ``*_doy``, se cae a defaults
-            estaticos para Italia continental (SOG=105/peak=180/senesc=260).
-        batch_size: Tamanio del batch GEE por reduceRegions.
-        overwrite: Si ``True`` ignora cache y reescribe.
-        cache_dir: Carpeta de cache (default ``data/cache/gee/``).
-        window_days: Ventana ``+/- window_days`` alrededor del DOY del ancla.
-        scale: Resolucion de muestreo en metros (default 10, nativa S2).
-        anchors: Tupla de nombres de ancla (default
-            ``("sog","peak","senescence")``); deben coincidir con
-            columnas ``{anchor}_doy`` en ``parcels`` o en
+        parcels: GeoDataFrame with ``parcel_id``, ``geometry`` POLYGON
+            EPSG:4326 and optionally ``*_doy`` columns.
+        year: Year to sample.
+        output_path: Output parquet (parent is created if it does not exist).
+        bands: S2 bands to sample (default ``("B04",...,"B08")``).
+        phenology_anchors_path: Optional parquet with pre-computed anchors.
+            If ``None`` and ``parcels`` does not carry ``*_doy``, falls back to
+            static defaults for continental Italy (SOG=105/peak=180/senesc=260).
+        batch_size: GEE batch size per reduceRegions.
+        overwrite: If ``True`` ignores the cache and rewrites.
+        cache_dir: Cache folder (default ``data/cache/gee/``).
+        window_days: Window ``+/- window_days`` around the anchor DOY.
+        scale: Sampling resolution in meters (default 10, native S2).
+        anchors: Tuple of anchor names (default
+            ``("sog","peak","senescence")``); they must match the
+            ``{anchor}_doy`` columns in ``parcels`` or in
             ``phenology_anchors_path``.
 
     Returns:
-        ``Path`` absoluto del parquet escrito (``output_path``).
+        Absolute ``Path`` of the written parquet (``output_path``).
 
     Raises:
-        ImportError: Si ``earthengine-api`` no esta instalado.
-        RuntimeError: Si ``init_ee`` falla y no hay cache previo utilizable.
+        ImportError: If ``earthengine-api`` is not installed.
+        RuntimeError: If ``init_ee`` fails and there is no usable prior cache.
     """
     output_path = Path(output_path)
     cache_root = cache_dir or DEFAULT_CACHE_DIR
@@ -429,15 +429,15 @@ def sample_s2_anchors_for_parcels(
         df_cached.write_parquet(output_path)
         return output_path.resolve()
 
-    # Lazy import de earthengine-api: solo dentro del path "real" para evitar
-    # romper tests sin EE instalado.
+    # Lazy import of earthengine-api: only inside the "real" path to avoid
+    # breaking tests without EE installed.
     from ml.ingest.gee_sampler import init_ee
 
     try:
         import ee  # type: ignore[import-untyped]
     except ImportError as exc:  # pragma: no cover
         raise ImportError(
-            "earthengine-api no instalado. Ejecuta `poetry install --with ml,geo`."
+            "earthengine-api not installed. Run `poetry install --with ml,geo`."
         ) from exc
 
     anchors_table = _resolve_anchors_table(parcels, phenology_anchors_path)
@@ -549,7 +549,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Entry-point CLI."""
+    """CLI entry-point."""
     import geopandas as gpd
 
     args = _build_arg_parser().parse_args(argv)

@@ -1,13 +1,13 @@
-"""Narrativas interpretativas por figura para dashboard y PDF.
+"""Interpretive per-figure narratives for the dashboard and PDF.
 
-Cada figura del EDA recibe un párrafo que explica:
-    - Qué muestra la figura (lectura visual).
-    - Por qué se hizo ese análisis.
-    - Cómo se llegó a la conclusión (método y datos).
-    - Qué implica para los siguientes Avances del proyecto.
+Each EDA figure receives a paragraph that explains:
+    - What the figure shows (visual reading).
+    - Why that analysis was done.
+    - How the conclusion was reached (method and data).
+    - What it implies for the project's next Avances.
 
-El texto se escribe en lenguaje claro para que un sponsor académico no
-técnico pueda seguir el razonamiento sin saltar a la fórmula.
+The text is written in plain language so a non-technical academic sponsor can
+follow the reasoning without jumping to the formula.
 """
 
 from __future__ import annotations
@@ -17,14 +17,14 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class FigureNarrative:
-    """Narrativa asociada a una figura PNG.
+    """Narrative associated with a PNG figure.
 
     Attributes:
-        filename: Nombre del archivo PNG (sin path), tal como existe en
+        filename: Name of the PNG file (without path), as it exists in
             ``paper/figures/<dir>/``.
-        title: Título legible para mostrar sobre la figura.
-        narrative: Párrafo interpretativo de lectura accesible.
-        method: Cómo se construyó la figura (datos y procesamiento).
+        title: Readable title to display above the figure.
+        narrative: Interpretive paragraph for accessible reading.
+        method: How the figure was built (data and processing).
     """
 
     filename: str
@@ -34,7 +34,7 @@ class FigureNarrative:
 
 
 # ---------------------------------------------------------------------------
-# US-010 — Sentinel-2 Univariado
+# US-010 — Sentinel-2 univariate
 # ---------------------------------------------------------------------------
 
 SENTINEL2_NARRATIVES: tuple[FigureNarrative, ...] = (
@@ -314,7 +314,7 @@ ALPHAEARTH_NARRATIVES: tuple[FigureNarrative, ...] = (
 
 
 # ---------------------------------------------------------------------------
-# US-012 — Bivariado, Multivariado y Temporal
+# US-012 — Bivariate, multivariate and temporal
 # ---------------------------------------------------------------------------
 
 BIVARIATE_NARRATIVES: tuple[FigureNarrative, ...] = (
@@ -504,7 +504,7 @@ BIVARIATE_NARRATIVES: tuple[FigureNarrative, ...] = (
 
 
 # ---------------------------------------------------------------------------
-# Avance 1 Equipo 17 — PASTIS-R consolidado
+# Avance 1 Equipo 17 — PASTIS-R consolidated
 # ---------------------------------------------------------------------------
 
 PASTIS_NARRATIVES: tuple[FigureNarrative, ...] = (
@@ -643,7 +643,7 @@ PASTIS_NARRATIVES: tuple[FigureNarrative, ...] = (
 
 
 # ---------------------------------------------------------------------------
-# BreizhCrops — Validación cross-region (Rußwurm & Körner, sucesor moderno)
+# BreizhCrops — Cross-region validation (Russwurm & Korner, modern successor)
 # ---------------------------------------------------------------------------
 
 BREIZHCROPS_NARRATIVES: tuple[FigureNarrative, ...] = (
@@ -711,7 +711,7 @@ BREIZHCROPS_NARRATIVES: tuple[FigureNarrative, ...] = (
 
 
 # ---------------------------------------------------------------------------
-# Métodos derivados de la literatura — cuatro artículos de referencia
+# Methods derived from the literature — four reference papers
 # ---------------------------------------------------------------------------
 
 PAPER_METHODS_NARRATIVES: tuple[FigureNarrative, ...] = (
@@ -830,7 +830,7 @@ PAPER_METHODS_NARRATIVES: tuple[FigureNarrative, ...] = (
 
 
 # ---------------------------------------------------------------------------
-# Avance 2 — Ingeniería de Características sobre Sentinel-2 (03a)
+# Avance 2 — Feature engineering on Sentinel-2 (03a)
 # ---------------------------------------------------------------------------
 
 FE_SENTINEL2_NARRATIVES: tuple[FigureNarrative, ...] = (
@@ -1104,7 +1104,7 @@ FE_SENTINEL2_NARRATIVES: tuple[FigureNarrative, ...] = (
 
 
 # ---------------------------------------------------------------------------
-# Avance 2 — Selección y extracción sobre PASTIS-R espectro-temporal (03b)
+# Avance 2 — Selection and extraction on spectro-temporal PASTIS-R (03b)
 # ---------------------------------------------------------------------------
 
 FE_SPECTRAL_TEMPORAL_NARRATIVES: tuple[FigureNarrative, ...] = (
@@ -1237,7 +1237,7 @@ FE_SPECTRAL_TEMPORAL_NARRATIVES: tuple[FigureNarrative, ...] = (
 
 
 # ---------------------------------------------------------------------------
-# Avance 2 — Fusión multisensor y embeddings AlphaEarth (03c)
+# Avance 2 — Multisensor fusion and AlphaEarth embeddings (03c)
 # ---------------------------------------------------------------------------
 
 FE_ALPHAEARTH_NARRATIVES: tuple[FigureNarrative, ...] = (
@@ -1329,8 +1329,95 @@ FE_ALPHAEARTH_NARRATIVES: tuple[FigureNarrative, ...] = (
 
 
 # ---------------------------------------------------------------------------
-# Índice global: notebook_id -> narrativas
+# Global index: notebook_id -> narratives
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Avance 4 — Dense semantic segmentation
+# ---------------------------------------------------------------------------
+
+SEGMENTATION_NARRATIVES: tuple[FigureNarrative, ...] = (
+    FigureNarrative(
+        filename="samples_tsvit-pheno.png",
+        title="Predicciones del modelo ganador (TSViT-pheno)",
+        narrative=(
+            "Cada fila compara la imagen RGB del patch, la etiqueta real del "
+            "agricultor y la prediccion del modelo. TSViT-pheno reconstruye las "
+            "parcelas grandes con limites netos; los errores se concentran en "
+            "parcelas pequenas y en los bordes, justo donde la varianza "
+            "espectral es mayor. Es la lectura cualitativa que acompana al "
+            "mIoU de 0,625."
+        ),
+        method=(
+            "Inferencia sobre patches del split de validacion espacial. Se "
+            "muestrean cuatro ejemplos representativos; colores por clase de "
+            "cultivo segun la paleta PASTIS-R."
+        ),
+    ),
+    FigureNarrative(
+        filename="per_class_iou_tsvit.png",
+        title="IoU por clase - donde se pierde el mIoU macro",
+        narrative=(
+            "El IoU por clase revela que el modelo segmenta bien los cultivos "
+            "mayoritarios (cereales de invierno, maiz, praderas) pero cae en "
+            "las clases minoritarias (legumbres, vinedos, frutales). Como el "
+            "mIoU macro promedia todas las clases por igual, esas pocas clases "
+            "con IoU bajo arrastran la metrica global. El camino para cerrar la "
+            "brecha con el target 0,70 es loss ponderada por frecuencia."
+        ),
+        method=(
+            "IoU calculado por clase sobre el split de validacion. Barras "
+            "ordenadas de mayor a menor para visualizar el efecto del "
+            "desbalance ~31x."
+        ),
+    ),
+    FigureNarrative(
+        filename="confusion_tsvit.png",
+        title="Matriz de confusion - que cultivos se confunden",
+        narrative=(
+            "La diagonal concentra la mayor parte de la masa: el modelo acierta "
+            "la clase dominante. Las confusiones fuera de la diagonal siguen el "
+            "patron esperado del EDA: cultivos con calendarios fenologicos "
+            "parecidos (potato, beet, corn) se mezclan entre si, mientras que "
+            "cereales de invierno y praderas quedan bien separados."
+        ),
+        method=(
+            "Matriz de confusion normalizada por fila sobre el split de "
+            "validacion. Cada celda es la fraccion de pixeles de la clase real "
+            "predichos como la clase columna."
+        ),
+    ),
+    FigureNarrative(
+        filename="curves_tsvit-pheno.png",
+        title="Curvas de entrenamiento - convergencia estable",
+        narrative=(
+            "Las curvas de perdida y mIoU de entrenamiento y validacion "
+            "convergen sin divergencia, senal de que el modelo no sobreajusta "
+            "en las 30 epocas presupuestadas. La epoca del mejor checkpoint de "
+            "validacion queda marcada; ese es el modelo que se reporta y se "
+            "promueve al ensamble."
+        ),
+        method=(
+            "Registro de perdida y mIoU por epoca en MLflow. El mejor epoch se "
+            "selecciona por mIoU de validacion (early stopping implicito)."
+        ),
+    ),
+    FigureNarrative(
+        filename="optuna_convergence.png",
+        title="Convergencia de Optuna - ajuste fino eficiente",
+        narrative=(
+            "La curva muestra el mejor valor objetivo acumulado a lo largo de "
+            "los trials de Optuna. El estudio converge pronto porque parte de "
+            "un warm-start desde el mejor checkpoint, evitando gastar ventana "
+            "H100 en reexplorar el espacio de hiperparametros desde cero."
+        ),
+        method=(
+            "Optuna con storage PostgreSQL sobre los dos mejores candidatos "
+            "(TSViT-pheno y U-TAE), 30 trials warm-start desde checkpoint."
+        ),
+    ),
+)
+
 
 NARRATIVES_BY_NOTEBOOK: dict[str, tuple[FigureNarrative, ...]] = {
     "sentinel2": SENTINEL2_NARRATIVES,
@@ -1343,19 +1430,20 @@ NARRATIVES_BY_NOTEBOOK: dict[str, tuple[FigureNarrative, ...]] = {
     "fe-sentinel2": FE_SENTINEL2_NARRATIVES,
     "fe-pastis-spectral-temporal": FE_SPECTRAL_TEMPORAL_NARRATIVES,
     "fe-alphaearth-fusion": FE_ALPHAEARTH_NARRATIVES,
+    "segmentation-avance4": SEGMENTATION_NARRATIVES,
 }
 
 
 def get_narrative(notebook_id: str, filename: str) -> FigureNarrative | None:
-    """Busca la narrativa asociada a una figura.
+    """Look up the narrative associated with a figure.
 
     Args:
-        notebook_id: ID de la ficha (e.g. ``"sentinel2"``).
-        filename: Nombre del PNG sin path (e.g. ``"band_distributions.png"``).
+        notebook_id: ID of the card (e.g. ``"sentinel2"``).
+        filename: Name of the PNG without path (e.g. ``"band_distributions.png"``).
 
     Returns:
-        ``FigureNarrative`` si la figura tiene narrativa asignada,
-        ``None`` en caso contrario.
+        ``FigureNarrative`` if the figure has an assigned narrative,
+        ``None`` otherwise.
     """
     narratives = NARRATIVES_BY_NOTEBOOK.get(notebook_id, ())
     for narrative in narratives:

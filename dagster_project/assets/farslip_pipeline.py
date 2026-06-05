@@ -1,7 +1,7 @@
-"""Assets Dagster — US-022b-B re-materializacion del pipeline FarSLIP.
+"""Dagster assets — US-022b-B re-materialization of the FarSLIP pipeline.
 
-Saldo la deuda de US-017 Fase 4 declarando explicitamente en Dagster los tres
-artefactos del paper FarSLIP (arXiv:2511.14901) con lineage end-to-end:
+Settles the US-017 Phase 4 debt by explicitly declaring in Dagster the three
+artifacts of the FarSLIP paper (arXiv:2511.14901) with end-to-end lineage:
 
 ::
 
@@ -13,38 +13,38 @@ artefactos del paper FarSLIP (arXiv:2511.14901) con lineage end-to-end:
                                                                          │
                                                                          ▼
                                                        farslip_embeddings_consolidated
-                                                       (data/farslip/embeddings_italy.parquet)
+                                                       (data/farslip/embeddings_pastis.parquet)
 
-Mapeo a criterios de aceptacion (docs/us-planning/us-022b.md §3.2):
+Mapping to the acceptance criteria (docs/us-planning/us-022b.md §3.2):
 
-- **B-4**: ``farslip_embeddings_consolidated`` produce
-  ``data/farslip/embeddings_italy.parquet`` consumido por
+- **B-4**: ``farslip_embeddings_consolidated`` produces
+  ``data/farslip/embeddings_pastis.parquet`` consumed by
   ``ml.features.fusion._DEFAULT_FARSLIP_PATH``.
-- **B-5**: tags ``farslip-pairs-italy-v1`` (en ``farslip_pairs_italy``),
-  ``farslip-embeddings-italy-v1`` (en ``farslip_embeddings_consolidated``),
-  ``farslip-student-italy-v1`` (en ``farslip_clip_italy_v1`` external asset).
-- **Lineage declarativo**: ``farslip_pairs_italy`` -> ``farslip_clip_italy_v1``
-  (modelo) -> ``farslip_embeddings_italy`` (extraccion) ->
-  ``farslip_embeddings_consolidated`` (parquet final).
-- **MLflow metrics**: vias resource ``mlflow`` (``dagster-mlflow``), tags
-  ``data_version`` + ``code_version`` (regla ML/CLAUDE.md NON-NEGOTIABLE).
+- **B-5**: tags ``farslip-pairs-italy-v1`` (in ``farslip_pairs_italy``),
+  ``farslip-embeddings-italy-v1`` (in ``farslip_embeddings_consolidated``),
+  ``farslip-student-italy-v1`` (in the ``farslip_clip_italy_v1`` external asset).
+- **Declarative lineage**: ``farslip_pairs_italy`` -> ``farslip_clip_italy_v1``
+  (model) -> ``farslip_embeddings_italy`` (extraction) ->
+  ``farslip_embeddings_consolidated`` (final parquet).
+- **MLflow metrics**: via the ``mlflow`` resource (``dagster-mlflow``), tags
+  ``data_version`` + ``code_version`` (ML/CLAUDE.md NON-NEGOTIABLE rule).
 
-El asset que ejecuta training real (``farslip_clip_italy_v1``) NO se
-materializa desde Dagster — el training se lanza via ``make train-l4`` sobre
-GCP L4 spot (regla ml/CLAUDE.md). Dagster lo modela como ``AssetSpec`` external
-con ``auto_materialize_policy=None`` para que aparezca en el lineage UI sin
-intentar ejecutarse.
+The asset that runs real training (``farslip_clip_italy_v1``) is NOT
+materialized from Dagster — the training is launched via ``make train-l4`` on
+GCP L4 spot (ml/CLAUDE.md rule). Dagster models it as an external ``AssetSpec``
+with ``auto_materialize_policy=None`` so that it appears in the lineage UI
+without attempting to run.
 
-Importante (scope US-022b-B Dagster):
+Important (US-022b-B Dagster scope):
 
-- Este archivo SOLO declara los assets nuevos y el wiring del lineage. La
-  consolidacion lee los parquets ya escritos por ``farslip_embeddings_italy``
-  (asset existente US-017). NO recodifica el pipeline FarSLIP — solo lo
-  orquesta y publica los artefactos a las paths canonicas (B-4).
-- La materializacion real (con datos en GCS y pesos student) ocurre fuera de
-  esta US (Isaac + Arthur, Fase 4 022b-B). Aqui se entrega la declaracion para
-  que ``dagster definitions validate`` pase y el lineage UI muestre el flujo
-  completo.
+- This file ONLY declares the new assets and the lineage wiring. The
+  consolidation reads the parquets already written by ``farslip_embeddings_italy``
+  (existing US-017 asset). It does NOT re-code the FarSLIP pipeline — it only
+  orchestrates it and publishes the artifacts to the canonical paths (B-4).
+- The real materialization (with data in GCS and student weights) happens outside
+  this US (Isaac + Arthur, Phase 4 022b-B). Here the declaration is delivered so
+  that ``dagster definitions validate`` passes and the lineage UI shows the full
+  flow.
 """
 
 from pathlib import Path
@@ -76,31 +76,31 @@ from dagster_project.assets.sentinel2_crops import (
 )
 from ml.utils.git_meta import git_sha
 
-#: Ruta canonica del parquet consolidado consumido por ``fusion.py``.
-#: Sincronizada con ``ml.features.fusion._DEFAULT_FARSLIP_PATH``.
-DATA_FARSLIP_CONSOLIDATED_PATH = Path("data/farslip/embeddings_italy.parquet")
+#: Canonical path of the consolidated parquet consumed by ``fusion.py``.
+#: Synchronized with ``ml.features.fusion._DEFAULT_FARSLIP_PATH``.
+DATA_FARSLIP_CONSOLIDATED_PATH = Path("data/farslip/embeddings_pastis.parquet")
 
-#: Tags DVC + MLflow Registry definidos en US-022b §3.2 B-5.
+#: DVC + MLflow Registry tags defined in US-022b §3.2 B-5.
 PAIRS_TAG = PAIRS_DATA_VERSION_TAG  # farslip-pairs-italy-v1
 EMBEDDINGS_TAG = EMBEDDINGS_DATA_VERSION_TAG  # farslip-embeddings-italy-v1
-STUDENT_TAG = "farslip-student-italy-v1"  # promovido a MLflow @Production
+STUDENT_TAG = "farslip-student-italy-v1"  # promoted to MLflow @Production
 
-#: URI MLflow Registry del modelo destilado (B-5).
+#: MLflow Registry URI of the distilled model (B-5).
 FARSLIP_REGISTRY_URI = "models:/farslip-clip-italy-v1/Production"
 
-#: AssetKey del modelo destilado — referenciado por
-#: ``farslip_embeddings_italy`` como dep externa (lineage explicito).
+#: AssetKey of the distilled model — referenced by
+#: ``farslip_embeddings_italy`` as an external dep (explicit lineage).
 FARSLIP_MODEL_ASSET_KEY = AssetKey("farslip_clip_italy_v1")
 
 
 # -----------------------------------------------------------------------------
-# AssetSpec externos (no materializables desde Dagster) — lineage declarativo.
+# External AssetSpec (not materializable from Dagster) — declarative lineage.
 # -----------------------------------------------------------------------------
 
-#: Alias semantico de ``sentinel2_crops_256`` para alinear con el contrato del
-#: plan US-022b §4.1 ("farslip_pairs_italy"). Es el mismo artefacto fisico
-#: (``data/farslip_pairs/{roi}/manifest.parquet`` + crops); declararlo aqui
-#: como ``AssetSpec`` external mantiene el lineage del paper visible en la UI.
+#: Semantic alias of ``sentinel2_crops_256`` to align with the contract of the
+#: US-022b §4.1 plan ("farslip_pairs_italy"). It is the same physical artifact
+#: (``data/farslip_pairs/{roi}/manifest.parquet`` + crops); declaring it here
+#: as an external ``AssetSpec`` keeps the paper lineage visible in the UI.
 farslip_pairs_italy_spec = AssetSpec(
     key=AssetKey("farslip_pairs_italy"),
     description=(
@@ -122,10 +122,10 @@ farslip_pairs_italy_spec = AssetSpec(
     },
 )
 
-#: Modelo destilado FarSLIP CLIP ViT-B/16 4-bandas. Vive en MLflow Registry,
-#: NO se materializa desde Dagster — el training real lo lanza ``make train-l4``
-#: sobre GCP L4 spot. Se declara como external AssetSpec con dep upstream a
-#: ``farslip_pairs_italy`` para que el lineage UI muestre el flujo
+#: Distilled FarSLIP CLIP ViT-B/16 4-band model. Lives in the MLflow Registry,
+#: it is NOT materialized from Dagster — the real training is launched by ``make train-l4``
+#: on GCP L4 spot. It is declared as an external AssetSpec with an upstream dep on
+#: ``farslip_pairs_italy`` so that the lineage UI shows the flow
 #: ``pairs -> model -> embeddings``.
 farslip_clip_italy_v1_spec = AssetSpec(
     key=FARSLIP_MODEL_ASSET_KEY,
@@ -150,17 +150,17 @@ farslip_clip_italy_v1_spec = AssetSpec(
 
 
 # -----------------------------------------------------------------------------
-# Asset materializable: consolida los embeddings por (roi, year) en un unico
-# parquet consumido por ml/features/fusion.py.
+# Materializable asset: consolidates the embeddings per (roi, year) into a single
+# parquet consumed by ml/features/fusion.py.
 # -----------------------------------------------------------------------------
 
 
 def _resolve_consolidated_path() -> Path:
-    """Resuelve la ruta consolidada relativa al cwd.
+    """Resolves the consolidated path relative to the cwd.
 
     Returns:
-        ``Path`` absoluto de ``data/farslip/embeddings_italy.parquet`` listo
-        para ``parent.mkdir(parents=True, exist_ok=True)``.
+        Absolute ``Path`` of ``data/farslip/embeddings_pastis.parquet`` ready for
+        ``parent.mkdir(parents=True, exist_ok=True)``.
     """
     return DATA_FARSLIP_CONSOLIDATED_PATH
 
@@ -168,16 +168,16 @@ def _resolve_consolidated_path() -> Path:
 def _iter_partition_parquets(
     embeddings_root: Path,
 ) -> list[tuple[str, int, Path]]:
-    """Itera los parquets escritos por ``farslip_embeddings_italy``.
+    """Iterates the parquets written by ``farslip_embeddings_italy``.
 
     Args:
-        embeddings_root: raiz ``data/farslip_embeddings/`` con layout
-            ``{roi}/{year}/embeddings.parquet`` (output del asset upstream
-            particionado por ROI).
+        embeddings_root: root ``data/farslip_embeddings/`` with layout
+            ``{roi}/{year}/embeddings.parquet`` (output of the upstream asset
+            partitioned by ROI).
 
     Returns:
-        Lista de tuplas ``(roi, year, path)`` ordenada por roi luego year.
-        Vacia si ``embeddings_root`` no existe.
+        List of tuples ``(roi, year, path)`` sorted by roi then year. Empty if
+        ``embeddings_root`` does not exist.
     """
     if not embeddings_root.exists():
         return []
@@ -206,7 +206,7 @@ def _iter_partition_parquets(
     required_resource_keys={"mlflow"},
     description=(
         "Consolida los embeddings FarSLIP 512-dim de las 3 ROIs italianas en "
-        "un unico parquet ``data/farslip/embeddings_italy.parquet`` (B-4 del "
+        "un unico parquet ``data/farslip/embeddings_pastis.parquet`` (B-4 del "
         "plan US-022b). Anade columna ``region`` y persiste con schema "
         "compatible con ``ml/features/fusion.py``. Registra metrics + tags en "
         "MLflow (data_version, code_version, n_embeddings, embedding_dim). "
@@ -216,30 +216,29 @@ def _iter_partition_parquets(
 def farslip_embeddings_consolidated(
     context: AssetExecutionContext,
 ) -> MaterializeResult:
-    """Consolida embeddings por (roi, year) en ``data/farslip/embeddings_italy.parquet``.
+    """Consolidates embeddings per (roi, year) into ``data/farslip/embeddings_pastis.parquet``.
 
-    Lee los parquets escritos por las particiones de
-    ``farslip_embeddings_italy`` (``data/farslip_embeddings/{roi}/{year}/``),
-    los concatena con Polars (NO pandas — regla ML CLAUDE.md), anade columna
-    ``region`` y persiste a la ruta canonica consumida por ``fusion.py``.
+    Reads the parquets written by the partitions of ``farslip_embeddings_italy``
+    (``data/farslip_embeddings/{roi}/{year}/``), concatenates them with Polars
+    (NOT pandas — ML CLAUDE.md rule), adds a ``region`` column and persists to the
+    canonical path consumed by ``fusion.py``.
 
     Args:
-        context: contexto Dagster. ``context.resources.mlflow`` provee el
-            cliente MLflow para registrar metrics + tags (B-5).
+        context: Dagster context. ``context.resources.mlflow`` provides the MLflow
+            client to record metrics + tags (B-5).
 
     Returns:
-        ``MaterializeResult`` con metadata ``rows``, ``embedding_dim``,
-        ``rois``, ``output_path``, ``data_version`` (DVC tag),
-        ``code_version`` (git SHA short).
-        Si no hay parquets upstream: ``status="skipped_no_upstream"`` y
-        ``rows=0`` (no error — el extractor FarSLIP puede haber skipped por
-        GCS auth en CI).
+        ``MaterializeResult`` with metadata ``rows``, ``embedding_dim``, ``rois``,
+        ``output_path``, ``data_version`` (DVC tag), ``code_version`` (short git
+        SHA). If there are no upstream parquets: ``status="skipped_no_upstream"``
+        and ``rows=0`` (no error — the FarSLIP extractor may have been skipped due
+        to GCS auth in CI).
 
     Notes:
-        Schema del parquet final:
-        ``{parcel_id: int64, region: str, embedding: list[float32]}``.
-        Mapea ``crop_id`` -> ``parcel_id`` (cast int via Path.stem). El cast
-        es defensivo: si el ``crop_id`` no es numerico se usa hash truncado.
+        Schema of the final parquet:
+        ``{parcel_id: int64, region: str, embedding: list[float32]}``. Maps
+        ``crop_id`` -> ``parcel_id`` (int cast via Path.stem). The cast is
+        defensive: if the ``crop_id`` is not numeric a truncated hash is used.
     """
     import polars as pl
 
@@ -280,7 +279,7 @@ def farslip_embeddings_consolidated(
     years_seen: set[int] = set()
     for roi, year, parquet_path in partitions:
         df = pl.read_parquet(parquet_path)
-        # Anade columnas region/year (compat con fusion.py LEFT JOIN por parcel_id).
+        # Add region/year columns (compat with fusion.py LEFT JOIN by parcel_id).
         df = df.with_columns(
             pl.lit(roi).alias("region"),
             pl.lit(year).cast(pl.Int32).alias("year"),
@@ -298,9 +297,9 @@ def farslip_embeddings_consolidated(
     consolidated = pl.concat(frames, how="diagonal_relaxed")
     n_rows = consolidated.height
 
-    # Garantiza el contrato con fusion.py: columna ``parcel_id`` numerica.
-    # ``crop_id`` del upstream tiene formato libre (Path.stem); intentamos cast
-    # int sin perder filas — fallback a hash si no es numerico.
+    # Guarantee the contract with fusion.py: numeric ``parcel_id`` column.
+    # ``crop_id`` from the upstream has free format (Path.stem); we attempt an
+    # int cast without losing rows — fallback to hash if not numeric.
     if "crop_id" in consolidated.columns and "parcel_id" not in consolidated.columns:
         consolidated = consolidated.with_columns(
             pl.col("crop_id")
@@ -318,8 +317,8 @@ def farslip_embeddings_consolidated(
         output_path,
     )
 
-    # B-5: metrics + tags MLflow via resource dagster-mlflow.
-    # El resource gestiona el run; aqui solo emitimos params/metrics.
+    # B-5: MLflow metrics + tags via the dagster-mlflow resource.
+    # The resource manages the run; here we only emit params/metrics.
     mlflow_client = context.resources.mlflow
     try:
         mlflow_client.log_metric("n_embeddings", float(n_rows))
@@ -331,7 +330,7 @@ def farslip_embeddings_consolidated(
         mlflow_client.log_param("pairs_version", PAIRS_TAG)
         mlflow_client.set_tag("us", "US-022b-B")
         mlflow_client.set_tag("pipeline", "farslip")
-    except Exception as exc:  # noqa: BLE001 — MLflow offline no debe romper la materializacion
+    except Exception as exc:  # noqa: BLE001 — MLflow offline must not break the materialization
         context.log.warning(
             "farslip_embeddings_consolidated: MLflow logging failed (offline?) "
             "%s: %s",

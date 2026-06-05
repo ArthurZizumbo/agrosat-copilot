@@ -1,22 +1,22 @@
-"""Exporta los parquets comparativos de los modelos del equipo us-025 (DeepLabv3+
-y TSViT) al formato que consume el integrador ``Avance4.Equipo17.ipynb``.
+"""Export the comparative parquets of the us-025 team models (DeepLabv3+
+and TSViT) to the format consumed by the integrator ``Avance4.Equipo17.ipynb``.
 
-El notebook de Aaron consolida ``reports/segmentation/metrics/
-model_comparison_avance4_<modelo>.parquet`` de cada integrante (celda de
-consolidacion: ``glob('model_comparison_avance4_*.parquet')`` + ``concat`` +
-``unique(subset=['model'])``). Este script genera los nuestros con el MISMO
-esquema que escribe :func:`ml.train.train_segmentation.run_training` (Aaron), a
-partir de las metricas reales medidas sobre el fold de validacion (fold 4, 482
-parches) en ``5a_deeplabv3plus.ipynb`` y ``5b_tsvit.ipynb``.
+Aaron's notebook consolidates ``reports/segmentation/metrics/
+model_comparison_avance4_<model>.parquet`` of each member (consolidation cell:
+``glob('model_comparison_avance4_*.parquet')`` + ``concat`` +
+``unique(subset=['model'])``). This script generates ours with the SAME schema
+that :func:`ml.train.train_segmentation.run_training` (Aaron) writes, from the
+real metrics measured on the validation fold (fold 4, 482 patches) in
+``5a_deeplabv3plus.ipynb`` and ``5b_tsvit.ipynb``.
 
-Asi nuestros 2 modelos aparecen como "disponibles" en la consolidacion (no
-"pendientes"), sin hardcodear filas en el notebook (data-driven, como el resto
-del equipo). ``tsvit`` y ``tsvit-pheno`` van como dos filas en el mismo parquet
-``_tsvit.parquet`` (la consolidacion las distingue por la columna ``model``).
+This way our 2 models appear as "available" in the consolidation (not
+"pending"), without hardcoding rows in the notebook (data-driven, like the rest
+of the team). ``tsvit`` and ``tsvit-pheno`` go as two rows in the same parquet
+``_tsvit.parquet`` (the consolidation distinguishes them by the ``model`` column).
 
-Operativo permanente (reproducible), no un script de smoke/debug.
+Permanent operational tool (reproducible), not a smoke/debug script.
 
-Uso::
+Usage::
 
     poetry run python scripts/export_avance4_metrics_us025.py
 """
@@ -27,14 +27,14 @@ from pathlib import Path
 
 import polars as pl
 
-# Esquema espejo de run_training (Aaron): columnas que consume la consolidacion.
-# Las metricas *_grouped solo aplican a deeplabv3plus (variante HCAT-6); para los
-# temporales quedan en None (la convencion de la tabla las deja vacias).
+# Mirror schema of run_training (Aaron): columns consumed by the consolidation.
+# The *_grouped metrics only apply to deeplabv3plus (HCAT-6 variant); for the
+# temporal ones they stay None (the table convention leaves them empty).
 #
-# ``train_time_s`` es el wall-clock real del run de entrenamiento medido en el
-# servidor MLflow local (Docker Postgres :5010, experimento 7
-# ``agrosat-segmentation``): ``end_time - start_time`` del run FINISHED.
-#   - deeplabv3plus (mobilenet, 18 clases, run 1c1e4f6f): 44676.4 s (~12.4 h).
+# ``train_time_s`` is the real wall-clock of the training run measured on the
+# local MLflow server (Docker Postgres :5010, experiment 7
+# ``agrosat-segmentation``): ``end_time - start_time`` of the FINISHED run.
+#   - deeplabv3plus (mobilenet, 18 classes, run 1c1e4f6f): 44676.4 s (~12.4 h).
 #   - tsvit          (run 24f70756, batch 16, 30 epochs):  1894.4 s (~31.6 min, RTX 4070).
 #   - tsvit-pheno    (run 0eef8a60, batch 16, 30 epochs):  1915.4 s (~31.9 min, RTX 4070).
 _ROWS = [
@@ -67,8 +67,8 @@ _ROWS = [
     },
 ]
 
-# Schema explicito: evita que Polars infiera Null en las columnas con solo None
-# (rompería el vertical_relaxed de la consolidacion contra parquets con floats).
+# Explicit schema: prevents Polars from inferring Null on columns with only None
+# (would break the vertical_relaxed of the consolidation against parquets with floats).
 _SCHEMA = {
     "model": pl.Utf8,
     "miou": pl.Float64, "f1_macro": pl.Float64, "pixel_accuracy": pl.Float64,
@@ -81,14 +81,14 @@ _SCHEMA = {
 
 
 def main() -> int:
-    """Escribe los parquets de deeplabv3plus y tsvit (incluye tsvit-pheno)."""
+    """Write the deeplabv3plus and tsvit parquets (includes tsvit-pheno)."""
     out_dir = Path("reports/segmentation/metrics")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     df = pl.DataFrame(_ROWS, schema=_SCHEMA)
 
-    # deeplabv3plus -> su parquet; tsvit + tsvit-pheno -> el parquet de tsvit
-    # (la consolidacion los separa por la columna `model`).
+    # deeplabv3plus -> its parquet; tsvit + tsvit-pheno -> the tsvit parquet
+    # (the consolidation separates them by the `model` column).
     deeplab = df.filter(pl.col("model") == "deeplabv3plus")
     tsvit = df.filter(pl.col("model").is_in(["tsvit", "tsvit-pheno"]))
 

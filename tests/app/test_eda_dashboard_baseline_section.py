@@ -30,19 +30,27 @@ DASHBOARD_PATH = Path(__file__).resolve().parents[2] / "app" / "eda_dashboard.py
 
 
 def test_section_baseline_in_options() -> None:
-    """AC-P9-1: ``_SECTION_BASELINE`` está presente en ``_SECTION_OPTIONS``."""
+    """AC-P9-1: ``_SECTION_BASELINE`` está presente y respeta el orden relativo.
+
+    El selector crecio de 3 a 5 secciones (Historia, EDA, FE, Baseline,
+    Segmentacion). Se valida pertenencia y el orden relativo EDA -> FE ->
+    Baseline, no la tupla exacta.
+    """
     assert hasattr(eda_dashboard, "_SECTION_BASELINE"), (
         "Constante `_SECTION_BASELINE` no definida en eda_dashboard"
     )
-    assert eda_dashboard._SECTION_BASELINE in eda_dashboard._SECTION_OPTIONS, (
-        "`_SECTION_BASELINE` no aparece en `_SECTION_OPTIONS`"
-    )
-    # Las 3 opciones canonicas estan ordenadas EDA -> FE -> Baseline.
-    assert eda_dashboard._SECTION_OPTIONS == (
+    options = eda_dashboard._SECTION_OPTIONS
+    expected = (
         eda_dashboard._SECTION_EDA,
         eda_dashboard._SECTION_FE,
         eda_dashboard._SECTION_BASELINE,
-    ), "Orden de `_SECTION_OPTIONS` distinto al esperado"
+    )
+    for name in expected:
+        assert name in options, f"`{name}` no aparece en `_SECTION_OPTIONS`"
+    idx_eda = options.index(eda_dashboard._SECTION_EDA)
+    idx_fe = options.index(eda_dashboard._SECTION_FE)
+    idx_baseline = options.index(eda_dashboard._SECTION_BASELINE)
+    assert idx_eda < idx_fe < idx_baseline, "Orden relativo EDA -> FE -> Baseline roto"
 
 
 # ---------------------------------------------------------------------------

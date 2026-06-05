@@ -1,27 +1,25 @@
-"""Carga de series temporales BreizhCrops desde disco a estructuras Polars.
+"""Loading of BreizhCrops time series from disk into Polars structures.
 
-BreizhCrops (Russwurm et al., ISPRS Archives 2020 — sucesor mantenido del
-dataset de Russwurm & Korner, ISPRS IJGI 2018) entrega series temporales
-Sentinel-2 por parcela agricola de Bretaña (Francia). Cada parcela es una
-secuencia ``(T, n_bands)`` almacenada en una base HDF5 ``<region>.h5``, con
-un indice tabular ``<region>.csv`` y un mapeo de 9 clases en
-``classmapping.csv``.
+BreizhCrops (Russwurm et al., ISPRS Archives 2020 — maintained successor of the
+Russwurm & Korner dataset, ISPRS IJGI 2018) provides Sentinel-2 time series per
+agricultural parcel in Brittany (France). Each parcel is a sequence
+``(T, n_bands)`` stored in an HDF5 store ``<region>.h5``, with a tabular index
+``<region>.csv`` and a 9-class mapping in ``classmapping.csv``.
 
-A diferencia de PASTIS-R (rejilla densa 128x128), BreizhCrops es una
-coleccion de series por objeto: 1 vector temporal multibanda por parcela,
-sin componente espacial. Esto lo hace el complemento natural para validar
-que las features temporales (FFT / fenologia) generalizan cross-region.
+Unlike PASTIS-R (dense 128x128 grid), BreizhCrops is a collection of per-object
+series: 1 multiband temporal vector per parcel, without a spatial component.
+This makes it the natural complement to validate that the temporal features
+(FFT / phenology) generalize cross-region.
 
-Este modulo expone helpers ligeros que reutilizan el paquete oficial
-``breizhcrops`` con descarga DESHABILITADA: si los archivos no estan en
-disco con el layout esperado, las funciones publicas retornan DataFrames
-Polars con esquema valido VACIO (modo degradado, espejo de
-``pastis_loader.py``), de forma que cualquier notebook completa la
-ejecucion sin error y sin tocar la red.
+This module exposes lightweight helpers that reuse the official ``breizhcrops``
+package with download DISABLED: if the files are not on disk with the expected
+layout, the public functions return Polars DataFrames with a valid EMPTY schema
+(degraded mode, mirror of ``pastis_loader.py``), so that any notebook completes
+its run without error and without touching the network.
 
-La descarga es manual y unica via ``scripts/download_breizhcrops.sh``.
+The download is manual and one-time via ``scripts/download_breizhcrops.sh``.
 
-Layout esperado (root = ``data/breizhcrops/``)::
+Expected layout (root = ``data/breizhcrops/``)::
 
     data/breizhcrops/classmapping.csv
     data/breizhcrops/codes.csv
@@ -39,10 +37,10 @@ from typing import Any
 import numpy as np
 import polars as pl
 
-# Bandas conservadas por el paquete breizhcrops en nivel L2A. El orden
-# replica SELECTED_BANDS["L2A"] de breizhcrops.datasets.breizhcrops: la
-# columna 0 de cada serie es `doa` (fecha como entero) y las 10 siguientes
-# son las bandas opticas; CLD/EDG/SAT (mascaras) se descartan en EDA.
+# Bands kept by the breizhcrops package at L2A level. The order
+# replicates SELECTED_BANDS["L2A"] from breizhcrops.datasets.breizhcrops: column
+# 0 of each series is `doa` (date as integer) and the next 10
+# are the optical bands; CLD/EDG/SAT (masks) are discarded in EDA.
 BREIZHCROPS_L2A_BANDS: list[str] = [
     "B02",
     "B03",
@@ -55,15 +53,15 @@ BREIZHCROPS_L2A_BANDS: list[str] = [
     "B11",
     "B12",
 ]
-"""Orden canonico de las 10 bandas opticas Sentinel-2 L2A de BreizhCrops.
+"""Canonical order of the 10 BreizhCrops Sentinel-2 L2A optical bands.
 
-Mapeado a la nomenclatura del proyecto (B2->B02, etc.) para alinearse con
-``PASTIS_S2_BANDS`` y permitir comparacion cross-dataset directa.
+Mapped to the project nomenclature (B2->B02, etc.) to align with
+``PASTIS_S2_BANDS`` and allow direct cross-dataset comparison.
 """
 
-# Indice posicional de cada banda dentro del array crudo que devuelve
-# breizhcrops.BreizhCrops.load() para L2A: [doa, B2, B3, B4, B5, B6, B7,
-# B8, B8A, B11, B12, CLD, EDG, SAT]. El indice 0 (doa) NO es banda.
+# Positional index of each band within the raw array returned by
+# breizhcrops.BreizhCrops.load() for L2A: [doa, B2, B3, B4, B5, B6, B7,
+# B8, B8A, B11, B12, CLD, EDG, SAT]. Index 0 (doa) is NOT a band.
 _L2A_BAND_OFFSET: int = 1
 
 BREIZHCROPS_CLASSES: dict[int, str] = {
@@ -77,11 +75,11 @@ BREIZHCROPS_CLASSES: dict[int, str] = {
     7: "permanent meadows",
     8: "temporary meadows",
 }
-"""Mapeo `class_id -> nombre` de las 9 clases canonicas BreizhCrops.
+"""Mapping `class_id -> name` of the 9 canonical BreizhCrops classes.
 
-Fuente: ``classmapping.csv`` distribuido con el dataset (bucket S2 publico).
-Se hardcodea para que el modulo exponga la taxonomia incluso en modo
-degradado (sin dataset descargado).
+Source: ``classmapping.csv`` distributed with the dataset (public S2 bucket). It
+is hardcoded so that the module exposes the taxonomy even in degraded mode
+(without the dataset downloaded).
 """
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -111,16 +109,16 @@ _PIXEL_SERIES_SCHEMA: dict[str, Any] = {
 
 
 def _required_paths(root: Path, region: str, year: int, level: str) -> dict[str, Path]:
-    """Construye las rutas que el paquete breizhcrops espera para una region.
+    """Builds the paths the breizhcrops package expects for a region.
 
     Args:
-        root: Raiz del dataset (``data/breizhcrops/``).
-        region: Region BreizhCrops (ej. ``frh04``).
-        year: Anio del ciclo (solo 2017 verificado).
-        level: Nivel de procesamiento Sentinel-2 (``L2A``).
+        root: Root of the dataset (``data/breizhcrops/``).
+        region: BreizhCrops region (e.g. ``frh04``).
+        year: Cycle year (only 2017 verified).
+        level: Sentinel-2 processing level (``L2A``).
 
     Returns:
-        Diccionario con keys ``classmapping``, ``codes``, ``index``, ``h5``.
+        Dictionary with keys ``classmapping``, ``codes``, ``index``, ``h5``.
     """
     level_dir = root / str(year) / level
     return {
@@ -132,44 +130,44 @@ def _required_paths(root: Path, region: str, year: int, level: str) -> dict[str,
 
 
 def _dataset_available(root: Path, region: str, year: int, level: str) -> bool:
-    """Verifica que TODOS los archivos requeridos existan en disco.
+    """Verifies that ALL the required files exist on disk.
 
-    Esta guarda es la que garantiza que jamas se dispare una descarga de
-    red: solo instanciamos ``breizhcrops.BreizhCrops`` cuando el layout
-    completo ya esta presente localmente.
+    This guard is what guarantees that a network download is never triggered: we
+    only instantiate ``breizhcrops.BreizhCrops`` when the full layout is already
+    present locally.
 
     Args:
-        root: Raiz del dataset.
-        region: Region BreizhCrops.
-        year: Anio del ciclo.
-        level: Nivel de procesamiento.
+        root: Root of the dataset.
+        region: BreizhCrops region.
+        year: Cycle year.
+        level: Processing level.
 
     Returns:
-        ``True`` si classmapping, codes, index y h5 existen y no estan
-        vacios; ``False`` en caso contrario (activa modo degradado).
+        ``True`` if classmapping, codes, index and h5 exist and are not empty;
+        ``False`` otherwise (activates degraded mode).
     """
     paths = _required_paths(root, region, year, level)
     return all(p.exists() and p.stat().st_size > 0 for p in paths.values())
 
 
 def _open_dataset(root: Path, region: str, year: int, level: str) -> Any | None:
-    """Instancia ``breizhcrops.BreizhCrops`` SIN descarga (offline-safe).
+    """Instantiates ``breizhcrops.BreizhCrops`` WITHOUT download (offline-safe).
 
-    El paquete no expone un flag ``download=False``: descarga si faltan
-    archivos. Por eso solo construimos el dataset cuando
-    :func:`_dataset_available` confirma que todo esta en disco. Si el
-    paquete no esta instalado o la construccion falla, devolvemos ``None``
-    para caer a modo degradado.
+    The package does not expose a ``download=False`` flag: it downloads if files
+    are missing. That is why we only build the dataset when
+    :func:`_dataset_available` confirms that everything is on disk. If the package
+    is not installed or the construction fails, we return ``None`` to fall back to
+    degraded mode.
 
     Args:
-        root: Raiz del dataset.
-        region: Region BreizhCrops.
-        year: Anio del ciclo.
-        level: Nivel de procesamiento.
+        root: Root of the dataset.
+        region: BreizhCrops region.
+        year: Cycle year.
+        level: Processing level.
 
     Returns:
-        Instancia de ``BreizhCrops`` o ``None`` si no es posible cargarla
-        sin red.
+        Instance of ``BreizhCrops`` or ``None`` if it cannot be loaded without
+        the network.
     """
     if not _dataset_available(root, region, year, level):
         return None
@@ -187,9 +185,9 @@ def _open_dataset(root: Path, region: str, year: int, level: str) -> Any | None:
             verbose=False,
         )
     except Exception:  # noqa: BLE001
-        # Construccion fallida (h5 corrupto, indice incompatible, etc.):
-        # degradamos a esquema vacio en vez de propagar. Sin log porque
-        # breizhcrops es opcional y el notebook documenta el modo.
+        # Construction failed (corrupt h5, incompatible index, etc.):
+        # we degrade to an empty schema instead of propagating. No log because
+        # breizhcrops is optional and the notebook documents the mode.
         return None
 
 
@@ -199,24 +197,24 @@ def breizhcrops_parcel_index(
     level: str = "L2A",
     root: Path | None = None,
 ) -> pl.DataFrame:
-    """Devuelve el indice plano de parcelas BreizhCrops de una region.
+    """Returns the flat index of BreizhCrops parcels for a region.
 
-    Equivalente a ``pastis_patch_index`` pero para series por objeto: una
-    fila por parcela con su clase y la longitud de su serie temporal. Util
-    para muestreo estratificado por clase antes de cargar las series H5.
+    Equivalent to ``pastis_patch_index`` but for per-object series: one row per
+    parcel with its class and the length of its time series. Useful for stratified
+    sampling by class before loading the H5 series.
 
     Args:
-        region: Region BreizhCrops (``frh01``..``frh04``, ``belle-ile``).
-        year: Anio del ciclo agricola (solo 2017 verificado).
-        level: Nivel de procesamiento Sentinel-2 (``L2A`` recomendado).
-        root: Raiz del dataset. Si ``None``, usa ``data/breizhcrops/``
-            relativo al repo.
+        region: BreizhCrops region (``frh01``..``frh04``, ``belle-ile``).
+        year: Agricultural cycle year (only 2017 verified).
+        level: Sentinel-2 processing level (``L2A`` recommended).
+        root: Root of the dataset. If ``None``, uses ``data/breizhcrops/``
+            relative to the repo.
 
     Returns:
-        DataFrame Polars con columnas ``parcel_id, region, year, level,
-        code_cultu, class_id, class_name, sequence_length``. Vacio (con
-        esquema valido) si el dataset no esta descargado o el paquete
-        ``breizhcrops`` no esta disponible.
+        Polars DataFrame with columns ``parcel_id, region, year, level,
+        code_cultu, class_id, class_name, sequence_length``. Empty (with a valid
+        schema) if the dataset is not downloaded or the ``breizhcrops`` package is
+        not available.
     """
     root = root or _DEFAULT_ROOT
     ds = _open_dataset(root, region, year, level)
@@ -246,17 +244,17 @@ def breizhcrops_parcel_index(
 
 
 def _doa_to_date_doy(doa_int: float) -> tuple[int, int]:
-    """Convierte el campo `doa` (datetime64[ns] como int) a (YYYYMMDD, DOY).
+    """Converts the `doa` field (datetime64[ns] as int) to (YYYYMMDD, DOY).
 
-    El paquete breizhcrops almacena la fecha de adquisicion como
-    ``pd.to_datetime(...).astype(int)`` (nanosegundos desde epoch). Aqui la
-    revertimos a un entero ``YYYYMMDD`` legible y al dia del anio.
+    The breizhcrops package stores the acquisition date as
+    ``pd.to_datetime(...).astype(int)`` (nanoseconds since epoch). Here we revert
+    it to a readable ``YYYYMMDD`` integer and the day of the year.
 
     Args:
-        doa_int: Valor crudo de la columna 0 (`doa`) de la serie.
+        doa_int: Raw value of column 0 (`doa`) of the series.
 
     Returns:
-        Tupla ``(date_yyyymmdd, doy)``. ``(0, 0)`` si el valor no es finito.
+        Tuple ``(date_yyyymmdd, doy)``. ``(0, 0)`` if the value is not finite.
     """
     if not np.isfinite(doa_int):
         return 0, 0
@@ -280,36 +278,35 @@ def breizhcrops_pixel_series(
     root: Path | None = None,
     only_parcel_ids: set[str] | None = None,
 ) -> pl.DataFrame:
-    """Convierte series BreizhCrops a un ``pl.DataFrame`` long-format.
+    """Converts BreizhCrops series into a long-format ``pl.DataFrame``.
 
-    Cada parcela aporta ``T`` pasos temporales x 10 bandas opticas. El
-    formato long resultante es directamente comparable con la salida de
-    ``pastis_to_polars`` (mismas columnas semanticas: ``band``, ``value``,
-    ``class_id``), habilitando el analisis cross-dataset BreizhCrops vs
-    PASTIS-R.
+    Each parcel contributes ``T`` temporal steps x 10 optical bands. The resulting
+    long format is directly comparable with the output of ``pastis_to_polars``
+    (same semantic columns: ``band``, ``value``, ``class_id``), enabling the
+    cross-dataset BreizhCrops vs PASTIS-R analysis.
 
-    El muestreo estratificado se hace por parcela (no por pixel, porque
-    BreizhCrops no tiene rejilla espacial): de ``sample_parcels`` parcelas
-    elegidas con semilla fija se expanden todas sus observaciones.
+    Stratified sampling is done per parcel (not per pixel, because BreizhCrops has
+    no spatial grid): all observations are expanded from ``sample_parcels``
+    parcels chosen with a fixed seed.
 
     Args:
-        region: Region BreizhCrops.
-        year: Anio del ciclo agricola.
-        level: Nivel de procesamiento (``L2A``).
-        sample_parcels: Si no ``None``, numero maximo de parcelas a
-            samplear (reproducible con ``seed``). ``None`` carga todas.
-        seed: Semilla para el muestreo de parcelas.
-        root: Raiz del dataset. ``None`` usa ``data/breizhcrops/``.
-        only_parcel_ids: Si no ``None``, restringe la extraccion a las
-            parcelas cuyo ``id`` (como string) este en el conjunto. Es la
-            via eficiente para extraer un subconjunto previamente muestreado
-            sin expandir toda la region (la region completa son cientos de
-            miles de parcelas). Se aplica ANTES de ``sample_parcels``.
+        region: BreizhCrops region.
+        year: Agricultural cycle year.
+        level: Processing level (``L2A``).
+        sample_parcels: If not ``None``, maximum number of parcels to sample
+            (reproducible with ``seed``). ``None`` loads all.
+        seed: Seed for the parcel sampling.
+        root: Root of the dataset. ``None`` uses ``data/breizhcrops/``.
+        only_parcel_ids: If not ``None``, restricts the extraction to the parcels
+            whose ``id`` (as string) is in the set. It is the efficient way to
+            extract a previously sampled subset without expanding the whole region
+            (the full region is hundreds of thousands of parcels). It is applied
+            BEFORE ``sample_parcels``.
 
     Returns:
-        DataFrame Polars con columnas ``parcel_id, t, date, doy, band,
-        value, class_id, class_name``. Vacio (esquema valido) si el
-        dataset no esta descargado o el paquete no esta disponible.
+        Polars DataFrame with columns ``parcel_id, t, date, doy, band, value,
+        class_id, class_name``. Empty (valid schema) if the dataset is not
+        downloaded or the package is not available.
     """
     root = root or _DEFAULT_ROOT
     ds = _open_dataset(root, region, year, level)
@@ -322,9 +319,9 @@ def breizhcrops_pixel_series(
 
     order = np.arange(n_parcels)
     if only_parcel_ids is not None:
-        # Filtra por posiciones cuyo `id` esta en el conjunto pedido. El
-        # indice de breizhcrops usa un RangeIndex posicional, asi que la
-        # posicion en `order` coincide con `ds.index.iloc[pos]`.
+        # Filter by positions whose `id` is in the requested set. The
+        # breizhcrops index uses a positional RangeIndex, so the
+        # position in `order` coincides with `ds.index.iloc[pos]`.
         wanted = {str(p) for p in only_parcel_ids}
         id_series = ds.index["id"].astype(str).to_numpy()
         order = np.where(np.isin(id_series, list(wanted)))[0]
@@ -338,8 +335,8 @@ def breizhcrops_pixel_series(
     n_bands = len(band_names)
     frames: list[pl.DataFrame] = []
 
-    # Abrimos el HDF5 UNA sola vez para toda la extraccion: reabrir el archivo
-    # por parcela domina el tiempo cuando `order` tiene cientos/miles de ids.
+    # We open the HDF5 ONCE for the entire extraction: reopening the file
+    # per parcel dominates the time when `order` has hundreds/thousands of ids.
     try:
         h5_ctx = _h5_open(ds)
     except Exception:  # noqa: BLE001
@@ -351,9 +348,9 @@ def breizhcrops_pixel_series(
                 row = ds.index.iloc[int(i)]
                 raw = np.asarray(h5[row.path], dtype=np.float64)
             except Exception:  # noqa: BLE001, S112
-                # Serie ilegible: la saltamos sin abortar la carga completa.
-                # Sin log porque breizhcrops es opcional y el notebook documenta
-                # el modo degradado (espejo de pastis_loader.py).
+                # Unreadable series: we skip it without aborting the full load.
+                # No log because breizhcrops is optional and the notebook documents
+                # the degraded mode (mirror of pastis_loader.py).
                 continue
             if raw.ndim != 2 or raw.shape[0] == 0:
                 continue
@@ -395,16 +392,16 @@ def breizhcrops_pixel_series(
 
 
 def _h5_open(ds: Any) -> Any:
-    """Abre el HDF5 de la instancia BreizhCrops en modo lectura.
+    """Opens the HDF5 of the BreizhCrops instance in read mode.
 
-    Aislado en su propia funcion para que el ``with`` del caller sea
-    legible y para poder mockearlo en tests sin red ni h5py real.
+    Isolated in its own function so that the caller's ``with`` is readable and so
+    it can be mocked in tests without the network or a real h5py.
 
     Args:
-        ds: Instancia de ``breizhcrops.BreizhCrops``.
+        ds: Instance of ``breizhcrops.BreizhCrops``.
 
     Returns:
-        Context manager de ``h5py.File`` sobre ``ds.h5path``.
+        Context manager of ``h5py.File`` over ``ds.h5path``.
     """
     import h5py  # type: ignore[import-untyped]
 

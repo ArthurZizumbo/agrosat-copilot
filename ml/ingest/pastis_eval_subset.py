@@ -1,19 +1,19 @@
-"""Construye un subset estratificado REAL de PASTIS-R para evaluacion FarSLIP/RemoteCLIP.
+"""Build a REAL stratified subset of PASTIS-R for FarSLIP/RemoteCLIP evaluation.
 
-Este modulo es la fuente unica de verdad para el fixture
-``data/test_fixtures/pastis_eval_subset.parquet`` consumido por
-``notebooks/baseline/04_farslip_eval_pastis.ipynb`` y por los smoke tests
-de los encoders FarSLIP / RemoteCLIP en EPIC 4.
+This module is the single source of truth for the fixture
+``data/test_fixtures/pastis_eval_subset.parquet`` consumed by
+``notebooks/baseline/04_farslip_eval_pastis.ipynb`` and by the smoke tests
+of the FarSLIP / RemoteCLIP encoders in EPIC 4.
 
-Reglas:
-    - NUNCA genera datos sinteticos. Si PASTIS-R no esta presente en disco
-      (``data/PASTIS-R/metadata.geojson`` y ``DATA_S2/``) se lanza
-      ``FileNotFoundError`` con la instruccion de descarga (DVC pull o link
-      al dataset oficial INRAE).
-    - Determinismo total: ``seed=42`` por defecto -> el MD5 del parquet
-      debe ser estable run-to-run.
-    - Polars 1.x para I/O parquet, sin pandas.
-    - Logs estructurados via ``structlog``.
+Rules:
+    - NEVER generates synthetic data. If PASTIS-R is not present on disk
+      (``data/PASTIS-R/metadata.geojson`` and ``DATA_S2/``), a
+      ``FileNotFoundError`` is raised with the download instruction (DVC pull or
+      link to the official INRAE dataset).
+    - Full determinism: ``seed=42`` by default -> the parquet MD5 must be
+      stable run-to-run.
+    - Polars 1.x for parquet I/O, no pandas.
+    - Structured logs via ``structlog``.
 
 CLI:
     poetry run python -m ml.ingest.pastis_eval_subset \\
@@ -56,43 +56,43 @@ _StratifyBy = Literal["class", "tile", "fold"]
 
 
 # ---------------------------------------------------------------------------
-# Errores
+# Errors
 # ---------------------------------------------------------------------------
 
 
 def _raise_missing_pastis(pastis_root: Path) -> None:
-    """Lanza FileNotFoundError con instruccion de descarga.
+    """Raise FileNotFoundError with download instruction.
 
     Args:
-        pastis_root: Raiz esperada del dataset PASTIS-R.
+        pastis_root: Expected root of the PASTIS-R dataset.
 
     Raises:
-        FileNotFoundError: Siempre. Incluye el path faltante y los comandos
-            de descarga (DVC pull) o enlace al dataset oficial.
+        FileNotFoundError: Always. Includes the missing path and the download
+            commands (DVC pull) or link to the official dataset.
     """
     msg = (
-        f"PASTIS-R no encontrado en {pastis_root}. "
-        "Esperado: metadata.geojson + DATA_S2/ + ANNOTATIONS/. "
-        "Para obtenerlo: `dvc pull data/PASTIS-R.dvc` "
-        "o descarga manual desde "
+        f"PASTIS-R not found at {pastis_root}. "
+        "Expected: metadata.geojson + DATA_S2/ + ANNOTATIONS/. "
+        "To obtain it: `dvc pull data/PASTIS-R.dvc` "
+        "or manual download from "
         "https://zenodo.org/record/5735646 (PASTIS-R, INRAE, CC-BY-SA-4.0)."
     )
     raise FileNotFoundError(msg)
 
 
 # ---------------------------------------------------------------------------
-# Helpers internos
+# Internal helpers
 # ---------------------------------------------------------------------------
 
 
 def _validate_pastis_present(pastis_root: Path) -> None:
-    """Valida que la estructura minima de PASTIS-R exista en disco.
+    """Validate that the minimal PASTIS-R structure exists on disk.
 
     Args:
-        pastis_root: Raiz esperada del dataset.
+        pastis_root: Expected root of the dataset.
 
     Raises:
-        FileNotFoundError: Si falta ``metadata.geojson`` o ``DATA_S2/``.
+        FileNotFoundError: If ``metadata.geojson`` or ``DATA_S2/`` is missing.
     """
     metadata = pastis_root / "metadata.geojson"
     data_s2 = pastis_root / "DATA_S2"
@@ -104,14 +104,14 @@ def _patch_majority_class(
     semantic: np.ndarray,
     exclude: tuple[int, ...] = (_BACKGROUND_CLASS, _VOID_CLASS),
 ) -> int:
-    """Devuelve la clase mayoritaria (1..18) de un patch.
+    """Return the majority class (1..18) of a patch.
 
     Args:
-        semantic: Mapa de clase 2D ``(H, W)``.
-        exclude: Clases a excluir del conteo.
+        semantic: 2D class map ``(H, W)``.
+        exclude: Classes to exclude from the count.
 
     Returns:
-        int en 1..18 con la clase mayoritaria, o 0 si todo es background/void.
+        int in 1..18 with the majority class, or 0 if everything is background/void.
     """
     flat = semantic.ravel()
     mask = ~np.isin(flat, np.asarray(exclude, dtype=flat.dtype))
@@ -123,14 +123,14 @@ def _patch_majority_class(
 
 
 def _load_target(pastis_root: Path, patch_id: str) -> np.ndarray | None:
-    """Carga ``TARGET_<patch_id>.npy`` o ``None`` si no existe.
+    """Load ``TARGET_<patch_id>.npy`` or ``None`` if it does not exist.
 
     Args:
-        pastis_root: Raiz del dataset.
-        patch_id: Identificador del patch.
+        pastis_root: Root of the dataset.
+        patch_id: Patch identifier.
 
     Returns:
-        ndarray de shape ``(3, H, W)`` o ``None`` si no existe.
+        ndarray of shape ``(3, H, W)`` or ``None`` if it does not exist.
     """
     tgt = pastis_root / "ANNOTATIONS" / f"TARGET_{patch_id}.npy"
     if not tgt.exists():
@@ -139,14 +139,14 @@ def _load_target(pastis_root: Path, patch_id: str) -> np.ndarray | None:
 
 
 def _load_s2(pastis_root: Path, patch_id: str) -> np.ndarray | None:
-    """Carga ``S2_<patch_id>.npy`` o ``None`` si no existe.
+    """Load ``S2_<patch_id>.npy`` or ``None`` if it does not exist.
 
     Args:
-        pastis_root: Raiz del dataset.
-        patch_id: Identificador del patch.
+        pastis_root: Root of the dataset.
+        patch_id: Patch identifier.
 
     Returns:
-        ndarray ``(T, 10, H, W)`` o ``None``.
+        ndarray ``(T, 10, H, W)`` or ``None``.
     """
     s2 = pastis_root / "DATA_S2" / f"S2_{patch_id}.npy"
     if not s2.exists():
@@ -158,18 +158,18 @@ def _enumerate_parcels(
     pastis_root: Path,
     patch_ids: list[str],
 ) -> pl.DataFrame:
-    """Enumera todas las parcelas ``(patch_id, instance_id, class_id, n_pixels)``.
+    """Enumerate all parcels ``(patch_id, instance_id, class_id, n_pixels)``.
 
-    Una parcela = (patch_id, instance_id) unica derivada del canal 1
-    (instancia) de ``TARGET_<patch_id>.npy``. La clase se toma de la moda
-    del canal 0 (semantic) restringido a los pixeles de esa instancia.
+    A parcel = unique (patch_id, instance_id) derived from channel 1
+    (instance) of ``TARGET_<patch_id>.npy``. The class is taken from the mode
+    of channel 0 (semantic) restricted to the pixels of that instance.
 
     Args:
-        pastis_root: Raiz PASTIS-R.
-        patch_ids: Lista de patch_ids a escanear.
+        pastis_root: PASTIS-R root.
+        patch_ids: List of patch_ids to scan.
 
     Returns:
-        DataFrame con columnas ``patch_id`` (Utf8), ``instance_id`` (Int64),
+        DataFrame with columns ``patch_id`` (Utf8), ``instance_id`` (Int64),
         ``class_id`` (Int64), ``n_pixels`` (Int64).
     """
     rows: list[dict[str, Any]] = []
@@ -183,7 +183,7 @@ def _enumerate_parcels(
         for iid in inst_ids:
             iid_int = int(iid)
             if iid_int == 0:
-                # 0 = sin instancia (background)
+                # 0 = no instance (background)
                 continue
             mask = instance == iid
             n_pixels = int(np.count_nonzero(mask))
@@ -225,22 +225,22 @@ def _stratified_sample(
     stratify_by: _StratifyBy,
     seed: int,
 ) -> pl.DataFrame:
-    """Muestra ``n_samples`` parcelas estratificadas por la dimension indicada.
+    """Sample ``n_samples`` parcels stratified by the indicated dimension.
 
-    Garantia (solo para ``stratify_by='class'``): cada clase con disponibilidad
-    en ``parcels`` recibe al menos ``max(8, n_samples // 36)`` muestras (o todas
-    las disponibles si hay menos).
+    Guarantee (only for ``stratify_by='class'``): each class available in
+    ``parcels`` receives at least ``max(8, n_samples // 36)`` samples (or all
+    available if there are fewer).
 
     Args:
-        parcels: DataFrame con columnas ``patch_id, instance_id, class_id,
+        parcels: DataFrame with columns ``patch_id, instance_id, class_id,
             n_pixels, tile, fold``.
-        n_samples: Tamano objetivo del subset.
-        stratify_by: Dimension de estratificacion (``class``, ``tile``, ``fold``).
-        seed: Semilla numpy para reproducibilidad.
+        n_samples: Target size of the subset.
+        stratify_by: Stratification dimension (``class``, ``tile``, ``fold``).
+        seed: numpy seed for reproducibility.
 
     Returns:
-        DataFrame muestreado con tamano <= ``n_samples`` (puede ser menor si
-        no hay suficientes parcelas en el catalogo).
+        Sampled DataFrame with size <= ``n_samples`` (may be smaller if
+        there are not enough parcels in the catalog).
     """
     rng = np.random.default_rng(seed)
     col_map = {"class": "class_id", "tile": "tile", "fold": "fold"}
@@ -257,7 +257,7 @@ def _stratified_sample(
     selected_indices: list[int] = []
     parcels_with_idx = parcels.with_row_index(name="_row_idx")
 
-    # Pase 1: garantizar minimo por grupo
+    # Pass 1: guarantee a minimum per group
     for grp_val in groups[strat_col].to_list():
         sub = parcels_with_idx.filter(pl.col(strat_col) == grp_val)
         sub_idx = sub["_row_idx"].to_list()
@@ -265,7 +265,7 @@ def _stratified_sample(
         choice = rng.choice(len(sub_idx), size=target, replace=False)
         selected_indices.extend(int(sub_idx[i]) for i in choice)
 
-    # Pase 2: rellenar hasta n_samples con remainder distribuido proporcional
+    # Pass 2: fill up to n_samples with the remainder distributed proportionally
     remaining = n_samples - len(selected_indices)
     if remaining > 0:
         already = set(selected_indices)
@@ -276,13 +276,13 @@ def _stratified_sample(
             choice = rng.choice(len(pool_idx), size=extra, replace=False)
             selected_indices.extend(int(pool_idx[i]) for i in choice)
     elif remaining < 0:
-        # Caso edge: el pase 1 ya excedio n_samples (n_groups * class_min > n_samples).
-        # Truncamos manteniendo al menos 1 por grupo presente.
+        # Edge case: pass 1 already exceeded n_samples (n_groups * class_min > n_samples).
+        # We truncate keeping at least 1 per present group.
         kept: dict[Any, list[int]] = defaultdict(list)
         for idx in selected_indices:
             grp = parcels.row(idx, named=True)[strat_col]
             kept[grp].append(idx)
-        # Round-robin hasta llenar n_samples
+        # Round-robin until n_samples is filled
         new_selection: list[int] = []
         cursors = {k: 0 for k in kept}
         while len(new_selection) < n_samples:
@@ -309,25 +309,25 @@ def _build_imagery_blob(
     pastis_root: Path,
     subset: pl.DataFrame,
 ) -> pl.DataFrame:
-    """Serializa crops S2 multitemporales SOLO de los pixeles de cada instancia.
+    """Serialize multitemporal S2 crops ONLY of the pixels of each instance.
 
-    Para cada parcela en ``subset``, carga el ``S2_<patch_id>.npy`` y el
-    ``TARGET_<patch_id>.npy`` correspondientes, calcula la mascara de la
-    instancia y emite una fila long-format ``(parcel_id, t_index, band_NN)``
-    con la media de los pixeles de esa instancia en esa banda y timestep.
+    For each parcel in ``subset``, loads the corresponding ``S2_<patch_id>.npy``
+    and ``TARGET_<patch_id>.npy``, computes the instance mask and emits a
+    long-format row ``(parcel_id, t_index, band_NN)`` with the mean of the
+    pixels of that instance in that band and timestep.
 
-    Promediar dentro de la instancia mantiene el parquet acotado
-    (N parcelas * T * 10 bandas), suficiente para un eval de FarSLIP/RemoteCLIP
-    en notebook.
+    Averaging within the instance keeps the parquet bounded
+    (N parcels * T * 10 bands), sufficient for a FarSLIP/RemoteCLIP eval
+    in a notebook.
 
     Args:
-        pastis_root: Raiz PASTIS-R.
-        subset: DataFrame con columnas ``parcel_id``, ``patch_id``,
+        pastis_root: PASTIS-R root.
+        subset: DataFrame with columns ``parcel_id``, ``patch_id``,
             ``instance_id``.
 
     Returns:
-        DataFrame con columnas ``parcel_id, t_index`` + ``band_B02..band_B12``
-        (10 bandas, Float32). Vacio si ningun patch pudo leerse.
+        DataFrame with columns ``parcel_id, t_index`` + ``band_B02..band_B12``
+        (10 bands, Float32). Empty if no patch could be read.
     """
     s2_cache: dict[str, np.ndarray] = {}
     target_cache: dict[str, np.ndarray] = {}
@@ -372,13 +372,13 @@ def _build_imagery_blob(
 
 
 def _md5_file(path: Path) -> str:
-    """Devuelve el MD5 hex de un archivo.
+    """Return the hex MD5 of a file.
 
     Args:
-        path: Ruta al archivo.
+        path: Path to the file.
 
     Returns:
-        Hash MD5 en hex.
+        MD5 hash in hex.
     """
     h = hashlib.md5(usedforsecurity=False)
     with path.open("rb") as fh:
@@ -388,7 +388,7 @@ def _md5_file(path: Path) -> str:
 
 
 # ---------------------------------------------------------------------------
-# API publica
+# Public API
 # ---------------------------------------------------------------------------
 
 
@@ -402,43 +402,43 @@ def build_pastis_eval_subset(
     stratify_by: _StratifyBy = "class",
     save_imagery: bool = True,
 ) -> Path:
-    """Construye un subset estratificado REAL de PASTIS-R para evaluacion FarSLIP/RemoteCLIP.
+    """Build a REAL stratified subset of PASTIS-R for FarSLIP/RemoteCLIP evaluation.
 
-    NO genera datos sinteticos. Si PASTIS-R no esta en disco, lanza
-    ``FileNotFoundError`` con instruccion de descarga.
+    Does NOT generate synthetic data. If PASTIS-R is not on disk, raises
+    ``FileNotFoundError`` with download instruction.
 
-    El subset se materializa como parquet con una fila por parcela
-    ``(patch_id, instance_id)`` y las columnas:
+    The subset is materialized as parquet with one row per parcel
+    ``(patch_id, instance_id)`` and the columns:
 
-    - ``parcel_id`` (Utf8, esquema ``{patch_id}_{instance_id}``)
+    - ``parcel_id`` (Utf8, schema ``{patch_id}_{instance_id}``)
     - ``patch_id`` (Int64)
     - ``instance_id`` (Int64)
     - ``class_id`` (Int64, 1..18)
     - ``class_name`` (Utf8, via ``PASTIS_R_CLASSES``)
     - ``tile`` (Utf8)
     - ``fold`` (Int64, 1..5)
-    - ``lon`` / ``lat`` (Float64, EPSG:4326, centroide del patch)
-    - ``n_pixels`` (Int64, size de la instancia)
+    - ``lon`` / ``lat`` (Float64, EPSG:4326, patch centroid)
+    - ``n_pixels`` (Int64, instance size)
 
-    Si ``save_imagery=True``, ademas se materializa
-    ``<output_path>.imagery.parquet`` con los crops S2 promediados por
-    instancia (filas ``parcel_id, t_index, band_B02..band_B12``).
+    If ``save_imagery=True``, also materializes
+    ``<output_path>.imagery.parquet`` with the S2 crops averaged per
+    instance (rows ``parcel_id, t_index, band_B02..band_B12``).
 
     Args:
-        output_path: Ruta destino del parquet principal.
-        n_samples: Numero objetivo de parcelas. Default 1024.
-        seed: Semilla numpy para reproducibilidad. Default 42.
-        pastis_root: Raiz del dataset. Default ``data/PASTIS-R/``.
-        overwrite: Si False y el archivo ya existe, no regenera.
-        stratify_by: Dimension de estratificacion (``class``, ``tile``, ``fold``).
-        save_imagery: Si True, materializa el blob de imagery auxiliar.
+        output_path: Destination path of the main parquet.
+        n_samples: Target number of parcels. Default 1024.
+        seed: numpy seed for reproducibility. Default 42.
+        pastis_root: Root of the dataset. Default ``data/PASTIS-R/``.
+        overwrite: If False and the file already exists, does not regenerate.
+        stratify_by: Stratification dimension (``class``, ``tile``, ``fold``).
+        save_imagery: If True, materializes the auxiliary imagery blob.
 
     Returns:
-        Ruta al parquet principal generado (o existente si ``overwrite=False``).
+        Path to the generated main parquet (or existing one if ``overwrite=False``).
 
     Raises:
-        FileNotFoundError: Si PASTIS-R no esta presente en disco.
-        ValueError: Si tras enumerar instancias no hay parcelas validas.
+        FileNotFoundError: If PASTIS-R is not present on disk.
+        ValueError: If after enumerating instances there are no valid parcels.
     """
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -456,7 +456,7 @@ def build_pastis_eval_subset(
 
     index_df = pastis_patch_index(root / "metadata.geojson")
     if index_df.is_empty():
-        raise ValueError(f"metadata.geojson de PASTIS-R sin features: {root}")
+        raise ValueError(f"PASTIS-R metadata.geojson has no features: {root}")
 
     coords_df = pastis_patch_coords(root / "metadata.geojson", target_crs="EPSG:4326")
 
@@ -464,10 +464,10 @@ def build_pastis_eval_subset(
     parcels_raw = _enumerate_parcels(root, patch_ids)
     if parcels_raw.is_empty():
         raise ValueError(
-            f"No se encontraron instancias validas en {root / 'ANNOTATIONS'}."
+            f"No valid instances found in {root / 'ANNOTATIONS'}."
         )
 
-    # Enriquecer con tile, fold, lon, lat
+    # Enrich with tile, fold, lon, lat
     parcels_enriched = parcels_raw.join(
         index_df.rename({"TILE": "tile", "Fold": "fold"}),
         on="patch_id",
@@ -489,7 +489,7 @@ def build_pastis_eval_subset(
         parcels_enriched, n_samples=n_samples, stratify_by=stratify_by, seed=seed
     )
 
-    # Construir parcel_id canonico Utf8 + class_name
+    # Build the canonical Utf8 parcel_id + class_name
     class_name_map = {int(k): v for k, v in PASTIS_R_CLASSES.items()}
     sampled = sampled.with_columns(
         (pl.col("patch_id").cast(pl.Utf8) + pl.lit("_") + pl.col("instance_id").cast(pl.Utf8))
@@ -547,10 +547,10 @@ def build_pastis_eval_subset(
 
 
 def _build_cli() -> argparse.ArgumentParser:
-    """Construye el ArgumentParser del CLI.
+    """Build the CLI ArgumentParser.
 
     Returns:
-        Parser configurado.
+        Configured parser.
     """
     parser = argparse.ArgumentParser(
         prog="python -m ml.ingest.pastis_eval_subset",
@@ -595,13 +595,13 @@ def _build_cli() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Entrypoint CLI.
+    """CLI entrypoint.
 
     Args:
-        argv: Argumentos opcionales (para tests). Si None, lee de sys.argv.
+        argv: Optional arguments (for tests). If None, reads from sys.argv.
 
     Returns:
-        0 si genero el subset correctamente; codigo de error en otro caso.
+        0 if the subset was generated correctly; error code otherwise.
     """
     args = _build_cli().parse_args(argv)
     out = build_pastis_eval_subset(

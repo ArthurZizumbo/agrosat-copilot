@@ -1,8 +1,8 @@
-"""Asset de smoke-test para verificar que Dagster arranca correctamente.
+"""Smoke-test asset to verify that Dagster starts correctly.
 
-Sirve para validar la instalación del entorno (Dagster + Polars + Python 3.12)
-antes de empezar a materializar los assets reales de ingesta. Se elimina cuando
-el primer asset productivo (``alphaearth_annual``) entra en operación.
+Used to validate the environment installation (Dagster + Polars + Python 3.12)
+before starting to materialize the real ingestion assets. It is removed when
+the first productive asset (``alphaearth_annual``) goes into operation.
 """
 
 from datetime import UTC, datetime
@@ -15,7 +15,7 @@ from dagster import AssetExecutionContext, MaterializeResult, MetadataValue, ass
     description="Smoke-test asset: confirma que Dagster ejecuta y registra metadata.",
 )
 def hello_world(context: AssetExecutionContext) -> MaterializeResult:
-    """Devuelve un timestamp como prueba de vida del orquestador."""
+    """Return a timestamp as a liveness check of the orchestrator."""
     now = datetime.now(UTC)
     context.log.info("Dagster bootstrap smoke-test executed at %s", now.isoformat())
     return MaterializeResult(

@@ -1,34 +1,34 @@
-"""Esquema canonico de ``parcel_id`` para el proyecto AgroSatCopilot.
+"""Canonical ``parcel_id`` schema for the AgroSatCopilot project.
 
-Contexto y motivacion
----------------------
+Context and motivation
+----------------------
 
-El identificador de parcela ``parcel_id`` viaja por multiples capas del
-proyecto: GeoDataFrames de ingesta, parquets de embeddings (FarSLIP,
-DINOv3, AlphaEarth), frames Polars de fusion (``ml.features.fusion``) y
-caches de spatial CV. Historicamente convivieron dos representaciones:
+The parcel identifier ``parcel_id`` travels through multiple layers of the
+project: ingest GeoDataFrames, embedding parquets (FarSLIP, DINOv3,
+AlphaEarth), fusion Polars frames (``ml.features.fusion``) and spatial CV
+caches. Historically two representations coexisted:
 
-1. ``Int64`` — heredada de PASTIS (``parcel_id`` numerico desde el GeoJSON
-   original) y consumida por los samplers GEE.
-2. ``Utf8`` — emergente desde los baselines que construyen el id como
-   ``"{patch_id}_{i}"`` para identificar pixeles dentro de patches.
+1. ``Int64`` — inherited from PASTIS (numeric ``parcel_id`` from the original
+   GeoJSON) and consumed by the GEE samplers.
+2. ``Utf8`` — emergent from the baselines that build the id as
+   ``"{patch_id}_{i}"`` to identify pixels within patches.
 
-Cuando un ``LEFT JOIN`` mezcla ambos esquemas el resultado es silenciosa
-mente vacio en Polars 1.x (el join produce NaN en todas las columnas del
-lado derecho). El bug se manifesto en ``05_reencuadre_fenologico.ipynb``
-con el FarSLIP omitido pese a existir el parquet canonico.
+When a ``LEFT JOIN`` mixes both schemas the result is silently empty in
+Polars 1.x (the join produces NaN in all the columns of the right-hand side).
+The bug manifested in ``05_reencuadre_fenologico.ipynb`` with FarSLIP omitted
+despite the canonical parquet existing.
 
-Esquema canonico
+Canonical schema
 ----------------
 
-A partir de US-023-preview v2 el esquema oficial es::
+As of US-023-preview v2 the official schema is::
 
-    parcel_id: pl.Utf8  (siempre, en todo el proyecto)
+    parcel_id: pl.Utf8  (always, throughout the project)
 
-Todo bloque que se incorpore via ``LEFT JOIN`` debe castear su columna
-``parcel_id`` a ``pl.Utf8`` antes del join. La utilidad
-:func:`canonical_parcel_id` aplica el cast de forma idempotente y sin
-perder precision (no usa notacion cientifica para enteros grandes).
+Every block incorporated via a ``LEFT JOIN`` must cast its ``parcel_id``
+column to ``pl.Utf8`` before the join. The utility
+:func:`canonical_parcel_id` applies the cast idempotently and without losing
+precision (it does not use scientific notation for large integers).
 """
 
 from __future__ import annotations
@@ -40,53 +40,53 @@ __all__ = ["canonical_parcel_id"]
 
 
 def _is_numeric_dtype(dtype: DataType) -> bool:
-    """Devuelve ``True`` si ``dtype`` es Int/UInt/Float castable a Utf8 directo.
+    """Returns ``True`` if ``dtype`` is Int/UInt/Float directly castable to Utf8.
 
-    En Polars 1.x ``cast(pl.Utf8)`` sobre enteros produce representacion
-    decimal sin notacion cientifica; sobre floats puede producir notacion
-    cientifica para valores muy grandes — en la practica los ``parcel_id``
-    son enteros.
+    In Polars 1.x ``cast(pl.Utf8)`` over integers produces a decimal
+    representation without scientific notation; over floats it may produce
+    scientific notation for very large values — in practice the ``parcel_id`` are
+    integers.
     """
     return dtype.is_integer() or dtype.is_float()
 
 
 def canonical_parcel_id(df: pl.DataFrame, col: str = "parcel_id") -> pl.DataFrame:
-    """Normaliza la columna ``parcel_id`` al esquema canonico ``pl.Utf8``.
+    """Normalizes the ``parcel_id`` column to the canonical ``pl.Utf8`` schema.
 
-    La funcion es idempotente: si ``col`` ya es ``pl.Utf8``, devuelve el
-    DataFrame sin cambios. Para columnas numericas (Int8..Int64, UInt*,
-    Float32/Float64) aplica un ``cast(pl.Utf8)`` que preserva el valor
-    decimal sin notacion cientifica para enteros razonables.
+    The function is idempotent: if ``col`` is already ``pl.Utf8``, it returns the
+    DataFrame unchanged. For numeric columns (Int8..Int64, UInt*,
+    Float32/Float64) it applies a ``cast(pl.Utf8)`` that preserves the decimal
+    value without scientific notation for reasonable integers.
 
     Args:
-        df: DataFrame de Polars cuya columna ``col`` se va a normalizar.
-        col: Nombre de la columna a normalizar. Default ``"parcel_id"``.
+        df: Polars DataFrame whose ``col`` column is to be normalized.
+        col: Name of the column to normalize. Default ``"parcel_id"``.
 
     Returns:
-        Un nuevo ``pl.DataFrame`` con ``col`` en dtype ``pl.Utf8``. Si
-        ``col`` ya era ``Utf8``, se devuelve ``df`` tal cual (sin clonado
-        defensivo — Polars maneja copy-on-write internamente).
+        A new ``pl.DataFrame`` with ``col`` in dtype ``pl.Utf8``. If ``col`` was
+        already ``Utf8``, ``df`` is returned as is (without defensive cloning —
+        Polars handles copy-on-write internally).
 
     Raises:
-        KeyError: si ``col`` no existe en ``df.columns``. Se levanta un
-            error explicito para evitar bugs silenciosos cuando el caller
-            confunde el nombre de la columna.
-        TypeError: si ``col`` no es numerica ni ``Utf8`` (ej. ``Datetime``,
-            ``List``, ``Struct``). Estos tipos requieren conversion
-            explicita por el caller.
+        KeyError: if ``col`` does not exist in ``df.columns``. An explicit error
+            is raised to avoid silent bugs when the caller confuses the column
+            name.
+        TypeError: if ``col`` is neither numeric nor ``Utf8`` (e.g. ``Datetime``,
+            ``List``, ``Struct``). These types require explicit conversion by the
+            caller.
 
     Examples:
-        Sirve para alinear el esquema antes de un ``LEFT JOIN``::
+        Useful to align the schema before a ``LEFT JOIN``::
 
             >>> base = pl.DataFrame({"parcel_id": ["p1", "p2"]})
             >>> rhs = pl.DataFrame({"parcel_id": [1, 2], "x": [10.0, 20.0]})
             >>> rhs = canonical_parcel_id(rhs)
-            >>> base.join(rhs, on="parcel_id", how="left")  # ahora ambos Utf8
+            >>> base.join(rhs, on="parcel_id", how="left")  # now both Utf8
     """
     if col not in df.columns:
         raise KeyError(
-            f"Columna '{col}' no esta presente en el DataFrame. "
-            f"Columnas disponibles: {df.columns}"
+            f"Column '{col}' is not present in the DataFrame. "
+            f"Available columns: {df.columns}"
         )
     dtype = df.schema[col]
     if dtype == pl.Utf8:
@@ -94,7 +94,7 @@ def canonical_parcel_id(df: pl.DataFrame, col: str = "parcel_id") -> pl.DataFram
     if _is_numeric_dtype(dtype):
         return df.with_columns(pl.col(col).cast(pl.Utf8).alias(col))
     raise TypeError(
-        f"Columna '{col}' tiene dtype no soportado para casteo canonico: "
-        f"{dtype}. Tipos aceptados: pl.Utf8 o un dtype numerico "
+        f"Column '{col}' has an unsupported dtype for canonical casting: "
+        f"{dtype}. Accepted types: pl.Utf8 or a numeric dtype "
         f"(Int*, UInt*, Float32, Float64)."
     )

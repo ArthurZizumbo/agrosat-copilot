@@ -1,12 +1,12 @@
-"""Gate AC-3 de US-017 / US-016b — auditoria del dataset farslip_pairs.
+"""AC-3 gate of US-017 / US-016b — audit of the farslip_pairs dataset.
 
-CLI ``python -m ml.farslip.dataset_audit`` que valida:
+CLI ``python -m ml.farslip.dataset_audit`` that validates:
 
 1. ``n_pairs >= 30000`` (exit 0). ``20000 <= n_pairs < 30000`` => warning + exit 0.
 2. ``n_pairs < 20000`` => exit 1.
 3. Balance ``min(n_per_roi) / max(n_per_roi) >= 0.20`` => exit 0; else exit 1.
 
-Usado por ``make farslip-dataset-check``.
+Used by ``make farslip-dataset-check``.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ import structlog
 try:
     import typer
 except ImportError as exc:  # pragma: no cover
-    raise ImportError("typer requerido para CLI dataset_audit. poetry add typer") from exc
+    raise ImportError("typer required for the dataset_audit CLI. poetry add typer") from exc
 
 _log = structlog.get_logger(__name__)
 
@@ -38,13 +38,13 @@ def audit_dataset(
     min_ok: int = MIN_OK,
     balance_threshold: float = BALANCE_THRESHOLD,
 ) -> int:
-    """Audita el dataset y devuelve exit code (0 = OK, 1 = fallo dura).
+    """Audit the dataset and return an exit code (0 = OK, 1 = hard failure).
 
     Args:
-        dataset_root: raiz que contiene ``{roi}/manifest.parquet``.
-        min_hard: umbral hard (debajo => exit 1).
-        min_ok: umbral OK (entre [hard, ok) => warning).
-        balance_threshold: ratio min/max por ROI minimo aceptable.
+        dataset_root: root containing ``{roi}/manifest.parquet``.
+        min_hard: hard threshold (below => exit 1).
+        min_ok: OK threshold (in [hard, ok) => warning).
+        balance_threshold: minimum acceptable min/max per-ROI ratio.
     """
     if not dataset_root.exists():
         _log.error("dataset_root no existe", path=str(dataset_root))
@@ -108,7 +108,7 @@ def main(
         float, typer.Option(help="Ratio min/max ROI aceptable")
     ] = BALANCE_THRESHOLD,
 ) -> None:
-    """CLI entrypoint — exit code consumido por make."""
+    """CLI entrypoint — exit code consumed by make."""
     code = audit_dataset(
         dataset_root=dataset_root,
         min_hard=min_hard,

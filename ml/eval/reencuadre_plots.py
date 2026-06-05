@@ -1,26 +1,26 @@
-"""Plots reutilizables para el notebook 05 del reencuadre fenologico.
+"""Reusable plots for notebook 05 of the phenology reframing.
 
-Funciones de visualizacion para los analisis de US-022b-C/D. Cada funcion
-devuelve un ``matplotlib.figure.Figure`` para que el notebook decida si lo
-muestra con ``display(fig)`` y/o lo persiste con ``fig.savefig(...)``.
+Visualization functions for the US-022b-C/D analyses. Each function returns a
+``matplotlib.figure.Figure`` so the notebook decides whether to show it with
+``display(fig)`` and/or persist it with ``fig.savefig(...)``.
 
-Patron canonico (consistente con :mod:`ml.eval.learning_curves` y
+Canonical pattern (consistent with :mod:`ml.eval.learning_curves` and
 :mod:`ml.eval.interpretability`):
 
-- Acepta inputs tipados (``FeatureAblationResult`` / ``TemporalModelResult`` /
-  ndarrays / DataFrames Polars), nunca paths.
-- Devuelve la figura, nunca la persiste ni la cierra.
-- Sin ``plt.show()`` ni side-effects globales (matplotlib backend lo configura
-  el caller).
+- Accepts typed inputs (``FeatureAblationResult`` / ``TemporalModelResult`` /
+  ndarrays / Polars DataFrames), never paths.
+- Returns the figure, never persists nor closes it.
+- No ``plt.show()`` nor global side-effects (the matplotlib backend is
+  configured by the caller).
 
-Plots provistos:
+Provided plots:
 
-- :func:`plot_ablation_bars` — F1-macro por conjunto de features.
-- :func:`plot_model_comparison_bars` — F1-macro de varios modelos vs baseline.
-- :func:`plot_class_support_bars` — distribucion de clases con umbral.
-- :func:`plot_per_class_f1` — F1 por clase del mejor modelo (highlight clases debiles).
-- :func:`plot_umap_clusters` — UMAP 2D coloreado por cluster KMeans.
-- :func:`plot_cluster_ndvi_curves` — curva NDVI media por cluster.
+- :func:`plot_ablation_bars` — F1-macro per feature set.
+- :func:`plot_model_comparison_bars` — F1-macro of several models vs baseline.
+- :func:`plot_class_support_bars` — class distribution with threshold.
+- :func:`plot_per_class_f1` — per-class F1 of the best model (highlight weak classes).
+- :func:`plot_umap_clusters` — UMAP 2D colored by KMeans cluster.
+- :func:`plot_cluster_ndvi_curves` — mean NDVI curve per cluster.
 """
 
 from __future__ import annotations
@@ -52,7 +52,7 @@ __all__ = [
 
 
 # ---------------------------------------------------------------------------
-# 1. Ablation de features (F1-macro por conjunto, mismo modelo).
+# 1. Feature ablation (F1-macro per set, same model).
 # ---------------------------------------------------------------------------
 
 
@@ -64,28 +64,28 @@ def plot_ablation_bars(
     baseline_value: float | None = None,
     figsize: tuple[float, float] = (8.0, 4.0),
 ) -> matplotlib.figure.Figure:
-    """Bar plot horizontal de F1-macro por conjunto de features.
+    """Horizontal bar plot of F1-macro per feature set.
 
-    Cada barra es un par ``(feature_set, model)``. Si hay varios modelos en
-    ``results``, los grupos por modelo se separan con colores distintos.
+    Each bar is a ``(feature_set, model)`` pair. If there are several models in
+    ``results``, the per-model groups are separated with distinct colors.
 
     Args:
-        results: Resultados de :func:`run_feature_ablation`.
-        metric: ``"f1_macro"``, ``"f1_weighted"`` o ``"miou"``.
-        title: Titulo opcional; si ``None`` se genera automaticamente.
-        baseline_value: Linea vertical de referencia (ej. F1-macro del
-            baseline tabular cerrado). ``None`` la omite.
-        figsize: Tupla ``(ancho, alto)`` en pulgadas.
+        results: Results of :func:`run_feature_ablation`.
+        metric: ``"f1_macro"``, ``"f1_weighted"`` or ``"miou"``.
+        title: Optional title; if ``None`` it is generated automatically.
+        baseline_value: Vertical reference line (e.g. F1-macro of the
+            closed tabular baseline). ``None`` omits it.
+        figsize: Tuple ``(width, height)`` in inches.
 
     Returns:
-        Figura matplotlib lista para ``display(fig)`` o ``fig.savefig(...)``.
+        Matplotlib figure ready for ``display(fig)`` or ``fig.savefig(...)``.
     """
     if not results:
-        raise ValueError("`results` esta vacio.")
+        raise ValueError("`results` is empty.")
     if metric not in {"f1_macro", "f1_weighted", "miou"}:
-        raise ValueError(f"metric={metric!r} no soportada.")
+        raise ValueError(f"metric={metric!r} not supported.")
 
-    # Agrupa por modelo manteniendo el orden estable de aparicion.
+    # Group by model keeping the stable order of appearance.
     by_model: dict[str, list[tuple[str, float]]] = {}
     for r in results:
         by_model.setdefault(r.model_kind, []).append(
@@ -95,9 +95,9 @@ def plot_ablation_bars(
     fig, ax = plt.subplots(figsize=figsize, dpi=110)
 
     if len(by_model) == 1:
-        # Un solo modelo: barras horizontales simples.
+        # A single model: simple horizontal bars.
         model_kind, items = next(iter(by_model.items()))
-        # Filtra NaN (entrenamientos que fallaron por cobertura nula del set).
+        # Filter NaN (trainings that failed due to null coverage of the set).
         items_clean = [(fs, v) for fs, v in items if v == v]
         items_sorted = sorted(items_clean, key=lambda kv: kv[1], reverse=False)
         labels = [s for s, _ in items_sorted]
@@ -131,7 +131,7 @@ def plot_ablation_bars(
             title or f"{metric.replace('_', '-')} por conjunto de features ({model_kind})"
         )
     else:
-        # Varios modelos: barras agrupadas verticalmente.
+        # Several models: bars grouped vertically.
         feature_sets: list[str] = []
         for items in by_model.values():
             for fs, _ in items:
@@ -179,8 +179,8 @@ def plot_ablation_bars(
 
 
 # ---------------------------------------------------------------------------
-# 2. Comparativa de modelos (XGBoost vs TempCNN vs InceptionTime sobre el
-#    mismo conjunto de features).
+# 2. Model comparison (XGBoost vs TempCNN vs InceptionTime over the
+#    same feature set).
 # ---------------------------------------------------------------------------
 
 
@@ -193,22 +193,22 @@ def plot_model_comparison_bars(
     metric_name: str = "F1-macro",
     figsize: tuple[float, float] = (6.5, 4.0),
 ) -> matplotlib.figure.Figure:
-    """Bar plot vertical comparando varios modelos contra una linea baseline.
+    """Vertical bar plot comparing several models against a baseline line.
 
     Args:
-        metric_by_model: Mapping ``{nombre_modelo: F1_macro}``. Tipico:
+        metric_by_model: Mapping ``{model_name: F1_macro}``. Typical:
             ``{"xgboost": 0.34, "tempcnn": 0.41, "inceptiontime": 0.39}``.
-        baseline_label: Etiqueta de la linea baseline en la leyenda.
-        baseline_value: Valor de referencia (linea horizontal).
-        title: Titulo del plot.
-        metric_name: Nombre legible de la metrica.
-        figsize: Tupla ``(ancho, alto)``.
+        baseline_label: Label of the baseline line in the legend.
+        baseline_value: Reference value (horizontal line).
+        title: Plot title.
+        metric_name: Readable name of the metric.
+        figsize: Tuple ``(width, height)``.
 
     Returns:
-        Figura matplotlib.
+        Matplotlib figure.
     """
     if not metric_by_model:
-        raise ValueError("`metric_by_model` esta vacio.")
+        raise ValueError("`metric_by_model` is empty.")
 
     items = list(metric_by_model.items())
     items_sorted = sorted(items, key=lambda kv: kv[1], reverse=True)
@@ -246,7 +246,7 @@ def plot_model_comparison_bars(
 
 
 # ---------------------------------------------------------------------------
-# 3. Soporte por clase (desbalance ~31x).
+# 3. Per-class support (imbalance ~31x).
 # ---------------------------------------------------------------------------
 
 
@@ -259,26 +259,26 @@ def plot_class_support_bars(
     title: str = "Numero de parcelas por clase (resaltadas clases con soporte debil)",
     figsize: tuple[float, float] = (8.0, 4.5),
 ) -> matplotlib.figure.Figure:
-    """Bar plot horizontal con soporte por clase.
+    """Horizontal bar plot with per-class support.
 
-    Las clases con soporte ``< weak_threshold`` se colorean diferente para
-    resaltar el desbalance.
+    Classes with support ``< weak_threshold`` are colored differently to
+    highlight the imbalance.
 
     Args:
-        class_counts: DataFrame con columnas ``class_col`` y ``count_col``,
-            tipico output de ``df.group_by("class_id").len()``.
-        class_col: Nombre de la columna con el id de clase.
-        count_col: Nombre de la columna con el conteo.
-        weak_threshold: Umbral debajo del cual la barra se marca como debil.
-        title: Titulo.
-        figsize: Tupla ``(ancho, alto)``.
+        class_counts: DataFrame with columns ``class_col`` and ``count_col``,
+            typical output of ``df.group_by("class_id").len()``.
+        class_col: Name of the column with the class id.
+        count_col: Name of the column with the count.
+        weak_threshold: Threshold below which the bar is marked as weak.
+        title: Title.
+        figsize: Tuple ``(width, height)``.
 
     Returns:
-        Figura matplotlib.
+        Matplotlib figure.
     """
     if class_col not in class_counts.columns or count_col not in class_counts.columns:
         raise ValueError(
-            f"`class_counts` debe contener `{class_col}` y `{count_col}`."
+            f"`class_counts` must contain `{class_col}` and `{count_col}`."
         )
 
     ordered = class_counts.sort(count_col, descending=False)
@@ -302,7 +302,7 @@ def plot_class_support_bars(
 
 
 # ---------------------------------------------------------------------------
-# 4. F1 por clase del mejor modelo (highlight de clases debiles).
+# 4. Per-class F1 of the best model (highlight weak classes).
 # ---------------------------------------------------------------------------
 
 
@@ -316,27 +316,27 @@ def plot_per_class_f1(
     weak_threshold: float = 0.10,
     figsize: tuple[float, float] = (8.0, 4.0),
 ) -> matplotlib.figure.Figure:
-    """Bar plot horizontal de F1 por clase con highlight de clases debiles.
+    """Horizontal bar plot of per-class F1 with weak-class highlighting.
 
     Args:
-        y_true: Etiquetas verdaderas (1D).
-        y_pred: Etiquetas predichas (1D).
-        class_labels: Lista de ids de clase a reportar (orden de la grafica).
-            ``None`` infiere de la union de ``y_true`` y ``y_pred``.
-        class_names: Mapping opcional ``{class_id: nombre legible}``.
-        title: Titulo del plot.
-        weak_threshold: F1 debajo del cual la barra se colorea como debil.
-        figsize: Tupla ``(ancho, alto)``.
+        y_true: True labels (1D).
+        y_pred: Predicted labels (1D).
+        class_labels: List of class ids to report (plot order).
+            ``None`` infers from the union of ``y_true`` and ``y_pred``.
+        class_names: Optional mapping ``{class_id: readable name}``.
+        title: Plot title.
+        weak_threshold: F1 below which the bar is colored as weak.
+        figsize: Tuple ``(width, height)``.
 
     Returns:
-        Figura matplotlib.
+        Matplotlib figure.
     """
     from sklearn.metrics import f1_score
 
     y_true_arr = np.asarray(y_true).ravel()
     y_pred_arr = np.asarray(y_pred).ravel()
     if y_true_arr.size == 0 or y_pred_arr.size == 0:
-        raise ValueError("`y_true` y `y_pred` no pueden estar vacios.")
+        raise ValueError("`y_true` and `y_pred` cannot be empty.")
     if y_true_arr.size != y_pred_arr.size:
         raise ValueError(
             f"Shape mismatch: y_true.shape={y_true_arr.shape} vs y_pred.shape={y_pred_arr.shape}."
@@ -376,8 +376,8 @@ def plot_per_class_f1(
 
 
 # ---------------------------------------------------------------------------
-# 5. UMAP 2D coloreado por cluster KMeans (no por class_id, para validar
-#    estructura sin coordenadas).
+# 5. 2D UMAP colored by KMeans cluster (not by class_id, to validate
+#    structure without coordinates).
 # ---------------------------------------------------------------------------
 
 
@@ -388,21 +388,21 @@ def plot_umap_clusters(
     title: str = "UMAP de la firma fenologica sin coordenadas, coloreado por cluster",
     figsize: tuple[float, float] = (7.0, 5.0),
 ) -> matplotlib.figure.Figure:
-    """Scatter UMAP 2D coloreado por cluster KMeans.
+    """UMAP 2D scatter colored by KMeans cluster.
 
     Args:
-        embedding: Array ``(N, 2)`` con la proyeccion UMAP.
-        cluster_labels: Array ``(N,)`` con la asignacion KMeans.
-        title: Titulo.
-        figsize: Tupla ``(ancho, alto)``.
+        embedding: Array ``(N, 2)`` with the UMAP projection.
+        cluster_labels: Array ``(N,)`` with the KMeans assignment.
+        title: Title.
+        figsize: Tuple ``(width, height)``.
 
     Returns:
-        Figura matplotlib.
+        Matplotlib figure.
     """
     emb = np.asarray(embedding)
     labels = np.asarray(cluster_labels).ravel()
     if emb.ndim != 2 or emb.shape[1] != 2:
-        raise ValueError(f"`embedding` debe ser (N, 2), got {emb.shape}.")
+        raise ValueError(f"`embedding` must be (N, 2), got {emb.shape}.")
     if emb.shape[0] != labels.shape[0]:
         raise ValueError(
             f"Shape mismatch: embedding={emb.shape}, labels={labels.shape}."
@@ -435,7 +435,7 @@ def plot_umap_clusters(
 
 
 # ---------------------------------------------------------------------------
-# 6. Curva NDVI sintetica media por cluster (interpretabilidad agronomica).
+# 6. Mean synthetic NDVI curve per cluster (agronomic interpretability).
 # ---------------------------------------------------------------------------
 
 
@@ -448,28 +448,28 @@ def plot_cluster_ndvi_curves(
     title: str = "Curva NDVI media reconstruida por cluster",
     figsize: tuple[float, float] = (8.0, 4.0),
 ) -> matplotlib.figure.Figure:
-    """Reconstruye la curva NDVI media por cluster a partir de las FFT cols.
+    """Reconstruct the mean NDVI curve per cluster from the FFT cols.
 
-    Para cada cluster KMeans, promedia los coeficientes FFT NDVI de las
-    parcelas del cluster, reconstruye la serie diaria por IDFT parcial y
-    grafica la curva sobre el dia del anio.
+    For each KMeans cluster, averages the NDVI FFT coefficients of the
+    cluster's parcels, reconstructs the daily series by partial IDFT and
+    plots the curve over the day of the year.
 
     Args:
-        df: DataFrame Polars con las columnas FFT NDVI presentes.
-        cluster_labels: Array ``(N,)`` con la asignacion KMeans (mismo orden
-            que ``df``).
-        fft_cols: Lista de columnas FFT a reconstruir; ``None`` autodetecta
-            ``NDVI_fft_amp_k`` y ``NDVI_fft_phase_k``.
-        sequence_length: Longitud temporal reconstruida.
-        title: Titulo.
-        figsize: Tupla ``(ancho, alto)``.
+        df: Polars DataFrame with the NDVI FFT columns present.
+        cluster_labels: Array ``(N,)`` with the KMeans assignment (same order
+            as ``df``).
+        fft_cols: List of FFT columns to reconstruct; ``None`` auto-detects
+            ``NDVI_fft_amp_k`` and ``NDVI_fft_phase_k``.
+        sequence_length: Reconstructed temporal length.
+        title: Title.
+        figsize: Tuple ``(width, height)``.
 
     Returns:
-        Figura matplotlib.
+        Matplotlib figure.
     """
     if df.height != cluster_labels.shape[0]:
         raise ValueError(
-            f"`df.height`={df.height} debe igualar `cluster_labels`={cluster_labels.shape[0]}."
+            f"`df.height`={df.height} must equal `cluster_labels`={cluster_labels.shape[0]}."
         )
 
     if fft_cols is None:
@@ -484,8 +484,8 @@ def plot_cluster_ndvi_curves(
     phase_cols = [c for c in fft_cols if "_fft_phase_" in c]
 
     if not amp_cols or not phase_cols:
-        # Fallback: sin FFT, grafica vacia con mensaje (notebook seguira
-        # sin romperse en CI con dataset reducido).
+        # Fallback: without FFT, empty plot with a message (the notebook will keep
+        # running without breaking in CI with a reduced dataset).
         fig, ax = plt.subplots(figsize=figsize, dpi=110)
         ax.text(
             0.5,
@@ -512,7 +512,7 @@ def plot_cluster_ndvi_curves(
     phases = np.where(np.isfinite(phases), phases, 0.0)
 
     t = np.linspace(0.0, 1.0, sequence_length, endpoint=False)
-    # Reconstruye: y(t) = sum_k amp_k * cos(2*pi*k*t + phase_k); k = 1..K.
+    # Reconstruct: y(t) = sum_k amp_k * cos(2*pi*k*t + phase_k); k = 1..K.
     k_indices = np.arange(1, n_harmonics + 1).reshape(1, -1)
     # series shape (N, T)
     series = np.zeros((df.height, sequence_length), dtype=np.float64)
@@ -548,7 +548,7 @@ def plot_cluster_ndvi_curves(
 
 
 # ---------------------------------------------------------------------------
-# 7. Leakage geografico: comparativa explicita full vs no_geom + geom_only.
+# 7. Geographic leakage: explicit comparison full vs no_geom + geom_only.
 # ---------------------------------------------------------------------------
 
 
@@ -558,22 +558,22 @@ def plot_geom_leakage_comparison(
     title: str = "Aporte de las columnas geom_*: leakage espacial vs. señal real",
     figsize: tuple[float, float] = (7.0, 4.0),
 ) -> matplotlib.figure.Figure:
-    """Bar plot con 3 barras `full`, `no_geom`, `geom_only` lado a lado.
+    """Bar plot with 3 bars `full`, `no_geom`, `geom_only` side by side.
 
-    Aisla el efecto de las columnas `geom_*` (area, perimetro, elongacion).
-    Si `geom_only` tiene F1-macro alto, hay leakage espacial. Si `full -
-    no_geom` es ~0 y `geom_only` es ~0, las cols no aportan y se pueden
-    descartar.
+    Isolates the effect of the `geom_*` columns (area, perimeter, elongation).
+    If `geom_only` has high F1-macro, there is spatial leakage. If `full -
+    no_geom` is ~0 and `geom_only` is ~0, the cols add nothing and can be
+    discarded.
 
     Args:
-        results: Resultados de :func:`run_feature_ablation`. Debe contener
-            las llaves `full`, `no_geom`, `geom_only` (o un subset; las
-            faltantes se omiten con anotacion en el plot).
-        title: Titulo del plot.
-        figsize: Tupla (ancho, alto).
+        results: Results of :func:`run_feature_ablation`. Must contain
+            the keys `full`, `no_geom`, `geom_only` (or a subset; the
+            missing ones are omitted with an annotation in the plot).
+        title: Plot title.
+        figsize: Tuple (width, height).
 
     Returns:
-        Figura matplotlib.
+        Matplotlib figure.
     """
     target_sets = ("full", "no_geom", "geom_only")
     by_set = {r.feature_set: float(r.f1_macro) for r in results if r.feature_set in target_sets}
@@ -632,7 +632,7 @@ def plot_geom_leakage_comparison(
 
 
 # ---------------------------------------------------------------------------
-# 8. Bloques opcionales: with_farslip / with_pheno_text / with_spectral_signature.
+# 8. Optional blocks: with_farslip / with_pheno_text / with_spectral_signature.
 # ---------------------------------------------------------------------------
 
 
@@ -643,20 +643,20 @@ def plot_optional_blocks_ablation(
     title: str = "Aporte de los bloques opcionales sobre el baseline `full`",
     figsize: tuple[float, float] = (8.5, 4.5),
 ) -> matplotlib.figure.Figure:
-    """Grafica los deltas de bloques opcionales contra un baseline.
+    """Plot the deltas of optional blocks against a baseline.
 
-    Para cada par `(set, modelo)` calcula el delta vs `baseline_set` (default
-    `full`) y lo grafica como barras horizontales con color segun signo
-    (verde = mejora, rojo = empeora, gris = neutro |delta| < 0.005).
+    For each `(set, model)` pair computes the delta vs `baseline_set` (default
+    `full`) and plots it as horizontal bars colored by sign
+    (green = improves, red = worsens, gray = neutral |delta| < 0.005).
 
     Args:
-        results: Resultados de :func:`run_feature_ablation`.
-        baseline_set: Conjunto de referencia.
-        title: Titulo del plot.
-        figsize: Tupla (ancho, alto).
+        results: Results of :func:`run_feature_ablation`.
+        baseline_set: Reference set.
+        title: Plot title.
+        figsize: Tuple (width, height).
 
     Returns:
-        Figura matplotlib.
+        Matplotlib figure.
     """
     by_set: dict[str, float] = {}
     for r in results:
@@ -714,7 +714,7 @@ def plot_optional_blocks_ablation(
 
 
 # ---------------------------------------------------------------------------
-# 9. Matriz de confusion (heatmap).
+# 9. Confusion matrix (heatmap).
 # ---------------------------------------------------------------------------
 
 
@@ -729,29 +729,29 @@ def plot_confusion_matrix_heatmap(
     figsize: tuple[float, float] = (8.5, 7.0),
     cmap: str = "Blues",
 ) -> matplotlib.figure.Figure:
-    """Heatmap de matriz de confusion con anotaciones por celda.
+    """Confusion matrix heatmap with per-cell annotations.
 
     Args:
-        y_true: Etiquetas verdaderas (1D).
-        y_pred: Etiquetas predichas (1D).
-        class_labels: Lista de class_ids a reportar.
-        class_names: Mapping {class_id: nombre legible}.
-        title: Titulo.
-        normalize: `"true"` normaliza por fila (recall por clase), `"pred"`
-            por columna (precision por clase), `"all"` por total, `"none"`
-            sin normalizar.
-        figsize: Tupla (ancho, alto).
-        cmap: Colormap de matplotlib.
+        y_true: True labels (1D).
+        y_pred: Predicted labels (1D).
+        class_labels: List of class_ids to report.
+        class_names: Mapping {class_id: readable name}.
+        title: Title.
+        normalize: `"true"` normalizes by row (per-class recall), `"pred"`
+            by column (per-class precision), `"all"` by total, `"none"`
+            without normalizing.
+        figsize: Tuple (width, height).
+        cmap: Matplotlib colormap.
 
     Returns:
-        Figura matplotlib.
+        Matplotlib figure.
     """
     from sklearn.metrics import confusion_matrix
 
     y_true_arr = np.asarray(y_true).ravel()
     y_pred_arr = np.asarray(y_pred).ravel()
     if y_true_arr.size == 0:
-        raise ValueError("`y_true` no puede estar vacio.")
+        raise ValueError("`y_true` cannot be empty.")
     if class_labels is None:
         class_labels = sorted({*y_true_arr.tolist(), *y_pred_arr.tolist()})
     labels_list = list(class_labels)
@@ -801,8 +801,8 @@ def plot_confusion_matrix_heatmap(
 
 
 # ---------------------------------------------------------------------------
-# 10. Comparativa modelos v2 (XGB + LGBM + RF + TempCNN + InceptionTime) con
-#     overlay opcional del baseline v1 (US-022).
+# 10. Model comparison v2 (XGB + LGBM + RF + TempCNN + InceptionTime) with
+#     optional overlay of the v1 baseline (US-022).
 # ---------------------------------------------------------------------------
 
 
@@ -814,21 +814,21 @@ def plot_model_comparison_v2_with_v1_overlay(
     title: str = "Comparativa modelos baseline v2 (con overlay v1 US-022)",
     figsize: tuple[float, float] = (8.0, 4.5),
 ) -> matplotlib.figure.Figure:
-    """Barras agrupadas v2 con overlay de barras v1 cuando esten disponibles.
+    """Grouped v2 bars with overlay of v1 bars when available.
 
     Args:
-        v2_metrics: Mapping {modelo: metrica} de la corrida v2.
-        v1_metrics: Mapping {modelo: metrica} de la corrida v1 (US-022).
-            Solo se solapan los modelos presentes en ambos diccionarios.
-        metric_name: Nombre legible (default `"F1-macro"`).
-        title: Titulo.
-        figsize: Tupla (ancho, alto).
+        v2_metrics: Mapping {model: metric} of the v2 run.
+        v1_metrics: Mapping {model: metric} of the v1 run (US-022).
+            Only the models present in both dictionaries are overlaid.
+        metric_name: Readable name (default `"F1-macro"`).
+        title: Title.
+        figsize: Tuple (width, height).
 
     Returns:
-        Figura matplotlib.
+        Matplotlib figure.
     """
     if not v2_metrics:
-        raise ValueError("`v2_metrics` esta vacio.")
+        raise ValueError("`v2_metrics` is empty.")
 
     models = list(v2_metrics)
     values_v2 = [float(v2_metrics[m]) for m in models]

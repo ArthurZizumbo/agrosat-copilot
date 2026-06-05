@@ -1,8 +1,8 @@
-"""Helpers de muestreo Sentinel-2 desde Google Earth Engine para EDA.
+"""Sentinel-2 sampling helpers from Google Earth Engine for EDA.
 
-No realiza descargas masivas. Usa `sampleRegions` server-side y cachea
-resultados en parquet local en `data/cache/gee/`. Apto solo para EDA
-(US-010/011/012). La ingesta productiva con Dagster + GCS se cierra en
+Does not perform bulk downloads. Uses server-side `sampleRegions` and caches
+results in local parquet under `data/cache/gee/`. Suitable only for EDA
+(US-010/011/012). Production ingestion with Dagster + GCS is closed in
 US-006/007/009.
 """
 
@@ -28,8 +28,8 @@ ERA5_COLLECTION = "ECMWF/ERA5_LAND/DAILY_AGGR"
 S1_COLLECTION = "COPERNICUS/S1_GRD"
 SRTM_COLLECTION = "USGS/SRTMGL1_003"
 
-#: 8 cuadrantes cardinales usados por `sample_srtm_terrain` para discretizar
-#: la orientación dominante (aspect) en grados [0, 360) → string cardinal.
+#: 8 cardinal quadrants used by `sample_srtm_terrain` to discretize
+#: the dominant orientation (aspect) in degrees [0, 360) -> cardinal string.
 _ASPECT_CARDINALS: tuple[str, ...] = (
     "N",
     "NE",
@@ -73,36 +73,36 @@ def init_ee(
     project: str | None = None,
     interactive_auth: bool = False,
 ) -> None:
-    """Inicializa Earth Engine con service account, ADC o auth interactiva.
+    """Initialize Earth Engine with service account, ADC or interactive auth.
 
-    Orden de preferencia:
+    Preference order:
 
-    1. Service account JSON si `service_account_json` apunta a un archivo válido.
-    2. ADC (`gcloud auth application-default login`) — credenciales reusadas
-       desde `~/.config/gcloud/application_default_credentials.json` o
+    1. Service account JSON if `service_account_json` points to a valid file.
+    2. ADC (`gcloud auth application-default login`) — credentials reused
+       from `~/.config/gcloud/application_default_credentials.json` or
        `~/.config/earthengine/credentials`.
-    3. Solo si `interactive_auth=True` y `ee.Initialize` falla, dispara
-       `ee.Authenticate()` en browser. Default `False` para evitar bloqueos
-       en notebooks ejecutados con papermill / CI / contextos no interactivos.
+    3. Only if `interactive_auth=True` and `ee.Initialize` fails, triggers
+       `ee.Authenticate()` in browser. Default `False` to avoid blocking
+       in notebooks run with papermill / CI / non-interactive contexts.
 
     Args:
-        service_account_json: Ruta al JSON de service account. Si None o no
-            existe, se cae al ADC.
-        project: ID de proyecto GCP asociado a la cuota EE (obligatorio para
-            proyectos Cloud-registered desde 2024).
-        interactive_auth: Si True y todo lo demás falla, lanza
-            `ee.Authenticate()` (abre browser, requiere intervención). Default
-            False — el caller debe ejecutar `earthengine authenticate` o
-            generar service account fuera del proceso.
+        service_account_json: Path to the service account JSON. If None or it
+            does not exist, falls back to ADC.
+        project: GCP project ID associated with the EE quota (required for
+            Cloud-registered projects since 2024).
+        interactive_auth: If True and everything else fails, triggers
+            `ee.Authenticate()` (opens browser, requires intervention). Default
+            False — the caller must run `earthengine authenticate` or
+            generate the service account outside the process.
 
     Raises:
-        ImportError: Si `earthengine-api` no está instalado.
-        ee.EEException / RuntimeError: Si `ee.Initialize` falla y
+        ImportError: If `earthengine-api` is not installed.
+        ee.EEException / RuntimeError: If `ee.Initialize` fails and
             `interactive_auth=False`.
     """
     if ee is None:
         raise ImportError(
-            "earthengine-api no está instalado. Ejecuta `poetry install --with ml,geo`."
+            "earthengine-api is not installed. Run `poetry install --with ml,geo`."
         )
     sa_path = Path(service_account_json) if service_account_json is not None else None
     if sa_path is not None and sa_path.is_file():
@@ -121,7 +121,7 @@ def init_ee(
 
 
 def _cache_key(roi_name: str, start_date: str, end_date: str, n_pixels: int) -> str:
-    """Genera nombre de archivo cache reproducible."""
+    """Generate a reproducible cache filename."""
     return f"{roi_name}_{start_date}_{end_date}_{n_pixels}.parquet"
 
 
@@ -136,22 +136,22 @@ def sample_s2_roi(
     roi_name: str = "roi",
     scale: int = 10,
 ) -> pl.DataFrame:
-    """Muestrea Sentinel-2 L2A sobre una ROI con cache local parquet.
+    """Sample Sentinel-2 L2A over a ROI with local parquet cache.
 
     Args:
-        roi: `ee.Geometry` o `ee.FeatureCollection` que define la región.
-        start_date: Fecha inicio formato `YYYY-MM-DD`.
-        end_date: Fecha fin formato `YYYY-MM-DD`.
-        bands: Bandas a extraer (default S2 SR sin atmosféricas).
-        n_pixels: Número total aproximado de píxeles a muestrear.
-        cloud_pct_max: Máximo `CLOUDY_PIXEL_PERCENTAGE` para filtrar imágenes.
-        cache_path: Carpeta cache (default `data/cache/gee/`).
-        roi_name: Nombre lógico de la ROI usado en cache + columna `roi`.
-        scale: Resolución en metros para `sampleRegions`.
+        roi: `ee.Geometry` or `ee.FeatureCollection` defining the region.
+        start_date: Start date in `YYYY-MM-DD` format.
+        end_date: End date in `YYYY-MM-DD` format.
+        bands: Bands to extract (default S2 SR without atmospheric ones).
+        n_pixels: Approximate total number of pixels to sample.
+        cloud_pct_max: Maximum `CLOUDY_PIXEL_PERCENTAGE` to filter images.
+        cache_path: Cache folder (default `data/cache/gee/`).
+        roi_name: Logical name of the ROI used in cache + column `roi`.
+        scale: Resolution in meters for `sampleRegions`.
 
     Returns:
-        DataFrame Polars con columnas `roi, date, band, value, lon, lat`.
-        Si EE falla (auth/quota), retorna DataFrame vacío con esquema correcto.
+        Polars DataFrame with columns `roi, date, band, value, lon, lat`.
+        If EE fails (auth/quota), returns an empty DataFrame with correct schema.
     """
     cache_dir = cache_path or DEFAULT_CACHE_DIR
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -191,8 +191,8 @@ def sample_s2_roi(
         )
         info = sample.getInfo()
     except Exception:  # noqa: BLE001
-        # Quota / auth / red — modo degradado: retornamos DataFrame vacío
-        # para no bloquear el notebook EDA. Logueo en notebook con print.
+        # Quota / auth / network — degraded mode: return an empty DataFrame
+        # so the EDA notebook is not blocked. Logging done in notebook via print.
         return pl.DataFrame(
             schema={
                 "roi": pl.Utf8,
@@ -243,7 +243,7 @@ def sample_s2_roi(
 
 
 def _alphaearth_empty_schema() -> dict[str, Any]:
-    """Esquema canonico del DataFrame AlphaEarth (64 dims)."""
+    """Canonical schema of the AlphaEarth DataFrame (64 dims)."""
     base: dict[str, Any] = {
         "px_id": pl.Utf8,
         "lon": pl.Float64,
@@ -257,10 +257,10 @@ def _alphaearth_empty_schema() -> dict[str, Any]:
 
 
 def _alphaearth_band_names() -> list[str]:
-    """Nombres convencionales de bandas AlphaEarth (`A00`..`A63`).
+    """Conventional AlphaEarth band names (`A00`..`A63`).
 
-    Se valida con `ee.ImageCollection(...).first().bandNames()` en runtime,
-    pero el patron documentado es `A{ii}`.
+    Validated with `ee.ImageCollection(...).first().bandNames()` at runtime,
+    but the documented pattern is `A{ii}`.
     """
     return [f"A{i:02d}" for i in range(64)]
 
@@ -273,19 +273,19 @@ def sample_alphaearth_roi(
     roi_name: str = "roi",
     scale: int = 10,
 ) -> pl.DataFrame:
-    """Muestrea el embedding AlphaEarth 64-dim sobre una ROI/anio con cache parquet.
+    """Sample the 64-dim AlphaEarth embedding over a ROI/year with parquet cache.
 
     Args:
-        roi: `ee.Geometry` o `ee.FeatureCollection` delimitando la region.
-        year: Anio (2017-2025) — selecciona la imagen anual correspondiente.
-        n_pixels: Numero de pixeles a samplear via `sample(numPixels=...)`.
-        cache_path: Carpeta cache local (default `data/cache/gee/`).
-        roi_name: Nombre logico de la ROI usado en cache y columna `roi`.
-        scale: Resolucion en metros (AlphaEarth nativo = 10).
+        roi: `ee.Geometry` or `ee.FeatureCollection` delimiting the region.
+        year: Year (2017-2025) — selects the corresponding annual image.
+        n_pixels: Number of pixels to sample via `sample(numPixels=...)`.
+        cache_path: Local cache folder (default `data/cache/gee/`).
+        roi_name: Logical name of the ROI used in cache and column `roi`.
+        scale: Resolution in meters (AlphaEarth native = 10).
 
     Returns:
-        DataFrame Polars con columnas `px_id, lon, lat, roi, year, dim_00..dim_63`.
-        Si EE no esta disponible o falla retorna DataFrame vacio con esquema valido.
+        Polars DataFrame with columns `px_id, lon, lat, roi, year, dim_00..dim_63`.
+        If EE is unavailable or fails, returns an empty DataFrame with valid schema.
     """
     cache_dir = cache_path or DEFAULT_CACHE_DIR
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -304,12 +304,12 @@ def sample_alphaearth_roi(
             .filterBounds(roi)
             .filterDate(f"{year}-01-01", f"{year + 1}-01-01")
         )
-        # mosaic() vs first(): AlphaEarth distribuye el embedding anual como
-        # tiles disjuntos (~10k imagenes/anio en Europa). first() devuelve una
-        # sola imagen con footprint limitado -> los pixeles fuera de ese tile
-        # caen a null. mosaic() une todos los tiles del anio que tocan la ROI
-        # en un raster continuo. Como cada (px, year) tiene un unico valor,
-        # mosaic() no introduce ambiguedad.
+        # mosaic() vs first(): AlphaEarth distributes the annual embedding as
+        # disjoint tiles (~10k images/year in Europe). first() returns a
+        # single image with limited footprint -> pixels outside that tile
+        # fall to null. mosaic() merges all tiles of the year touching the ROI
+        # into a continuous raster. Since each (px, year) has a single value,
+        # mosaic() introduces no ambiguity.
         image = collection.mosaic().select(band_names)
         sample = image.sample(
             region=roi,
@@ -356,24 +356,24 @@ def sample_alphaearth_at_coords(
     scale: int = 10,
     batch_size: int = 500,
 ) -> pl.DataFrame:
-    """Sampla AlphaEarth 64-dim en coordenadas (lon, lat) EPSG:4326 dadas.
+    """Sample 64-dim AlphaEarth at given (lon, lat) EPSG:4326 coordinates.
 
-    Util para joinear con labels externos (e.g. PASTIS-R). Internamente arma
-    una `ee.FeatureCollection` desde el DataFrame y llama `reduceRegions` con
-    `ee.Reducer.first()` en lotes de `batch_size` puntos.
+    Useful for joining with external labels (e.g. PASTIS-R). Internally builds
+    an `ee.FeatureCollection` from the DataFrame and calls `reduceRegions` with
+    `ee.Reducer.first()` in batches of `batch_size` points.
 
     Args:
-        coords: DataFrame con columnas `px_id, lon, lat` en EPSG:4326.
-        year: Anio del embedding anual a queryear.
-        cache_path: Carpeta cache parquet local.
-        cache_key: Identificador logico para el cache (e.g. `pastis_fold1`).
-        scale: Resolucion en metros (default 10).
-        batch_size: Tamano de batch por request server-side. AlphaEarth tiene
-            64 bandas, asi que el payload es ~64x mas grande que DW; mantenemos
-            500 puntos por batch para evitar timeouts.
+        coords: DataFrame with columns `px_id, lon, lat` in EPSG:4326.
+        year: Year of the annual embedding to query.
+        cache_path: Local parquet cache folder.
+        cache_key: Logical identifier for the cache (e.g. `pastis_fold1`).
+        scale: Resolution in meters (default 10).
+        batch_size: Batch size per server-side request. AlphaEarth has
+            64 bands, so the payload is ~64x larger than DW; we keep
+            500 points per batch to avoid timeouts.
 
     Returns:
-        DataFrame con columnas `px_id, lon, lat, year, dim_00..dim_63`.
+        DataFrame with columns `px_id, lon, lat, year, dim_00..dim_63`.
     """
     cache_dir = cache_path or DEFAULT_CACHE_DIR
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -397,11 +397,11 @@ def sample_alphaearth_at_coords(
     collection = ee.ImageCollection(ALPHAEARTH_COLLECTION).filterDate(
         f"{year}-01-01", f"{year + 1}-01-01"
     )
-    # mosaic() vs first(): la coleccion AlphaEarth tiene ~10k tiles/anio.
-    # first() devuelve un tile arbitrario con footprint limitado -> los
-    # puntos fuera caen a null. mosaic() une todos los tiles del anio en
-    # un raster continuo. Cada (px, year) tiene un unico valor canonico,
-    # asi que mosaic() es deterministico.
+    # mosaic() vs first(): the AlphaEarth collection has ~10k tiles/year.
+    # first() returns an arbitrary tile with limited footprint -> points
+    # outside it fall to null. mosaic() merges all tiles of the year into
+    # a continuous raster. Each (px, year) has a single canonical value,
+    # so mosaic() is deterministic.
     image = collection.mosaic().select(band_names)
 
     by_id: dict[str, dict[str, float | None]] = {
@@ -468,24 +468,24 @@ def sample_dynamic_world_at(
     scale: int = 10,
     batch_size: int = 500,
 ) -> pl.DataFrame:
-    """Extrae la clase moda Dynamic World del anio dado para cada (lon, lat).
+    """Extract the Dynamic World mode class of the given year for each (lon, lat).
 
-    Procesa coords en lotes de `batch_size` puntos para evitar timeouts del
-    compute graph server-side de GEE (un `reduceRegions` con >1000 puntos
-    suele exceder el limite de 5 min y retornar respuesta vacia/parcial,
-    quedando todas las filas con `dw_class_id=-1`).
+    Processes coords in batches of `batch_size` points to avoid timeouts in
+    the GEE server-side compute graph (a `reduceRegions` with >1000 points
+    often exceeds the 5 min limit and returns an empty/partial response,
+    leaving all rows with `dw_class_id=-1`).
 
     Args:
-        coords: DataFrame con columnas `px_id, lon, lat` en EPSG:4326.
-        year: Anio para filtrar la coleccion Dynamic World.
-        cache_path: Carpeta cache parquet.
-        cache_key: Identificador logico para el cache.
-        scale: Resolucion en metros.
-        batch_size: Numero maximo de puntos por request `reduceRegions`.
-            Default 500 — empiricamente seguro para Italia con DW 2024.
+        coords: DataFrame with columns `px_id, lon, lat` in EPSG:4326.
+        year: Year to filter the Dynamic World collection.
+        cache_path: Parquet cache folder.
+        cache_key: Logical identifier for the cache.
+        scale: Resolution in meters.
+        batch_size: Maximum number of points per `reduceRegions` request.
+            Default 500 — empirically safe for Italy with DW 2024.
 
     Returns:
-        DataFrame con columnas `px_id, dw_class_id, dw_class_name, dw_confidence`.
+        DataFrame with columns `px_id, dw_class_id, dw_class_name, dw_confidence`.
     """
     cache_dir = cache_path or DEFAULT_CACHE_DIR
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -537,7 +537,7 @@ def sample_dynamic_world_at(
                 year=int(year),
                 error=str(exc),
             )
-            # Batch fallido: anotamos px_id con clase -1 para no corromper el join.
+            # Failed batch: annotate px_id with class -1 so the join is not corrupted.
             for r in chunk.iter_rows(named=True):
                 rows.append(
                     {
@@ -552,8 +552,8 @@ def sample_dynamic_world_at(
         for feat in info.get("features", []):
             props = feat.get("properties", {}) or {}
             pid = str(props.get("px_id", ""))
-            # reduceRegions con ee.Reducer.first() renombra la banda a "first";
-            # con sampleRegions seria "label". Cubrimos ambos por compatibilidad.
+            # reduceRegions with ee.Reducer.first() renames the band to "first";
+            # with sampleRegions it would be "label". We cover both for compatibility.
             cls_val = props.get("first", props.get("label"))
             cls_id = int(cls_val) if cls_val is not None else -1
             rows.append(
@@ -579,24 +579,24 @@ def fetch_s2_ndvi_rgb_for_parcel(
     scale: int = 10,
     max_pixels: int = 1_000_000,
 ) -> dict[str, Any]:
-    """Devuelve RGB + NDVI Sentinel-2 para una parcela en una fecha aproximada.
+    """Return Sentinel-2 RGB + NDVI for a parcel at an approximate date.
 
-    Toma una ventana +/- 15 dias alrededor de `date` y retorna la mediana
-    de la coleccion filtrada por nubes. Si EE no esta disponible o falla,
-    retorna arrays vacios para que el caller pueda degradar graciosamente.
+    Takes a +/- 15 day window around `date` and returns the median of the
+    cloud-filtered collection. If EE is unavailable or fails, returns empty
+    arrays so the caller can degrade gracefully.
 
     Args:
-        parcel_geom: `ee.Geometry` de la parcela.
-        date: Fecha central `YYYY-MM-DD`.
-        cloud_pct_max: Maximo `CLOUDY_PIXEL_PERCENTAGE`.
-        scale: Resolucion en metros.
-        max_pixels: Limite de pixeles a recuperar.
+        parcel_geom: `ee.Geometry` of the parcel.
+        date: Central date `YYYY-MM-DD`.
+        cloud_pct_max: Maximum `CLOUDY_PIXEL_PERCENTAGE`.
+        scale: Resolution in meters.
+        max_pixels: Limit of pixels to retrieve.
 
     Returns:
-        Diccionario con keys:
-            - `rgb`: ndarray (H, W, 3) float, valores en [0, 1] post stretch.
-            - `ndvi`: ndarray (H, W) float, valores en [-1, 1].
-            - `date_used`: str fecha real usada.
+        Dictionary with keys:
+            - `rgb`: ndarray (H, W, 3) float, values in [0, 1] after stretch.
+            - `ndvi`: ndarray (H, W) float, values in [-1, 1].
+            - `date_used`: str of the actual date used.
     """
     empty = {
         "rgb": np.zeros((0, 0, 3), dtype=np.float32),
@@ -619,10 +619,10 @@ def fetch_s2_ndvi_rgb_for_parcel(
             .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", cloud_pct_max))
             .select(["B2", "B3", "B4", "B8"])
         )
-        # median() colapsa la proyeccion nativa de S2 (UTM 10m) a la default
-        # (EPSG:4326 con scale=1 grado/pixel). Sin reproyectar, sampleRectangle
-        # devuelve un unico pixel porque un bbox de 0.01deg << 1 grado de scale.
-        # Reproyectamos a la proyeccion de la primera imagen (UTM nativo S2 a 10m).
+        # median() collapses the S2 native projection (UTM 10m) to the default
+        # (EPSG:4326 with scale=1 degree/pixel). Without reprojecting, sampleRectangle
+        # returns a single pixel because a 0.01deg bbox << 1 degree of scale.
+        # We reproject to the first image's projection (S2 native UTM at 10m).
         ref_proj = collection.first().select("B4").projection()
         median = collection.median().reproject(crs=ref_proj, scale=scale)
         sample = median.sampleRectangle(region=parcel_geom, defaultValue=0)
@@ -645,10 +645,10 @@ def fetch_s2_ndvi_rgb_for_parcel(
     denom = np.where((b8 + b4) == 0, 1.0, b8 + b4)
     ndvi = (b8 - b4) / denom
 
-    # Stretch percentil 2-98 POR BANDA antes del stack. Aplicar el stretch
-    # global al RGB tras stack colapsa el rango dinamico de las bandas con
-    # menor magnitud, produciendo una imagen aparentemente uniforme cuando
-    # B4 (rojo) >> B3 (verde) >> B2 (azul) en superficies vegetadas.
+    # 2-98 percentile stretch PER BAND before the stack. Applying the global
+    # stretch to the RGB after stacking collapses the dynamic range of the
+    # lower-magnitude bands, producing an apparently uniform image when
+    # B4 (red) >> B3 (green) >> B2 (blue) over vegetated surfaces.
     def _stretch(band: np.ndarray) -> np.ndarray:
         if band.size == 0:
             return band
@@ -668,23 +668,23 @@ def era5_annual_precip(
     roi_name: str = "roi",
     scale: int = 11132,
 ) -> pl.DataFrame:
-    """Acumula precipitacion total anual ERA5-Land sobre una ROI con cache parquet.
+    """Accumulate ERA5-Land annual total precipitation over a ROI with parquet cache.
 
-    Agrega `total_precipitation_sum` (metros) sobre el ano completo via
-    `reduceRegion(ee.Reducer.mean())` en el axis temporal y luego multiplica
-    por 1000 para reportar en mm. Resolucion nativa ERA5-Land ~11132 m.
+    Aggregates `total_precipitation_sum` (meters) over the full year via
+    `reduceRegion(ee.Reducer.mean())` on the temporal axis and then multiplies
+    by 1000 to report in mm. ERA5-Land native resolution ~11132 m.
 
     Args:
-        roi: `ee.Geometry` que delimita la region.
-        years: Lista de anos enteros a procesar (e.g. `[2018, 2019, 2020]`).
-        cache_path: Carpeta cache local (default `data/cache/gee/`).
-        roi_name: Nombre logico de la ROI usado en cache y columna `roi_name`.
-        scale: Resolucion en metros para `reduceRegion` (default 11132 = nativa).
+        roi: `ee.Geometry` delimiting the region.
+        years: List of integer years to process (e.g. `[2018, 2019, 2020]`).
+        cache_path: Local cache folder (default `data/cache/gee/`).
+        roi_name: Logical name of the ROI used in cache and column `roi_name`.
+        scale: Resolution in meters for `reduceRegion` (default 11132 = native).
 
     Returns:
-        DataFrame Polars con columnas `year, roi_name, precip_mm`. Si EE no
-        esta disponible o falla, devuelve DataFrame vacio con esquema valido
-        para degradar el notebook sin romper la cadena Polars.
+        Polars DataFrame with columns `year, roi_name, precip_mm`. If EE is
+        unavailable or fails, returns an empty DataFrame with valid schema
+        to degrade the notebook without breaking the Polars chain.
     """
     schema: dict[str, Any] = {
         "year": pl.Int64,
@@ -709,8 +709,8 @@ def era5_annual_precip(
                 .filterDate(f"{year}-01-01", f"{year + 1}-01-01")
                 .select(["total_precipitation_sum"])
             )
-            # ee.Reducer.sum sobre el axis temporal acumula la precipitacion
-            # diaria del ano completo (metros). Luego reducimos espacialmente.
+            # ee.Reducer.sum over the temporal axis accumulates the daily
+            # precipitation of the full year (meters). Then we reduce spatially.
             annual_img = collection.sum()
             stat = annual_img.reduceRegion(
                 reducer=ee.Reducer.mean(),
@@ -740,32 +740,32 @@ def era5_annual_precip(
 
 
 # ===========================================================================
-# US-016 — samplers nuevos (Sentinel-1, SRTM, ERA5 mensual) por parcela.
+# US-016 — new samplers (Sentinel-1, SRTM, monthly ERA5) per parcel.
 # ===========================================================================
 #
-# Convención común:
-# - `parcels` es un `gpd.GeoDataFrame` con columnas `parcel_id`, `geometry`
-#   (POLYGON EPSG:4326) y opcionalmente `year`. Cada parcela se convierte a
-#   `ee.Geometry` server-side y se reduce con `ee.Reducer.mean()`.
-# - Outputs Polars con cache parquet local en `data/cache/gee/` (mismo patrón
-#   que `sample_alphaearth_*` y `era5_annual_precip`).
-# - Modo degradado: si `ee` no está disponible o GEE falla, se devuelve un
-#   DataFrame vacío con el esquema correcto para no romper la cadena Polars
-#   en el resto del pipeline (los blocks de `ml/features/fusion.py` rellenan
-#   con None las cols faltantes).
+# Common convention:
+# - `parcels` is a `gpd.GeoDataFrame` with columns `parcel_id`, `geometry`
+#   (POLYGON EPSG:4326) and optionally `year`. Each parcel is converted to
+#   `ee.Geometry` server-side and reduced with `ee.Reducer.mean()`.
+# - Polars outputs with local parquet cache in `data/cache/gee/` (same pattern
+#   as `sample_alphaearth_*` and `era5_annual_precip`).
+# - Degraded mode: if `ee` is not available or GEE fails, an empty DataFrame
+#   with the correct schema is returned so the Polars chain is not broken
+#   in the rest of the pipeline (the blocks in `ml/features/fusion.py` fill
+#   the missing cols with None).
 
 
 def _parcels_to_feature_collection(parcels: Any) -> Any:
-    """Convierte un GeoDataFrame de parcelas a ``ee.FeatureCollection``.
+    """Convert a parcels GeoDataFrame to ``ee.FeatureCollection``.
 
     Args:
-        parcels: GeoDataFrame con `parcel_id` y `geometry` POLYGON EPSG:4326.
+        parcels: GeoDataFrame with `parcel_id` and `geometry` POLYGON EPSG:4326.
 
     Returns:
-        ``ee.FeatureCollection`` con propiedad `parcel_id` por feature.
+        ``ee.FeatureCollection`` with a `parcel_id` property per feature.
     """
     if ee is None:
-        raise ImportError("earthengine-api no disponible.")
+        raise ImportError("earthengine-api is not available.")
     features = []
     for row in parcels.itertuples(index=False):
         geom = getattr(row, "geometry", None)
@@ -788,35 +788,35 @@ def sample_s1_roi_for_parcels(
     cache_dir: Path | None = None,
     cache_key: str = "parcels",
 ) -> pl.DataFrame:
-    """Muestrea Sentinel-1 GRD VV+VH por parcela con stats temporales (US-016 AC-4).
+    """Sample Sentinel-1 GRD VV+VH per parcel with temporal stats (US-016 AC-4).
 
-    Preset operativo:
+    Operational preset:
 
-    - Colección ``COPERNICUS/S1_GRD`` modo IW (Interferometric Wide).
-    - ``ascending + descending`` mosaicados (``orbit_pass="both"``),
-      resolución 10 m.
-    - Despeckle Lee 7x7 (default) aplicado por imagen antes del stack.
-    - Salida en sigma0 dB (default; ``"linear"`` para datos crudos).
+    - Collection ``COPERNICUS/S1_GRD`` mode IW (Interferometric Wide).
+    - ``ascending + descending`` mosaicked (``orbit_pass="both"``),
+      10 m resolution.
+    - Lee 7x7 despeckle (default) applied per image before the stack.
+    - Output in sigma0 dB (default; ``"linear"`` for raw data).
 
-    Stats devueltos por (parcel_id, polarization): ``mean, std, p25, p50,
-    p95`` sobre el stack temporal → 5 stats x 2 pol = 10 columnas con
-    prefijos ``s1_vv_*`` y ``s1_vh_*``.
+    Stats returned per (parcel_id, polarization): ``mean, std, p25, p50,
+    p95`` over the temporal stack -> 5 stats x 2 pol = 10 columns with
+    prefixes ``s1_vv_*`` and ``s1_vh_*``.
 
     Args:
-        parcels: GeoDataFrame con `parcel_id` y `geometry` POLYGON EPSG:4326.
-        year: Año a samplear (ventana ``[YYYY-01-01, (YYYY+1)-01-01)``).
-        polarization: Polarizaciones a extraer (default ``("VV", "VH")``).
-        orbit_pass: Filtro de pase orbital. ``"both"`` mosaicea asc+desc.
-        despeckle: Filtro de speckle. ``"lee_7x7"`` aplica filtro Lee con
-            kernel 7x7; ``"none"`` desactiva el filtro.
-        sigma0_units: Unidades de salida; los datos GRD GEE ya vienen en dB.
-            Si se solicita ``"linear"`` se aplica ``10^(x/10)``.
-        cache_dir: Carpeta de cache local (default ``data/cache/gee/``).
-        cache_key: Nombre lógico del subset para el cache.
+        parcels: GeoDataFrame with `parcel_id` and `geometry` POLYGON EPSG:4326.
+        year: Year to sample (window ``[YYYY-01-01, (YYYY+1)-01-01)``).
+        polarization: Polarizations to extract (default ``("VV", "VH")``).
+        orbit_pass: Orbital pass filter. ``"both"`` mosaicks asc+desc.
+        despeckle: Speckle filter. ``"lee_7x7"`` applies a Lee filter with a
+            7x7 kernel; ``"none"`` disables the filter.
+        sigma0_units: Output units; GEE GRD data already comes in dB.
+            If ``"linear"`` is requested, ``10^(x/10)`` is applied.
+        cache_dir: Local cache folder (default ``data/cache/gee/``).
+        cache_key: Logical name of the subset for the cache.
 
     Returns:
-        ``pl.DataFrame`` con columnas ``parcel_id, year, s1_vv_mean, ...,
-        s1_vh_p95``. Devuelve frame vacío con esquema válido si GEE falla.
+        ``pl.DataFrame`` with columns ``parcel_id, year, s1_vv_mean, ...,
+        s1_vh_p95``. Returns an empty frame with valid schema if GEE fails.
     """
     pol_cols: list[str] = []
     for pol in polarization:
@@ -855,7 +855,7 @@ def sample_s1_roi_for_parcels(
             collection = collection.filter(ee.Filter.eq("orbitProperties_pass", "DESCENDING"))
 
         if despeckle == "lee_7x7":
-            # focalMean con kernel cuadrado de radio 3 (7x7 pixels).
+            # focalMean with a square kernel of radius 3 (7x7 pixels).
             kernel = ee.Kernel.square(radius=3, units="pixels")
             collection = collection.map(lambda img: img.focalMean(kernel=kernel))
 
@@ -892,14 +892,14 @@ def sample_s1_roi_for_parcels(
                 row[f"s1_{pol.lower()}_p50"] = _safe_float(props.get(f"{pol}_p50"))
                 row[f"s1_{pol.lower()}_p95"] = _safe_float(props.get(f"{pol}_p95"))
                 rows.append(row)
-    except Exception as exc:  # noqa: BLE001 — degradación graceful
+    except Exception as exc:  # noqa: BLE001 — graceful degradation
         _log.warning("s1_sample_failed", error=str(exc), year=int(year))
         return pl.DataFrame(schema=schema)
 
     if not rows:
         return pl.DataFrame(schema=schema)
 
-    # Merge filas VV y VH de la misma parcela.
+    # Merge VV and VH rows of the same parcel.
     merged: dict[int, dict[str, Any]] = {}
     for row in rows:
         pid = int(row["parcel_id"])
@@ -921,20 +921,20 @@ def sample_srtm_terrain(
     cache_dir: Path | None = None,
     cache_key: str = "parcels",
 ) -> pl.DataFrame:
-    """Muestrea SRTM elevación + slope + aspect dominante por parcela (US-016 AC-5).
+    """Sample SRTM elevation + slope + dominant aspect per parcel (US-016 AC-5).
 
-    Usa ``USGS/SRTMGL1_003`` (DEM 30m global) más ``ee.Terrain.slope`` y
-    ``ee.Terrain.aspect``. ``aspect_dominant`` se discretiza en 8 cuadrantes
-    cardinales (N, NE, ..., NW) usando el centro de cada bin de 45°.
+    Uses ``USGS/SRTMGL1_003`` (global 30m DEM) plus ``ee.Terrain.slope`` and
+    ``ee.Terrain.aspect``. ``aspect_dominant`` is discretized into 8 cardinal
+    quadrants (N, NE, ..., NW) using the center of each 45 degree bin.
 
     Args:
-        parcels: GeoDataFrame con `parcel_id` y `geometry` POLYGON EPSG:4326.
-        cache_dir: Carpeta cache local.
-        cache_key: Nombre lógico para el cache.
+        parcels: GeoDataFrame with `parcel_id` and `geometry` POLYGON EPSG:4326.
+        cache_dir: Local cache folder.
+        cache_key: Logical name for the cache.
 
     Returns:
-        ``pl.DataFrame`` con cols ``parcel_id, srtm_elev_mean,
-        srtm_slope_mean, srtm_aspect_dominant`` (string cardinal).
+        ``pl.DataFrame`` with cols ``parcel_id, srtm_elev_mean,
+        srtm_slope_mean, srtm_aspect_dominant`` (cardinal string).
     """
     schema: dict[str, Any] = {
         "parcel_id": pl.Int64,
@@ -997,32 +997,32 @@ def sample_alphaearth_for_parcels(
     batch_size: int = 100,
     scale: int = 10,
 ) -> pl.DataFrame:
-    """Muestrea AlphaEarth 64-dim por polígono de parcela (US-018.3).
+    """Sample 64-dim AlphaEarth per parcel polygon (US-018.3).
 
-    Variante de ``sample_alphaearth_at_coords`` que opera sobre polígonos
-    en lugar de puntos. Usa ``ee.Reducer.mean()`` para agregar el embedding
-    sobre cada parcela individual. Útil para PASTIS-R vectorizado por
-    parcela (no por centroide del patch).
+    Variant of ``sample_alphaearth_at_coords`` that operates on polygons
+    instead of points. Uses ``ee.Reducer.mean()`` to aggregate the embedding
+    over each individual parcel. Useful for PASTIS-R vectorized by parcel
+    (not by patch centroid).
 
-    A diferencia de los otros samplers de parcela (``sample_srtm_terrain``,
-    ``sample_s1_roi_for_parcels``), aquí ``parcel_id`` puede ser string
-    (formato ``"<patch_id>_<instance_id>"``) porque PASTIS-R tiene IDs
-    duplicados entre patches. Internamente reasignamos a enteros
-    sequenciales para que GEE pueda devolverlos en las properties.
+    Unlike the other parcel samplers (``sample_srtm_terrain``,
+    ``sample_s1_roi_for_parcels``), here ``parcel_id`` may be a string
+    (format ``"<patch_id>_<instance_id>"``) because PASTIS-R has duplicate
+    IDs across patches. Internally we reassign to sequential integers so
+    GEE can return them in the properties.
 
     Args:
-        parcels: GeoDataFrame con `parcel_id` (str o int) y `geometry`
+        parcels: GeoDataFrame with `parcel_id` (str or int) and `geometry`
             POLYGON EPSG:4326.
-        year: Año del embedding anual a queryear.
-        cache_dir: Carpeta cache local.
-        cache_key: Nombre lógico para el cache.
-        batch_size: Tamaño de batch por request server-side. Polígonos son
-            más caros que puntos; default 100 evita timeouts.
-        scale: Resolución de muestreo (default 10 m, nativa de AlphaEarth).
+        year: Year of the annual embedding to query.
+        cache_dir: Local cache folder.
+        cache_key: Logical name for the cache.
+        batch_size: Batch size per server-side request. Polygons are more
+            expensive than points; default 100 avoids timeouts.
+        scale: Sampling resolution (default 10 m, AlphaEarth native).
 
     Returns:
-        ``pl.DataFrame`` con columnas ``parcel_id, year, dim_00..dim_63``.
-        Frame vacío con esquema válido si GEE falla.
+        ``pl.DataFrame`` with columns ``parcel_id, year, dim_00..dim_63``.
+        Empty frame with valid schema if GEE fails.
     """
     schema: dict[str, Any] = {
         "parcel_id": pl.Utf8,
@@ -1048,8 +1048,8 @@ def sample_alphaearth_for_parcels(
         .select(band_names)
     )
 
-    # Reasignamos parcel_id (potencialmente string) a int sequential para que
-    # GEE lo devuelva en properties. Mapping inverso al final.
+    # Reassign parcel_id (potentially a string) to a sequential int so that
+    # GEE returns it in properties. Inverse mapping at the end.
     int_to_str: dict[int, str] = {}
     rows: list[dict[str, Any]] = []
     total = len(parcels)
@@ -1119,24 +1119,24 @@ def sample_era5_monthly_climate(
     cache_dir: Path | None = None,
     cache_key: str = "parcels",
 ) -> pl.DataFrame:
-    """Muestrea ERA5-Land mensual: tmean (12) + prec acumulado (12) (US-016 AC-6).
+    """Sample monthly ERA5-Land: tmean (12) + accumulated prec (12) (US-016 AC-6).
 
-    Usa ``ECMWF/ERA5_LAND/DAILY_AGGR`` agrupando server-side por mes:
+    Uses ``ECMWF/ERA5_LAND/DAILY_AGGR`` grouping server-side by month:
 
-    - ``temperature_2m`` reducido con ``mean()`` por mes → °C si
+    - ``temperature_2m`` reduced with ``mean()`` per month -> degrees C if
       ``temperature_units="C"``.
-    - ``total_precipitation_sum`` reducido con ``sum()`` por mes (metros)
-      → mm acumulado (multiplicado x 1000).
+    - ``total_precipitation_sum`` reduced with ``sum()`` per month (meters)
+      -> accumulated mm (multiplied x 1000).
 
     Args:
-        parcels: GeoDataFrame con `parcel_id` y `geometry` POLYGON EPSG:4326.
-        year: Año (genera ventana ``[YYYY-01-01, (YYYY+1)-01-01)``).
-        temperature_units: ``"C"`` (default) o ``"K"``.
-        cache_dir: Carpeta cache local.
-        cache_key: Nombre lógico para el cache.
+        parcels: GeoDataFrame with `parcel_id` and `geometry` POLYGON EPSG:4326.
+        year: Year (generates window ``[YYYY-01-01, (YYYY+1)-01-01)``).
+        temperature_units: ``"C"`` (default) or ``"K"``.
+        cache_dir: Local cache folder.
+        cache_key: Logical name for the cache.
 
     Returns:
-        ``pl.DataFrame`` con cols ``parcel_id, year, era5_tmean_m01..m12,
+        ``pl.DataFrame`` with cols ``parcel_id, year, era5_tmean_m01..m12,
         era5_prec_m01..m12`` (24 cols).
     """
     t_cols = [f"era5_tmean_m{m:02d}" for m in range(1, 13)]
@@ -1158,17 +1158,17 @@ def sample_era5_monthly_climate(
     try:
         fc = _parcels_to_feature_collection(parcels)
         result_rows: dict[int, dict[str, Any]] = {}
-        # Bug-6 fix (smoke real, 2026-05-17):
-        # reduceRegions con scale=11132 (nativa ERA5-Land ~11 km/pixel) y
-        # parcelas sub-pixel (~1 km2 del fixture demo) NO intersecta ningun
-        # pixel: el payload omite por completo la propiedad reducida y queda
-        # solo `{parcel_id}`. Bajamos scale a 1000 m (oversampling 11x) y
-        # anadimos `tileScale=4` para evitar memory errors en parcelas grandes.
-        # Resultado: scale=1000 interpola correctamente el pixel ERA5
-        # contenedor y rellena las 24 cols con valores fisicos plausibles.
-        # Ademas, dependiendo del scale, GEE renombra la propiedad al band
-        # original (`temperature_2m` / `total_precipitation_sum`) o a `mean`;
-        # leemos band-name con fallback a `mean` para cubrir ambos paths.
+        # Bug-6 fix (real smoke test, 2026-05-17):
+        # reduceRegions with scale=11132 (ERA5-Land native ~11 km/pixel) and
+        # sub-pixel parcels (~1 km2 from the demo fixture) does NOT intersect any
+        # pixel: the payload omits the reduced property entirely and only
+        # `{parcel_id}` remains. We lower scale to 1000 m (11x oversampling) and
+        # add `tileScale=4` to avoid memory errors on large parcels.
+        # Result: scale=1000 correctly interpolates the containing ERA5 pixel
+        # and fills the 24 cols with physically plausible values.
+        # Also, depending on the scale, GEE renames the property to the original
+        # band (`temperature_2m` / `total_precipitation_sum`) or to `mean`;
+        # we read the band-name with a fallback to `mean` to cover both paths.
         tband = "temperature_2m"
         pband = "total_precipitation_sum"
         for month in range(1, 13):
@@ -1191,9 +1191,9 @@ def sample_era5_monthly_climate(
                 pid = int(props["parcel_id"])
                 if pid not in result_rows:
                     result_rows[pid] = {"parcel_id": pid, "year": int(year)}
-                # `reduceRegions` con single-band image renombra la propiedad
-                # al nombre del band (no a "mean"); fallback a "mean" por
-                # compatibilidad con mocks viejos / multi-band reducers.
+                # `reduceRegions` with a single-band image renames the property
+                # to the band name (not to "mean"); fallback to "mean" for
+                # compatibility with old mocks / multi-band reducers.
                 tval = _safe_float(props.get(tband, props.get("mean")))
                 if tval is not None and temperature_units == "C":
                     tval = tval - 273.15
@@ -1204,8 +1204,8 @@ def sample_era5_monthly_climate(
                 if pid not in result_rows:
                     result_rows[pid] = {"parcel_id": pid, "year": int(year)}
                 pval = _safe_float(props.get(pband, props.get("mean")))
-                # `pval` proviene del `sum()` mensual (metros) reducido en
-                # espacio; multiplicamos x 1000 para reportar en mm.
+                # `pval` comes from the monthly `sum()` (meters) reduced in
+                # space; we multiply by 1000 to report in mm.
                 result_rows[pid][f"era5_prec_m{month:02d}"] = (
                     pval * 1000.0 if pval is not None else None
                 )
@@ -1221,7 +1221,7 @@ def sample_era5_monthly_climate(
 
 
 def _safe_float(val: Any) -> float | None:
-    """Convierte valor a float o devuelve None si es nulo/NaN."""
+    """Convert a value to float or return None if it is null/NaN."""
     if val is None:
         return None
     try:
@@ -1234,10 +1234,10 @@ def _safe_float(val: Any) -> float | None:
 
 
 def _aspect_to_cardinal(aspect_deg: float | None) -> str | None:
-    """Discretiza un ángulo ``[0, 360)`` en uno de 8 cuadrantes cardinales.
+    """Discretize an angle ``[0, 360)`` into one of 8 cardinal quadrants.
 
-    Bins centrados en cada cardinal (N=0, NE=45, ..., NW=315) con ancho 45°.
-    ``None`` o NaN devuelve ``None``.
+    Bins centered on each cardinal (N=0, NE=45, ..., NW=315) with 45 degree
+    width. ``None`` or NaN returns ``None``.
     """
     if aspect_deg is None:
         return None

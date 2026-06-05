@@ -1,27 +1,27 @@
-"""Baseline tabular de clasificacion de cultivos: Random Forest + XGBoost (US-019).
+"""Tabular crop classification baseline: Random Forest + XGBoost (US-019).
 
-Libreria del EPIC 4 (Avance 3). Entrena dos modelos tabulares sobre el
-vector de features combinado del EPIC 3 (AlphaEarth + indices espectrales
-+ estadisticas temporales + SRTM + ERA5) con evaluacion por validacion
-cruzada **espacial** y tuning ligero opcional.
+EPIC 4 library (Avance 3). Trains two tabular models on the combined
+feature vector from EPIC 3 (AlphaEarth + spectral indices + temporal
+statistics + SRTM + ERA5) with **spatial** cross-validation evaluation
+and optional light tuning.
 
-Decisiones canonicas (plan ``docs/us-planning/us-019.md`` 2.1):
+Canonical decisions (plan ``docs/us-planning/us-019.md`` 2.1):
 
-- **D1**: el CV es espacial via :func:`ml.features.spatial_split.build_spatial_kfold`
-  (H3 + KMeans + buffer 1 km). CERO ``KFold``/``train_test_split`` aleatorio.
-- **D2**: solo ``RandomForestClassifier`` + ``xgboost.XGBClassifier``.
-- **D3**: ``tree_method="hist"``; XGBoost usa ``device="cuda"`` si hay una
-  GPU NVIDIA disponible y degrada automaticamente a CPU si no (CI sin GPU,
-  laptop sin CUDA). RandomForest es siempre CPU (sklearn no tiene backend
-  GPU). El problema (85 k x 187) corre en minutos en cualquiera de los dos.
-- **D5**: balanceo de clases (``class_weight="balanced"`` para RF,
-  ``sample_weight`` inverso a frecuencia para XGB).
-- **D12**: ``LabelEncoder`` sobre ``class_id`` persistido en el resultado;
-  XGB ``multi:softprob`` exige etiquetas contiguas ``[0, n_classes)``.
+- **D1**: the CV is spatial via :func:`ml.features.spatial_split.build_spatial_kfold`
+  (H3 + KMeans + 1 km buffer). ZERO random ``KFold``/``train_test_split``.
+- **D2**: only ``RandomForestClassifier`` + ``xgboost.XGBClassifier``.
+- **D3**: ``tree_method="hist"``; XGBoost uses ``device="cuda"`` if an
+  NVIDIA GPU is available and degrades automatically to CPU otherwise (CI
+  without GPU, laptop without CUDA). RandomForest is always CPU (sklearn has
+  no GPU backend). The problem (85 k x 187) runs in minutes on either one.
+- **D5**: class balancing (``class_weight="balanced"`` for RF,
+  frequency-inverse ``sample_weight`` for XGB).
+- **D12**: ``LabelEncoder`` on ``class_id`` persisted in the result;
+  XGB ``multi:softprob`` requires contiguous labels ``[0, n_classes)``.
 
-El dataset de features no incluye geometria de parcela; el centroide
-espacial se deriva del ``patch_id`` PASTIS-R via
-``data/PASTIS-R/metadata.geojson`` (geometria por patch en EPSG:2154).
+The feature dataset does not include parcel geometry; the spatial
+centroid is derived from the PASTIS-R ``patch_id`` via
+``data/PASTIS-R/metadata.geojson`` (per-patch geometry in EPSG:2154).
 """
 
 from __future__ import annotations
@@ -58,7 +58,7 @@ __all__ = [
 
 ModelKind = Literal["rf", "xgb", "lgbm"]
 
-# Columnas de metadata que NO son features (se excluyen de la matriz X).
+# Metadata columns that are NOT features (excluded from the X matrix).
 _META_COLS: tuple[str, ...] = (
     "parcel_id",
     "year",
@@ -72,12 +72,12 @@ _META_COLS: tuple[str, ...] = (
     "geometry",
 )
 
-# Sufijos de columnas que indican un join sin coalesce previo y nunca son
-# features. Defensa en profundidad sobre `_META_COLS`: el bug US-023-preview-v2
-# (patch_id_right importance=0.27 en XGB) entraba aqui via Polars left join.
+# Column suffixes that indicate a join without prior coalesce and are never
+# features. Defense in depth over `_META_COLS`: the US-023-preview-v2 bug
+# (patch_id_right importance=0.27 in XGB) entered here via a Polars left join.
 _META_SUFFIXES: tuple[str, ...] = ("_right", "_left", "_x", "_y")
 
-# Clases PASTIS-R no agronomicas a descartar (Background, Void label).
+# Non-agronomic PASTIS-R classes to discard (Background, Void label).
 _DROP_CLASS_IDS: tuple[int, ...] = (0, 19)
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -86,12 +86,12 @@ _DEFAULT_FEATURES_PATH = (
 )
 _PASTIS_METADATA_PATH = _REPO_ROOT / "data" / "PASTIS-R" / "metadata.geojson"
 
-# Hiperparametros base documentados (criterio AC-1).
-# `max_depth` y `min_samples_leaf` acotados (no None / no 1): un RF sin poda
-# sobre 85k parcelas crece hasta hojas puras -> modelo de ~700 MB inmanejable
-# para el Model Registry y con sobreajuste severo. La poda (depth 20,
-# min_samples_leaf 10, 150 arboles) deja el modelo en ~100-150 MB, logueable,
-# sin perder F1 material (desviacion justificada del plan US-019; ver handoff).
+# Documented base hyperparameters (criterion AC-1).
+# `max_depth` and `min_samples_leaf` bounded (not None / not 1): an unpruned RF
+# over 85k parcels grows down to pure leaves -> a ~700 MB model unmanageable
+# for the Model Registry and with severe overfitting. The pruning (depth 20,
+# min_samples_leaf 10, 150 trees) keeps the model at ~100-150 MB, loggable,
+# without losing material F1 (deviation justified from plan US-019; see handoff).
 _RF_BASE_PARAMS: dict[str, object] = {
     "n_estimators": 150,
     "max_depth": 20,
@@ -110,13 +110,13 @@ _XGB_BASE_PARAMS: dict[str, object] = {
     "objective": "multi:softprob",
     "random_state": 42,
 }
-# LightGBM (3er modelo del baseline tabular). Hiperparametros alineados con XGB
-# para una comparacion justa: misma profundidad efectiva (`num_leaves=63 ~ 2^6`
-# con `max_depth=-1`), mismo `learning_rate=0.05`, mismo subsample/colsample.
-# `class_weight="balanced"` reemplaza el `sample_weight` manual que XGB requiere
-# (LGBM si expone el parametro nativamente, decision D5). LGBM acepta NaN sin
-# imputacion previa pero seguimos el mismo `_impute_with` por consistencia.
-# Nota: la rueda PyPI de `lightgbm` no incluye build con CUDA; se queda en CPU.
+# LightGBM (3rd model of the tabular baseline). Hyperparameters aligned with XGB
+# for a fair comparison: same effective depth (`num_leaves=63 ~ 2^6`
+# with `max_depth=-1`), same `learning_rate=0.05`, same subsample/colsample.
+# `class_weight="balanced"` replaces the manual `sample_weight` that XGB requires
+# (LGBM does expose the parameter natively, decision D5). LGBM accepts NaN without
+# prior imputation but we keep the same `_impute_with` for consistency.
+# Note: the PyPI wheel for `lightgbm` does not include a CUDA build; it stays on CPU.
 _LGBM_BASE_PARAMS: dict[str, object] = {
     "n_estimators": 400,
     "learning_rate": 0.05,
@@ -134,15 +134,15 @@ _LGBM_BASE_PARAMS: dict[str, object] = {
 
 
 def resolve_xgb_device() -> str:
-    """Resuelve el device de XGBoost segun la disponibilidad de GPU NVIDIA.
+    """Resolve the XGBoost device based on NVIDIA GPU availability.
 
-    Detecta una GPU CUDA via ``nvidia-smi``. Si esta presente devuelve
-    ``"cuda"`` (XGBoost 3.x usa ``tree_method="hist"`` + ``device="cuda"``
-    para el entrenamiento acelerado); si no, degrada a ``"cpu"`` para que
-    el baseline corra en CI y en laptops sin CUDA (decision D3).
+    Detects a CUDA GPU via ``nvidia-smi``. If present, returns
+    ``"cuda"`` (XGBoost 3.x uses ``tree_method="hist"`` + ``device="cuda"``
+    for accelerated training); otherwise, degrades to ``"cpu"`` so the
+    baseline runs in CI and on laptops without CUDA (decision D3).
 
     Returns:
-        ``"cuda"`` si hay GPU NVIDIA detectable, ``"cpu"`` en caso contrario.
+        ``"cuda"`` if a detectable NVIDIA GPU exists, ``"cpu"`` otherwise.
     """
     import shutil
     import subprocess
@@ -151,7 +151,7 @@ def resolve_xgb_device() -> str:
     if nvidia_smi is None:
         return "cpu"
     try:
-        result = subprocess.run(  # noqa: S603 — ruta resuelta con shutil.which
+        result = subprocess.run(  # noqa: S603 — path resolved with shutil.which
             [nvidia_smi, "--query-gpu=name", "--format=csv,noheader"],
             capture_output=True,
             text=True,
@@ -165,9 +165,9 @@ def resolve_xgb_device() -> str:
         return "cuda"
     return "cpu"
 
-# Grids de tuning ligero (criterio AC-4): 8 combinaciones por modelo.
-# `max_depth` y `min_samples_leaf` acotados: evita el RF de ~700 MB y el
-# sobreajuste de arboles sin poda (ver _RF_BASE_PARAMS).
+# Light tuning grids (criterion AC-4): 8 combinations per model.
+# `max_depth` and `min_samples_leaf` bounded: avoids the ~700 MB RF and the
+# overfitting of unpruned trees (see _RF_BASE_PARAMS).
 _RF_PARAM_GRID: dict[str, list] = {
     "n_estimators": [100, 150],
     "max_depth": [15, 20],
@@ -178,8 +178,8 @@ _XGB_PARAM_GRID: dict[str, list] = {
     "max_depth": [6, 8],
     "learning_rate": [0.05, 0.1],
 }
-# LightGBM: 8 combinaciones (2 x 2 x 2). `num_leaves` acotado a [31, 63] para no
-# crecer arboles que dupliquen el modelo en memoria (mismo criterio que RF).
+# LightGBM: 8 combinations (2 x 2 x 2). `num_leaves` bounded to [31, 63] to avoid
+# growing trees that double the model in memory (same criterion as RF).
 _LGBM_PARAM_GRID: dict[str, list] = {
     "n_estimators": [300, 400],
     "num_leaves": [31, 63],
@@ -196,30 +196,30 @@ _METRIC_KEYS: tuple[str, ...] = (
 
 
 # ---------------------------------------------------------------------------
-# Dataclass de salida.
+# Output dataclass.
 # ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
 class BaselineResult:
-    """Resultado de entrenar un baseline tabular.
+    """Result of training a tabular baseline.
 
     Attributes:
-        model: Estimador sklearn/xgboost ya ajustado sobre el dataset
-            completo (etiquetas codificadas con ``LabelEncoder``).
-        model_kind: ``"rf"`` o ``"xgb"``.
-        metrics: Las cinco metricas de :func:`compute_baseline_metrics`
-            calculadas sobre las predicciones out-of-fold del CV espacial.
-        cv_metrics: Mapa ``{metrica: (media, desviacion)}`` sobre los
-            folds del CV espacial.
-        feature_cols: Nombres de las columnas usadas como features, en el
-            mismo orden de las columnas de la matriz X.
-        best_params: Hiperparametros usados (de ``GridSearchCV`` si hubo
-            tuning, o los base si no).
-        label_classes: Clases originales en el orden del ``LabelEncoder``;
-            ``label_classes[i]`` es la clase real de la etiqueta ``i``.
-        label_encoder: El ``LabelEncoder`` ajustado, para decodificar
-            predicciones en downstream (US-020, inferencia).
+        model: sklearn/xgboost estimator already fitted on the full
+            dataset (labels encoded with ``LabelEncoder``).
+        model_kind: ``"rf"`` or ``"xgb"``.
+        metrics: The five metrics from :func:`compute_baseline_metrics`
+            computed on the out-of-fold predictions of the spatial CV.
+        cv_metrics: Map ``{metric: (mean, std)}`` over the
+            spatial CV folds.
+        feature_cols: Names of the columns used as features, in the
+            same order as the columns of the X matrix.
+        best_params: Hyperparameters used (from ``GridSearchCV`` if tuning
+            occurred, or the base ones otherwise).
+        label_classes: Original classes in ``LabelEncoder`` order;
+            ``label_classes[i]`` is the real class of label ``i``.
+        label_encoder: The fitted ``LabelEncoder``, to decode
+            predictions downstream (US-020, inference).
     """
 
     model: ClassifierMixin
@@ -233,43 +233,43 @@ class BaselineResult:
 
 
 # ---------------------------------------------------------------------------
-# Construccion de estimadores.
+# Estimator construction.
 # ---------------------------------------------------------------------------
 
 
 def build_estimator(model: ModelKind, hyperparams: dict[str, object]) -> ClassifierMixin:
-    """Instancia un estimador RF, XGB o LGBM con los hiperparametros dados.
+    """Instantiate an RF, XGB or LGBM estimator with the given hyperparameters.
 
     Args:
-        model: ``"rf"`` para :class:`RandomForestClassifier`, ``"xgb"``
-            para :class:`xgboost.XGBClassifier` o ``"lgbm"`` para
+        model: ``"rf"`` for :class:`RandomForestClassifier`, ``"xgb"``
+            for :class:`xgboost.XGBClassifier` or ``"lgbm"`` for
             :class:`lightgbm.LGBMClassifier`.
-        hyperparams: Diccionario de hiperparametros del constructor.
+        hyperparams: Dictionary of constructor hyperparameters.
 
     Returns:
-        El estimador instanciado (sin ajustar).
+        The instantiated estimator (unfitted).
 
     Raises:
-        ValueError: si ``model`` no es ``"rf"``, ``"xgb"`` ni ``"lgbm"``.
+        ValueError: if ``model`` is not ``"rf"``, ``"xgb"`` nor ``"lgbm"``.
     """
     if model == "rf":
         return RandomForestClassifier(**hyperparams)
     if model == "xgb":
-        # Inyecta el device (cuda/cpu) si el caller no lo fijo; permite
-        # acelerar en GPU local sin romper CI sin CUDA (decision D3).
+        # Inject the device (cuda/cpu) if the caller did not set it; allows
+        # acceleration on local GPU without breaking CI without CUDA (decision D3).
         xgb_params = dict(hyperparams)
         xgb_params.setdefault("device", resolve_xgb_device())
         return XGBClassifier(**xgb_params)
     if model == "lgbm":
-        # LGBM se queda en CPU: la rueda PyPI no trae build CUDA. Para GPU
-        # haria falta `pip install lightgbm --config-settings=cmake.define...`
-        # con `device_type="gpu"`, fuera del alcance del baseline.
+        # LGBM stays on CPU: the PyPI wheel does not ship a CUDA build. For GPU
+        # one would need `pip install lightgbm --config-settings=cmake.define...`
+        # with `device_type="gpu"`, out of scope for the baseline.
         return LGBMClassifier(**hyperparams)  # type: ignore[arg-type]
     raise ValueError(f"`model` debe ser 'rf', 'xgb' o 'lgbm'; recibido {model!r}.")
 
 
 # ---------------------------------------------------------------------------
-# API publica.
+# Public API.
 # ---------------------------------------------------------------------------
 
 
@@ -282,31 +282,31 @@ def train_one_model(
     buffer_km: float = 1.0,
     random_state: int = 42,
 ) -> BaselineResult:
-    """Entrena un baseline (RF o XGB) con evaluacion por CV espacial.
+    """Train a baseline (RF or XGB) with spatial CV evaluation.
 
-    Carga las features, construye los folds espaciales con
-    :func:`build_spatial_kfold`, evalua con scaler anti-leakage por fold,
-    obtiene predicciones out-of-fold y ajusta el modelo final sobre todo
-    el dataset.
+    Loads the features, builds the spatial folds with
+    :func:`build_spatial_kfold`, evaluates with a per-fold anti-leakage
+    scaler, obtains out-of-fold predictions and fits the final model on
+    the whole dataset.
 
     Args:
-        df: DataFrame Polars de features (debe contener ``parcel_id``,
-            ``class_id`` y al menos una columna de feature numerica).
-        model: ``"rf"`` o ``"xgb"``.
-        hyperparams: Hiperparametros del estimador; si es ``None`` se usan
-            los valores base documentados (``_RF_BASE_PARAMS`` /
+        df: Polars feature DataFrame (must contain ``parcel_id``,
+            ``class_id`` and at least one numeric feature column).
+        model: ``"rf"`` or ``"xgb"``.
+        hyperparams: Estimator hyperparameters; if ``None`` the
+            documented base values are used (``_RF_BASE_PARAMS`` /
             ``_XGB_BASE_PARAMS``).
-        k_folds: Numero de folds del CV espacial (default 5).
-        buffer_km: Buffer anti-leakage en km entre folds (default 1.0).
-        random_state: Semilla determinista.
+        k_folds: Number of spatial CV folds (default 5).
+        buffer_km: Anti-leakage buffer in km between folds (default 1.0).
+        random_state: Deterministic seed.
 
     Returns:
-        Un :class:`BaselineResult` con el modelo ajustado, las metricas
-        out-of-fold, las metricas por fold y la metadata de features.
+        A :class:`BaselineResult` with the fitted model, the out-of-fold
+        metrics, the per-fold metrics and the feature metadata.
 
     Raises:
-        ValueError: si ``df`` carece de columnas obligatorias o si tras
-            descartar las clases no agronomicas no quedan muestras.
+        ValueError: if ``df`` lacks mandatory columns or if no samples
+            remain after discarding the non-agronomic classes.
     """
     clean_df = _prepare_dataframe(df)
     feature_cols = _feature_columns(clean_df)
@@ -332,15 +332,15 @@ def train_one_model(
         labels=list(range(len(encoder.classes_))),
     )
 
-    # Ajuste final sobre el dataset completo (modelo de produccion). Los
-    # arboles (RF/XGB) son invariantes a escala monotona, asi que el modelo
-    # final opera sobre features imputadas crudas (sin StandardScaler); el
-    # CV si escala porque `fit_scaler_on_train` es el patron del repo.
+    # Final fit over the full dataset (production model). The trees
+    # (RF/XGB) are invariant to monotonic scaling, so the final model
+    # operates on raw imputed features (without StandardScaler); the
+    # CV does scale because `fit_scaler_on_train` is the repo pattern.
     matrix = _impute(_feature_matrix(clean_df, feature_cols))
     final_model = build_estimator(model, params)
-    # XGB no expone `class_weight`: inyectamos `sample_weight` inverso a
-    # frecuencia (decision D5). LGBM con `class_weight="balanced"` ya lo
-    # maneja nativamente; si el caller lo quita, caemos a sample_weight.
+    # XGB does not expose `class_weight`: we inject `sample_weight` inverse to
+    # frequency (decision D5). LGBM with `class_weight="balanced"` already
+    # handles it natively; if the caller removes it, we fall back to sample_weight.
     sample_weight: np.ndarray | None
     if model == "xgb":
         sample_weight = _sample_weights(y_encoded)
@@ -383,28 +383,28 @@ def tune_baseline(
     scoring: str = "f1_macro",
     random_state: int = 42,
 ) -> dict[str, object]:
-    """Tuning ligero de hiperparametros via ``GridSearchCV`` sobre CV espacial.
+    """Light hyperparameter tuning via ``GridSearchCV`` over spatial CV.
 
-    El parametro ``cv`` de :class:`GridSearchCV` recibe la **lista de
-    splits espaciales** ``(train_idx, test_idx)`` (no un entero), de modo
-    que el tuning respeta la particion geografica y no introduce leakage.
+    The ``cv`` parameter of :class:`GridSearchCV` receives the **list of
+    spatial splits** ``(train_idx, test_idx)`` (not an integer), so that
+    the tuning respects the geographic partition and introduces no leakage.
 
     Args:
-        df: DataFrame Polars de features.
-        model: ``"rf"`` o ``"xgb"``.
-        param_grid: Grilla de hiperparametros; si es ``None`` se usan las
-            grillas ligeras documentadas (8 combinaciones por modelo).
-        k_folds: Numero de folds del CV espacial (default 5).
-        buffer_km: Buffer anti-leakage en km (default 1.0).
-        scoring: Metrica de seleccion de ``GridSearchCV`` (default
+        df: Polars feature DataFrame.
+        model: ``"rf"`` or ``"xgb"``.
+        param_grid: Hyperparameter grid; if ``None`` the documented light
+            grids are used (8 combinations per model).
+        k_folds: Number of spatial CV folds (default 5).
+        buffer_km: Anti-leakage buffer in km (default 1.0).
+        scoring: Selection metric for ``GridSearchCV`` (default
             ``"f1_macro"``).
-        random_state: Semilla determinista.
+        random_state: Deterministic seed.
 
     Returns:
-        El diccionario ``best_params_`` del ``GridSearchCV``.
+        The ``best_params_`` dictionary from ``GridSearchCV``.
 
     Raises:
-        ValueError: si ``df`` carece de columnas obligatorias.
+        ValueError: if ``df`` lacks mandatory columns.
     """
     clean_df = _prepare_dataframe(df)
     feature_cols = _feature_columns(clean_df)
@@ -419,7 +419,7 @@ def tune_baseline(
     base_params = _base_params(model)
     if model == "xgb":
         base_params.setdefault("num_class", len(encoder.classes_))
-    # Quitamos del estimador base las claves que la grilla va a sobrescribir.
+    # Remove from the base estimator the keys that the grid will overwrite.
     for key in grid:
         base_params.pop(key, None)
     estimator = build_estimator(model, base_params)
@@ -427,10 +427,10 @@ def tune_baseline(
     n_combos = 1
     for values in grid.values():
         n_combos *= len(values)
-    # Con XGB en GPU el GridSearchCV usa n_jobs=1: una sola GPU no puede
-    # atender varios fits en paralelo y N workers compitiendo por ella
-    # causan thrashing (cada uno crea su contexto CUDA). El boosting de XGB
-    # ya paraleliza internamente en la GPU. RF (CPU) si usa todos los nucleos.
+    # With XGB on GPU, GridSearchCV uses n_jobs=1: a single GPU cannot
+    # serve several fits in parallel and N workers competing for it
+    # cause thrashing (each one creates its own CUDA context). XGB boosting
+    # already parallelizes internally on the GPU. RF (CPU) does use all cores.
     xgb_on_gpu = model == "xgb" and resolve_xgb_device() == "cuda"
     search_n_jobs = 1 if xgb_on_gpu else -1
     logger.info(
@@ -469,28 +469,28 @@ def evaluate_with_spatial_cv(
     buffer_km: float = 1.0,
     random_state: int = 42,
 ) -> tuple[dict[str, tuple[float, float]], np.ndarray, np.ndarray]:
-    """Evalua un estimador con validacion cruzada espacial anti-leakage.
+    """Evaluate an estimator with anti-leakage spatial cross-validation.
 
-    Por cada fold espacial ajusta un :class:`StandardScaler` solo sobre el
-    train (anti-leakage, via :func:`fit_scaler_on_train`), entrena un
-    estimador fresco y predice sobre el test del fold. Agrega la media y
-    desviacion de las cinco metricas y devuelve tambien las predicciones
-    out-of-fold concatenadas.
+    For each spatial fold it fits a :class:`StandardScaler` on the train
+    only (anti-leakage, via :func:`fit_scaler_on_train`), trains a fresh
+    estimator and predicts on the fold's test. It aggregates the mean and
+    std of the five metrics and also returns the concatenated out-of-fold
+    predictions.
 
     Args:
-        df: DataFrame Polars de features ya preparado (ver
+        df: Already prepared Polars feature DataFrame (see
             :func:`_prepare_dataframe`).
-        model_factory: Callable sin argumentos que devuelve un estimador
-            nuevo sin ajustar (se invoca una vez por fold).
-        k_folds: Numero de folds del CV espacial (default 5).
-        buffer_km: Buffer anti-leakage en km (default 1.0).
-        random_state: Semilla determinista.
+        model_factory: Argument-less callable that returns a fresh
+            unfitted estimator (invoked once per fold).
+        k_folds: Number of spatial CV folds (default 5).
+        buffer_km: Anti-leakage buffer in km (default 1.0).
+        random_state: Deterministic seed.
 
     Returns:
-        Tupla ``(cv_metrics, y_true_oof, y_pred_oof)`` donde ``cv_metrics``
-        es ``{metrica: (media, std)}``, ``y_true_oof`` son las etiquetas
-        verdaderas codificadas concatenadas por fold y ``y_pred_oof`` las
-        predicciones correspondientes.
+        Tuple ``(cv_metrics, y_true_oof, y_pred_oof)`` where ``cv_metrics``
+        is ``{metric: (mean, std)}``, ``y_true_oof`` are the encoded true
+        labels concatenated per fold and ``y_pred_oof`` the corresponding
+        predictions.
     """
     feature_cols = _feature_columns(df)
     encoder, y_encoded = _encode_labels(df)
@@ -520,14 +520,14 @@ def evaluate_with_spatial_cv(
         scaler, scaler_cols = _fit_fold_scaler(
             df, feature_cols=feature_cols, train_idx=train_idx, fold_idx=fold_idx
         )
-        # `fit_scaler_on_train` puede descartar columnas all-NaN: alineamos la
-        # matriz a las columnas que el scaler conoce antes de `transform`.
+        # `fit_scaler_on_train` may drop all-NaN columns: we align the
+        # matrix to the columns the scaler knows before `transform`.
         col_idx = np.array(
             [feature_cols.index(c) for c in scaler_cols], dtype=np.int64
         )
         raw_train = matrix[np.ix_(train_idx, col_idx)]
         raw_test = matrix[np.ix_(test_idx, col_idx)]
-        # Imputacion anti-leakage: las medianas se calculan solo sobre train.
+        # Anti-leakage imputation: the medians are computed only over train.
         train_medians = _column_medians(raw_train)
         x_train = scaler.transform(_impute_with(raw_train, train_medians))
         x_test = scaler.transform(_impute_with(raw_test, train_medians))
@@ -538,8 +538,8 @@ def evaluate_with_spatial_cv(
         if _is_xgb(estimator):
             estimator.fit(x_train, y_train, sample_weight=_sample_weights(y_train))
         elif _is_lgbm(estimator) and getattr(estimator, "class_weight", None) is None:
-            # LGBM sin `class_weight="balanced"` recibe el sample_weight inverso
-            # a frecuencia para alineacion con XGB (decision D5).
+            # LGBM without `class_weight="balanced"` receives the sample_weight
+            # inverse to frequency for alignment with XGB (decision D5).
             estimator.fit(x_train, y_train, sample_weight=_sample_weights(y_train))
         else:
             estimator.fit(x_train, y_train)
@@ -568,22 +568,22 @@ def evaluate_with_spatial_cv(
 
 
 # ---------------------------------------------------------------------------
-# Helpers privados — carga y limpieza.
+# Private helpers — loading and cleaning.
 # ---------------------------------------------------------------------------
 
 
 def _load_baseline_dataset(features_path: Path | str | None = None) -> pl.DataFrame:
-    """Carga el parquet de features del baseline desde disco.
+    """Load the baseline feature parquet from disk.
 
     Args:
-        features_path: Ruta al parquet; si es ``None`` usa el subset
-            canonico de US-018 (``feature_selection_parcels_subset.parquet``).
+        features_path: Path to the parquet; if ``None`` uses the canonical
+            US-018 subset (``feature_selection_parcels_subset.parquet``).
 
     Returns:
-        El DataFrame Polars crudo (sin limpiar).
+        The raw (uncleaned) Polars DataFrame.
 
     Raises:
-        FileNotFoundError: si el parquet no existe.
+        FileNotFoundError: if the parquet does not exist.
     """
     path = Path(features_path) if features_path is not None else _DEFAULT_FEATURES_PATH
     if not path.exists():
@@ -596,20 +596,20 @@ def _load_baseline_dataset(features_path: Path | str | None = None) -> pl.DataFr
 
 
 def _prepare_dataframe(df: pl.DataFrame) -> pl.DataFrame:
-    """Valida y limpia el DataFrame de features para el baseline.
+    """Validate and clean the feature DataFrame for the baseline.
 
-    Descarta las clases no agronomicas PASTIS-R (0 Background, 19 Void) y
-    elimina filas sin ``class_id``.
+    Discards the non-agronomic PASTIS-R classes (0 Background, 19 Void) and
+    removes rows without ``class_id``.
 
     Args:
-        df: DataFrame Polars crudo de features.
+        df: Raw Polars feature DataFrame.
 
     Returns:
-        El DataFrame filtrado, listo para entrenar.
+        The filtered DataFrame, ready for training.
 
     Raises:
-        ValueError: si faltan ``parcel_id`` o ``class_id``, o si tras el
-            filtrado no quedan filas.
+        ValueError: if ``parcel_id`` or ``class_id`` are missing, or if no
+            rows remain after filtering.
     """
     for col in ("parcel_id", "class_id"):
         if col not in df.columns:
@@ -624,9 +624,9 @@ def _prepare_dataframe(df: pl.DataFrame) -> pl.DataFrame:
             "Tras descartar las clases no agronomicas el DataFrame quedo vacio."
         )
 
-    # El dataset real trae +/-inf en algunas pendientes/ratios espectrales;
-    # los normalizamos a null para que el scaler (que solo trata NaN) y la
-    # imputacion downstream los manejen de forma uniforme.
+    # The real dataset carries +/-inf in some spectral slopes/ratios;
+    # we normalize them to null so the scaler (which only handles NaN) and the
+    # downstream imputation manage them uniformly.
     float_cols = [c for c in clean.columns if clean.schema[c] in (pl.Float32, pl.Float64)]
     if float_cols:
         clean = clean.with_columns(
@@ -640,18 +640,18 @@ def _prepare_dataframe(df: pl.DataFrame) -> pl.DataFrame:
 
 
 def _feature_columns(df: pl.DataFrame) -> tuple[str, ...]:
-    """Devuelve las columnas numericas usables como features.
+    """Return the numeric columns usable as features.
 
-    Excluye la metadata (``_META_COLS``) y cualquier columna no numerica.
+    Excludes the metadata (``_META_COLS``) and any non-numeric column.
 
     Args:
-        df: DataFrame Polars ya preparado.
+        df: Already prepared Polars DataFrame.
 
     Returns:
-        Tupla ordenada de nombres de columnas de feature.
+        Ordered tuple of feature column names.
 
     Raises:
-        ValueError: si no queda ninguna columna de feature.
+        ValueError: if no feature column remains.
     """
     cols = [
         c
@@ -666,30 +666,30 @@ def _feature_columns(df: pl.DataFrame) -> tuple[str, ...]:
 
 
 def _feature_matrix(df: pl.DataFrame, feature_cols: tuple[str, ...]) -> np.ndarray:
-    """Extrae la matriz de features como ``np.ndarray`` float64.
+    """Extract the feature matrix as a float64 ``np.ndarray``.
 
     Args:
-        df: DataFrame Polars ya preparado.
-        feature_cols: Columnas a seleccionar, en orden.
+        df: Already prepared Polars DataFrame.
+        feature_cols: Columns to select, in order.
 
     Returns:
-        Matriz ``(n_samples, n_features)`` de dtype float64.
+        Matrix ``(n_samples, n_features)`` of dtype float64.
     """
     return df.select(feature_cols).to_numpy().astype(np.float64)
 
 
 def _encode_labels(df: pl.DataFrame) -> tuple[LabelEncoder, np.ndarray]:
-    """Codifica ``class_id`` a etiquetas contiguas ``[0, n_classes)``.
+    """Encode ``class_id`` to contiguous labels ``[0, n_classes)``.
 
-    PASTIS-R no tiene class_ids contiguos tras descartar 0 y 19; XGBoost
-    ``multi:softprob`` exige etiquetas contiguas (decision D12).
+    PASTIS-R has no contiguous class_ids after discarding 0 and 19; XGBoost
+    ``multi:softprob`` requires contiguous labels (decision D12).
 
     Args:
-        df: DataFrame Polars ya preparado.
+        df: Already prepared Polars DataFrame.
 
     Returns:
-        Tupla ``(encoder, y_encoded)`` con el ``LabelEncoder`` ajustado y
-        el vector de etiquetas codificadas.
+        Tuple ``(encoder, y_encoded)`` with the fitted ``LabelEncoder`` and
+        the encoded label vector.
     """
     raw = df.get_column("class_id").to_numpy().astype(np.int64)
     encoder = LabelEncoder()
@@ -698,7 +698,7 @@ def _encode_labels(df: pl.DataFrame) -> tuple[LabelEncoder, np.ndarray]:
 
 
 def _base_params(model: ModelKind) -> dict[str, object]:
-    """Devuelve una copia de los hiperparametros base del modelo dado."""
+    """Return a copy of the base hyperparameters for the given model."""
     if model == "rf":
         return dict(_RF_BASE_PARAMS)
     if model == "xgb":
@@ -709,7 +709,7 @@ def _base_params(model: ModelKind) -> dict[str, object]:
 
 
 def _default_grid(model: ModelKind) -> dict[str, list]:
-    """Devuelve una copia de la grilla de tuning ligero del modelo dado."""
+    """Return a copy of the light tuning grid for the given model."""
     if model == "rf":
         grid = _RF_PARAM_GRID
     elif model == "xgb":
@@ -724,16 +724,16 @@ def _default_grid(model: ModelKind) -> dict[str, list]:
 
 
 def _sample_weights(y_encoded: np.ndarray) -> np.ndarray:
-    """Calcula pesos por muestra inversamente proporcionales a la frecuencia.
+    """Compute per-sample weights inversely proportional to frequency.
 
-    Reproduce el efecto de ``class_weight="balanced"`` para XGBoost, que no
-    expone ese parametro (decision D5).
+    Reproduces the effect of ``class_weight="balanced"`` for XGBoost, which
+    does not expose that parameter (decision D5).
 
     Args:
-        y_encoded: Vector de etiquetas codificadas.
+        y_encoded: Encoded label vector.
 
     Returns:
-        Vector de pesos ``(n_samples,)`` float64.
+        Weight vector ``(n_samples,)`` float64.
     """
     classes, counts = np.unique(y_encoded, return_counts=True)
     n_samples = y_encoded.size
@@ -745,26 +745,26 @@ def _sample_weights(y_encoded: np.ndarray) -> np.ndarray:
 
 
 def _is_xgb(estimator: ClassifierMixin) -> bool:
-    """Indica si ``estimator`` es un ``XGBClassifier``."""
+    """Indicate whether ``estimator`` is an ``XGBClassifier``."""
     return isinstance(estimator, XGBClassifier)
 
 
 def _is_lgbm(estimator: ClassifierMixin) -> bool:
-    """Indica si ``estimator`` es un ``LGBMClassifier``."""
+    """Indicate whether ``estimator`` is an ``LGBMClassifier``."""
     return isinstance(estimator, LGBMClassifier)
 
 
 def _column_medians(matrix: np.ndarray) -> np.ndarray:
-    """Calcula la mediana de cada columna ignorando NaN e infinitos.
+    """Compute the median of each column ignoring NaN and infinities.
 
     Args:
-        matrix: Matriz ``(n_samples, n_features)`` que puede contener NaN
-            o ``+/-inf`` (el dataset real trae ``inf`` en algunas
-            pendientes/ratios espectrales).
+        matrix: Matrix ``(n_samples, n_features)`` that may contain NaN
+            or ``+/-inf`` (the real dataset carries ``inf`` in some
+            spectral slopes/ratios).
 
     Returns:
-        Vector ``(n_features,)`` de medianas; ``0.0`` para columnas
-        enteramente no-finitas.
+        Vector ``(n_features,)`` of medians; ``0.0`` for entirely
+        non-finite columns.
     """
     finite = np.where(np.isfinite(matrix), matrix, np.nan)
     medians = np.nanmedian(finite, axis=0)
@@ -772,18 +772,18 @@ def _column_medians(matrix: np.ndarray) -> np.ndarray:
 
 
 def _impute_with(matrix: np.ndarray, medians: np.ndarray) -> np.ndarray:
-    """Imputa valores no finitos usando un vector de medianas precomputado.
+    """Impute non-finite values using a precomputed median vector.
 
-    Trata ``NaN`` y ``+/-inf`` por igual: sklearn no acepta ninguno.
+    Treats ``NaN`` and ``+/-inf`` equally: sklearn accepts neither.
 
     Args:
-        matrix: Matriz ``(n_samples, n_features)`` que puede contener NaN
-            o infinitos.
-        medians: Vector ``(n_features,)`` de valores de imputacion (las
-            medianas del split train, para evitar leakage hacia test).
+        matrix: Matrix ``(n_samples, n_features)`` that may contain NaN
+            or infinities.
+        medians: Vector ``(n_features,)`` of imputation values (the
+            train-split medians, to avoid leakage into test).
 
     Returns:
-        Una copia de la matriz con todos los valores finitos.
+        A copy of the matrix with all finite values.
     """
     out = np.array(matrix, dtype=np.float64, copy=True)
     non_finite = ~np.isfinite(out)
@@ -795,22 +795,22 @@ def _impute_with(matrix: np.ndarray, medians: np.ndarray) -> np.ndarray:
 
 
 def _impute(matrix: np.ndarray) -> np.ndarray:
-    """Imputa NaN por la mediana de cada columna del propio ``matrix``.
+    """Impute NaN with the median of each column of ``matrix`` itself.
 
-    Atajo para el ajuste final sobre el dataset completo, donde no aplica
-    la separacion train/test.
+    Shortcut for the final fit on the full dataset, where the train/test
+    separation does not apply.
 
     Args:
-        matrix: Matriz ``(n_samples, n_features)`` que puede contener NaN.
+        matrix: Matrix ``(n_samples, n_features)`` that may contain NaN.
 
     Returns:
-        Una copia de la matriz sin NaN.
+        A copy of the matrix without NaN.
     """
     return _impute_with(matrix, _column_medians(matrix))
 
 
 # ---------------------------------------------------------------------------
-# Helpers privados — CV espacial.
+# Private helpers — spatial CV.
 # ---------------------------------------------------------------------------
 
 
@@ -820,10 +820,10 @@ _SPATIAL_FOLDS_CACHE_DIR = Path("data/test_fixtures")
 def _spatial_folds_cache_path(
     n_rows: int, k_folds: int, buffer_km: float, random_state: int
 ) -> Path:
-    """Ruta del parquet de caché de los splits espaciales.
+    """Path of the cache parquet for the spatial splits.
 
-    La clave incluye el numero de filas, ``k``, el buffer y la semilla:
-    cualquier cambio invalida el caché y fuerza recomputar.
+    The key includes the number of rows, ``k``, the buffer and the seed:
+    any change invalidates the cache and forces a recompute.
     """
     buffer_tag = f"{buffer_km:g}".replace(".", "p")
     name = (
@@ -834,7 +834,7 @@ def _spatial_folds_cache_path(
 
 
 def _load_cached_cv_splits(path: Path) -> list[tuple[np.ndarray, np.ndarray]] | None:
-    """Lee los splits espaciales cacheados, o ``None`` si no existen."""
+    """Read the cached spatial splits, or ``None`` if they do not exist."""
     if not path.exists():
         return None
     try:
@@ -857,7 +857,7 @@ def _load_cached_cv_splits(path: Path) -> list[tuple[np.ndarray, np.ndarray]] | 
 def _save_cached_cv_splits(
     path: Path, splits: list[tuple[np.ndarray, np.ndarray]]
 ) -> None:
-    """Persiste los splits espaciales a parquet para futuras corridas."""
+    """Persist the spatial splits to parquet for future runs."""
     rows: list[dict[str, object]] = []
     for fold_idx, (train_idx, test_idx) in enumerate(splits):
         rows.extend({"fold": fold_idx, "split": "train", "idx": int(i)} for i in train_idx)
@@ -875,28 +875,28 @@ def _build_cv_splits(
     random_state: int,
     use_cache: bool = True,
 ) -> list[tuple[np.ndarray, np.ndarray]]:
-    """Convierte los folds espaciales en splits posicionales ``(train, test)``.
+    """Convert the spatial folds into positional ``(train, test)`` splits.
 
-    Construye un :class:`geopandas.GeoDataFrame` con un ``parcel_id`` entero
-    sintetico (posicion en el DataFrame) y la geometria del centroide del
-    patch PASTIS-R, llama a :func:`build_spatial_kfold` y traduce los
-    ``parcel_id`` de cada :class:`FoldAssignment` a indices posicionales.
+    Builds a :class:`geopandas.GeoDataFrame` with a synthetic integer
+    ``parcel_id`` (position in the DataFrame) and the PASTIS-R patch
+    centroid geometry, calls :func:`build_spatial_kfold` and translates the
+    ``parcel_id`` of each :class:`FoldAssignment` to positional indices.
 
-    ``build_spatial_kfold`` es O(N^2) por el buffer anti-leakage; sobre 85k
-    parcelas tarda minutos. Por eso los splits se cachean en un parquet
-    (clave: n_filas + k + buffer + seed) y se reusan en corridas
-    posteriores (handoff US-019 R3).
+    ``build_spatial_kfold`` is O(N^2) due to the anti-leakage buffer; over
+    85k parcels it takes minutes. That is why the splits are cached in a
+    parquet (key: n_rows + k + buffer + seed) and reused in subsequent
+    runs (handoff US-019 R3).
 
     Args:
-        df: DataFrame Polars ya preparado.
-        k_folds: Numero de folds.
-        buffer_km: Buffer anti-leakage en km.
-        random_state: Semilla determinista.
-        use_cache: Si ``True`` (default) lee/escribe el caché de splits.
+        df: Already prepared Polars DataFrame.
+        k_folds: Number of folds.
+        buffer_km: Anti-leakage buffer in km.
+        random_state: Deterministic seed.
+        use_cache: If ``True`` (default) reads/writes the splits cache.
 
     Returns:
-        Lista de tuplas ``(train_idx, test_idx)`` de arrays de indices
-        posicionales, una por fold con muestras en ambos lados.
+        List of tuples ``(train_idx, test_idx)`` of positional index
+        arrays, one per fold with samples on both sides.
     """
     cache_path = _spatial_folds_cache_path(
         df.height, k_folds, buffer_km, random_state
@@ -925,15 +925,15 @@ def _build_cv_splits(
     n_rows = df.height
     all_idx = np.arange(n_rows, dtype=np.int64)
     for fold in folds:
-        # train_ids del FoldAssignment ya equivalen a indices posicionales
-        # porque el GeoDataFrame usa la posicion como `parcel_id` sintetico.
+        # train_ids of the FoldAssignment already equal positional indices
+        # because the GeoDataFrame uses the position as a synthetic `parcel_id`.
         train_pool = np.array(
             sorted(fold.train_ids) + sorted(fold.val_ids), dtype=np.int64
         )
         test_idx = np.array(sorted(fold.test_ids), dtype=np.int64)
         if train_pool.size == 0 or test_idx.size == 0:
             continue
-        # Filtramos por seguridad contra ids fuera de rango.
+        # We filter for safety against out-of-range ids.
         train_idx = train_pool[np.isin(train_pool, all_idx)]
         test_idx = test_idx[np.isin(test_idx, all_idx)]
         if train_idx.size == 0 or test_idx.size == 0:
@@ -951,20 +951,20 @@ def _build_cv_splits(
 
 
 def _build_parcels_geodataframe(df: pl.DataFrame):  # type: ignore[no-untyped-def]
-    """Construye el GeoDataFrame de parcelas para el CV espacial.
+    """Build the parcels GeoDataFrame for the spatial CV.
 
-    El dataset de features no incluye geometria; el centroide se deriva del
-    ``patch_id`` PASTIS-R via ``data/PASTIS-R/metadata.geojson``. Cada
-    parcela recibe un ``parcel_id`` sintetico igual a su posicion en el
-    DataFrame para poder traducir folds a indices.
+    The feature dataset does not include geometry; the centroid is derived
+    from the PASTIS-R ``patch_id`` via ``data/PASTIS-R/metadata.geojson``.
+    Each parcel receives a synthetic ``parcel_id`` equal to its position in
+    the DataFrame so that folds can be translated to indices.
 
     Args:
-        df: DataFrame Polars ya preparado.
+        df: Already prepared Polars DataFrame.
 
     Returns:
-        Un ``GeoDataFrame`` en EPSG:4326 con ``parcel_id`` (posicion) y
-        ``geometry`` (centroide del patch, o jitter determinista si la
-        metadata no esta disponible).
+        A ``GeoDataFrame`` in EPSG:4326 with ``parcel_id`` (position) and
+        ``geometry`` (patch centroid, or deterministic jitter if the
+        metadata is not available).
     """
     import geopandas as gpd
     from shapely.geometry import Point
@@ -982,8 +982,8 @@ def _build_parcels_geodataframe(df: pl.DataFrame):  # type: ignore[no-untyped-de
     else:
         coords = np.full((n_rows, 2), np.nan, dtype=np.float64)
 
-    # Fallback determinista: si falta la metadata o algun patch, distribuye
-    # los centroides en una rejilla pseudo-aleatoria estable por patch_id.
+    # Deterministic fallback: if the metadata or some patch is missing, distribute
+    # the centroids on a pseudo-random grid stable per patch_id.
     missing = np.isnan(coords).any(axis=1)
     if missing.any():
         logger.warning(
@@ -997,9 +997,9 @@ def _build_parcels_geodataframe(df: pl.DataFrame):  # type: ignore[no-untyped-de
             else positions
         )
         rng = np.random.default_rng(20240519)
-        # Centroides en una caja sobre Francia continental (PASTIS-R).
+        # Centroids in a box over continental France (PASTIS-R).
         grid = rng.uniform(low=[-1.0, 43.0], high=[7.0, 49.0], size=(n_rows, 2))
-        # Asegura que parcelas del mismo patch compartan centroide.
+        # Ensure that parcels from the same patch share a centroid.
         unique_keys, inverse = np.unique(key, return_inverse=True)
         per_key = rng.uniform(
             low=[-1.0, 43.0], high=[7.0, 49.0], size=(unique_keys.size, 2)
@@ -1016,11 +1016,11 @@ def _build_parcels_geodataframe(df: pl.DataFrame):  # type: ignore[no-untyped-de
 
 
 def _load_patch_centroids() -> dict[int, tuple[float, float]] | None:
-    """Carga los centroides de patch PASTIS-R desde ``metadata.geojson``.
+    """Load the PASTIS-R patch centroids from ``metadata.geojson``.
 
     Returns:
-        Mapa ``{patch_id: (lon, lat)}`` en EPSG:4326, o ``None`` si la
-        metadata no esta disponible en disco.
+        Map ``{patch_id: (lon, lat)}`` in EPSG:4326, or ``None`` if the
+        metadata is not available on disk.
     """
     if not _PASTIS_METADATA_PATH.exists():
         return None
@@ -1028,9 +1028,9 @@ def _load_patch_centroids() -> dict[int, tuple[float, float]] | None:
         import geopandas as gpd
 
         meta = gpd.read_file(_PASTIS_METADATA_PATH)
-        # Centroide en CRS proyectado (3857) para evitar el UserWarning de
-        # geopandas sobre operaciones geometricas en CRS geografico; luego
-        # se reproyecta a 4326 (lat/lng) que es lo que espera el consumidor.
+        # Centroid in a projected CRS (3857) to avoid the geopandas UserWarning
+        # about geometric operations in a geographic CRS; then it is
+        # reprojected to 4326 (lat/lng), which is what the consumer expects.
         centroids = meta.geometry.to_crs("EPSG:3857").centroid.to_crs("EPSG:4326")
         id_col = "ID_PATCH" if "ID_PATCH" in meta.columns else meta.columns[0]
         return {
@@ -1049,26 +1049,26 @@ def _fit_fold_scaler(
     train_idx: np.ndarray,
     fold_idx: int,
 ):  # type: ignore[no-untyped-def]
-    """Ajusta un :class:`StandardScaler` solo sobre el train del fold.
+    """Fit a :class:`StandardScaler` on the fold's train only.
 
-    Reutiliza :func:`fit_scaler_on_train` (anti-leakage); el scaler se
-    persiste en un archivo temporal por fold que se descarta.
+    Reuses :func:`fit_scaler_on_train` (anti-leakage); the scaler is
+    persisted in a per-fold temporary file that is discarded.
 
     Args:
-        df: DataFrame Polars ya preparado.
-        feature_cols: Columnas de feature.
-        train_idx: Indices posicionales del train del fold.
-        fold_idx: Indice del fold (para nombrar el archivo temporal).
+        df: Already prepared Polars DataFrame.
+        feature_cols: Feature columns.
+        train_idx: Positional indices of the fold's train.
+        fold_idx: Fold index (to name the temporary file).
 
     Returns:
-        Tupla ``(scaler, scaler_cols)`` con el ``StandardScaler`` ajustado
-        y la tupla de columnas que efectivamente conoce (puede ser un
-        subconjunto de ``feature_cols`` si hubo columnas all-NaN).
+        Tuple ``(scaler, scaler_cols)`` with the fitted ``StandardScaler``
+        and the tuple of columns it effectively knows (may be a subset of
+        ``feature_cols`` if there were all-NaN columns).
     """
     import tempfile
 
-    # `fit_scaler_on_train` filtra por `parcel_id`; sustituimos esa columna
-    # por la posicion de fila para alinear con los `train_idx` posicionales.
+    # `fit_scaler_on_train` filters by `parcel_id`; we substitute that column
+    # with the row position to align with the positional `train_idx`.
     positional = (
         df.drop("parcel_id")
         .with_row_index(name="parcel_id")
@@ -1091,14 +1091,14 @@ def _fit_fold_scaler(
 def _aggregate_fold_metrics(
     per_fold: list[dict[str, float]],
 ) -> dict[str, tuple[float, float]]:
-    """Agrega las metricas por fold en ``{metrica: (media, std)}``.
+    """Aggregate the per-fold metrics into ``{metric: (mean, std)}``.
 
     Args:
-        per_fold: Lista de diccionarios de metricas, uno por fold.
+        per_fold: List of metric dictionaries, one per fold.
 
     Returns:
-        Mapa ``{metrica: (media, desviacion)}`` sobre las cinco metricas;
-        ``(nan, nan)`` para cada metrica si no hubo folds validos.
+        Map ``{metric: (mean, std)}`` over the five metrics;
+        ``(nan, nan)`` for each metric if there were no valid folds.
     """
     if not per_fold:
         return {key: (float("nan"), float("nan")) for key in _METRIC_KEYS}

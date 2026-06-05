@@ -1,11 +1,10 @@
-"""Feature engineering canónico de AgroSatCopilot (EPIC 3).
+"""Canonical feature engineering of AgroSatCopilot (EPIC 3).
 
-Exporta la API pública de :mod:`ml.features.spectral_indices` (US-014),
-:mod:`ml.features.temporal_features` (US-015), los módulos de fusión
-multisensor + spatial K-fold + scaler de US-016
-(:mod:`ml.features.fusion`, :mod:`ml.features.spatial_split`,
-:mod:`ml.features.scaler`), y la suite de selección/normalización de US-018
-(:mod:`ml.features.selection`).
+Exports the public API of :mod:`ml.features.spectral_indices` (US-014),
+:mod:`ml.features.temporal_features` (US-015), the multisensor fusion + spatial
+K-fold + scaler modules of US-016 (:mod:`ml.features.fusion`,
+:mod:`ml.features.spatial_split`, :mod:`ml.features.scaler`), and the
+selection/normalization suite of US-018 (:mod:`ml.features.selection`).
 """
 
 from ml.features.encoding import (

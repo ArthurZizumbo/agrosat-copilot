@@ -1,33 +1,34 @@
-"""Curvas de aprendizaje/validacion y diagnostico de sub/sobreajuste (US-021, EPIC 4).
+"""Learning/validation curves and under/overfitting diagnosis (US-021, EPIC 4).
 
-Modulo reutilizable consumido por el baseline tabular (RF/XGB de US-019) y, mas
-adelante, por las arquitecturas del EPIC 5/6 para diagnosticar el sub/sobreajuste
-de cualquier estimador sklearn. Expone tres familias de funciones:
+Reusable module consumed by the tabular baseline (RF/XGB of US-019) and, later,
+by the EPIC 5/6 architectures to diagnose under/overfitting of any sklearn
+estimator. Exposes three families of functions:
 
-- **Curva de aprendizaje** (criterio AC-1): :func:`plot_learning_curve` envuelve
-  :func:`sklearn.model_selection.learning_curve` para trazar accuracy de train y
-  validacion frente al numero de muestras de entrenamiento. Las curvas
-  RE-ENTRENAN estimadores frescos por cada punto (decision D3) — no cargan los
-  joblib de produccion de US-019.
-- **Curva de validacion** (criterio AC-2): :func:`plot_validation_curve` envuelve
-  :func:`sklearn.model_selection.validation_curve` para trazar accuracy frente a
-  un hiperparametro critico (``max_depth``, ``n_estimators``, ``learning_rate``).
-- **Diagnostico** (criterio AC-4): :func:`diagnose_fit` deriva un veredicto
-  ``overfit``/``underfit``/``good_fit`` del resultado de una curva de aprendizaje
-  con umbrales parametricos. Funcion pura — no re-entrena (decision D8).
+- **Learning curve** (criterion AC-1): :func:`plot_learning_curve` wraps
+  :func:`sklearn.model_selection.learning_curve` to plot train and validation
+  accuracy against the number of training samples. The curves RE-TRAIN fresh
+  estimators for each point (decision D3) — they do not load the production
+  joblib of US-019.
+- **Validation curve** (criterion AC-2): :func:`plot_validation_curve` wraps
+  :func:`sklearn.model_selection.validation_curve` to plot accuracy against a
+  critical hyperparameter (``max_depth``, ``n_estimators``, ``learning_rate``).
+- **Diagnosis** (criterion AC-4): :func:`diagnose_fit` derives an
+  ``overfit``/``underfit``/``good_fit`` verdict from the result of a learning
+  curve with parametric thresholds. Pure function — it does not re-train
+  (decision D8).
 
-Decision D2 (plan US-021 2.1): el ``cv`` que reciben ``learning_curve`` y
-``validation_curve`` debe ser una **lista materializada** de tuplas
-``(train_idx, test_idx)`` — ``learning_curve`` reusa el ``cv`` una vez por cada
-``train_size``; un generador se agota tras el primer uso y los demas tamanos
-quedan sin folds. :func:`_materialize_cv_splits` garantiza la materializacion.
+Decision D2 (plan US-021 2.1): the ``cv`` received by ``learning_curve`` and
+``validation_curve`` must be a **materialized list** of ``(train_idx, test_idx)``
+tuples — ``learning_curve`` reuses the ``cv`` once per ``train_size``; a generator
+is exhausted after the first use and the remaining sizes are left without folds.
+:func:`_materialize_cv_splits` guarantees the materialization.
 
-Decision D4: la metrica de las curvas es ``accuracy`` (el criterio de aceptacion
-lo pide literal); F1-macro es la metrica principal del baseline (US-019) pero el
-CA de US-021 especifica accuracy para las curvas.
+Decision D4: the metric of the curves is ``accuracy`` (the acceptance criterion
+requests it literally); F1-macro is the main metric of the baseline (US-019) but
+the AC of US-021 specifies accuracy for the curves.
 
-Polars es el formato de I/O; la conversion a numpy ocurre exclusivamente en el
-borde de sklearn, en el helper privado :func:`_to_numpy_xy`.
+Polars is the I/O format; the conversion to numpy happens exclusively at the
+sklearn boundary, in the private helper :func:`_to_numpy_xy`.
 """
 
 from __future__ import annotations
@@ -43,10 +44,10 @@ from matplotlib.figure import Figure
 from sklearn.base import ClassifierMixin
 from sklearn.model_selection import learning_curve, validation_curve
 
-# `ml.train.baseline` se importa de forma diferida dentro de `_to_numpy_xy`
-# para romper el ciclo de imports: `baseline` importa de `ml.eval.metrics`,
-# y `ml.eval.__init__` re-exporta este modulo — un import a nivel de modulo
-# dispararia un circular import al cargar el paquete `ml.eval`.
+# `ml.train.baseline` is imported lazily inside `_to_numpy_xy`
+# to break the import cycle: `baseline` imports from `ml.eval.metrics`,
+# and `ml.eval.__init__` re-exports this module — a module-level import
+# would trigger a circular import when loading the `ml.eval` package.
 
 logger = structlog.get_logger(__name__)
 
@@ -66,34 +67,33 @@ __all__ = [
 
 FitVerdict = Literal["overfit", "underfit", "good_fit"]
 
-# Resolucion de figuras de los entregables visuales del Avance 3 (criterio AC-8).
+# Figure resolution for the visual deliverables of Avance 3 (criterion AC-8).
 _PLOT_DPI: int = 200
 
-# Fracciones de muestras por defecto para la curva de aprendizaje (decision D6:
-# fracciones, no conteos absolutos — se adaptan a cualquier tamano de dataset).
+# Default sample fractions for the learning curve (decision D6:
+# fractions, not absolute counts — they adapt to any dataset size).
 _DEFAULT_TRAIN_SIZES: tuple[float, ...] = (0.1, 0.25, 0.4, 0.55, 0.7, 0.85, 1.0)
 
 
 # ---------------------------------------------------------------------------
-# Dataclasses de salida.
+# Output dataclasses.
 # ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
 class LearningCurveResult:
-    """Resultado de una curva de aprendizaje.
+    """Result of a learning curve.
 
     Attributes:
-        train_sizes_abs: Numero absoluto de muestras de entrenamiento por
-            punto de la curva, vector ``(n,)``.
-        train_scores_mean: Accuracy media de train por tamano, vector ``(n,)``.
-        train_scores_std: Desviacion estandar de la accuracy de train por
-            tamano, vector ``(n,)``.
-        val_scores_mean: Accuracy media de validacion por tamano, vector
-            ``(n,)``.
-        val_scores_std: Desviacion estandar de la accuracy de validacion por
-            tamano, vector ``(n,)``.
-        scoring: Metrica usada en la curva (``"accuracy"`` por defecto).
+        train_sizes_abs: Absolute number of training samples per curve point,
+            vector ``(n,)``.
+        train_scores_mean: Mean train accuracy per size, vector ``(n,)``.
+        train_scores_std: Standard deviation of the train accuracy per size,
+            vector ``(n,)``.
+        val_scores_mean: Mean validation accuracy per size, vector ``(n,)``.
+        val_scores_std: Standard deviation of the validation accuracy per size,
+            vector ``(n,)``.
+        scoring: Metric used in the curve (``"accuracy"`` by default).
     """
 
     train_sizes_abs: np.ndarray
@@ -106,18 +106,17 @@ class LearningCurveResult:
 
 @dataclass(frozen=True)
 class ValidationCurveResult:
-    """Resultado de una curva de validacion sobre un hiperparametro.
+    """Result of a validation curve over a hyperparameter.
 
     Attributes:
-        param_name: Nombre del hiperparametro variado.
-        param_range: Valores evaluados, en el mismo orden de las curvas.
-        train_scores_mean: Accuracy media de train por valor, vector ``(n,)``.
-        train_scores_std: Desviacion estandar de la accuracy de train, vector
+        param_name: Name of the varied hyperparameter.
+        param_range: Evaluated values, in the same order as the curves.
+        train_scores_mean: Mean train accuracy per value, vector ``(n,)``.
+        train_scores_std: Standard deviation of the train accuracy, vector
             ``(n,)``.
-        val_scores_mean: Accuracy media de validacion por valor, vector
+        val_scores_mean: Mean validation accuracy per value, vector ``(n,)``.
+        val_scores_std: Standard deviation of the validation accuracy, vector
             ``(n,)``.
-        val_scores_std: Desviacion estandar de la accuracy de validacion,
-            vector ``(n,)``.
     """
 
     param_name: str
@@ -130,16 +129,16 @@ class ValidationCurveResult:
 
 @dataclass(frozen=True)
 class FitDiagnosis:
-    """Diagnostico de sub/sobreajuste derivado de una curva de aprendizaje.
+    """Under/overfitting diagnosis derived from a learning curve.
 
     Attributes:
-        verdict: ``"overfit"``, ``"underfit"`` o ``"good_fit"``.
-        gap: ``accuracy_train - accuracy_val`` en el tamano maximo de la
-            curva de aprendizaje.
-        train_acc_max: Accuracy de train en el tamano maximo.
-        val_acc_max: Accuracy de validacion en el tamano maximo.
-        explanation: Texto en espanol que justifica el veredicto con los
-            numeros concretos.
+        verdict: ``"overfit"``, ``"underfit"`` or ``"good_fit"``.
+        gap: ``accuracy_train - accuracy_val`` at the maximum size of the
+            learning curve.
+        train_acc_max: Train accuracy at the maximum size.
+        val_acc_max: Validation accuracy at the maximum size.
+        explanation: Text in Spanish that justifies the verdict with the
+            concrete numbers.
     """
 
     verdict: FitVerdict
@@ -150,33 +149,33 @@ class FitDiagnosis:
 
 
 # ---------------------------------------------------------------------------
-# Helpers privados.
+# Private helpers.
 # ---------------------------------------------------------------------------
 
 
 def _materialize_cv_splits(
     cv_splits: Sequence[tuple[np.ndarray, np.ndarray]],
 ) -> list[tuple[np.ndarray, np.ndarray]]:
-    """Materializa los splits espaciales en una lista reutilizable.
+    """Materialize the spatial splits into a reusable list.
 
-    Decision D2 (riesgo R2, el bug mas probable): ``learning_curve`` reusa el
-    ``cv`` una vez por cada ``train_size``; un generador se agota tras el primer
-    uso y los tamanos restantes quedan sin folds. Esta funcion fuerza una
-    ``list`` de tuplas ``(train_idx, test_idx)`` de arrays ``np.int64`` —
-    reutilizable cuantas veces sklearn la consuma.
+    Decision D2 (risk R2, the most likely bug): ``learning_curve`` reuses the
+    ``cv`` once per ``train_size``; a generator is exhausted after the first use
+    and the remaining sizes are left without folds. This function forces a
+    ``list`` of ``(train_idx, test_idx)`` tuples of ``np.int64`` arrays —
+    reusable as many times as sklearn consumes it.
 
     Args:
-        cv_splits: Secuencia (lista o generador) de tuplas
-            ``(train_idx, test_idx)`` de indices posicionales, tipicamente la
-            salida de ``ml.train.baseline._build_cv_splits``.
+        cv_splits: Sequence (list or generator) of ``(train_idx, test_idx)``
+            tuples of positional indices, typically the output of
+            ``ml.train.baseline._build_cv_splits``.
 
     Returns:
-        Lista materializada de tuplas ``(train_idx, test_idx)`` con los indices
-        convertidos a arrays ``np.int64``.
+        Materialized list of ``(train_idx, test_idx)`` tuples with the indices
+        converted to ``np.int64`` arrays.
 
     Raises:
-        ValueError: si ``cv_splits`` esta vacio o si algun split no tiene
-            muestras en train o en test.
+        ValueError: if ``cv_splits`` is empty or if any split has no samples in
+            train or test.
     """
     materialized: list[tuple[np.ndarray, np.ndarray]] = []
     for fold_idx, (train_idx, test_idx) in enumerate(cv_splits):
@@ -184,13 +183,13 @@ def _materialize_cv_splits(
         test_arr = np.asarray(test_idx, dtype=np.int64)
         if train_arr.size == 0 or test_arr.size == 0:
             raise ValueError(
-                f"El split espacial {fold_idx} no tiene muestras en train "
-                f"({train_arr.size}) o en test ({test_arr.size})."
+                f"Spatial split {fold_idx} has no samples in train "
+                f"({train_arr.size}) or in test ({test_arr.size})."
             )
         materialized.append((train_arr, test_arr))
     if not materialized:
         raise ValueError(
-            "`cv_splits` esta vacio; las curvas requieren al menos un split."
+            "`cv_splits` is empty; the curves require at least one split."
         )
     return materialized
 
@@ -201,29 +200,29 @@ def _to_numpy_xy(
     max_samples: int,
     random_state: int,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Convierte el DataFrame de features a la matriz numpy del borde sklearn.
+    """Convert the features DataFrame to the numpy matrix at the sklearn boundary.
 
-    Reutiliza los helpers del baseline (``_feature_columns``, ``_feature_matrix``,
-    ``_impute``, ``_encode_labels``) para que la matriz X, las etiquetas y la
-    imputacion sean identicas a las que usa US-019. La conversion a numpy ocurre
-    solo aqui — el resto del modulo opera sobre Polars.
+    Reuses the baseline helpers (``_feature_columns``, ``_feature_matrix``,
+    ``_impute``, ``_encode_labels``) so that the X matrix, the labels and the
+    imputation are identical to those used by US-019. The conversion to numpy
+    happens only here — the rest of the module operates on Polars.
 
-    Cuando ``max_samples > 0`` y el dataset es mas grande, devuelve un subsample
-    estratificado por clase (decision D7) para acelerar dev/CI; tambien devuelve
-    los indices posicionales conservados para que el caller realinee el ``cv``.
+    When ``max_samples > 0`` and the dataset is larger, it returns a
+    class-stratified subsample (decision D7) to speed up dev/CI; it also returns
+    the kept positional indices so the caller can realign the ``cv``.
 
     Args:
-        df: DataFrame Polars de features ya preparado.
-        max_samples: Cota superior de muestras; ``0`` desactiva el subsample.
-        random_state: Semilla determinista del subsample estratificado.
+        df: Polars features DataFrame already prepared.
+        max_samples: Upper bound of samples; ``0`` disables the subsample.
+        random_state: Deterministic seed of the stratified subsample.
 
     Returns:
-        Tupla ``(matrix, y_encoded, kept_idx)`` donde ``matrix`` es la matriz
-        de features imputada ``(n, n_features)``, ``y_encoded`` las etiquetas
-        contiguas ``(n,)`` y ``kept_idx`` los indices posicionales del ``df``
-        original conservados (todos si no hubo subsample).
+        Tuple ``(matrix, y_encoded, kept_idx)`` where ``matrix`` is the imputed
+        features matrix ``(n, n_features)``, ``y_encoded`` the contiguous labels
+        ``(n,)`` and ``kept_idx`` the positional indices of the original ``df``
+        that were kept (all if there was no subsample).
     """
-    # Import diferido: rompe el ciclo `baseline` <-> `ml.eval` (ver cabecera).
+    # Lazy import: breaks the `baseline` <-> `ml.eval` cycle (see header).
     from ml.train.baseline import (
         _encode_labels,
         _feature_columns,
@@ -240,13 +239,13 @@ def _to_numpy_xy(
     if max_samples <= 0 or max_samples >= n_rows:
         return matrix_all, y_all, kept_idx
 
-    # Subsample estratificado por clase: conserva la proporcion de cada clase.
+    # Class-stratified subsample: preserves the proportion of each class.
     rng = np.random.default_rng(random_state)
     fraction = max_samples / n_rows
     selected: list[np.ndarray] = []
     for cls in np.unique(y_all):
         cls_idx = np.where(y_all == cls)[0]
-        # Al menos una muestra por clase para no perder ninguna etiqueta.
+        # At least one sample per class so no label is lost.
         n_take = max(1, round(cls_idx.size * fraction))
         n_take = min(n_take, cls_idx.size)
         selected.append(rng.choice(cls_idx, size=n_take, replace=False))
@@ -264,22 +263,22 @@ def _remap_cv_splits(
     cv_splits: list[tuple[np.ndarray, np.ndarray]],
     kept_idx: np.ndarray,
 ) -> list[tuple[np.ndarray, np.ndarray]]:
-    """Realinea los splits espaciales tras un subsample de muestras.
+    """Realign the spatial splits after a sample subsample.
 
-    Cuando :func:`_to_numpy_xy` submuestrea el dataset, los indices posicionales
-    de ``cv_splits`` ya no apuntan a las filas correctas de la matriz reducida.
-    Esta funcion traduce cada indice original a su nueva posicion en el subset y
-    descarta los indices que el subsample dejo fuera.
+    When :func:`_to_numpy_xy` subsamples the dataset, the positional indices of
+    ``cv_splits`` no longer point to the correct rows of the reduced matrix.
+    This function translates each original index to its new position in the
+    subset and discards the indices that the subsample left out.
 
     Args:
-        cv_splits: Lista materializada de splits sobre el dataset completo.
-        kept_idx: Indices posicionales conservados por el subsample, ordenados.
+        cv_splits: Materialized list of splits over the complete dataset.
+        kept_idx: Positional indices kept by the subsample, sorted.
 
     Returns:
-        Lista de splits ``(train_idx, test_idx)`` con indices posicionales del
-        dataset reducido; se descartan los folds que se quedan sin train o test.
+        List of ``(train_idx, test_idx)`` splits with positional indices of the
+        reduced dataset; folds left without train or test are discarded.
     """
-    # `position[i]` = nueva posicion del indice original `i`, o -1 si se descarto.
+    # `position[i]` = new position of original index `i`, or -1 if discarded.
     max_original = int(kept_idx.max()) + 1 if kept_idx.size else 0
     position = np.full(max_original, -1, dtype=np.int64)
     position[kept_idx] = np.arange(kept_idx.size, dtype=np.int64)
@@ -297,8 +296,8 @@ def _remap_cv_splits(
         remapped.append((new_train, new_test))
     if not remapped:
         raise ValueError(
-            "El subsample dejo sin muestras a todos los folds espaciales; "
-            "aumenta `max_samples`."
+            "The subsample left all spatial folds without samples; "
+            "increase `max_samples`."
         )
     return remapped
 
@@ -313,34 +312,34 @@ def _curve_figure(
     x_label: str,
     title: str,
 ) -> Figure:
-    """Construye una figura de curva con banda +/-std sombreada.
+    """Build a curve figure with a shaded +/-std band.
 
-    Patron de US-019 (``ml/eval/metrics.py``): backend ``Agg`` no interactivo
-    para que la figura sea serializable a PNG en CI y en notebooks ejecutados
-    con papermill. La banda sombreada (``fill_between``) cubre +/-1 desviacion
-    estandar alrededor de la media de cada curva (criterio AC-8).
+    US-019 pattern (``ml/eval/metrics.py``): non-interactive ``Agg`` backend so
+    the figure is serializable to PNG in CI and in notebooks executed with
+    papermill. The shaded band (``fill_between``) covers +/-1 standard deviation
+    around the mean of each curve (criterion AC-8).
 
     Args:
-        x_values: Valores del eje X (tamanos de muestra o valores del
-            hiperparametro). Se rotulan como categorias para soportar valores
-            no numericos como ``None`` (riesgo R4).
-        train_mean: Accuracy media de train por punto, vector ``(n,)``.
-        train_std: Desviacion estandar de train por punto, vector ``(n,)``.
-        val_mean: Accuracy media de validacion por punto, vector ``(n,)``.
-        val_std: Desviacion estandar de validacion por punto, vector ``(n,)``.
-        x_label: Etiqueta del eje X.
-        title: Titulo de la figura.
+        x_values: X-axis values (sample sizes or hyperparameter values). They
+            are labeled as categories to support non-numeric values such as
+            ``None`` (risk R4).
+        train_mean: Mean train accuracy per point, vector ``(n,)``.
+        train_std: Standard deviation of train per point, vector ``(n,)``.
+        val_mean: Mean validation accuracy per point, vector ``(n,)``.
+        val_std: Standard deviation of validation per point, vector ``(n,)``.
+        x_label: X-axis label.
+        title: Figure title.
 
     Returns:
-        Figura matplotlib lista para ``fig.savefig(...)`` o ``display``.
+        Matplotlib figure ready for ``fig.savefig(...)`` or ``display``.
     """
     import matplotlib
 
     matplotlib.use("Agg", force=False)
     import matplotlib.pyplot as plt
 
-    # Posiciones equiespaciadas: soporta valores no numericos (e.g. `None` en
-    # `max_depth`) sin romper el eje (riesgo R4).
+    # Evenly spaced positions: supports non-numeric values (e.g. `None` in
+    # `max_depth`) without breaking the axis (risk R4).
     positions = np.arange(len(x_values))
     tick_labels = [str(v) for v in x_values]
 
@@ -373,7 +372,7 @@ def _curve_figure(
 
 
 # ---------------------------------------------------------------------------
-# API publica.
+# Public API.
 # ---------------------------------------------------------------------------
 
 
@@ -387,40 +386,40 @@ def plot_learning_curve(
     max_samples: int = 0,
     random_state: int = 42,
 ) -> tuple[LearningCurveResult, Figure]:
-    """Traza la curva de aprendizaje de un estimador con validacion cruzada espacial.
+    """Plot the learning curve of an estimator with spatial cross-validation.
 
-    Envuelve :func:`sklearn.model_selection.learning_curve` para medir como
-    evoluciona la accuracy de train y de validacion al crecer el numero de
-    muestras de entrenamiento. ``learning_curve`` re-entrena el estimador
-    ``len(train_sizes) * len(cv_splits)`` veces — el ``estimator`` debe estar
-    sin ajustar (decision D3).
+    Wraps :func:`sklearn.model_selection.learning_curve` to measure how train
+    and validation accuracy evolve as the number of training samples grows.
+    ``learning_curve`` re-trains the estimator
+    ``len(train_sizes) * len(cv_splits)`` times — the ``estimator`` must be
+    unfitted (decision D3).
 
-    ``cv_splits`` DEBE ser una lista materializada de tuplas
-    ``(train_idx, test_idx)`` (no un generador): la funcion reusa el ``cv`` por
-    cada ``train_size`` y un generador se agotaria (decision D2). Se materializa
-    de nuevo internamente por seguridad.
+    ``cv_splits`` MUST be a materialized list of ``(train_idx, test_idx)`` tuples
+    (not a generator): the function reuses the ``cv`` per ``train_size`` and a
+    generator would be exhausted (decision D2). It is materialized again
+    internally for safety.
 
     Args:
-        estimator: Estimador sklearn/xgboost sin ajustar (factory de US-019 via
+        estimator: Unfitted sklearn/xgboost estimator (US-019 factory via
             ``ml.train.baseline.build_estimator``).
-        df: DataFrame Polars de features ya preparado (con ``parcel_id``,
-            ``class_id`` y columnas de feature numericas).
-        cv_splits: Lista materializada de splits espaciales
-            ``(train_idx, test_idx)`` de indices posicionales.
-        train_sizes: Fracciones del train por punto de la curva; si es ``None``
-            se usan ``(0.1, 0.25, 0.4, 0.55, 0.7, 0.85, 1.0)`` (decision D6).
-        scoring: Metrica de la curva; ``"accuracy"`` por defecto (decision D4).
-        max_samples: Cota superior de muestras para subsample estratificado en
-            dev/CI; ``0`` (default) usa el dataset completo (decision D7).
-        random_state: Semilla determinista del subsample.
+        df: Polars features DataFrame already prepared (with ``parcel_id``,
+            ``class_id`` and numeric feature columns).
+        cv_splits: Materialized list of spatial splits ``(train_idx, test_idx)``
+            of positional indices.
+        train_sizes: Train fractions per curve point; if ``None`` the values
+            ``(0.1, 0.25, 0.4, 0.55, 0.7, 0.85, 1.0)`` are used (decision D6).
+        scoring: Curve metric; ``"accuracy"`` by default (decision D4).
+        max_samples: Upper bound of samples for the stratified subsample in
+            dev/CI; ``0`` (default) uses the complete dataset (decision D7).
+        random_state: Deterministic seed of the subsample.
 
     Returns:
-        Tupla ``(LearningCurveResult, Figure)`` con los scores agregados por
-        tamano y la figura con la banda +/-std.
+        Tuple ``(LearningCurveResult, Figure)`` with the scores aggregated by
+        size and the figure with the +/-std band.
 
     Raises:
-        ValueError: si ``cv_splits`` esta vacio o si ``df`` carece de columnas
-            obligatorias.
+        ValueError: if ``cv_splits`` is empty or if ``df`` lacks mandatory
+            columns.
     """
     sizes = list(train_sizes) if train_sizes is not None else list(_DEFAULT_TRAIN_SIZES)
     splits = _materialize_cv_splits(cv_splits)
@@ -485,40 +484,40 @@ def plot_validation_curve(
     max_samples: int = 0,
     random_state: int = 42,
 ) -> tuple[ValidationCurveResult, Figure]:
-    """Traza la curva de validacion de un hiperparametro con validacion cruzada espacial.
+    """Plot the validation curve of a hyperparameter with spatial cross-validation.
 
-    Envuelve :func:`sklearn.model_selection.validation_curve` para medir como
-    cambia la accuracy de train y de validacion al variar un hiperparametro
-    critico (``max_depth``, ``n_estimators``, ``learning_rate``). ``validation_curve``
-    re-instancia el estimador por cada valor del rango — el ``estimator`` debe
-    estar sin ajustar.
+    Wraps :func:`sklearn.model_selection.validation_curve` to measure how train
+    and validation accuracy change when varying a critical hyperparameter
+    (``max_depth``, ``n_estimators``, ``learning_rate``). ``validation_curve``
+    re-instantiates the estimator for each value of the range — the ``estimator``
+    must be unfitted.
 
-    El eje X soporta valores no numericos como ``None`` (riesgo R4): el ``param_range``
-    se preserva tal cual en el resultado y la figura lo rotula como categoria
-    (``"None"``).
+    The X-axis supports non-numeric values such as ``None`` (risk R4): the
+    ``param_range`` is preserved as-is in the result and the figure labels it as
+    a category (``"None"``).
 
     Args:
-        estimator: Estimador sklearn/xgboost sin ajustar.
-        df: DataFrame Polars de features ya preparado.
-        param_name: Nombre del hiperparametro a variar (e.g. ``"max_depth"``).
-        param_range: Valores del hiperparametro a evaluar; puede contener
-            ``None`` (e.g. ``max_depth`` sin tope).
-        cv_splits: Lista materializada de splits espaciales.
-        scoring: Metrica de la curva; ``"accuracy"`` por defecto (decision D4).
-        max_samples: Cota superior de muestras para subsample en dev/CI; ``0``
-            usa el dataset completo (decision D7).
-        random_state: Semilla determinista del subsample.
+        estimator: Unfitted sklearn/xgboost estimator.
+        df: Polars features DataFrame already prepared.
+        param_name: Name of the hyperparameter to vary (e.g. ``"max_depth"``).
+        param_range: Hyperparameter values to evaluate; may contain ``None``
+            (e.g. ``max_depth`` without a cap).
+        cv_splits: Materialized list of spatial splits.
+        scoring: Curve metric; ``"accuracy"`` by default (decision D4).
+        max_samples: Upper bound of samples for the subsample in dev/CI; ``0``
+            uses the complete dataset (decision D7).
+        random_state: Deterministic seed of the subsample.
 
     Returns:
-        Tupla ``(ValidationCurveResult, Figure)`` con los scores agregados por
-        valor del hiperparametro y la figura con la banda +/-std.
+        Tuple ``(ValidationCurveResult, Figure)`` with the scores aggregated by
+        hyperparameter value and the figure with the +/-std band.
 
     Raises:
-        ValueError: si ``cv_splits`` esta vacio, si ``param_range`` esta vacio
-            o si ``df`` carece de columnas obligatorias.
+        ValueError: if ``cv_splits`` is empty, if ``param_range`` is empty or if
+            ``df`` lacks mandatory columns.
     """
     if not param_range:
-        raise ValueError("`param_range` no puede estar vacio.")
+        raise ValueError("`param_range` cannot be empty.")
     splits = _materialize_cv_splits(cv_splits)
     matrix, y_encoded, kept_idx = _to_numpy_xy(
         df, max_samples=max_samples, random_state=random_state
@@ -575,38 +574,38 @@ def diagnose_fit(
     gap_threshold: float = 0.10,
     low_acc_threshold: float = 0.65,
 ) -> FitDiagnosis:
-    """Diagnostica sub/sobreajuste a partir de una curva de aprendizaje.
+    """Diagnose under/overfitting from a learning curve.
 
-    Funcion pura (decision D8): deriva el veredicto de los scores ya calculados
-    en ``LearningCurveResult`` evaluados en el tamano maximo de la curva — no
-    re-entrena ningun modelo.
+    Pure function (decision D8): derives the verdict from the scores already
+    computed in ``LearningCurveResult`` evaluated at the maximum size of the
+    curve — it does not re-train any model.
 
-    Reglas (criterio AC-4):
+    Rules (criterion AC-4):
 
     - ``gap > gap_threshold``                                  -> ``"overfit"``
     - ``train_acc < low_acc AND val_acc < low_acc``            -> ``"underfit"``
-    - resto                                                    -> ``"good_fit"``
+    - otherwise                                                -> ``"good_fit"``
 
-    El sobreajuste se evalua primero: un modelo con un gap grande es overfit
-    incluso si ambas accuracies son modestas. El subajuste solo aplica cuando
-    el modelo no logra ajustar ni siquiera el train.
+    Overfitting is evaluated first: a model with a large gap is overfit even if
+    both accuracies are modest. Underfitting only applies when the model fails
+    to fit even the train set.
 
     Args:
-        result: Resultado de :func:`plot_learning_curve`.
-        gap_threshold: Umbral del gap train-val por encima del cual hay
-            sobreajuste; ``0.10`` por defecto (criterio AC-4).
-        low_acc_threshold: Umbral por debajo del cual ambas accuracies se
-            consideran bajas (subajuste); ``0.65`` por defecto.
+        result: Result of :func:`plot_learning_curve`.
+        gap_threshold: Threshold of the train-val gap above which there is
+            overfitting; ``0.10`` by default (criterion AC-4).
+        low_acc_threshold: Threshold below which both accuracies are considered
+            low (underfitting); ``0.65`` by default.
 
     Returns:
-        Un :class:`FitDiagnosis` con el veredicto, el gap, las accuracies en el
-        tamano maximo y una explicacion textual.
+        A :class:`FitDiagnosis` with the verdict, the gap, the accuracies at the
+        maximum size and a textual explanation.
 
     Raises:
-        ValueError: si la curva no tiene puntos.
+        ValueError: if the curve has no points.
     """
     if result.train_scores_mean.size == 0:
-        raise ValueError("La curva de aprendizaje no tiene puntos para diagnosticar.")
+        raise ValueError("The learning curve has no points to diagnose.")
 
     train_acc = float(result.train_scores_mean[-1])
     val_acc = float(result.val_scores_mean[-1])
@@ -653,31 +652,31 @@ def diagnose_fit(
 
 
 # ---------------------------------------------------------------------------
-# Diagnostico para modelos temporales via historial de loss en MLflow.
+# Diagnosis for temporal models via loss history in MLflow.
 # ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
 class TemporalLossHistory:
-    """Historial de loss por epoca de un modelo temporal entrenado con CV.
+    """Per-epoch loss history of a temporal model trained with CV.
 
-    ``train_temporal_model`` loggea en MLflow la metrica ``fold{i}_train_loss``
-    (y ``fold{i}_val_loss`` cuando hay split interno de validacion) por epoca.
-    Esta dataclass agrega esos historiales en una vista consolidada para
-    diagnosticar sub/sobreajuste en modelos PyTorch que no implementan la API
-    sklearn que consume :func:`plot_learning_curve`.
+    ``train_temporal_model`` logs to MLflow the metric ``fold{i}_train_loss``
+    (and ``fold{i}_val_loss`` when there is an internal validation split) per
+    epoch. This dataclass aggregates those histories into a consolidated view to
+    diagnose under/overfitting in PyTorch models that do not implement the
+    sklearn API consumed by :func:`plot_learning_curve`.
 
     Attributes:
-        model_kind: ``"tempcnn"`` o ``"inceptiontime"``.
-        run_id: ID del run MLflow del que se leyo el historial.
-        epochs: Array de indices de epoca (eje X de la curva).
-        train_loss_mean: Loss de entrenamiento promediada sobre los folds del
-            spatial CV, por epoca.
-        train_loss_std: Desviacion estandar entre folds.
-        val_loss_mean: Loss de validacion interna promediada sobre los folds.
-            Vacio si el entrenamiento no abrio split interno val.
-        val_loss_std: Desviacion estandar entre folds (val).
-        n_folds: Numero de folds detectados en MLflow para este run.
+        model_kind: ``"tempcnn"`` or ``"inceptiontime"``.
+        run_id: ID of the MLflow run from which the history was read.
+        epochs: Array of epoch indices (X-axis of the curve).
+        train_loss_mean: Training loss averaged over the spatial CV folds, per
+            epoch.
+        train_loss_std: Standard deviation across folds.
+        val_loss_mean: Internal validation loss averaged over the folds. Empty
+            if the training did not open an internal val split.
+        val_loss_std: Standard deviation across folds (val).
+        n_folds: Number of folds detected in MLflow for this run.
     """
 
     model_kind: str
@@ -696,25 +695,26 @@ def fetch_loss_history_from_mlflow(
     model_kind: str,
     tracking_uri: str | None = None,
 ) -> TemporalLossHistory:
-    """Lee el historial de loss por epoca de un run MLflow de modelo temporal.
+    """Read the per-epoch loss history of a temporal-model MLflow run.
 
-    Consulta ``MlflowClient.get_metric_history`` por las metricas
-    ``fold{i}_train_loss`` y ``fold{i}_val_loss`` (i in [0, k)) que loggea
-    :func:`ml.train.phenology_models.train_temporal_model` durante el spatial
-    CV. Agrega los folds por epoca calculando media y desviacion estandar.
+    Queries ``MlflowClient.get_metric_history`` for the metrics
+    ``fold{i}_train_loss`` and ``fold{i}_val_loss`` (i in [0, k)) that
+    :func:`ml.train.phenology_models.train_temporal_model` logs during the
+    spatial CV. Aggregates the folds per epoch computing mean and standard
+    deviation.
 
     Args:
-        run_id: ID del run MLflow del modelo temporal.
-        model_kind: ``"tempcnn"`` o ``"inceptiontime"`` (solo para etiquetado).
-        tracking_uri: Override del tracking URI; si es ``None`` se resuelve via
-            :func:`ml.utils.mlflow_utils.resolve_tracking_uri`.
+        run_id: ID of the temporal-model MLflow run.
+        model_kind: ``"tempcnn"`` or ``"inceptiontime"`` (only for labeling).
+        tracking_uri: Override of the tracking URI; if ``None`` it is resolved
+            via :func:`ml.utils.mlflow_utils.resolve_tracking_uri`.
 
     Returns:
-        :class:`TemporalLossHistory` con epochs y curvas agregadas.
+        :class:`TemporalLossHistory` with epochs and aggregated curves.
 
     Raises:
-        RuntimeError: si el run no expone ninguna metrica ``fold{i}_train_loss``
-            (probablemente no se loggeo a MLflow durante el entrenamiento).
+        RuntimeError: if the run does not expose any ``fold{i}_train_loss``
+            metric (probably it was not logged to MLflow during training).
     """
     import mlflow
     from mlflow.tracking import MlflowClient
@@ -733,9 +733,9 @@ def fetch_loss_history_from_mlflow(
 
     if not train_keys:
         raise RuntimeError(
-            f"Run {run_id} no expone metricas `fold{{i}}_train_loss`. "
-            "Verifica que el entrenamiento haya recibido `mlflow_uri` y que "
-            "el server haya estado disponible durante la corrida."
+            f"Run {run_id} does not expose `fold{{i}}_train_loss` metrics. "
+            "Verify that the training received `mlflow_uri` and that the "
+            "server was available during the run."
         )
 
     def _collect(keys: list[str]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -754,7 +754,7 @@ def fetch_loss_history_from_mlflow(
         if not per_fold:
             empty = np.array([], dtype=np.float64)
             return empty, empty, empty
-        # Alinea folds rellenando con NaN al final si tuvieron early stopping.
+        # Align folds by padding with NaN at the end if they had early stopping.
         aligned = np.full((len(per_fold), max_epochs), np.nan, dtype=np.float64)
         for i, arr in enumerate(per_fold):
             aligned[i, : arr.size] = arr
@@ -787,19 +787,19 @@ def plot_loss_history_from_mlflow(
     *,
     title: str | None = None,
 ) -> Figure:
-    """Traza el historial de loss train vs val por epoca para un modelo temporal.
+    """Plot the per-epoch train vs val loss history for a temporal model.
 
-    Replica el formato visual de :func:`plot_learning_curve` (curva azul train,
-    naranja val, con banda +/-std entre folds) pero leyendo el historial real
-    de PyTorch desde MLflow en lugar de re-entrenar el estimador.
+    Replicates the visual format of :func:`plot_learning_curve` (blue train
+    curve, orange val, with a +/-std band across folds) but reading the real
+    PyTorch history from MLflow instead of re-training the estimator.
 
     Args:
-        history: Resultado de :func:`fetch_loss_history_from_mlflow`.
-        title: Titulo de la figura; si es ``None`` se genera desde
+        history: Result of :func:`fetch_loss_history_from_mlflow`.
+        title: Figure title; if ``None`` it is generated from
             ``history.model_kind``.
 
     Returns:
-        Figura matplotlib ``dpi=200`` lista para ``fig.savefig`` o ``display``.
+        Matplotlib figure ``dpi=200`` ready for ``fig.savefig`` or ``display``.
     """
     import matplotlib
 
@@ -808,7 +808,7 @@ def plot_loss_history_from_mlflow(
 
     if history.epochs.size == 0:
         raise ValueError(
-            f"El historial del run {history.run_id} esta vacio; no hay nada que graficar."
+            f"The history of run {history.run_id} is empty; there is nothing to plot."
         )
 
     if title is None:
@@ -860,37 +860,38 @@ def diagnose_temporal_fit(
     gap_threshold: float = 0.10,
     high_loss_threshold: float = 1.5,
 ) -> FitDiagnosis:
-    """Diagnostica sub/sobreajuste de un modelo temporal desde su loss history.
+    """Diagnose under/overfitting of a temporal model from its loss history.
 
-    Aplica la misma logica de :func:`diagnose_fit` pero adaptada a loss en
-    lugar de accuracy: un gap grande train-val en loss indica overfit; ambas
-    losses altas indican underfit.
+    Applies the same logic as :func:`diagnose_fit` but adapted to loss instead
+    of accuracy: a large train-val gap in loss indicates overfit; both losses
+    high indicate underfit.
 
     Args:
-        history: Resultado de :func:`fetch_loss_history_from_mlflow`.
-        gap_threshold: Gap absoluto train-val en loss por encima del cual hay
-            sobreajuste. Default 0.10 (cross-entropy ~ log de probabilidad).
-        high_loss_threshold: Umbral de loss por encima del cual ambas curvas
-            se consideran altas (underfit). Default 1.5 (random sobre 18
-            clases es ~log(18) = 2.89; un modelo razonable cae a < 1.5).
+        history: Result of :func:`fetch_loss_history_from_mlflow`.
+        gap_threshold: Absolute train-val gap in loss above which there is
+            overfitting. Default 0.10 (cross-entropy ~ log of probability).
+        high_loss_threshold: Loss threshold above which both curves are
+            considered high (underfit). Default 1.5 (random over 18 classes is
+            ~log(18) = 2.89; a reasonable model drops to < 1.5).
 
     Returns:
-        :class:`FitDiagnosis` con veredicto y explicacion en lenguaje accesible.
+        :class:`FitDiagnosis` with verdict and explanation in accessible
+        language.
 
     Raises:
-        ValueError: si el historial no tiene epocas o si no hay val_loss.
+        ValueError: if the history has no epochs or if there is no val_loss.
     """
     if history.epochs.size == 0:
-        raise ValueError("El historial de loss esta vacio; no se puede diagnosticar.")
+        raise ValueError("The loss history is empty; it cannot be diagnosed.")
     if history.val_loss_mean.size == 0:
         raise ValueError(
-            f"El run {history.run_id} no tiene val_loss loggeado; el "
-            "entrenamiento no abrio split interno de validacion (val_fraction=0)."
+            f"Run {history.run_id} has no val_loss logged; the training did "
+            "not open an internal validation split (val_fraction=0)."
         )
 
     train_loss = float(history.train_loss_mean[-1])
     val_loss = float(history.val_loss_mean[-1])
-    # En loss, "gap grande" = val_loss >> train_loss (al reves que accuracy).
+    # In loss, "large gap" = val_loss >> train_loss (opposite to accuracy).
     gap = val_loss - train_loss
 
     if gap > gap_threshold:
@@ -928,7 +929,7 @@ def diagnose_temporal_fit(
     return FitDiagnosis(
         verdict=verdict,
         gap=gap,
-        train_acc_max=train_loss,  # Reusa el campo como train_loss_min.
-        val_acc_max=val_loss,  # Reusa el campo como val_loss_min.
+        train_acc_max=train_loss,  # Reuses the field as train_loss_min.
+        val_acc_max=val_loss,  # Reuses the field as val_loss_min.
         explanation=explanation,
     )

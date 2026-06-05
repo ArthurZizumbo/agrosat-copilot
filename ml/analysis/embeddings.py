@@ -1,20 +1,20 @@
-"""Analisis de embeddings AlphaEarth 64-dim para US-011 (EDA).
+"""Analysis of 64-dim AlphaEarth embeddings for US-011 (EDA).
 
-Provee 8 funciones reutilizables sobre DataFrames Polars con las dimensiones
+Provides 8 reusable functions over Polars DataFrames with the dimensions
 `dim_00..dim_63`:
 
-- `correlation_matrix`: matriz de correlacion en formato long.
-- `qq_test_dims`: estadisticos por dimension + Shapiro test contra N(0,1).
-- `tsne_2d`: reduccion a 2D via t-SNE (subsampling cubico).
-- `umap_2d`: reduccion a 2D via UMAP.
-- `rf_feature_importance`: Random Forest importance contra labels.
-- `temporal_stability`: cosine similarity inter-anual por parcela.
-- `compare_alphaearth_vs_ndvi`: figura comparativa AE pseudo-RGB vs NDVI vs RGB S2.
-- `cross_region_consistency`: tabla comparativa de importance Italia vs Francia.
+- `correlation_matrix`: correlation matrix in long format.
+- `qq_test_dims`: per-dimension statistics + Shapiro test against N(0,1).
+- `tsne_2d`: 2D reduction via t-SNE (cubic subsampling).
+- `umap_2d`: 2D reduction via UMAP.
+- `rf_feature_importance`: Random Forest importance against labels.
+- `temporal_stability`: inter-annual cosine similarity per parcel.
+- `compare_alphaearth_vs_ndvi`: comparative figure AE pseudo-RGB vs NDVI vs RGB S2.
+- `cross_region_consistency`: comparative table of importance Italy vs France.
 
-Nota Polars: el adapter a pandas se usa unicamente como borde tecnico para
-funciones de sklearn / scipy / statsmodels / seaborn cuando esas librerias no
-aceptan Polars directamente. Toda la persistencia y agregacion va por Polars.
+Polars note: the pandas adapter is used only as a technical boundary for
+sklearn / scipy / statsmodels / seaborn functions when those libraries do not
+accept Polars directly. All persistence and aggregation goes through Polars.
 """
 
 from __future__ import annotations
@@ -34,16 +34,16 @@ from scipy.stats import rankdata, shapiro, skew
 _log = structlog.get_logger(__name__)
 
 DIM_COLS: list[str] = [f"dim_{i:02d}" for i in range(64)]
-"""Nombres canonicos de las 64 dimensiones AlphaEarth (`dim_00`..`dim_63`)."""
+"""Canonical names of the 64 AlphaEarth dimensions (`dim_00`..`dim_63`)."""
 
 
 def _select_dim_cols(df: pl.DataFrame, cols: list[str] | None) -> list[str]:
-    """Selecciona columnas validas de dimension dentro del DataFrame."""
+    """Select valid dimension columns within the DataFrame."""
     if cols is None:
         return [c for c in DIM_COLS if c in df.columns]
     missing = [c for c in cols if c not in df.columns]
     if missing:
-        raise ValueError(f"Columnas no encontradas en df: {missing}")
+        raise ValueError(f"Columns not found in df: {missing}")
     return cols
 
 
@@ -52,16 +52,16 @@ def correlation_matrix(
     method: Literal["pearson", "spearman"] = "pearson",
     cols: list[str] | None = None,
 ) -> pl.DataFrame:
-    """Matriz de correlacion long-format entre dimensiones del embedding.
+    """Long-format correlation matrix between embedding dimensions.
 
     Args:
-        df: DataFrame con columnas `dim_00..dim_63`.
-        method: `pearson` (lineal) o `spearman` (rank).
-        cols: Subset de columnas, default todas las `DIM_COLS` presentes.
+        df: DataFrame with columns `dim_00..dim_63`.
+        method: `pearson` (linear) or `spearman` (rank).
+        cols: Subset of columns, default all `DIM_COLS` present.
 
     Returns:
-        DataFrame con columnas `dim_i, dim_j, pearson|spearman, abs_corr`,
-        ordenado por `abs_corr` desc. Incluye la diagonal y la mitad superior.
+        DataFrame with columns `dim_i, dim_j, pearson|spearman, abs_corr`,
+        sorted by `abs_corr` desc. Includes the diagonal and the upper half.
     """
     selected = _select_dim_cols(df, cols)
     if df.is_empty() or not selected:
@@ -75,7 +75,7 @@ def correlation_matrix(
         )
     arr = df.select(selected).to_numpy()
     if method == "pearson":
-        # numpy es Polars-friendly y mucho mas rapido que pandas.corr
+        # numpy is Polars-friendly and much faster than pandas.corr
         valid = ~np.isnan(arr).any(axis=1)
         arr_v = arr[valid]
         if arr_v.shape[0] < 2:
@@ -83,7 +83,7 @@ def correlation_matrix(
         else:
             corr = np.corrcoef(arr_v, rowvar=False)
     else:
-        # Spearman: ranks por columna + Pearson de los ranks
+        # Spearman: ranks per column + Pearson of the ranks
         valid = ~np.isnan(arr).any(axis=1)
         arr_v = arr[valid]
         if arr_v.shape[0] < 2:
@@ -115,20 +115,20 @@ def qq_test_dims(
     cols: list[str] | None = None,
     alpha: float = 0.05,
 ) -> pl.DataFrame:
-    """Estadisticos descriptivos + Shapiro-Wilk por dimension.
+    """Descriptive statistics + Shapiro-Wilk per dimension.
 
     Args:
-        df: DataFrame con `dim_00..dim_63`.
-        against: Distribucion de referencia (solo `normal` soportado).
-        cols: Subset de dimensiones, default todas.
-        alpha: Nivel de significancia para flag `is_unit_normal_at_005`.
+        df: DataFrame with `dim_00..dim_63`.
+        against: Reference distribution (only `normal` supported).
+        cols: Subset of dimensions, default all.
+        alpha: Significance level for the `is_unit_normal_at_005` flag.
 
     Returns:
-        DataFrame con columnas `dim, mean, std, skewness, kurtosis,
+        DataFrame with columns `dim, mean, std, skewness, kurtosis,
         shapiro_stat, shapiro_pvalue, is_unit_normal_at_005`.
     """
     if against != "normal":  # pragma: no cover - defensivo
-        raise ValueError(f"Distribucion no soportada: {against}")
+        raise ValueError(f"Unsupported distribution: {against}")
 
     selected = _select_dim_cols(df, cols)
     schema = {
@@ -163,7 +163,7 @@ def qq_test_dims(
                 }
             )
             continue
-        # Shapiro-Wilk satura a 5000 muestras (scipy doc): submuestreamos si excede
+        # Shapiro-Wilk saturates at 5000 samples (scipy doc): we subsample if it exceeds
         if vals.size > 5000:
             rng = np.random.default_rng(42)
             sample = rng.choice(vals, size=5000, replace=False)
@@ -192,18 +192,18 @@ def tsne_2d(
     subsample: int = 10_000,
     cols: list[str] | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Proyeccion 2D via t-SNE con subsampling para complejidad cubica.
+    """2D projection via t-SNE with subsampling for cubic complexity.
 
     Args:
-        df: DataFrame con `dim_00..dim_63`.
-        perplexity: Hiperparametro t-SNE (default 30).
-        seed: Semilla para reproducibilidad.
-        subsample: Maximo numero de filas a procesar.
-        cols: Subset de columnas dimensionales.
+        df: DataFrame with `dim_00..dim_63`.
+        perplexity: t-SNE hyperparameter (default 30).
+        seed: Seed for reproducibility.
+        subsample: Maximum number of rows to process.
+        cols: Subset of dimensional columns.
 
     Returns:
-        Tupla `(X_2d shape (m, 2), idx_subsample)` donde `m <= subsample` y
-        `idx_subsample` son los indices originales seleccionados.
+        Tuple `(X_2d shape (m, 2), idx_subsample)` where `m <= subsample` and
+        `idx_subsample` are the selected original indices.
     """
     selected = _select_dim_cols(df, cols)
     if df.is_empty() or not selected:
@@ -212,9 +212,9 @@ def tsne_2d(
     from sklearn.manifold import TSNE
 
     arr = df.select(selected).to_numpy()
-    # Filtrar filas con NaN: sklearn rechaza missing values. `valid_idx` son
-    # indices contra el df original, asi que el caller puede mapear labels con
-    # `df[col].to_numpy()[idx]` sin desalineamiento.
+    # Filter rows with NaN: sklearn rejects missing values. `valid_idx` are
+    # indices against the original df, so the caller can map labels with
+    # `df[col].to_numpy()[idx]` without misalignment.
     valid_mask = ~np.isnan(arr).any(axis=1)
     valid_idx = np.flatnonzero(valid_mask)
     n_dropped = int(arr.shape[0] - valid_idx.size)
@@ -254,22 +254,23 @@ def umap_2d(
     seed: int = 42,
     cols: list[str] | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Proyeccion 2D via UMAP. Escala a ~100k puntos.
+    """2D projection via UMAP. Scales to ~100k points.
 
-    Filtra filas con NaN antes del fit (UMAP las rechaza). Los indices
-    retornados son contra el df original para que el caller pueda mapear
-    labels con `df[col].to_numpy()[idx]` sin desalineamiento.
+    Filters rows with NaN before the fit (UMAP rejects them). The returned
+    indices are against the original df so the caller can map labels with
+    `df[col].to_numpy()[idx]` without misalignment.
 
     Args:
-        df: DataFrame con `dim_00..dim_63`.
-        n_neighbors: Vecinos locales (default 15).
-        min_dist: Distancia minima en el embedding 2D.
-        seed: Semilla para reproducibilidad.
-        cols: Subset de dimensiones.
+        df: DataFrame with `dim_00..dim_63`.
+        n_neighbors: Local neighbors (default 15).
+        min_dist: Minimum distance in the 2D embedding.
+        seed: Seed for reproducibility.
+        cols: Subset of dimensions.
 
     Returns:
-        Tupla `(X_2d shape (m, 2), idx)` donde `m` es el numero de filas sin
-        NaN. Si UMAP no esta instalado o df esta vacio retorna arrays vacios.
+        Tuple `(X_2d shape (m, 2), idx)` where `m` is the number of rows
+        without NaN. If UMAP is not installed or df is empty returns empty
+        arrays.
     """
     selected = _select_dim_cols(df, cols)
     if df.is_empty() or not selected:
@@ -312,20 +313,20 @@ def rf_feature_importance(
     seed: int = 42,
     n_jobs: int = -1,
 ) -> pl.DataFrame:
-    """Random Forest feature importance contra labels categoricos.
+    """Random Forest feature importance against categorical labels.
 
     Args:
-        X: DataFrame Polars con las dimensiones (`dim_00..dim_63`).
-        y: Serie Polars con la clase / etiqueta por fila.
-        n_estimators: Numero de arboles.
-        max_depth: Profundidad maxima.
-        seed: Semilla.
-        n_jobs: Paralelismo sklearn (default -1 = todos los cores).
+        X: Polars DataFrame with the dimensions (`dim_00..dim_63`).
+        y: Polars Series with the class / label per row.
+        n_estimators: Number of trees.
+        max_depth: Maximum depth.
+        seed: Seed.
+        n_jobs: sklearn parallelism (default -1 = all cores).
 
     Returns:
-        DataFrame con columnas `dim, importance, rank, cumulative_importance,
-        oob_score` (el `oob_score` se replica en todas las filas como metadata
-        del entrenamiento).
+        DataFrame with columns `dim, importance, rank, cumulative_importance,
+        oob_score` (the `oob_score` is replicated across all rows as training
+        metadata).
     """
     from sklearn.ensemble import RandomForestClassifier
 
@@ -342,14 +343,14 @@ def rf_feature_importance(
 
     arr = X.select(selected).to_numpy()
     labels = y.to_numpy()
-    # Filtrar filas con NaN en X o labels nulos: RandomForestClassifier rechaza
-    # missing values y la senal de importance se contamina con clase 'unknown'.
+    # Filter rows with NaN in X or null labels: RandomForestClassifier rejects
+    # missing values and the importance signal gets contaminated with class 'unknown'.
     valid_mask = ~np.isnan(arr).any(axis=1)
-    # `labels` puede ser dtype object con None: tratar None como invalido.
+    # `labels` may be dtype object with None: treat None as invalid.
     if labels.dtype == object:
         label_mask = np.array([lbl is not None for lbl in labels])
     else:
-        label_mask = ~(labels != labels)  # NaN-aware sin asumir float
+        label_mask = ~(labels != labels)  # NaN-aware without assuming float
     valid_mask &= label_mask
     n_dropped = int(arr.shape[0] - valid_mask.sum())
     if n_dropped > 0:
@@ -399,22 +400,22 @@ def temporal_stability(
     year_col: str = "year",
     class_col: str | None = "class_name",
 ) -> pl.DataFrame:
-    """Cosine similarity inter-anual del embedding 64-dim por parcela.
+    """Inter-annual cosine similarity of the 64-dim embedding per parcel.
 
-    Para cada parcela presente en >=2 anios consecutivos, calcula la cosine
-    similarity entre el vector del anio `t` y el del anio `t+1`. Agrega la
-    similitud media por parcela como `cosine_mean` y enumera los pares
-    consecutivos en columnas `cosine_YYYY_YYYY` cuando estan disponibles.
+    For each parcel present in >=2 consecutive years, computes the cosine
+    similarity between the vector of year `t` and that of year `t+1`.
+    Aggregates the mean similarity per parcel as `cosine_mean` and enumerates
+    the consecutive pairs in `cosine_YYYY_YYYY` columns when available.
 
     Args:
-        df_long: DataFrame con `parcel_col, year_col, dim_00..dim_63`.
-        parcel_col: Columna identificador de parcela.
-        year_col: Columna anio.
-        class_col: Columna clase para conservar en el output (opcional).
+        df_long: DataFrame with `parcel_col, year_col, dim_00..dim_63`.
+        parcel_col: Parcel identifier column.
+        year_col: Year column.
+        class_col: Class column to keep in the output (optional).
 
     Returns:
-        DataFrame con `parcel_col, [class_col], cosine_mean` y columnas
-        `cosine_YYYY_YYYY` por par anio-anio consecutivo.
+        DataFrame with `parcel_col, [class_col], cosine_mean` and
+        `cosine_YYYY_YYYY` columns per consecutive year-year pair.
     """
     selected = _select_dim_cols(df_long, None)
     base_cols = [parcel_col, year_col] + ([class_col] if class_col else [])
@@ -438,7 +439,7 @@ def temporal_stability(
             continue
         arr_a = joined.select(selected).to_numpy()
         arr_b = joined.select([f"{c}_b" for c in selected]).to_numpy()
-        # cosine similarity por fila
+        # cosine similarity per row
         num = np.sum(arr_a * arr_b, axis=1)
         denom = np.linalg.norm(arr_a, axis=1) * np.linalg.norm(arr_b, axis=1)
         denom = np.where(denom == 0, 1.0, denom)
@@ -449,7 +450,7 @@ def temporal_stability(
             entry = rows.setdefault(pid, {parcel_col: pid})
             entry[col_name] = float(val)
 
-    # class_col se reincorpora por mayoria
+    # class_col is reincorporated by majority
     if class_col and class_col in df.columns:
         class_lookup = (
             df.group_by(parcel_col)
@@ -485,21 +486,21 @@ def compare_alphaearth_vs_ndvi(
     out_path: Path | None = None,
     dpi: int = 200,
 ) -> matplotlib.figure.Figure:
-    """Grid 1x3: RGB stretch 2-98 | NDVI | embedding pseudo-RGB con top 3 dims.
+    """Grid 1x3: RGB stretch 2-98 | NDVI | embedding pseudo-RGB with top 3 dims.
 
     Args:
-        parcel_id: Identificador de la parcela para el titulo.
-        df_embeddings: DataFrame con dimensiones AlphaEarth de la parcela
-            (debe contener al menos `top_dims[:3]`).
-        top_dims: Ranking de dimensiones (las primeras 3 se usan como RGB).
-        s2_date: Fecha S2 usada para el RGB / NDVI.
-        rgb_array: Imagen RGB pre-cargada (H, W, 3). Si None se muestra placeholder.
-        ndvi_array: Imagen NDVI pre-cargada (H, W). Si None se muestra placeholder.
-        out_path: Si se provee, guarda PNG.
-        dpi: Resolucion.
+        parcel_id: Parcel identifier for the title.
+        df_embeddings: DataFrame with the parcel's AlphaEarth dimensions
+            (must contain at least `top_dims[:3]`).
+        top_dims: Ranking of dimensions (the first 3 are used as RGB).
+        s2_date: S2 date used for the RGB / NDVI.
+        rgb_array: Preloaded RGB image (H, W, 3). If None a placeholder is shown.
+        ndvi_array: Preloaded NDVI image (H, W). If None a placeholder is shown.
+        out_path: If provided, saves PNG.
+        dpi: Resolution.
 
     Returns:
-        Figure matplotlib con 3 subplots.
+        matplotlib Figure with 3 subplots.
     """
     fig, axes = plt.subplots(1, 3, figsize=(15, 5), dpi=dpi)
 
@@ -524,13 +525,13 @@ def compare_alphaearth_vs_ndvi(
     dims3 = [d for d in top_dims[:3] if d in df_embeddings.columns]
     if len(dims3) == 3 and not df_embeddings.is_empty():
         vec = df_embeddings.select(dims3).to_numpy()
-        # Normalizamos cada canal por min/max para visualizar como pseudo-RGB
+        # We normalize each channel by min/max to visualize as pseudo-RGB
         norm = np.empty_like(vec, dtype=np.float32)
         for c in range(3):
             v = vec[:, c]
             lo, hi = float(np.min(v)), float(np.max(v))
             norm[:, c] = (v - lo) / max(hi - lo, 1e-6)
-        # Reshape a una tira horizontal si no hay info espacial
+        # Reshape to a horizontal strip if there is no spatial info
         h = int(np.ceil(np.sqrt(norm.shape[0])))
         w = int(np.ceil(norm.shape[0] / h))
         canvas = np.zeros((h, w, 3), dtype=np.float32)
@@ -555,17 +556,17 @@ def cross_region_consistency(
     rf_francia: pl.DataFrame,
     top_k: int = 10,
 ) -> pl.DataFrame:
-    """Compara feature importance entre Italia y Francia (AC-15 US-011).
+    """Compare feature importance between Italy and France (AC-15 US-011).
 
     Args:
-        rf_italia: Output de `rf_feature_importance()` sobre Italia x DW.
-        rf_francia: Output de `rf_feature_importance()` sobre Francia x PASTIS.
-        top_k: Cuantas dims del ranking marcar como "top" en cada region.
+        rf_italia: Output of `rf_feature_importance()` over Italy x DW.
+        rf_francia: Output of `rf_feature_importance()` over France x PASTIS.
+        top_k: How many dims of the ranking to mark as "top" in each region.
 
     Returns:
-        DataFrame con columnas `dim, rank_italia, importance_italia,
+        DataFrame with columns `dim, rank_italia, importance_italia,
         rank_francia, importance_francia, consistente_top10, delta_rank,
-        importance_sum` ordenado por `importance_sum` desc.
+        importance_sum` sorted by `importance_sum` desc.
     """
     schema = {
         "dim": pl.Utf8,

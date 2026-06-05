@@ -1,21 +1,21 @@
-"""Genera el fixture demo de serie temporal multibanda por parcela (US-015).
+"""Generate the demo fixture of a per-parcel multiband time series (US-015).
 
-Operativo permanente del proyecto: produce ``data/test_fixtures/parcel_demo_ts.nc``
-(<100 KB) consumido por
+Permanent project operative tool: produces
+``data/test_fixtures/parcel_demo_ts.nc`` (<100 KB) consumed by
 ``tests/ml/features/test_temporal_features.py::test_extract_demo_fixture_end_to_end``.
 
-Nota sobre el formato: el plan US-015 §3.1 menciona ``.zarr`` como sufijo
-previsto. Se conmuta a NetCDF3 (scipy backend, sin dependencia adicional)
-para evitar introducir ``zarr`` al stack. El contenido lógico y los attrs
-son idénticos; el cambio es puramente de serialización.
+Note on the format: the US-015 §3.1 plan mentions ``.zarr`` as the intended
+suffix. It is switched to NetCDF3 (scipy backend, no additional dependency)
+to avoid introducing ``zarr`` into the stack. The logical content and the
+attrs are identical; the change is purely about serialization.
 
-La serie sintética tiene 30 timesteps espaciados aproximadamente cada 12 días
-durante el año 2024 y 17 bandas (los 17 índices canónicos del proyecto). La
-banda NDVI sigue una gaussiana centrada en DOY 180 con peak 0.85 y σ=30 días
-+ ruido gaussiano σ=0.02 (seed=42). El resto de bandas usa curvas plausibles
-correlacionadas con NDVI.
+The synthetic series has 30 timesteps spaced approximately every 12 days
+during the year 2024 and 17 bands (the project's 17 canonical indices). The
+NDVI band follows a gaussian centered at DOY 180 with peak 0.85 and σ=30 days
++ gaussian noise σ=0.02 (seed=42). The remaining bands use plausible curves
+correlated with NDVI.
 
-Uso:
+Usage:
 
     poetry run python scripts/generate_demo_parcel_ts.py \\
         --output data/test_fixtures/parcel_demo_ts.nc
@@ -57,10 +57,10 @@ app = typer.Typer(add_completion=False, help="Genera el fixture demo de serie te
 
 
 def _build_dataarray(*, parcel_id: int, year: int, seed: int) -> xr.DataArray:
-    """Construye el DataArray sintético determinista."""
+    """Build the deterministic synthetic DataArray."""
     rng = np.random.default_rng(seed)
     n_steps = 30
-    # Timesteps regularmente espaciados (~12 días) durante el año.
+    # Timesteps regularly spaced (~12 days) during the year.
     start = np.datetime64(f"{year}-01-15", "ns")
     delta_days = 12
     times = np.array(
@@ -71,7 +71,7 @@ def _build_dataarray(*, parcel_id: int, year: int, seed: int) -> xr.DataArray:
     doys = np.array([(t - np.datetime64(f"{year}-01-01", "ns")) / np.timedelta64(1, "D") + 1
                      for t in times], dtype=np.float64)
 
-    # NDVI canónico: gaussiana DOY 180, peak 0.85, sigma 30 días + ruido.
+    # Canonical NDVI: gaussian DOY 180, peak 0.85, sigma 30 days + noise.
     ndvi = 0.85 * np.exp(-0.5 * ((doys - 180) / 30.0) ** 2)
     ndvi += rng.normal(0.0, 0.02, size=n_steps)
     ndvi = np.clip(ndvi, -1.0, 1.0)
@@ -81,7 +81,7 @@ def _build_dataarray(*, parcel_id: int, year: int, seed: int) -> xr.DataArray:
         if band == "NDVI":
             values[:, j] = ndvi
             continue
-        # Curvas plausibles derivadas de NDVI con ruido por banda.
+        # Plausible curves derived from NDVI with per-band noise.
         if band in {"EVI", "SAVI", "MSAVI2", "TSAVI", "RENDVI", "NDRE"}:
             base = 0.9 * ndvi + 0.05
         elif band in {"NDWI", "NDMI"}:
@@ -91,7 +91,7 @@ def _build_dataarray(*, parcel_id: int, year: int, seed: int) -> xr.DataArray:
         elif band in {"MCARI", "CCCI", "GCVI", "NDCI"}:
             base = 0.6 * ndvi + 0.1
         elif band == "PSRI":
-            # Senescencia: anti-correlacionada con vigor.
+            # Senescence: anti-correlated with vigor.
             base = -0.4 * ndvi + 0.2
         elif band == "FAPAR":
             base = 1.24 * ndvi - 0.168
@@ -125,7 +125,7 @@ def main(
     year: int = typer.Option(2024, help="Año del ciclo agrícola simulado."),
     seed: int = typer.Option(42, help="Semilla para reproducibilidad."),
 ) -> None:
-    """Genera el fixture demo y lo escribe a disco en formato Zarr."""
+    """Generate the demo fixture and write it to disk in Zarr format."""
     output.parent.mkdir(parents=True, exist_ok=True)
     if output.exists():
         if output.is_dir():
@@ -137,13 +137,13 @@ def main(
 
     da = _build_dataarray(parcel_id=parcel_id, year=year, seed=seed)
     ds = da.to_dataset(name="parcel_indices")
-    # scipy backend (NetCDF3) no soporta strings de longitud variable en coords
-    # de tipo "band"; convertimos a array de objetos/string fijo vía to_netcdf
-    # con format NETCDF4 si está disponible, fallback NETCDF3_64BIT.
+    # The scipy backend (NetCDF3) does not support variable-length strings in
+    # "band"-type coords; we convert to a fixed object/string array via to_netcdf
+    # with format NETCDF4 if available, fallback NETCDF3_64BIT.
     try:
         ds.to_netcdf(output, format="NETCDF4")
     except (ValueError, RuntimeError):
-        # Convertir coord band a S1 fixed-length para NETCDF3.
+        # Convert the band coord to S1 fixed-length for NETCDF3.
         ds = ds.assign_coords(band=ds.coords["band"].astype("S16"))
         ds.to_netcdf(output, format="NETCDF3_64BIT", engine="scipy")
 
@@ -162,6 +162,6 @@ if __name__ == "__main__":
         app()
     except SystemExit:
         raise
-    except Exception as exc:  # pragma: no cover - defensivo
+    except Exception as exc:  # pragma: no cover - defensive
         logger.error("demo fixture generation failed", error=str(exc))
         sys.exit(1)

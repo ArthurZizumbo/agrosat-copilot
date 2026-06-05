@@ -1,27 +1,27 @@
-"""Wrapper de alto nivel para materializar el bloque ``pheno_text_*``.
+"""High-level wrapper to materialize the ``pheno_text_*`` block.
 
-Este modulo orquesta la generacion de descripciones fenologicas con
-Gemini 3.5 Flash sobre el dataset full (PASTIS-R, ~85951 parcelas;
-``parcel_id`` formato ``10000_1``, no italiano) y persiste el resultado
-como un parquet listo para ``LEFT JOIN`` en ``ml.features.fusion``.
+This module orchestrates the generation of phenology descriptions with
+Gemini 3.5 Flash over the full dataset (PASTIS-R, ~85951 parcels;
+``parcel_id`` format ``10000_1``, not Italian) and persists the result
+as a parquet ready for ``LEFT JOIN`` in ``ml.features.fusion``.
 
-Contrato (US-023-preview v2):
+Contract (US-023-preview v2):
 
-1. **Sin mocks ni skips silenciosos**: si falta API key, se levanta
-   ``RuntimeError`` explicito con instrucciones de configuracion.
-2. **Cache idempotente**: si el parquet ya existe y ``overwrite=False``,
-   se reutiliza sin volver a invocar el LLM.
-3. **Muestreo estratificado opcional**: ``balanced_by_class=True`` toma
-   ``min_per_class`` filas por ``class_id`` (semilla fija para
-   reproducibilidad).
-4. **Budget tracking**: estima el costo Gemini al inicio del run
-   (``COST_PER_DESCRIPTION_USD * N``) y lo loguea via structlog.
-5. **Esquema canonico**: ``parcel_id`` siempre se persiste como
-   ``pl.Utf8`` (ver :mod:`ml.utils.parcel_id`).
+1. **No mocks or silent skips**: if the API key is missing, an explicit
+   ``RuntimeError`` is raised with configuration instructions.
+2. **Idempotent cache**: if the parquet already exists and ``overwrite=False``,
+   it is reused without invoking the LLM again.
+3. **Optional stratified sampling**: ``balanced_by_class=True`` takes
+   ``min_per_class`` rows per ``class_id`` (fixed seed for
+   reproducibility).
+4. **Budget tracking**: estimates the Gemini cost at the start of the run
+   (``COST_PER_DESCRIPTION_USD * N``) and logs it via structlog.
+5. **Canonical schema**: ``parcel_id`` is always persisted as
+   ``pl.Utf8`` (see :mod:`ml.utils.parcel_id`).
 
-El wrapper deliberadamente NO acepta el flag ``skip_llm`` desde su
-firma: notebooks y pipelines deben ejecutar Gemini real. Para tests
-unitarios se inyecta un cliente mock via
+The wrapper deliberately does NOT accept the ``skip_llm`` flag in its
+signature: notebooks and pipelines must run real Gemini. For unit tests a
+mock client is injected via
 ``ml.features.phenology_description.set_llm_client``.
 """
 
@@ -47,20 +47,20 @@ __all__ = ["materialize_phenology_text"]
 
 
 def _check_credentials_or_raise() -> None:
-    """Verifica credenciales Gemini; levanta ``RuntimeError`` si faltan.
+    """Check Gemini credentials; raise ``RuntimeError`` if missing.
 
     Raises:
-        RuntimeError: si no hay ``GEMINI_API_KEY`` ni ``GOOGLE_API_KEY``
-            ni configuracion Vertex AI presente.
+        RuntimeError: if there is no ``GEMINI_API_KEY`` nor ``GOOGLE_API_KEY``
+            nor Vertex AI configuration present.
     """
     if not _has_credentials():
         raise RuntimeError(
-            "Gemini no esta configurado. Define una de estas opciones en "
-            ".env.local antes de invocar materialize_phenology_text:\n"
+            "Gemini is not configured. Define one of these options in "
+            ".env.local before invoking materialize_phenology_text:\n"
             "  1. GEMINI_API_KEY=...        (Google AI Studio)\n"
-            "  2. GOOGLE_API_KEY=...        (alias historico)\n"
+            "  2. GOOGLE_API_KEY=...        (historical alias)\n"
             "  3. GOOGLE_GENAI_USE_VERTEXAI=true + GOOGLE_CLOUD_PROJECT=...\n"
-            "Si necesitas un dry-run, inyecta un cliente mock con "
+            "If you need a dry-run, inject a mock client with "
             "ml.features.phenology_description.set_llm_client(callable)."
         )
 
@@ -72,24 +72,24 @@ def _stratified_sample(
     min_per_class: int,
     seed: int,
 ) -> pl.DataFrame:
-    """Muestrea hasta ``min_per_class`` filas por valor de ``class_col``.
+    """Sample up to ``min_per_class`` rows per value of ``class_col``.
 
-    Para clases con menos parcelas que ``min_per_class`` se toman todas
-    (no se hace upsampling). El resultado se mezcla globalmente con la
-    misma ``seed`` para evitar ordenacion por clase residual.
+    For classes with fewer parcels than ``min_per_class``, all are taken
+    (no upsampling). The result is shuffled globally with the same
+    ``seed`` to avoid residual per-class ordering.
 
     Args:
-        df: DataFrame de entrada.
-        class_col: Columna con el id de clase (Int / Utf8).
-        min_per_class: Numero objetivo de filas por clase.
-        seed: Semilla del muestreo.
+        df: Input DataFrame.
+        class_col: Column with the class id (Int / Utf8).
+        min_per_class: Target number of rows per class.
+        seed: Sampling seed.
 
     Returns:
-        DataFrame muestreado y mezclado.
+        Sampled and shuffled DataFrame.
     """
     parts: list[pl.DataFrame] = []
     for class_value, sub in df.group_by(class_col, maintain_order=True):
-        del class_value  # solo para debug en pdb si hace falta.
+        del class_value  # only for debugging in pdb if needed.
         n = min(sub.height, min_per_class)
         if sub.height <= min_per_class:
             parts.append(sub)
@@ -119,63 +119,63 @@ def materialize_phenology_text(
     year_col: str = "year",
     progress_every: int = 100,
 ) -> Path:
-    """Materializa el bloque ``pheno_text_*`` sobre las parcelas reales.
+    """Materialize the ``pheno_text_*`` block over the real parcels.
 
-    Comportamiento canonico:
+    Canonical behavior:
 
-    1. Lee el dataset de features full (PASTIS-R, ~85951 parcelas) desde
+    1. Reads the full features dataset (PASTIS-R, ~85951 parcels) from
        ``parcels_features_path``.
-    2. Si ``enforce_api_key=True``: verifica credenciales Gemini con
-       :func:`_check_credentials_or_raise`. Si no hay cliente inyectado
-       ni env vars, levanta ``RuntimeError``.
-    3. Si ``balanced_by_class=True``: estratifica por ``class_col``
-       tomando ``min_per_class`` por clase (las que tengan menos usan
-       todas las filas disponibles).
-    4. Si ``max_parcels`` es ``int > 0``: aplica subsample posterior al
-       muestreo balanceado.
-    5. Cache: si ``output_path`` existe y ``overwrite=False`` retorna
-       sin recomputar (logueando ``phenology_text_cache_hit``).
-    6. Llama a :func:`build_phenology_text_block` con ``skip_llm=False``
-       forzado.
-    7. Persiste parquet con esquema canonico:
+    2. If ``enforce_api_key=True``: checks Gemini credentials with
+       :func:`_check_credentials_or_raise`. If there is no injected client
+       nor env vars, raises ``RuntimeError``.
+    3. If ``balanced_by_class=True``: stratifies by ``class_col``
+       taking ``min_per_class`` per class (those with fewer use all
+       available rows).
+    4. If ``max_parcels`` is ``int > 0``: applies a subsample after the
+       balanced sampling.
+    5. Cache: if ``output_path`` exists and ``overwrite=False`` returns
+       without recomputing (logging ``phenology_text_cache_hit``).
+    6. Calls :func:`build_phenology_text_block` with forced
+       ``skip_llm=False``.
+    7. Persists parquet with canonical schema:
        ``parcel_id`` (Utf8) + ``year`` (Int16) +
-       ``pheno_text_000..pheno_text_{D-1}`` (Float32, D=384 por default).
+       ``pheno_text_000..pheno_text_{D-1}`` (Float32, D=384 by default).
 
     Args:
-        parcels_features_path: Path al parquet de features completas
-            (PASTIS-R full, ~85951 parcelas).
-        output_path: Path destino del parquet con embeddings textuales.
-        max_parcels: Limite superior de parcelas a procesar tras el
-            muestreo balanceado. ``None`` = sin limite.
-        balanced_by_class: Si ``True`` estratifica por ``class_col``.
-        min_per_class: Minimo de filas por clase tras la estratificacion.
-        seed: Semilla del muestreo.
-        model: Identificador del modelo Gemini (default
+        parcels_features_path: Path to the full features parquet
+            (PASTIS-R full, ~85951 parcels).
+        output_path: Destination path of the parquet with text embeddings.
+        max_parcels: Upper limit of parcels to process after the
+            balanced sampling. ``None`` = no limit.
+        balanced_by_class: If ``True`` stratifies by ``class_col``.
+        min_per_class: Minimum rows per class after stratification.
+        seed: Sampling seed.
+        model: Gemini model identifier (default
             ``"gemini-3.5-flash"``).
-        overwrite: Si ``True`` recomputa aunque ``output_path`` exista.
-        enforce_api_key: Si ``True`` y no hay credenciales ni cliente
-            inyectado, levanta ``RuntimeError``. Solo ponerlo en
-            ``False`` para tests con cliente mockeado.
-        class_col: Columna con el id de clase (default ``"class_id"``).
-        parcel_id_col: Columna identificadora de parcela.
-        year_col: Columna del anio agronomico.
-        progress_every: Frecuencia (en numero de parcelas) del log
-            de progreso.
+        overwrite: If ``True`` recomputes even if ``output_path`` exists.
+        enforce_api_key: If ``True`` and there are no credentials nor
+            injected client, raises ``RuntimeError``. Only set it to
+            ``False`` for tests with a mocked client.
+        class_col: Column with the class id (default ``"class_id"``).
+        parcel_id_col: Parcel identifier column.
+        year_col: Agronomic year column.
+        progress_every: Frequency (in number of parcels) of the progress
+            log.
 
     Returns:
-        ``Path`` apuntando al parquet generado o reutilizado.
+        ``Path`` pointing to the generated or reused parquet.
 
     Raises:
-        RuntimeError: si ``enforce_api_key=True`` y no hay credenciales
-            ni cliente inyectado.
-        FileNotFoundError: si ``parcels_features_path`` no existe.
+        RuntimeError: if ``enforce_api_key=True`` and there are no credentials
+            nor injected client.
+        FileNotFoundError: if ``parcels_features_path`` does not exist.
     """
     from ml.features.phenology_description import _LLM_CLIENT
 
     parcels_path = Path(parcels_features_path)
     if not parcels_path.exists():
         raise FileNotFoundError(
-            f"parcels_features_path no existe: {parcels_path}"
+            f"parcels_features_path does not exist: {parcels_path}"
         )
 
     output_path = Path(output_path)
@@ -188,9 +188,9 @@ def materialize_phenology_text(
         )
         return output_path
 
-    # Validacion de credenciales: la barrera dura vive en
-    # build_phenology_text_block, pero adelantamos el error aqui para
-    # no leer el parquet completo si vamos a fallar.
+    # Credentials validation: the hard barrier lives in
+    # build_phenology_text_block, but we bring the error forward here to
+    # avoid reading the full parquet if we are going to fail.
     if enforce_api_key and _LLM_CLIENT is None:
         _check_credentials_or_raise()
 
@@ -207,8 +207,8 @@ def materialize_phenology_text(
     if balanced_by_class:
         if class_col not in df.columns:
             raise KeyError(
-                f"balanced_by_class=True requiere la columna {class_col!r}. "
-                f"Columnas disponibles: {df.columns}"
+                f"balanced_by_class=True requires the {class_col!r} column. "
+                f"Available columns: {df.columns}"
             )
         sample = _stratified_sample(
             df, class_col=class_col, min_per_class=min_per_class, seed=seed
@@ -246,7 +246,7 @@ def materialize_phenology_text(
     )
     elapsed_s = time.monotonic() - t_start
 
-    # Validacion del esquema canonico de salida.
+    # Validation of the canonical output schema.
     if parcel_id_col in block.columns and block.schema[parcel_id_col] != pl.Utf8:
         block = canonical_parcel_id(block, col=parcel_id_col)
 

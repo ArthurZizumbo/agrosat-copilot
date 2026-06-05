@@ -47,20 +47,33 @@ def dummy_csv(tmp_path: Path) -> Path:
 
 @pytest.fixture(scope="module")
 def loaded_app() -> object:
-    """Carga el dashboard completo una sola vez por modulo (cache scope)."""
+    """Carga el dashboard con la landing Historia (seccion por defecto)."""
     return AppTest.from_file(str(DASHBOARD_PATH)).run(timeout=45)
 
 
+@pytest.fixture(scope="module")
+def eda_app() -> object:
+    """Carga el dashboard y selecciona la seccion EDA via session_state."""
+    at = AppTest.from_file(str(DASHBOARD_PATH)).run(timeout=45)
+    at.session_state[eda_dashboard._SECTION_STATE_KEY] = eda_dashboard._SECTION_EDA  # type: ignore[attr-defined]
+    return at.run(timeout=45)
+
+
+def _markdown_blob(at: object) -> str:
+    """Concatena el markdown renderizado del AppTest en un solo string."""
+    return " ".join(getattr(node, "value", "") for node in at.markdown)  # type: ignore[attr-defined]
+
+
 # ---------------------------------------------------------------------------
-# Dashboard completo (AppTest desde file)
+# Landing por defecto: Historia del proyecto (linea de tiempo A0 -> A4)
 # ---------------------------------------------------------------------------
 
 
 def test_dashboard_loads(loaded_app: object) -> None:
-    """AC-1: el dashboard arranca sin excepcion y expone 6 tabs."""
+    """El dashboard arranca sin excepcion y la landing expone 6 hitos."""
     at = loaded_app
     assert not at.exception, f"Excepcion al cargar: {at.exception}"  # type: ignore[attr-defined]
-    assert len(at.tabs) == 6, f"Se esperaban 6 tabs, hay {len(at.tabs)}"  # type: ignore[attr-defined]
+    assert len(at.tabs) == 6, f"Se esperaban 6 hitos en la landing, hay {len(at.tabs)}"  # type: ignore[attr-defined]
 
 
 def test_dashboard_sidebar_has_team(loaded_app: object) -> None:
@@ -74,33 +87,42 @@ def test_dashboard_sidebar_has_team(loaded_app: object) -> None:
 
 
 def test_dashboard_hero_present(loaded_app: object) -> None:
-    """El hero banner inyecta el título principal del Avance 1."""
-    at = loaded_app
-    markdown_blob = " ".join(getattr(node, "value", "") for node in at.markdown)  # type: ignore[attr-defined]
-    assert "AgroSatCopilot" in markdown_blob
-    assert "Análisis Exploratorio" in markdown_blob
+    """El hero presenta la identidad del proyecto y su narrativa de evolucion."""
+    blob = _markdown_blob(loaded_app)
+    assert "AgroSatCopilot" in blob
+    assert "Analisis Exploratorio" in blob
 
 
-def test_dashboard_renders_all_card_titles(loaded_app: object) -> None:
-    """El dashboard muestra los 5 títulos de las fichas en el HTML inyectado."""
-    at = loaded_app
-    markdown_blob = " ".join(getattr(node, "value", "") for node in at.markdown)  # type: ignore[attr-defined]
+def test_landing_shows_evolution_kpis(loaded_app: object) -> None:
+    """La landing Historia muestra KPIs que evolucionan A0 -> A4."""
+    blob = _markdown_blob(loaded_app)
+    for needle in ("Historia del proyecto", "Mejor mIoU", "0,625", "Reencuadre"):
+        assert needle in blob, f"Falta hito/KPI en la landing: {needle}"
+
+
+# ---------------------------------------------------------------------------
+# Seccion EDA (seleccionada via session_state)
+# ---------------------------------------------------------------------------
+
+
+def test_dashboard_renders_all_card_titles(eda_app: object) -> None:
+    """La seccion EDA muestra los titulos de las 7 fichas."""
+    blob = _markdown_blob(eda_app)
     expected_titles = (
-        "EDA Univariado",  # acepta " — Sentinel-2" o " - Sentinel-2"
+        "EDA Univariado",
         "AlphaEarth Foundations",
         "Bivariado, Multivariado y Temporal",
         "PASTIS-R Consolidado",
+        "BreizhCrops",
         "Conclusiones Globales del Avance 1",
     )
-    missing = [t for t in expected_titles if t not in markdown_blob]
+    missing = [t for t in expected_titles if t not in blob]
     assert not missing, f"Titulos faltantes: {missing}"
 
 
-def test_dashboard_renders_kpi_cards(loaded_app: object) -> None:
-    """El dashboard inyecta KPI cards con valores clave de cada ficha."""
-    at = loaded_app
-    markdown_blob = " ".join(getattr(node, "value", "") for node in at.markdown)  # type: ignore[attr-defined]
-    # KPIs canonicos de cada ficha
+def test_dashboard_renders_kpi_cards(eda_app: object) -> None:
+    """La seccion EDA inyecta KPI cards con valores clave de cada ficha."""
+    blob = _markdown_blob(eda_app)
     expected_kpis = (
         "Bandas analizadas",
         "OOB Italia",
@@ -108,21 +130,20 @@ def test_dashboard_renders_kpi_cards(loaded_app: object) -> None:
         "Parches",
         "Notebooks integrados",
     )
-    missing = [k for k in expected_kpis if k not in markdown_blob]
+    missing = [k for k in expected_kpis if k not in blob]
     assert not missing, f"KPIs faltantes: {missing}"
 
 
-def test_dashboard_renders_global_conclusions(loaded_app: object) -> None:
+def test_dashboard_renders_global_conclusions(eda_app: object) -> None:
     """La ficha de globales muestra conclusiones interpretadas."""
-    at = loaded_app
-    markdown_blob = " ".join(getattr(node, "value", "") for node in at.markdown)  # type: ignore[attr-defined]
+    blob = _markdown_blob(eda_app)
     for needle in (
         "AlphaEarth es la mejor base",
         "especialización por región",
         "máscara de calidad",
         "Lo que sigue",
     ):
-        assert needle in markdown_blob, f"Falta conclusion: {needle}"
+        assert needle in blob, f"Falta conclusion: {needle}"
 
 
 def test_footer_has_attributions(loaded_app: object) -> None:

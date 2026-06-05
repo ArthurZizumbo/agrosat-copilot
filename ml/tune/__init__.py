@@ -1,1 +1,1 @@
-"""Ajuste fino de hiperparametros (Optuna) para los modelos del Avance 4."""
+"""Hyperparameter fine-tuning (Optuna) for the Avance 4 models."""

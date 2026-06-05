@@ -1,18 +1,18 @@
-"""Genera el subset compacto de PASTIS-R para el mapa folium del dashboard.
+"""Generate the compact PASTIS-R subset for the dashboard folium map.
 
-El ``metadata.geojson`` original de PASTIS-R pesa 19 MB (2.433 patches en
-EPSG:2154), no se commitea al repo. Para que el dashboard funcione en
-Streamlit Cloud necesitamos una versión compacta:
+The original PASTIS-R ``metadata.geojson`` weighs 19 MB (2,433 patches in
+EPSG:2154) and is not committed to the repo. For the dashboard to work on
+Streamlit Cloud we need a compact version:
 
-    1. Dissolve por columna ``TILE`` (4 super-tiles).
-    2. Reproyectar a EPSG:4326.
-    3. Simplificar geometrías con tolerancia 0,001 grados.
-    4. Conservar solo ``tile`` + ``geometry``.
+    1. Dissolve by ``TILE`` column (4 super-tiles).
+    2. Reproject to EPSG:4326.
+    3. Simplify geometries with 0.001 degree tolerance.
+    4. Keep only ``tile`` + ``geometry``.
 
-Resultado: ``data/reference/pastis_tiles_dissolved.geojson`` (~500 KB),
-listado en el whitelist del ``.gitignore`` (``!data/reference/**/*.geojson``).
+Result: ``data/reference/pastis_tiles_dissolved.geojson`` (~500 KB),
+listed in the ``.gitignore`` whitelist (``!data/reference/**/*.geojson``).
 
-Uso:
+Usage:
     python -m ml.report.generate_pastis_subset
     python -m ml.report.generate_pastis_subset --source data/PASTIS-R/metadata.geojson \\
         --output data/reference/pastis_tiles_dissolved.geojson
@@ -54,7 +54,7 @@ def main(
         help="Tolerancia de simplificación en grados (default 0,001 ≈ 100 m).",
     ),
 ) -> None:
-    """Genera el subset compacto a partir del metadata.geojson completo."""
+    """Generate the compact subset from the full metadata.geojson."""
     try:
         import geopandas as gpd
     except ImportError as exc:

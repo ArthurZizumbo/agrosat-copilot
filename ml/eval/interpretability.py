@@ -1,35 +1,35 @@
-"""Interpretabilidad del baseline de clasificacion de cultivos (US-020, EPIC 4).
+"""Interpretability for the crop classification baseline (US-020, EPIC 4).
 
-Modulo reutilizable que explica los modelos *production* del baseline tabular
-(Random Forest y XGBoost de US-019) mediante dos familias de tecnicas:
+Reusable module that explains the *production* models of the tabular baseline
+(Random Forest and XGBoost from US-019) using two families of techniques:
 
-- **Importancia nativa** (criterio AC-1): Gini/MDI para Random Forest
-  (``feature_importances_``) y *gain* para XGBoost
-  (``Booster.get_score(importance_type="gain")``). Se extrae del modelo ya
-  ajustado — no se re-entrena nada.
-- **SHAP** (criterios AC-2, AC-3, AC-6): valores de Shapley exactos con
-  ``shap.TreeExplainer`` sobre un subsample estratificado del dataset.
-  El analisis es **multiclase** (18-20 clases PASTIS-R): ``compute_shap_values``
-  normaliza las tres formas de salida que ``TreeExplainer`` produce segun
-  version (lista-por-clase, array 3D, objeto ``Explanation``) a un unico tensor
-  ``(n_samples, n_features, n_classes)``.
+- **Native importance** (criterion AC-1): Gini/MDI for Random Forest
+  (``feature_importances_``) and *gain* for XGBoost
+  (``Booster.get_score(importance_type="gain")``). Extracted from the already
+  fitted model — nothing is re-trained.
+- **SHAP** (criteria AC-2, AC-3, AC-6): exact Shapley values with
+  ``shap.TreeExplainer`` over a stratified subsample of the dataset.
+  The analysis is **multiclass** (18-20 PASTIS-R classes): ``compute_shap_values``
+  normalizes the three output shapes that ``TreeExplainer`` produces depending
+  on version (per-class list, 3D array, ``Explanation`` object) into a single
+  tensor ``(n_samples, n_features, n_classes)``.
 
-Ademas cuantifica la *dominancia AlphaEarth* (criterio AC-4): clasifica cada
-feature en su familia de origen (``is_alphaearth_dim`` + ``alphaearth_dominance_table``)
-para responder cuantas de las top-N features SHAP son dimensiones del embedding
-AlphaEarth — dato de entrada para el Paper Track.
+It also quantifies *AlphaEarth dominance* (criterion AC-4): it classifies each
+feature into its source family (``is_alphaearth_dim`` + ``alphaearth_dominance_table``)
+to answer how many of the top-N SHAP features are AlphaEarth embedding
+dimensions — an input for the Paper Track.
 
-Decision D1 (plan US-020 2.1): este modulo es independiente de
-``ml/eval/metrics.py`` (metricas) y de ``ml/features/selection.py`` (feature
-engineering exploratorio). La interpretabilidad de modelos production es un
-dominio propio, consumido tambien por las arquitecturas del EPIC 5/6.
+Decision D1 (plan US-020 2.1): this module is independent of
+``ml/eval/metrics.py`` (metrics) and ``ml/features/selection.py`` (exploratory
+feature engineering). Interpretability of production models is its own domain,
+also consumed by the EPIC 5/6 architectures.
 
-Decision D6: SHAP corre sobre un subsample estratificado (``sample_size=3000``
-por defecto), no sobre las ~85k filas del dataset completo — TreeSHAP es exacto
-pero O(samples x trees x depth) y el subsample da un summary estable.
+Decision D6: SHAP runs over a stratified subsample (``sample_size=3000`` by
+default), not over the ~85k rows of the full dataset — TreeSHAP is exact but
+O(samples x trees x depth) and the subsample gives a stable summary.
 
-Polars es el formato de I/O y de las tablas de salida; la conversion a
-numpy/pandas ocurre exclusivamente en el borde de SHAP, en helpers privados.
+Polars is the I/O format and the format of the output tables; the conversion to
+numpy/pandas happens exclusively at the SHAP boundary, in private helpers.
 """
 
 from __future__ import annotations
@@ -64,16 +64,16 @@ FeatureFamily = Literal[
     "alphaearth", "spectral_index", "s1", "srtm", "era5", "geom", "other"
 ]
 
-# Resolucion de figuras de los entregables visuales del Avance 3 (criterio AC-7).
+# Figure resolution for the Avance 3 visual deliverables (criterion AC-7).
 _PLOT_DPI: int = 200
 
-# Regex de las dimensiones del embedding AlphaEarth: `dim_00`..`dim_63`
-# (prefijo real confirmado 2026-05-21 en el parquet parcel-level enriquecido).
+# Regex for the AlphaEarth embedding dimensions: `dim_00`..`dim_63`
+# (real prefix confirmed 2026-05-21 in the enriched parcel-level parquet).
 _ALPHAEARTH_DIM_RE = re.compile(r"^dim_\d{2}$")
 
-# Sufijos estadisticos de los indices espectrales (NDVI_mean, EVI_p95, ...) y
-# armonicos FFT (NDVI_fft_amp_0, ...). Sirven para clasificar la familia
-# `spectral_index` por convencion de nombres en `_classify_family`.
+# Statistical suffixes of the spectral indices (NDVI_mean, EVI_p95, ...) and
+# FFT harmonics (NDVI_fft_amp_0, ...). Used to classify the
+# `spectral_index` family by naming convention in `_classify_family`.
 _SPECTRAL_PREFIXES: tuple[str, ...] = (
     "NDVI", "NDWI", "EVI", "NDMI", "NBR", "MSAVI2", "NDRE", "MCARI",
     "CCCI", "GCVI", "PSRI", "NDCI", "FAPAR", "LAI", "RENDVI", "SAVI", "TSAVI",
@@ -81,25 +81,25 @@ _SPECTRAL_PREFIXES: tuple[str, ...] = (
 
 
 # ---------------------------------------------------------------------------
-# Dataclass de salida.
+# Output dataclass.
 # ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
 class ShapResult:
-    """Resultado de un analisis SHAP multiclase.
+    """Result of a multiclass SHAP analysis.
 
     Attributes:
-        values: Array SHAP normalizado, shape
-            ``(n_samples, n_features, n_classes)``. Para clasificacion binaria
-            con salida 2D tambien se expande a 3 ejes (``n_classes`` = 2 o 1).
+        values: Normalized SHAP array, shape
+            ``(n_samples, n_features, n_classes)``. For binary classification
+            with 2D output it is also expanded to 3 axes (``n_classes`` = 2 or 1).
         global_importance: ``pl.DataFrame`` ``(feature, mean_abs_shap, rank)``;
-            el ranking global es la media de ``|SHAP|`` sobre clases y muestras
+            the global ranking is the mean of ``|SHAP|`` over classes and samples
             (decision D4).
-        feature_cols: Nombres de las features en el orden del eje 1 de
+        feature_cols: Names of the features in the order of axis 1 of
             ``values``.
-        base_values: Valores esperados del explainer, shape ``(n_classes,)``.
-        model_kind: ``"rf"`` o ``"xgb"``.
+        base_values: Expected values of the explainer, shape ``(n_classes,)``.
+        model_kind: ``"rf"`` or ``"xgb"``.
     """
 
     values: np.ndarray
@@ -110,7 +110,7 @@ class ShapResult:
 
 
 # ---------------------------------------------------------------------------
-# Helpers privados.
+# Private helpers.
 # ---------------------------------------------------------------------------
 
 
@@ -121,32 +121,32 @@ def _to_numpy_sample(
     sample_size: int | None = None,
     random_state: int = 42,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Extrae la matriz de features como ``np.ndarray`` y opcionalmente submuestrea.
+    """Extract the feature matrix as ``np.ndarray`` and optionally subsample.
 
-    Convierte el ``pl.DataFrame`` a ``float64`` (borde numpy obligatorio para
-    SHAP) seleccionando las columnas de ``feature_cols`` en orden. Si
-    ``sample_size`` es menor que el numero de filas toma una muestra aleatoria
-    reproducible; en caso contrario devuelve todas las filas.
+    Converts the ``pl.DataFrame`` to ``float64`` (numpy boundary required for
+    SHAP) selecting the ``feature_cols`` columns in order. If ``sample_size`` is
+    smaller than the number of rows it takes a reproducible random sample;
+    otherwise it returns all rows.
 
     Args:
-        X: DataFrame Polars con al menos las columnas de ``feature_cols``.
-        feature_cols: Columnas a seleccionar, en orden.
-        sample_size: Tamano del subsample; si es ``None`` o ``>= X.height`` se
-            usan todas las filas.
-        random_state: Semilla del muestreo.
+        X: Polars DataFrame with at least the ``feature_cols`` columns.
+        feature_cols: Columns to select, in order.
+        sample_size: Subsample size; if ``None`` or ``>= X.height`` all rows are
+            used.
+        random_state: Sampling seed.
 
     Returns:
-        Tupla ``(matrix, row_index)`` donde ``matrix`` es
-        ``(n_sample, n_features)`` float64 y ``row_index`` son los indices
-        originales de las filas seleccionadas.
+        Tuple ``(matrix, row_index)`` where ``matrix`` is
+        ``(n_sample, n_features)`` float64 and ``row_index`` are the original
+        indices of the selected rows.
 
     Raises:
-        ValueError: si falta alguna columna de ``feature_cols`` en ``X``.
+        ValueError: if any ``feature_cols`` column is missing from ``X``.
     """
     missing = [c for c in feature_cols if c not in X.columns]
     if missing:
         raise ValueError(
-            f"`X` no contiene las columnas de feature requeridas: {missing}."
+            f"`X` does not contain the required feature columns: {missing}."
         )
 
     n_rows = X.height
@@ -163,22 +163,22 @@ def _to_numpy_sample(
         .to_numpy()
         .astype(np.float64)
     )
-    # Imputa NaN/inf con la media de columna: TreeExplainer no acepta NaN para
-    # algunos modelos y los +/-inf de ratios espectrales rompen el algoritmo.
+    # Impute NaN/inf with the column mean: TreeExplainer does not accept NaN for
+    # some models and the +/-inf of spectral ratios break the algorithm.
     matrix = _impute_columns(matrix)
     return matrix[row_index], row_index
 
 
 def _impute_columns(matrix: np.ndarray) -> np.ndarray:
-    """Reemplaza NaN e infinitos por la media finita de cada columna.
+    """Replace NaN and infinities with the finite mean of each column.
 
     Args:
-        matrix: Matriz ``(n_samples, n_features)`` que puede contener NaN o
+        matrix: Matrix ``(n_samples, n_features)`` that may contain NaN or
             +/-inf.
 
     Returns:
-        Una copia de ``matrix`` sin valores no finitos. Las columnas sin ningun
-        valor finito se rellenan con ``0.0``.
+        A copy of ``matrix`` without non-finite values. Columns with no finite
+        value at all are filled with ``0.0``.
     """
     clean = np.array(matrix, dtype=np.float64, copy=True)
     clean[~np.isfinite(clean)] = np.nan
@@ -198,30 +198,30 @@ def _normalize_shap_multiclass(
     n_samples: int,
     n_features: int,
 ) -> np.ndarray:
-    """Normaliza la salida de ``TreeExplainer.shap_values`` a un tensor 3D.
+    """Normalize the output of ``TreeExplainer.shap_values`` into a 3D tensor.
 
-    ``shap.TreeExplainer`` devuelve formas distintas segun la version y el tipo
-    de modelo (decision D3, riesgo R2):
+    ``shap.TreeExplainer`` returns different shapes depending on the version and
+    the model type (decision D3, risk R2):
 
-    - **Lista por clase**: ``list`` de ``n_classes`` arrays
-      ``(n_samples, n_features)`` — API clasica multiclase.
-    - **Array 3D**: ``(n_samples, n_features, n_classes)`` — API nueva.
-    - **Array 2D**: ``(n_samples, n_features)`` — binario o regresion; se
-      expande a ``(n_samples, n_features, 1)``.
-    - **Objeto ``Explanation``**: se accede a su atributo ``.values``.
+    - **Per-class list**: ``list`` of ``n_classes`` arrays
+      ``(n_samples, n_features)`` — classic multiclass API.
+    - **3D array**: ``(n_samples, n_features, n_classes)`` — new API.
+    - **2D array**: ``(n_samples, n_features)`` — binary or regression; expanded
+      to ``(n_samples, n_features, 1)``.
+    - **``Explanation`` object**: its ``.values`` attribute is accessed.
 
     Args:
-        raw: Salida cruda de ``shap_values`` o de ``explainer(X)``.
-        n_samples: Numero de muestras esperado (eje 0).
-        n_features: Numero de features esperado (eje 1).
+        raw: Raw output of ``shap_values`` or of ``explainer(X)``.
+        n_samples: Expected number of samples (axis 0).
+        n_features: Expected number of features (axis 1).
 
     Returns:
-        Array float64 ``(n_samples, n_features, n_classes)``.
+        float64 array ``(n_samples, n_features, n_classes)``.
 
     Raises:
-        ValueError: si la salida no encaja en ninguna de las formas conocidas.
+        ValueError: if the output does not match any of the known shapes.
     """
-    # Objeto Explanation -> extraer .values y recursar.
+    # Explanation object -> extract .values and recurse.
     if hasattr(raw, "values") and not isinstance(raw, (list, tuple, np.ndarray)):
         return _normalize_shap_multiclass(
             np.asarray(raw.values, dtype=np.float64),
@@ -229,12 +229,12 @@ def _normalize_shap_multiclass(
             n_features=n_features,
         )
 
-    # Lista/tupla de arrays 2D, uno por clase.
+    # List/tuple of 2D arrays, one per class.
     if isinstance(raw, (list, tuple)):
         per_class = [np.asarray(arr, dtype=np.float64) for arr in raw]
         if not per_class:
-            raise ValueError("`shap_values` devolvio una lista vacia.")
-        # stack sobre el ultimo eje -> (n_samples, n_features, n_classes).
+            raise ValueError("`shap_values` returned an empty list.")
+        # stack over the last axis -> (n_samples, n_features, n_classes).
         stacked = np.stack(per_class, axis=-1)
         return _validate_shape(stacked, n_samples, n_features)
 
@@ -242,37 +242,37 @@ def _normalize_shap_multiclass(
     if array.ndim == 2:
         return _validate_shape(array[:, :, np.newaxis], n_samples, n_features)
     if array.ndim == 3:
-        # Algunas versiones devuelven (n_classes, n_samples, n_features);
-        # se reordena al layout canonico si el eje 0 no es n_samples.
+        # Some versions return (n_classes, n_samples, n_features);
+        # reorder to the canonical layout if axis 0 is not n_samples.
         if array.shape[0] != n_samples and array.shape[1] == n_samples:
             array = np.transpose(array, (1, 2, 0))
         return _validate_shape(array, n_samples, n_features)
 
     raise ValueError(
-        f"Forma de SHAP no reconocida: ndim={array.ndim}, shape={array.shape}."
+        f"Unrecognized SHAP shape: ndim={array.ndim}, shape={array.shape}."
     )
 
 
 def _validate_shape(
     array: np.ndarray, n_samples: int, n_features: int
 ) -> np.ndarray:
-    """Valida que un tensor SHAP 3D tenga los ejes ``(n_samples, n_features, *)``.
+    """Validate that a 3D SHAP tensor has the axes ``(n_samples, n_features, *)``.
 
     Args:
-        array: Tensor candidato de 3 ejes.
-        n_samples: Numero de muestras esperado.
-        n_features: Numero de features esperado.
+        array: Candidate 3-axis tensor.
+        n_samples: Expected number of samples.
+        n_features: Expected number of features.
 
     Returns:
-        El propio ``array`` si los dos primeros ejes coinciden.
+        The ``array`` itself if the first two axes match.
 
     Raises:
-        ValueError: si los ejes no coinciden con lo esperado.
+        ValueError: if the axes do not match what was expected.
     """
     if array.shape[:2] != (n_samples, n_features):
         raise ValueError(
-            f"Tensor SHAP con ejes inesperados {array.shape}; "
-            f"se esperaba (n_samples={n_samples}, n_features={n_features}, *)."
+            f"SHAP tensor with unexpected axes {array.shape}; "
+            f"expected (n_samples={n_samples}, n_features={n_features}, *)."
         )
     return array
 
@@ -280,19 +280,19 @@ def _validate_shape(
 def _global_importance_table(
     values: np.ndarray, feature_cols: tuple[str, ...]
 ) -> pl.DataFrame:
-    """Construye la tabla de importancia global SHAP.
+    """Build the global SHAP importance table.
 
-    La importancia global de cada feature es la media de ``|SHAP|`` sobre todas
-    las muestras y todas las clases (decision D4) — el ranking estandar para los
-    summary plots.
+    The global importance of each feature is the mean of ``|SHAP|`` over all
+    samples and all classes (decision D4) — the standard ranking for the summary
+    plots.
 
     Args:
-        values: Tensor SHAP ``(n_samples, n_features, n_classes)``.
-        feature_cols: Nombres de las features.
+        values: SHAP tensor ``(n_samples, n_features, n_classes)``.
+        feature_cols: Names of the features.
 
     Returns:
-        ``pl.DataFrame`` ``(feature, mean_abs_shap, rank)`` ordenado
-        descendentemente por ``mean_abs_shap``.
+        ``pl.DataFrame`` ``(feature, mean_abs_shap, rank)`` sorted descending by
+        ``mean_abs_shap``.
     """
     mean_abs = np.abs(values).mean(axis=(0, 2))
     order = np.argsort(-mean_abs)
@@ -311,16 +311,16 @@ def _global_importance_table(
 
 
 def _classify_family(feature_name: str) -> FeatureFamily:
-    """Clasifica un feature en su familia de origen por convencion de nombres.
+    """Classify a feature into its source family by naming convention.
 
     Args:
-        feature_name: Nombre de la columna de feature.
+        feature_name: Name of the feature column.
 
     Returns:
-        La familia: ``alphaearth`` (``dim_NN``), ``spectral_index`` (indices y
-        sus armonicos FFT), ``s1`` (radar Sentinel-1, prefijo ``VV``/``VH``),
-        ``srtm`` (elevacion/pendiente), ``era5`` (clima), ``geom`` (geometria de
-        la parcela) o ``other``.
+        The family: ``alphaearth`` (``dim_NN``), ``spectral_index`` (indices and
+        their FFT harmonics), ``s1`` (Sentinel-1 radar, prefix ``VV``/``VH``),
+        ``srtm`` (elevation/slope), ``era5`` (climate), ``geom`` (parcel
+        geometry) or ``other``.
     """
     if is_alphaearth_dim(feature_name):
         return "alphaearth"
@@ -338,8 +338,8 @@ def _classify_family(feature_name: str) -> FeatureFamily:
     base = feature_name.split("_", 1)[0]
     if base in _SPECTRAL_PREFIXES:
         return "spectral_index"
-    # Fenologia derivada de NDVI (sog_doy, peak_doy, ndvi_auc, ...): se trata
-    # como indice espectral porque deriva de las series de indices.
+    # Phenology derived from NDVI (sog_doy, peak_doy, ndvi_auc, ...): treated
+    # as a spectral index because it derives from the index series.
     if feature_name.lower().startswith(
         ("sog_", "peak_", "senescence_", "ndvi_", "maturity_")
     ):
@@ -348,7 +348,7 @@ def _classify_family(feature_name: str) -> FeatureFamily:
 
 
 # ---------------------------------------------------------------------------
-# Importancia nativa (criterio AC-1).
+# Native importance (criterion AC-1).
 # ---------------------------------------------------------------------------
 
 
@@ -357,34 +357,34 @@ def feature_importance_table(
     model_kind: ModelKind,
     feature_cols: tuple[str, ...],
 ) -> pl.DataFrame:
-    """Calcula la importancia nativa de un modelo de arboles ya ajustado.
+    """Compute the native importance of an already fitted tree model.
 
-    Random Forest expone la importancia Gini/MDI en ``feature_importances_``;
-    XGBoost expone la ganancia (*gain*) en
-    ``Booster.get_score(importance_type="gain")``. A diferencia de
-    :func:`ml.features.selection.compute_feature_importance` (que re-entrena un
-    modelo exploratorio), aqui se extrae el atributo del modelo *production* de
-    US-019 — decision D2: no se re-entrena nada.
+    Random Forest exposes the Gini/MDI importance in ``feature_importances_``;
+    XGBoost exposes the gain in
+    ``Booster.get_score(importance_type="gain")``. Unlike
+    :func:`ml.features.selection.compute_feature_importance` (which re-trains an
+    exploratory model), here the attribute is extracted from the US-019
+    *production* model — decision D2: nothing is re-trained.
 
     Args:
-        model: Estimador ``RandomForestClassifier`` o ``XGBClassifier`` ya
-            ajustado.
-        model_kind: ``"rf"`` para Gini o ``"xgb"`` para *gain*.
-        feature_cols: Nombres de las features en el orden con el que se ajusto
-            el modelo.
+        model: Already fitted ``RandomForestClassifier`` or ``XGBClassifier``
+            estimator.
+        model_kind: ``"rf"`` for Gini or ``"xgb"`` for gain.
+        feature_cols: Names of the features in the order in which the model was
+            fitted.
 
     Returns:
-        ``pl.DataFrame`` ``(feature, importance, rank)`` ordenado
-        descendentemente por ``importance``. Para XGBoost las features que el
-        booster nunca uso reciben ``importance = 0.0``.
+        ``pl.DataFrame`` ``(feature, importance, rank)`` sorted descending by
+        ``importance``. For XGBoost the features the booster never used receive
+        ``importance = 0.0``.
 
     Raises:
-        ValueError: si ``model_kind`` no es ``"rf"`` ni ``"xgb"``, o si el
-            numero de features del modelo no coincide con ``len(feature_cols)``.
+        ValueError: if ``model_kind`` is neither ``"rf"`` nor ``"xgb"``, or if
+            the model's number of features does not match ``len(feature_cols)``.
     """
     if model_kind not in ("rf", "xgb"):
         raise ValueError(
-            f"`model_kind` debe ser 'rf' o 'xgb'; recibido {model_kind!r}."
+            f"`model_kind` must be 'rf' or 'xgb'; received {model_kind!r}."
         )
 
     n_features = len(feature_cols)
@@ -394,8 +394,8 @@ def feature_importance_table(
         )
         if importances.shape[0] != n_features:
             raise ValueError(
-                f"El modelo RF tiene {importances.shape[0]} features pero "
-                f"`feature_cols` tiene {n_features}."
+                f"The RF model has {importances.shape[0]} features but "
+                f"`feature_cols` has {n_features}."
             )
     else:
         importances = _xgb_gain_importances(model, feature_cols)
@@ -421,18 +421,18 @@ def feature_importance_table(
 def _xgb_gain_importances(
     model: ClassifierMixin, feature_cols: tuple[str, ...]
 ) -> np.ndarray:
-    """Extrae la importancia *gain* de un ``XGBClassifier`` alineada al orden dado.
+    """Extract the gain importance of an ``XGBClassifier`` aligned to the given order.
 
-    El booster XGBoost indexa las features como ``f0``, ``f1``, ... cuando se
-    entreno con un ``np.ndarray``. ``get_score`` solo devuelve las features que
-    el modelo efectivamente uso; el resto se rellena con ``0.0``.
+    The XGBoost booster indexes the features as ``f0``, ``f1``, ... when trained
+    with an ``np.ndarray``. ``get_score`` only returns the features the model
+    actually used; the rest are filled with ``0.0``.
 
     Args:
-        model: ``XGBClassifier`` ya ajustado.
-        feature_cols: Nombres de las features en el orden de entrenamiento.
+        model: Already fitted ``XGBClassifier``.
+        feature_cols: Names of the features in training order.
 
     Returns:
-        Array ``(n_features,)`` de importancias *gain*, alineado a
+        Array ``(n_features,)`` of gain importances, aligned to
         ``feature_cols``.
     """
     booster = model.get_booster()
@@ -455,7 +455,7 @@ def _xgb_gain_importances(
 
 
 # ---------------------------------------------------------------------------
-# SHAP (criterios AC-2, AC-3, AC-6).
+# SHAP (criteria AC-2, AC-3, AC-6).
 # ---------------------------------------------------------------------------
 
 
@@ -468,35 +468,34 @@ def compute_shap_values(
     sample_size: int = 3000,
     random_state: int = 42,
 ) -> ShapResult:
-    """Calcula los valores SHAP de un modelo de arboles con ``TreeExplainer``.
+    """Compute the SHAP values of a tree model with ``TreeExplainer``.
 
-    Instancia ``shap.TreeExplainer`` (algoritmo TreeSHAP exacto, CPU) sobre un
-    subsample estratificado de ``X`` (decision D6) y normaliza la salida
-    multiclase a un tensor ``(n_samples, n_features, n_classes)`` mediante
+    Instantiates ``shap.TreeExplainer`` (exact TreeSHAP algorithm, CPU) over a
+    stratified subsample of ``X`` (decision D6) and normalizes the multiclass
+    output into a tensor ``(n_samples, n_features, n_classes)`` via
     :func:`_normalize_shap_multiclass` (decision D3).
 
     Args:
-        model: Estimador ``RandomForestClassifier`` o ``XGBClassifier`` ya
-            ajustado.
-        X: DataFrame Polars con las columnas de ``feature_cols``.
-        model_kind: ``"rf"`` o ``"xgb"``.
-        feature_cols: Nombres de las features en el orden de entrenamiento.
-        sample_size: Tamano del subsample SHAP; si ``X`` tiene menos filas se
-            usan todas.
-        random_state: Semilla del muestreo (reproducibilidad).
+        model: Already fitted ``RandomForestClassifier`` or ``XGBClassifier``
+            estimator.
+        X: Polars DataFrame with the ``feature_cols`` columns.
+        model_kind: ``"rf"`` or ``"xgb"``.
+        feature_cols: Names of the features in training order.
+        sample_size: SHAP subsample size; if ``X`` has fewer rows all are used.
+        random_state: Sampling seed (reproducibility).
 
     Returns:
-        :class:`ShapResult` con el tensor SHAP, la tabla de importancia global
-        y los valores base del explainer.
+        :class:`ShapResult` with the SHAP tensor, the global importance table
+        and the base values of the explainer.
 
     Raises:
-        ValueError: si ``model_kind`` es invalido o faltan columnas en ``X``.
+        ValueError: if ``model_kind`` is invalid or columns are missing in ``X``.
     """
     import shap
 
     if model_kind not in ("rf", "xgb"):
         raise ValueError(
-            f"`model_kind` debe ser 'rf' o 'xgb'; recibido {model_kind!r}."
+            f"`model_kind` must be 'rf' or 'xgb'; received {model_kind!r}."
         )
 
     matrix, row_index = _to_numpy_sample(
@@ -538,21 +537,21 @@ def shap_summary_plot(
     *,
     top_n: int = 20,
 ) -> Figure:
-    """Genera el summary plot (beeswarm) de las top-N features SHAP.
+    """Generate the summary plot (beeswarm) of the top-N SHAP features.
 
-    Agrega los valores SHAP sobre las clases (media de ``|SHAP|``) para producir
-    un beeswarm global de las ``top_n`` features mas importantes. Usa el backend
-    ``Agg`` de matplotlib para que la figura sea serializable a PNG en CI y en
-    notebooks ejecutados con papermill.
+    Aggregates the SHAP values over the classes (mean of ``|SHAP|``) to produce
+    a global beeswarm of the ``top_n`` most important features. Uses matplotlib's
+    ``Agg`` backend so the figure is serializable to PNG in CI and in notebooks
+    executed with papermill.
 
     Args:
-        shap_result: Resultado de :func:`compute_shap_values`.
-        X: DataFrame Polars con las columnas de ``shap_result.feature_cols``;
-            debe tener al menos tantas filas como el subsample SHAP.
-        top_n: Numero de features a mostrar (las mas importantes globalmente).
+        shap_result: Result of :func:`compute_shap_values`.
+        X: Polars DataFrame with the ``shap_result.feature_cols`` columns; it
+            must have at least as many rows as the SHAP subsample.
+        top_n: Number of features to show (the most important globally).
 
     Returns:
-        Figura matplotlib ``dpi=200`` lista para ``fig.savefig`` o ``display``.
+        matplotlib figure ``dpi=200`` ready for ``fig.savefig`` or ``display``.
     """
     import matplotlib
 
@@ -564,7 +563,7 @@ def shap_summary_plot(
     matrix, _ = _to_numpy_sample(
         X, feature_cols, sample_size=shap_result.values.shape[0]
     )
-    # Importancia agregada sobre clases -> array 2D (n_samples, n_features).
+    # Importance aggregated over classes -> 2D array (n_samples, n_features).
     aggregated = np.abs(shap_result.values).mean(axis=2)
 
     fig = plt.figure(dpi=_PLOT_DPI)
@@ -592,20 +591,20 @@ def shap_dependence_plots(
     *,
     top_features: int = 5,
 ) -> list[tuple[str, Figure]]:
-    """Genera un dependence plot por cada una de las top-N features SHAP.
+    """Generate one dependence plot for each of the top-N SHAP features.
 
-    Las features se ordenan por importancia SHAP global (decision D4); para cada
-    una se grafica el valor SHAP de la clase mas explicada frente al valor del
-    feature.
+    The features are sorted by global SHAP importance (decision D4); for each one
+    the SHAP value of the most explained class is plotted against the feature
+    value.
 
     Args:
-        shap_result: Resultado de :func:`compute_shap_values`.
-        X: DataFrame Polars con las columnas de ``shap_result.feature_cols``.
-        top_features: Numero de features a graficar.
+        shap_result: Result of :func:`compute_shap_values`.
+        X: Polars DataFrame with the ``shap_result.feature_cols`` columns.
+        top_features: Number of features to plot.
 
     Returns:
-        Lista de tuplas ``(feature_name, figure)``, una por feature, ordenadas
-        por importancia SHAP global descendente.
+        List of tuples ``(feature_name, figure)``, one per feature, sorted by
+        descending global SHAP importance.
     """
     import matplotlib
 
@@ -621,7 +620,7 @@ def shap_dependence_plots(
         .head(top_features)["feature"]
         .to_list()
     )
-    # Clase de referencia: la que concentra mas senal SHAP global.
+    # Reference class: the one concentrating the most global SHAP signal.
     class_idx = int(
         np.abs(shap_result.values).mean(axis=(0, 1)).argmax()
     )
@@ -663,25 +662,25 @@ def shap_waterfall_plot(
     row: int = 0,
     class_idx: int | None = None,
 ) -> Figure:
-    """Genera el waterfall plot de una prediccion ejemplo.
+    """Generate the waterfall plot of a sample prediction.
 
-    El waterfall descompone una prediccion individual mostrando la contribucion
-    de cada feature al desplazamiento desde el valor base hasta la salida del
-    modelo.
+    The waterfall decomposes an individual prediction by showing the
+    contribution of each feature to the shift from the base value to the model
+    output.
 
     Args:
-        shap_result: Resultado de :func:`compute_shap_values`.
-        row: Indice de la fila (muestra) a explicar.
-        class_idx: Indice de la clase a explicar; si es ``None`` se usa la clase
-            con mayor suma de ``|SHAP|`` para esa fila (proxy de la clase
-            predicha).
+        shap_result: Result of :func:`compute_shap_values`.
+        row: Index of the row (sample) to explain.
+        class_idx: Index of the class to explain; if ``None`` the class with the
+            largest sum of ``|SHAP|`` for that row is used (proxy of the
+            predicted class).
 
     Returns:
-        Figura matplotlib ``dpi=200`` con el waterfall plot.
+        matplotlib figure ``dpi=200`` with the waterfall plot.
 
     Raises:
-        IndexError: si ``row`` esta fuera del rango de muestras.
-        ValueError: si ``class_idx`` esta fuera del rango de clases.
+        IndexError: if ``row`` is out of the sample range.
+        ValueError: if ``class_idx`` is out of the class range.
     """
     import matplotlib
 
@@ -692,8 +691,8 @@ def shap_waterfall_plot(
     n_samples, _n_features, n_classes = shap_result.values.shape
     if not 0 <= row < n_samples:
         raise IndexError(
-            f"`row`={row} fuera de rango; el subsample SHAP tiene "
-            f"{n_samples} muestras."
+            f"`row`={row} out of range; the SHAP subsample has "
+            f"{n_samples} samples."
         )
 
     if class_idx is None:
@@ -703,7 +702,7 @@ def shap_waterfall_plot(
     else:
         if not 0 <= class_idx < n_classes:
             raise ValueError(
-                f"`class_idx`={class_idx} fuera de rango; hay {n_classes} clases."
+                f"`class_idx`={class_idx} out of range; there are {n_classes} classes."
             )
         resolved_class = class_idx
 
@@ -731,22 +730,22 @@ def shap_waterfall_plot(
 
 
 # ---------------------------------------------------------------------------
-# Analisis de dominancia AlphaEarth (criterio AC-4).
+# AlphaEarth dominance analysis (criterion AC-4).
 # ---------------------------------------------------------------------------
 
 
 def is_alphaearth_dim(feature_name: str) -> bool:
-    """Indica si un feature es una dimension del embedding AlphaEarth.
+    """Indicate whether a feature is an AlphaEarth embedding dimension.
 
-    Las dimensiones AlphaEarth se nombran ``dim_00``..``dim_63`` (embedding de
-    64 dimensiones — convencion real confirmada inspeccionando el parquet
-    AlphaEarth parcel-level). La funcion aplica el regex ``^dim_\\d{2}$``.
+    The AlphaEarth dimensions are named ``dim_00``..``dim_63`` (64-dimensional
+    embedding — real convention confirmed by inspecting the AlphaEarth
+    parcel-level parquet). The function applies the regex ``^dim_\\d{2}$``.
 
     Args:
-        feature_name: Nombre de la columna de feature.
+        feature_name: Name of the feature column.
 
     Returns:
-        ``True`` si el nombre encaja en el patron de una dimension AlphaEarth.
+        ``True`` if the name matches the pattern of an AlphaEarth dimension.
     """
     return bool(_ALPHAEARTH_DIM_RE.match(feature_name))
 
@@ -756,31 +755,31 @@ def alphaearth_dominance_table(
     *,
     top_n: int = 20,
 ) -> pl.DataFrame:
-    """Clasifica las top-N features por familia y cuantifica la dominancia.
+    """Classify the top-N features by family and quantify dominance.
 
-    Toma una tabla de importancia (importancia nativa o SHAP global), recorta a
-    las ``top_n`` mas importantes y anade la familia de origen de cada feature
+    Takes an importance table (native importance or global SHAP), trims it to the
+    ``top_n`` most important and adds the source family of each feature
     (``alphaearth``, ``spectral_index``, ``s1``, ``srtm``, ``era5``, ``geom``,
-    ``other``). Es el insumo de la conclusion cuantificada del criterio AC-4
-    ("cuantas de las top-20 son dimensiones AlphaEarth").
+    ``other``). It is the input for the quantified conclusion of criterion AC-4
+    ("how many of the top-20 are AlphaEarth dimensions").
 
     Args:
-        importance_df: ``pl.DataFrame`` con una columna ``feature`` y una
-            columna numerica de importancia (``importance`` o
-            ``mean_abs_shap``). Si trae una columna ``rank`` se respeta su
-            orden; si no, se ordena por la columna de importancia.
-        top_n: Numero de features a retener.
+        importance_df: ``pl.DataFrame`` with a ``feature`` column and a numeric
+            importance column (``importance`` or ``mean_abs_shap``). If it has a
+            ``rank`` column its order is respected; otherwise it is sorted by the
+            importance column.
+        top_n: Number of features to retain.
 
     Returns:
-        ``pl.DataFrame`` ``(rank, feature, family, importance)`` con las ``top_n``
-        primeras features.
+        ``pl.DataFrame`` ``(rank, feature, family, importance)`` with the first
+        ``top_n`` features.
 
     Raises:
-        ValueError: si ``importance_df`` no contiene la columna ``feature`` o no
-            tiene una columna de importancia reconocible.
+        ValueError: if ``importance_df`` does not contain the ``feature`` column
+            or has no recognizable importance column.
     """
     if "feature" not in importance_df.columns:
-        raise ValueError("`importance_df` debe contener la columna `feature`.")
+        raise ValueError("`importance_df` must contain the `feature` column.")
 
     importance_col: str | None = None
     for candidate in ("importance", "mean_abs_shap"):
@@ -789,8 +788,8 @@ def alphaearth_dominance_table(
             break
     if importance_col is None:
         raise ValueError(
-            "`importance_df` debe contener una columna de importancia "
-            "(`importance` o `mean_abs_shap`)."
+            "`importance_df` must contain an importance column "
+            "(`importance` or `mean_abs_shap`)."
         )
 
     if "rank" in importance_df.columns:

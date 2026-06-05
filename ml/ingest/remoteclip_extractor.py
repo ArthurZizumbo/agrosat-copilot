@@ -1,38 +1,37 @@
-"""Extraccion de embeddings RemoteCLIP sobre crops PASTIS-R (US-023-preview-v2 P5).
+"""RemoteCLIP embeddings extraction over PASTIS-R crops (US-023-preview-v2 P5).
 
-Reemplaza el placeholder ``_extract_remoteclip_embeddings`` del notebook
-``04_farslip_eval_pastis.ipynb`` por una extraccion REAL usando RemoteCLIP
-(Chen et al. 2023, https://github.com/ChenDelong1999/RemoteCLIP). El modelo
-``chendelong/RemoteCLIP-ViT-B-32`` es un CLIP ViT-B/32 fine-tuned sobre
-imageria de remote sensing (RSITMD + RSICD + UCM).
+Replaces the ``_extract_remoteclip_embeddings`` placeholder of the notebook
+``04_farslip_eval_pastis.ipynb`` with a REAL extraction using RemoteCLIP
+(Chen et al. 2023, https://github.com/ChenDelong1999/RemoteCLIP). The model
+``chendelong/RemoteCLIP-ViT-B-32`` is a CLIP ViT-B/32 fine-tuned on
+remote sensing imagery (RSITMD + RSICD + UCM).
 
-Pipeline por parcela:
+Per-parcel pipeline:
 
-1. Carga crops S2 multitemporales desde ``imagery_path`` (parquet binario o
-   array NCHW por parcela).
-2. Selecciona bandas B04 (red), B03 (green), B02 (blue) y compone RGB.
-3. Normaliza con stats ``NORM_S2_patch.json`` (PASTIS-R) y aplica stretch
-   percentil 2-98 -> uint8.
-4. Resize bilineal a 224x224.
-5. Forward por el ``CLIPVisionModel`` y normaliza L2.
-6. Pooling temporal (mean sobre eje T) si la parcela es multi-temporal.
+1. Loads multitemporal S2 crops from ``imagery_path`` (binary parquet or
+   NCHW array per parcel).
+2. Selects bands B04 (red), B03 (green), B02 (blue) and composes RGB.
+3. Normalizes with stats ``NORM_S2_patch.json`` (PASTIS-R) and applies a
+   2-98 percentile stretch -> uint8.
+4. Bilinear resize to 224x224.
+5. Forward through the ``CLIPVisionModel`` and L2-normalize.
+6. Temporal pooling (mean over the T axis) if the parcel is multi-temporal.
 
-Output ``data/farslip/remoteclip_embeddings_pastis.parquet`` con schema:
+Output ``data/farslip/remoteclip_embeddings_pastis.parquet`` with schema:
 
 ::
 
     parcel_id (Utf8) | year (Int16) |
     remoteclip_000 .. remoteclip_511 (Float32)
 
-Esquema compatible con :func:`ml.farslip.extract_embeddings.extract_farslip_embeddings`
-salvo el prefijo de columnas (``remoteclip_*`` vs ``farslip_emb_*``); el
-notebook 04 puede concatenar ambos para el linear probe comparativo.
+Schema compatible with :func:`ml.farslip.extract_embeddings.extract_farslip_embeddings`
+except for the column prefix (``remoteclip_*`` vs ``farslip_emb_*``); the
+notebook 04 can concatenate both for the comparative linear probe.
 
-Fallback: si ``chendelong/RemoteCLIP-ViT-B-32`` no se puede descargar
-(bloqueo de red, modelo retirado de HF), se usa
-``openai/clip-vit-base-patch32`` y se anota ``model_used`` en el log
-estructurado para que el operador sepa que la comparacion no es contra
-RemoteCLIP puro.
+Fallback: if ``chendelong/RemoteCLIP-ViT-B-32`` cannot be downloaded
+(network block, model removed from HF), ``openai/clip-vit-base-patch32`` is
+used and ``model_used`` is annotated in the structured log so the operator
+knows the comparison is not against pure RemoteCLIP.
 """
 
 from __future__ import annotations
@@ -55,15 +54,15 @@ _log = structlog.get_logger(__name__)
 
 
 EMBED_DIM: int = 512
-"""Dimension del embedding CLIP ViT-B/32 (image features tras projection)."""
+"""Dimension of the CLIP ViT-B/32 embedding (image features after projection)."""
 
 EMBED_COL_PREFIX: str = "remoteclip_"
 
 DEFAULT_MODEL_ID: str = "chendelong/RemoteCLIP-ViT-B-32"
-"""HF Hub repo del modelo RemoteCLIP (CLIP ViT-B/32 fine-tuned en RS)."""
+"""HF Hub repo of the RemoteCLIP model (CLIP ViT-B/32 fine-tuned on RS)."""
 
 FALLBACK_MODEL_ID: str = "openai/clip-vit-base-patch32"
-"""Fallback si ``DEFAULT_MODEL_ID`` no esta disponible."""
+"""Fallback if ``DEFAULT_MODEL_ID`` is not available."""
 
 DEFAULT_SUBSET_PATH: Path = Path("data/test_fixtures/pastis_eval_subset.parquet")
 DEFAULT_IMAGERY_PATH: Path = Path("data/test_fixtures/pastis_eval_subset.imagery.parquet")
@@ -72,12 +71,12 @@ DEFAULT_BATCH_SIZE: int = 32
 
 
 def _embed_columns() -> list[str]:
-    """Devuelve ``["remoteclip_000", ..., "remoteclip_511"]`` (orden estable)."""
+    """Return ``["remoteclip_000", ..., "remoteclip_511"]`` (stable order)."""
     return [f"{EMBED_COL_PREFIX}{i:03d}" for i in range(EMBED_DIM)]
 
 
 def _build_output_schema() -> dict[str, Any]:
-    """Schema canonico de salida (parcel_id + year + 512 floats)."""
+    """Canonical output schema (parcel_id + year + 512 floats)."""
     schema: dict[str, Any] = {
         "parcel_id": pl.Utf8,
         "year": pl.Int16,
@@ -88,14 +87,14 @@ def _build_output_schema() -> dict[str, Any]:
 
 
 def _resolve_device(device: str | None) -> torch.device:
-    """Resuelve device con fallback ``cuda -> cpu``.
+    """Resolve device with ``cuda -> cpu`` fallback.
 
     Args:
-        device: ``"cuda"``, ``"cpu"`` o ``None`` (autodetect).
+        device: ``"cuda"``, ``"cpu"`` or ``None`` (autodetect).
 
     Returns:
-        ``torch.device`` resuelto. Si CUDA fue solicitado pero no esta
-        disponible, emite warning estructurado y degrada a CPU.
+        Resolved ``torch.device``. If CUDA was requested but is not
+        available, emits a structured warning and degrades to CPU.
     """
     import torch  # noqa: PLC0415
 
@@ -123,16 +122,16 @@ def _resolve_device(device: str | None) -> torch.device:
 def _load_model(
     model_name: str, device: torch.device
 ) -> tuple[CLIPModel, CLIPProcessor, str]:
-    """Carga ``CLIPModel`` + ``CLIPProcessor`` con fallback a OpenAI CLIP.
+    """Load ``CLIPModel`` + ``CLIPProcessor`` with fallback to OpenAI CLIP.
 
     Args:
         model_name: HF repo id (default ``chendelong/RemoteCLIP-ViT-B-32``).
-        device: device destino para los pesos.
+        device: target device for the weights.
 
     Returns:
-        Tupla ``(model, processor, model_used)`` donde ``model_used`` es el
-        id efectivamente cargado (puede coincidir con ``model_name`` o ser
-        el fallback OpenAI CLIP).
+        Tuple ``(model, processor, model_used)`` where ``model_used`` is the
+        id actually loaded (may match ``model_name`` or be the OpenAI CLIP
+        fallback).
     """
     from transformers import CLIPModel, CLIPProcessor  # noqa: PLC0415
 
@@ -157,36 +156,36 @@ def _load_model(
 
 
 def _load_imagery(imagery_path: Path) -> pl.DataFrame:
-    """Carga el parquet binario con crops Sentinel-2.
+    """Load the binary parquet with Sentinel-2 crops.
 
-    Schema esperado (al menos)::
+    Expected schema (at least)::
 
         parcel_id (Utf8) | year (Int16) |
-        image (List[List[Float32]] o binary) | shape (List[Int64])
+        image (List[List[Float32]] or binary) | shape (List[Int64])
 
-    Tolera cualquiera de estos esquemas siempre que cada fila exponga
-    ``parcel_id`` y un payload de imagen interpretable (numpy bytes via
-    ``np.frombuffer`` o lista anidada).
+    Tolerates any of these schemas as long as each row exposes
+    ``parcel_id`` and an interpretable image payload (numpy bytes via
+    ``np.frombuffer`` or nested list).
     """
     if not imagery_path.exists():
         raise FileNotFoundError(
-            f"imagery_path no existe: {imagery_path}. "
-            "Generalo con ml.ingest.pastis_eval_subset (US-022-c P1 B-1)."
+            f"imagery_path does not exist: {imagery_path}. "
+            "Generate it with ml.ingest.pastis_eval_subset (US-022-c P1 B-1)."
         )
     return pl.read_parquet(imagery_path)
 
 
 def _row_to_array(row: dict[str, Any]) -> np.ndarray:
-    """Convierte una fila del parquet de imagery a array ``(T, C, H, W)``.
+    """Convert a row of the imagery parquet to a ``(T, C, H, W)`` array.
 
-    Soporta tres encodings comunes:
+    Supports three common encodings:
 
-    - ``image`` ya es un ``np.ndarray`` (formato in-memory).
-    - ``image`` es ``bytes`` -> ``np.frombuffer`` con ``shape`` adyacente.
-    - ``image`` es lista anidada -> ``np.asarray``.
+    - ``image`` is already a ``np.ndarray`` (in-memory format).
+    - ``image`` is ``bytes`` -> ``np.frombuffer`` with adjacent ``shape``.
+    - ``image`` is a nested list -> ``np.asarray``.
 
-    Para parcelas mono-temporales devuelve shape ``(1, C, H, W)`` (anade
-    eje T=1) para uniformar el resto del pipeline.
+    For mono-temporal parcels returns shape ``(1, C, H, W)`` (adds a
+    T=1 axis) to standardize the rest of the pipeline.
     """
     img: Any = row.get("image")
     shape = row.get("shape")
@@ -200,43 +199,43 @@ def _row_to_array(row: dict[str, Any]) -> np.ndarray:
         arr = np.asarray(img, dtype=np.float32)
     else:
         raise ValueError(
-            f"formato de imagery no soportado para parcel_id={row.get('parcel_id')!r}: "
-            f"tipo {type(img).__name__}"
+            f"unsupported imagery format for parcel_id={row.get('parcel_id')!r}: "
+            f"type {type(img).__name__}"
         )
     if arr.ndim == 3:
         # (C, H, W) -> (1, C, H, W)
         arr = arr[np.newaxis, ...]
     elif arr.ndim != 4:
         raise ValueError(
-            f"shape de imagery inesperado para parcel_id={row.get('parcel_id')!r}: "
+            f"unexpected imagery shape for parcel_id={row.get('parcel_id')!r}: "
             f"{arr.shape}"
         )
     return arr
 
 
 def _select_rgb(arr: np.ndarray, band_indices: tuple[int, int, int]) -> np.ndarray:
-    """Selecciona y reordena bandas para RGB.
+    """Select and reorder bands for RGB.
 
     Args:
         arr: ``(T, C, H, W)`` float.
-        band_indices: indices (red, green, blue). Para PASTIS-R con orden
+        band_indices: indices (red, green, blue). For PASTIS-R with order
             B02/B03/B04/B08, RGB = (2, 1, 0).
 
     Returns:
-        ``(T, 3, H, W)`` float con orden ``[R, G, B]``.
+        ``(T, 3, H, W)`` float with order ``[R, G, B]``.
     """
     r, g, b = band_indices
     return arr[:, [r, g, b], :, :]
 
 
 def _stretch_percentile_uint8(rgb: np.ndarray) -> np.ndarray:
-    """Stretch percentil 2-98 por banda -> uint8 ``[0, 255]``.
+    """2-98 percentile stretch per band -> uint8 ``[0, 255]``.
 
     Args:
         rgb: ``(T, 3, H, W)`` float.
 
     Returns:
-        ``(T, H, W, 3)`` uint8 (formato HWC esperado por
+        ``(T, H, W, 3)`` uint8 (HWC format expected by
         :class:`CLIPProcessor`).
     """
     t, c, h, w = rgb.shape
@@ -252,12 +251,12 @@ def _stretch_percentile_uint8(rgb: np.ndarray) -> np.ndarray:
 
 
 def _resolve_band_indices(imagery_meta: dict[str, Any] | None) -> tuple[int, int, int]:
-    """Resuelve indices RGB segun metadata de bandas.
+    """Resolve RGB indices according to band metadata.
 
-    Default PASTIS-R: bandas B02/B03/B04/B08 (orden canonico) -> RGB =
-    ``(2, 1, 0)`` (B04 rojo en idx 2, B03 verde en idx 1, B02 azul en idx 0).
-    Si ``imagery_meta`` trae ``band_order``, se respeta y se busca
-    ``B04/B03/B02``.
+    Default PASTIS-R: bands B02/B03/B04/B08 (canonical order) -> RGB =
+    ``(2, 1, 0)`` (B04 red at idx 2, B03 green at idx 1, B02 blue at idx 0).
+    If ``imagery_meta`` provides ``band_order``, it is respected and
+    ``B04/B03/B02`` are looked up.
     """
     if imagery_meta and "band_order" in imagery_meta:
         order = [b.upper() for b in imagery_meta["band_order"]]
@@ -274,10 +273,10 @@ def _embed_batch(
     images_hwc_uint8: list[np.ndarray],
     device: torch.device,
 ) -> torch.Tensor:
-    """Forward de un batch de imagenes RGB uint8 por el visual encoder CLIP.
+    """Forward a batch of RGB uint8 images through the CLIP visual encoder.
 
     Returns:
-        Tensor ``(B, 512)`` float32 en CPU, L2-normalizado.
+        Tensor ``(B, 512)`` float32 on CPU, L2-normalized.
     """
     import torch  # noqa: PLC0415
 
@@ -285,9 +284,9 @@ def _embed_batch(
     pixel_values = inputs["pixel_values"].to(device)
     with torch.inference_mode():
         features = model.get_image_features(pixel_values=pixel_values)
-    # `get_image_features` deberia devolver un tensor (B, dim) pero algunos
-    # checkpoints RemoteCLIP (chendelong/*) devuelven el output completo
-    # `BaseModelOutputWithPooling`. Normalizamos a tensor antes de L2.
+    # `get_image_features` should return a tensor (B, dim) but some
+    # RemoteCLIP checkpoints (chendelong/*) return the full output
+    # `BaseModelOutputWithPooling`. We normalize to a tensor before L2.
     if hasattr(features, "image_embeds") and features.image_embeds is not None:
         features = features.image_embeds
     elif hasattr(features, "pooler_output") and features.pooler_output is not None:
@@ -308,34 +307,34 @@ def extract_remoteclip_embeddings(
     device: str | None = None,
     overwrite: bool = False,
 ) -> Path:
-    """Extrae embeddings RemoteCLIP por parcela del subset PASTIS-R.
+    """Extract RemoteCLIP embeddings per parcel of the PASTIS-R subset.
 
-    Carga los crops S2 multitemporales desde ``imagery_path`` (generado por
-    ``ml.ingest.pastis_eval_subset``), construye composiciones RGB
-    (B04/B03/B02) normalizadas y produce un embedding 512-dim por parcela.
+    Loads the multitemporal S2 crops from ``imagery_path`` (generated by
+    ``ml.ingest.pastis_eval_subset``), builds normalized RGB compositions
+    (B04/B03/B02) and produces a 512-dim embedding per parcel.
 
-    Para parcelas multi-temporales agrega temporalmente (mean pooling sobre
-    el eje T) antes de la L2-normalizacion final.
+    For multi-temporal parcels it aggregates temporally (mean pooling over
+    the T axis) before the final L2-normalization.
 
     Args:
-        pastis_eval_subset_path: Parquet con metadata ``parcel_id`` + ``year``
-            + ``label_id``. Aporta el orden canonico de filas del output.
-        imagery_path: Parquet binario con crops Sentinel-2 por parcela.
-        output_path: Parquet destino (parent se crea si no existe).
+        pastis_eval_subset_path: Parquet with metadata ``parcel_id`` + ``year``
+            + ``label_id``. Provides the canonical row order of the output.
+        imagery_path: Binary parquet with Sentinel-2 crops per parcel.
+        output_path: Destination parquet (parent is created if it does not exist).
         model_name: HF repo id. Default ``chendelong/RemoteCLIP-ViT-B-32``;
-            fallback automatico a ``openai/clip-vit-base-patch32``.
-        batch_size: Numero de imagenes RGB procesadas por forward.
-        device: ``"cuda"``, ``"cpu"`` o ``None`` (autodetect).
-        overwrite: Si ``False`` y ``output_path`` existe, retorna el path
-            existente sin recomputar.
+            automatic fallback to ``openai/clip-vit-base-patch32``.
+        batch_size: Number of RGB images processed per forward.
+        device: ``"cuda"``, ``"cpu"`` or ``None`` (autodetect).
+        overwrite: If ``False`` and ``output_path`` exists, returns the
+            existing path without recomputing.
 
     Returns:
-        Path absoluto al parquet ``output_path``.
+        Absolute path to the ``output_path`` parquet.
 
     Raises:
-        FileNotFoundError: Si ``imagery_path`` no existe.
-        ValueError: Si el imagery parquet no expone ``parcel_id`` o el
-            payload de imagen es de un tipo no soportado.
+        FileNotFoundError: If ``imagery_path`` does not exist.
+        ValueError: If the imagery parquet does not expose ``parcel_id`` or the
+            image payload is of an unsupported type.
     """
     output_path = Path(output_path)
     if output_path.exists() and not overwrite:
@@ -348,21 +347,21 @@ def extract_remoteclip_embeddings(
     imagery = _load_imagery(imagery_path)
     if "parcel_id" not in imagery.columns:
         raise ValueError(
-            f"imagery_path={imagery_path} sin columna parcel_id; "
-            "esquema esperado: parcel_id, year, image, shape."
+            f"imagery_path={imagery_path} without parcel_id column; "
+            "expected schema: parcel_id, year, image, shape."
         )
 
-    # Asegura parcel_id Utf8 en ambos parquets.
+    # Ensure parcel_id Utf8 in both parquets.
     subset = subset.with_columns(pl.col("parcel_id").cast(pl.Utf8))
     imagery = imagery.with_columns(pl.col("parcel_id").cast(pl.Utf8))
 
-    # PASTIS-R no expone `year` por parcela (es un dataset 2019 monolitico).
-    # Si falta lo materializamos como constante para preservar el esquema de
-    # salida (parcel_id, year, remoteclip_emb_*).
+    # PASTIS-R does not expose `year` per parcel (it is a monolithic 2019 dataset).
+    # If missing, we materialize it as a constant to preserve the output
+    # schema (parcel_id, year, remoteclip_emb_*).
     if "year" not in subset.columns:
         subset = subset.with_columns(pl.lit(2019).cast(pl.Int64).alias("year"))
 
-    # Join orden estable: imagery merge sobre orden de subset.
+    # Stable-order join: imagery merge over subset order.
     joined = subset.select(["parcel_id", "year"]).join(
         imagery, on="parcel_id", how="left"
     )
@@ -379,7 +378,7 @@ def extract_remoteclip_embeddings(
     rows = joined.to_dicts()
     n = len(rows)
 
-    # Procesamiento por batch de parcelas (cada parcela puede tener T frames).
+    # Batch processing of parcels (each parcel may have T frames).
     for start in range(0, n, batch_size):
         chunk = rows[start : start + batch_size]
         images_per_parcel: list[np.ndarray] = []
@@ -393,12 +392,12 @@ def extract_remoteclip_embeddings(
                     parcel_id=row.get("parcel_id"),
                     error=str(exc),
                 )
-                # Frame vacio -> embedding zeros para no romper alineacion.
+                # Empty frame -> zeros embedding to avoid breaking alignment.
                 arr = np.zeros((1, 4, 32, 32), dtype=np.float32)
             rgb = _select_rgb(arr, band_indices)
             rgb_uint8 = _stretch_percentile_uint8(rgb)
-            # ``rgb_uint8`` shape (T, H, W, 3). Aplanamos T y registramos
-            # el parcel_idx para hacer mean pooling post-forward.
+            # ``rgb_uint8`` shape (T, H, W, 3). We flatten T and record
+            # the parcel_idx to do mean pooling post-forward.
             for ti in range(rgb_uint8.shape[0]):
                 images_per_parcel.append(rgb_uint8[ti])
                 frame_to_parcel.append(parcel_idx)
@@ -407,14 +406,14 @@ def extract_remoteclip_embeddings(
             continue
         feats_frames = _embed_batch(model, processor, images_per_parcel, torch_device)
 
-        # Mean pooling temporal por parcela.
+        # Temporal mean pooling per parcel.
         per_parcel: dict[int, list[torch.Tensor]] = {}
         for fi, p_idx in enumerate(frame_to_parcel):
             per_parcel.setdefault(p_idx, []).append(feats_frames[fi])
         for p_idx, frames in per_parcel.items():
             stacked = torch.stack(frames, dim=0)
             mean_emb = stacked.mean(dim=0)
-            # Re-normaliza L2 post mean-pooling.
+            # Re-normalize L2 post mean-pooling.
             mean_emb = torch.nn.functional.normalize(mean_emb, dim=-1)
             embeddings.append(mean_emb)
             parcel_ids_out.append(str(chunk[p_idx]["parcel_id"]))
@@ -434,7 +433,7 @@ def extract_remoteclip_embeddings(
     )
 
     if not embeddings:
-        # Output vacio con esquema valido.
+        # Empty output with a valid schema.
         out_df = pl.DataFrame(schema=_build_output_schema())
     else:
         emb_tensor = torch.stack(embeddings, dim=0).numpy().astype(np.float32)

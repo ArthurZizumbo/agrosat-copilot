@@ -1,36 +1,36 @@
-"""Baseline XGBoost: 18 clases planas PASTIS-R vs 6 grupos HCAT Level-1.
+"""XGBoost baseline: 18 flat PASTIS-R classes vs 6 HCAT Level-1 groups.
 
-Operativo permanente. Re-corre el MEJOR setup del baseline (XGBoost, spatial
-CV 5-fold con buffer anti-leakage de 1 km) sobre las 85951 parcelas PASTIS-R
-en DOS esquemas de etiquetas y los compara:
+Permanent operational tool. Re-runs the BEST baseline setup (XGBoost, 5-fold
+spatial CV with a 1 km anti-leakage buffer) over the 85951 PASTIS-R parcels in
+TWO label schemes and compares them:
 
-1. ``flat18``    : las 18 clases planas originales PASTIS-R.
-2. ``hcat_l1_6`` : las 18 clases fusionadas en 6 super-clases HCAT Level-1
+1. ``flat18``    : the original 18 flat PASTIS-R classes.
+2. ``hcat_l1_6`` : the 18 classes merged into 6 HCAT Level-1 super-classes
    (CEREALS, OILSEEDS, ROOT_CROPS, LEGUMES, PERMANENT_WOODY, OTHER).
 
-El vector de features es el mejor encontrado en la ablation: las 185 features
-base (indices espectrales + temporales + fenologia) mas los embeddings
-AlphaEarth Foundations de 2018 (cols ``ae18_NN``) y 2019 (cols ``ae19_NN``),
-unidos por ``parcel_id``.
+The feature vector is the best found in the ablation: the 185 base features
+(spectral + temporal indices + phenology) plus the AlphaEarth Foundations
+embeddings from 2018 (cols ``ae18_NN``) and 2019 (cols ``ae19_NN``), joined by
+``parcel_id``.
 
-Diseno apples-to-apples: ambos esquemas operan sobre EXACTAMENTE las mismas
-filas en el mismo orden, por lo que comparten los mismos splits espaciales
-cacheados (la clave de cache es ``n_filas + k + buffer + seed``). La unica
-diferencia entre las dos corridas es el remapeo de ``class_id``.
+Apples-to-apples design: both schemes operate over EXACTLY the same rows in the
+same order, so they share the same cached spatial splits (the cache key is
+``n_rows + k + buffer + seed``). The only difference between the two runs is the
+remapping of ``class_id``.
 
-El mapeo de 6 grupos y sus codigos HCAT viven en
-``data/reference/pastis_class_mapping.json`` (grouping ``hcat_l1_6``) y se
-cargan via ``ml.ingest.pastis_loader.PASTIS_R_GROUPINGS``; este script los
-reusa, no los redefine.
+The 6-group mapping and their HCAT codes live in
+``data/reference/pastis_class_mapping.json`` (grouping ``hcat_l1_6``) and are
+loaded via ``ml.ingest.pastis_loader.PASTIS_R_GROUPINGS``; this script reuses
+them, it does not redefine them.
 
-Uso:
+Usage:
     python scripts/baseline_18_vs_grouped6.py                  # FULL 85951
-    python scripts/baseline_18_vs_grouped6.py --max-samples 300  # validacion
+    python scripts/baseline_18_vs_grouped6.py --max-samples 300  # validation
 
-Artefactos en ``reports/baseline/grouped_vs_flat/``:
-    - comparison.parquet        : F1-macro y demas metricas por esquema.
-    - per_class_f1_flat18.parquet     : F1 por clase (18 clases).
-    - per_class_f1_hcat_l1_6.parquet  : F1 por grupo HCAT (6 grupos).
+Artifacts in ``reports/baseline/grouped_vs_flat/``:
+    - comparison.parquet        : F1-macro and other metrics per scheme.
+    - per_class_f1_flat18.parquet     : per-class F1 (18 classes).
+    - per_class_f1_hcat_l1_6.parquet  : per-HCAT-group F1 (6 groups).
 """
 
 from __future__ import annotations
@@ -73,14 +73,14 @@ _AE19 = (
 )
 _OUT_DIR = _REPO_ROOT / "reports" / "baseline" / "grouped_vs_flat"
 
-# Grouping canonico HCAT Level-1 (6 grupos). Se reusa el que ya vive en
-# data/reference/pastis_class_mapping.json; aqui solo se referencia el nombre
-# y se documentan los codigos HCAT para defendibilidad. NO redefinir el mapa:
-# es la fuente unica de verdad cargada via PASTIS_R_GROUPINGS.
+# Canonical HCAT Level-1 grouping (6 groups). We reuse the one that already
+# lives in data/reference/pastis_class_mapping.json; here we only reference the
+# name and document the HCAT codes for defensibility. Do NOT redefine the map:
+# it is the single source of truth loaded via PASTIS_R_GROUPINGS.
 _HCAT_GROUPING = "hcat_l1_6"
 
-# Codigos HCAT v3 Level-1 de cada fusion (metodo Russwurm et al. 2018 /
-# H2Crop arXiv:2506.06155). Se imprimen para la defensa del agrupamiento.
+# HCAT v3 Level-1 codes for each fusion (Russwurm et al. 2018 method /
+# H2Crop arXiv:2506.06155). Printed for the defense of the grouping.
 _HCAT_CODES: dict[str, str] = {
     "CEREALS": "3300000000 cereals (wheat 3301, barley 3302, maize 3303, "
     "triticale 3304, sorghum 3305, mixed cereal 3300010000)",
@@ -95,19 +95,19 @@ _HCAT_CODES: dict[str, str] = {
 
 
 def _load_features(max_samples: int | None) -> pl.DataFrame:
-    """Carga el fixture de 185 features y une los embeddings AlphaEarth.
+    """Load the 185-feature fixture and join the AlphaEarth embeddings.
 
-    Une AlphaEarth 2018 (``ae18_NN``) y 2019 (``ae19_NN``) por ``parcel_id``.
-    Si ``max_samples`` se especifica, submuestrea de forma determinista
-    ANTES de unir (la validacion rapida no necesita las 85951 filas).
+    Joins AlphaEarth 2018 (``ae18_NN``) and 2019 (``ae19_NN``) by ``parcel_id``.
+    If ``max_samples`` is specified, it subsamples deterministically BEFORE the
+    join (the quick validation does not need the 85951 rows).
 
     Args:
-        max_samples: Si no es ``None``, toma las primeras ``max_samples``
-            filas tras un shuffle con semilla fija.
+        max_samples: If not ``None``, takes the first ``max_samples`` rows after
+            a fixed-seed shuffle.
 
     Returns:
-        DataFrame Polars con las 185 features base + 128 dims AlphaEarth
-        (64 de 2018 + 64 de 2019) + metadata (``parcel_id``, ``class_id``,
+        Polars DataFrame with the 185 base features + 128 AlphaEarth dims
+        (64 from 2018 + 64 from 2019) + metadata (``parcel_id``, ``class_id``,
         ``patch_id``, etc.).
     """
     base = pl.read_parquet(_FIXTURE)
@@ -137,25 +137,25 @@ def _load_features(max_samples: int | None) -> pl.DataFrame:
     )
     if n_ae18 != 64 or n_ae19 != 64:
         raise ValueError(
-            f"Se esperaban 64 dims AlphaEarth por anio; obtenidas {n_ae18} (2018) "
-            f"y {n_ae19} (2019). Revisa los caches de AlphaEarth."
+            f"Expected 64 AlphaEarth dims per year; got {n_ae18} (2018) "
+            f"and {n_ae19} (2019). Check the AlphaEarth caches."
         )
     return merged
 
 
 def _remap_to_hcat(df: pl.DataFrame) -> pl.DataFrame:
-    """Remapea ``class_id`` (1..18) a IDs enteros de los 6 grupos HCAT L1.
+    """Remap ``class_id`` (1..18) to integer IDs of the 6 HCAT L1 groups.
 
-    Usa el grouping canonico ``hcat_l1_6`` de
-    :data:`PASTIS_R_GROUPINGS`. Asigna un entero estable y ordenado a cada
-    nombre de grupo para que XGBoost reciba etiquetas limpias.
+    Uses the canonical grouping ``hcat_l1_6`` from :data:`PASTIS_R_GROUPINGS`. It
+    assigns a stable and ordered integer to each group name so XGBoost receives
+    clean labels.
 
     Args:
-        df: DataFrame con la columna ``class_id`` (18 clases planas).
+        df: DataFrame with the ``class_id`` column (18 flat classes).
 
     Returns:
-        Copia del DataFrame con ``class_id`` reemplazado por el ID del grupo
-        HCAT (enteros contiguos por orden alfabetico de grupo).
+        Copy of the DataFrame with ``class_id`` replaced by the HCAT group ID
+        (contiguous integers in alphabetical group order).
     """
     grouping = PASTIS_R_GROUPINGS[_HCAT_GROUPING]
     group_names = sorted(set(grouping.values()))
@@ -168,7 +168,7 @@ def _remap_to_hcat(df: pl.DataFrame) -> pl.DataFrame:
 
 
 def _group_id_to_name() -> dict[int, str]:
-    """Mapa ``{group_id: group_name}`` consistente con :func:`_remap_to_hcat`."""
+    """Map ``{group_id: group_name}`` consistent with :func:`_remap_to_hcat`."""
     group_names = sorted(set(PASTIS_R_GROUPINGS[_HCAT_GROUPING].values()))
     return {i + 1: name for i, name in enumerate(group_names)}
 
@@ -180,29 +180,29 @@ def _run_scheme(
     k_folds: int,
     buffer_km: float,
 ) -> tuple[dict[str, float], pl.DataFrame]:
-    """Corre el CV espacial para un esquema de etiquetas y arma per-class F1.
+    """Run the spatial CV for a label scheme and build the per-class F1.
 
-    Llama a :func:`evaluate_with_spatial_cv` (el mismo motor que usa
-    ``train_one_model``) para obtener las predicciones out-of-fold, calcula
-    las metricas agregadas con :func:`compute_baseline_metrics` y el F1 por
-    clase a partir de los mismos vectores OOF.
+    Calls :func:`evaluate_with_spatial_cv` (the same engine used by
+    ``train_one_model``) to obtain the out-of-fold predictions, computes the
+    aggregated metrics with :func:`compute_baseline_metrics` and the per-class
+    F1 from the same OOF vectors.
 
     Args:
-        df: DataFrame de features con ``class_id`` ya en el esquema deseado.
-        scheme: Etiqueta del esquema (``"flat18"`` o ``"hcat_l1_6"``).
-        k_folds: Numero de folds del CV espacial.
-        buffer_km: Buffer anti-leakage en km.
+        df: Feature DataFrame with ``class_id`` already in the desired scheme.
+        scheme: Scheme label (``"flat18"`` or ``"hcat_l1_6"``).
+        k_folds: Number of spatial CV folds.
+        buffer_km: Anti-leakage buffer in km.
 
     Returns:
-        Tupla ``(metrics, per_class_df)`` donde ``metrics`` son las cinco
-        metricas OOF y ``per_class_df`` es un DataFrame con ``label_id``,
-        ``label_name``, ``f1`` y ``support`` por clase.
+        Tuple ``(metrics, per_class_df)`` where ``metrics`` are the five OOF
+        metrics and ``per_class_df`` is a DataFrame with ``label_id``,
+        ``label_name``, ``f1`` and ``support`` per class.
     """
-    from ml.train.baseline import _base_params, _encode_labels  # reuso interno
+    from ml.train.baseline import _base_params, _encode_labels  # internal reuse
 
-    # No fijamos `num_class`: XGBClassifier (API sklearn) lo infiere por fold.
-    # Forzarlo rompe los folds donde el train no contiene las 18 clases
-    # (artefacto de subsamples chicos; en el full cada fold trae todas).
+    # We do not set `num_class`: XGBClassifier (sklearn API) infers it per fold.
+    # Forcing it breaks the folds where the train does not contain all 18 classes
+    # (artifact of small subsamples; in the full run each fold has all of them).
     params = _base_params("xgb")
 
     def factory():  # type: ignore[no-untyped-def]
@@ -247,7 +247,7 @@ def _run_scheme(
 
 
 def _print_per_class(title: str, frame: pl.DataFrame) -> None:
-    """Imprime un per-class F1 en ASCII puro (consola cp1252 segura)."""
+    """Print a per-class F1 in pure ASCII (cp1252-safe console)."""
     print(f"\n{title}")
     print(f"  {'id':>3}  {'clase/grupo':32s}  {'F1':>7}  {'support':>8}")
     for row in frame.iter_rows(named=True):
@@ -258,9 +258,9 @@ def _print_per_class(title: str, frame: pl.DataFrame) -> None:
 
 
 def main() -> None:
-    """Punto de entrada: corre ambos esquemas, persiste y reporta."""
-    # La consola Windows (cp1252) no codifica los bordes Unicode de Polars ni
-    # acentos; forzamos UTF-8 en stdout para que el reporte no truene.
+    """Entry point: run both schemes, persist and report."""
+    # The Windows console (cp1252) does not encode the Polars Unicode borders nor
+    # accents; we force UTF-8 on stdout so the report does not crash.
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
 
@@ -277,12 +277,12 @@ def main() -> None:
 
     df = _load_features(args.max_samples)
 
-    # Esquema 1: 18 clases planas.
+    # Scheme 1: 18 flat classes.
     metrics_18, per_class_18 = _run_scheme(
         df, scheme="flat18", k_folds=args.k_folds, buffer_km=args.buffer_km
     )
 
-    # Esquema 2: 6 grupos HCAT L1 (mismas filas -> mismos folds cacheados).
+    # Scheme 2: 6 HCAT L1 groups (same rows -> same cached folds).
     df_grouped = _remap_to_hcat(df)
     metrics_6, per_class_6 = _run_scheme(
         df_grouped, scheme=_HCAT_GROUPING, k_folds=args.k_folds, buffer_km=args.buffer_km

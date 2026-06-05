@@ -3,7 +3,7 @@
 Cubre:
 
 - ``farslip_embeddings_consolidated`` produce
-  ``data/farslip/embeddings_italy.parquet`` (gate B-4 del plan).
+  ``data/farslip/embeddings_pastis.parquet`` (gate B-4 del plan).
 - Skipea limpio cuando no hay parquets upstream (CI sin GCS).
 - Lineage explicito: ``farslip_embeddings_italy.deps`` incluye el modelo
   ``farslip_clip_italy_v1`` (B-5 del plan).
@@ -90,7 +90,7 @@ def test_farslip_embeddings_consolidated_skips_when_no_upstream(
 def test_farslip_embeddings_consolidated_writes_canonical_parquet(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Con upstream poblado: escribe data/farslip/embeddings_italy.parquet (B-4)."""
+    """Con upstream poblado: escribe data/farslip/embeddings_pastis.parquet (B-4)."""
     import polars as pl
     from dagster import build_asset_context
 

@@ -1,12 +1,12 @@
-"""Re-muestrea SRTM y ERA5 sobre los polígonos reales de las 85k parcelas PASTIS-R.
+"""Re-sample SRTM and ERA5 over the real polygons of the 85k PASTIS-R parcels.
 
-Variante de `generate_fusion_blocks_pastis.py` que en lugar de operar sobre
-centroides de patch toma el geoparquet vectorizado parcel-level (output de
+Variant of `generate_fusion_blocks_pastis.py` that, instead of operating on
+patch centroids, takes the vectorized parcel-level geoparquet (output of
 `scripts/vectorize_pastis_parcels.py`).
 
-Procesa en batches porque los samplers de US-016 mandan todos los polígonos
-en una sola request, lo que excede el límite de payload GEE (10 MB) con
-85k polígonos.
+Processes in batches because the US-016 samplers send all polygons in a
+single request, which exceeds the GEE payload limit (10 MB) with
+85k polygons.
 
 Outputs:
     data/cache/gee/srtm_pastis_fr_parcels_enriched.parquet
@@ -41,11 +41,11 @@ def _batch_sample(
     batch_size: int,
     **sampler_kwargs,
 ) -> pl.DataFrame:
-    """Llama el sampler en batches y concatena los resultados.
+    """Call the sampler in batches and concatenate the results.
 
-    Cada batch usa un cache_key distinto para no colisionar con caches
-    previos. Los caches temporales se mantienen para poder resumir si
-    el proceso es interrumpido.
+    Each batch uses a distinct cache_key so as not to collide with previous
+    caches. The temporary caches are kept so the process can be resumed if
+    it is interrupted.
     """
     frames: list[pl.DataFrame] = []
     total = len(gdf)
@@ -107,7 +107,7 @@ def main(
         0, "--limit", help="Si > 0, procesa solo las primeras N parcelas"
     ),
 ) -> None:
-    """Re-muestrea SRTM y ERA5 sobre polígonos reales de parcelas PASTIS."""
+    """Re-sample SRTM and ERA5 over real PASTIS parcel polygons."""
     if not parcels.exists():
         logger.error("parcels_missing", path=str(parcels))
         raise typer.Exit(code=2)
@@ -120,8 +120,8 @@ def main(
         gdf = gdf.head(limit).copy()
         logger.info("limited_for_smoke", n=len(gdf))
 
-    # Los samplers existentes esperan parcel_id int. Reasignamos a sequential
-    # int para compatibilidad. El mapping se conserva en parcel_id_str.
+    # The existing samplers expect an int parcel_id. We reassign to a sequential
+    # int for compatibility. The mapping is preserved in parcel_id_str.
     gdf = gdf.reset_index(drop=True)
     gdf["parcel_id_str"] = gdf["parcel_id"].astype(str)
     gdf["parcel_id"] = gdf.index.astype("int64")

@@ -11,7 +11,7 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 - [ ] Branch name `feature/E{epic}-US-XXX-{slug}`
 - [ ] Conventional Commit `feat(EX): ...`
 - [ ] Sin emojis en código, commits ni logs
-- [ ] Idioma: código en inglés, docstrings/UI en es/it/en según corresponda
+- [ ] Idioma: todo el código en inglés (comentarios y docstrings); texto del lector en notebooks y UI en es/it/en según corresponda
 - [ ] Sin secretos hardcodeados (`make secrets-scan` con gitleaks)
 - [ ] `make check` limpio (lint + secrets + i18n)
 - [ ] Si tocó notebook: ejecutado end-to-end con papermill, commit con outputs poblados

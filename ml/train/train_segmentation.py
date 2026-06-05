@@ -1,27 +1,27 @@
-"""CLI Typer para entrenar modelos de segmentacion densa PASTIS-R (EPIC 5, Avance 4).
+"""Typer CLI to train PASTIS-R dense segmentation models (EPIC 5, Avance 4).
 
-Orquesta el entrenamiento de las arquitecturas a cargo de Aaron en el reparto del
-equipo: **#1 U-Net ResNet-50** (composite temporal 2D) y **#6 AnySat frozen +
-linear head** (serie temporal). Comparte el pipeline denso
-(:mod:`ml.ingest.pastis_dataset`), las metricas pixel-level
-(:mod:`ml.eval.dense_metrics`) y el tracking MLflow (:mod:`ml.utils.mlflow_utils`).
+Orchestrates the training of the architectures assigned to Aaron in the team's
+split: **#1 U-Net ResNet-50** (2D temporal composite) and **#6 AnySat frozen +
+linear head** (time series). Shares the dense pipeline
+(:mod:`ml.ingest.pastis_dataset`), the pixel-level metrics
+(:mod:`ml.eval.dense_metrics`) and the MLflow tracking (:mod:`ml.utils.mlflow_utils`).
 
-La logica de modelado vive en los factories (:mod:`ml.models.segmentation`,
-:mod:`ml.models.anysat_wrapper`); este modulo solo orquesta el loop de
-entrenamiento, la evaluacion por epoch y la persistencia de artefactos
-(separation of concerns, regla CLAUDE.md 8).
+The modeling logic lives in the factories (:mod:`ml.models.segmentation`,
+:mod:`ml.models.anysat_wrapper`); this module only orchestrates the training
+loop, the per-epoch evaluation and the artifact persistence (separation of
+concerns, CLAUDE.md rule 8).
 
-Uso (smoke CPU local)::
+Usage (local CPU smoke)::
 
     poetry run python -m ml.train.train_segmentation \\
         --model unet --subset 4 --epochs 1 --device cpu
 
-Uso (corrida real en Colab L4)::
+Usage (real run on Colab L4)::
 
     poetry run python -m ml.train.train_segmentation \\
         --model unet --epochs 30 --batch-size 8 --device cuda
 
-Operativo permanente (NO viola el anti-patron ``scripts/_*.py``).
+Permanent operational tool (does NOT violate the ``scripts/_*.py`` anti-pattern).
 """
 
 from __future__ import annotations
@@ -55,21 +55,21 @@ from ml.ingest.pastis_dataset import (
 from ml.models.deeplabv3plus import build_dice_ce_loss
 from ml.utils.mlflow_utils import track_experiment
 
-if TYPE_CHECKING:  # pragma: no cover - solo anotaciones de tipo
+if TYPE_CHECKING:  # pragma: no cover - type annotations only
     from collections.abc import Sequence
 
     from torch.utils.data import Dataset
 
 try:
     from tqdm.auto import tqdm
-except ImportError:  # pragma: no cover - tqdm es opcional
+except ImportError:  # pragma: no cover - tqdm is optional
     tqdm = None
 
 logger = structlog.get_logger(__name__)
 app = typer.Typer(add_completion=False, help=__doc__)
 
-# MLflow 3.x emite emojis al cerrar runs; la consola Windows usa cp1252 y eso
-# provoca UnicodeEncodeError. Forzamos UTF-8 (no-op en Linux/macOS/Colab).
+# MLflow 3.x emits emojis when closing runs; the Windows console uses cp1252 and
+# that causes UnicodeEncodeError. Force UTF-8 (no-op on Linux/macOS/Colab).
 for _stream in (sys.stdout, sys.stderr):
     _reconfigure = getattr(_stream, "reconfigure", None)
     if _reconfigure is not None:
@@ -79,31 +79,31 @@ _EXPERIMENT_NAME = "agrosat-segmentation"
 _DEFAULT_OUTPUT = Path("artifacts/segmentation")
 _DEFAULT_COMPARISON = Path("reports/segmentation/model_comparison_avance4_aaron.parquet")
 _DEFAULT_ROOT = Path("data/PASTIS-R")
-#: Ruta (relativa al repo) del dataset PASTIS-R para resolver el ``data_version``
-#: DVC en los entrenadores DeepLab/TSViT (us-025).
+#: Path (relative to the repo) of the PASTIS-R dataset to resolve the ``data_version``
+#: DVC in the DeepLab/TSViT trainers (us-025).
 _PASTIS_DVC_PATH = "data/PASTIS-R"
 
 
 
 def _parse_folds(spec: str) -> tuple[int, ...]:
-    """Parsea ``"1,2,3"`` a ``(1, 2, 3)``."""
+    """Parses ``"1,2,3"`` into ``(1, 2, 3)``."""
     return tuple(int(x) for x in spec.split(",") if x.strip())
 
 
 def _build_model(model_name: str, num_classes: int, target_size: int) -> tuple[nn.Module, str]:
-    """Construye el modelo y devuelve ``(modelo, temporal_reduction)``.
+    """Builds the model and returns ``(model, temporal_reduction)``.
 
     Args:
-        model_name: ``unet`` o ``anysat``.
-        num_classes: Numero de clases de salida.
-        target_size: Lado espacial de los logits.
+        model_name: ``unet`` or ``anysat``.
+        num_classes: Number of output classes.
+        target_size: Spatial side of the logits.
 
     Returns:
-        Tupla ``(nn.Module, temporal_reduction)`` donde la reduccion temporal es
-        ``"median"`` para modelos 2D y ``"none"`` para AnySat.
+        Tuple ``(nn.Module, temporal_reduction)`` where the temporal reduction is
+        ``"median"`` for 2D models and ``"none"`` for AnySat.
 
     Raises:
-        typer.BadParameter: si ``model_name`` no esta soportado por este CLI.
+        typer.BadParameter: if ``model_name`` is not supported by this CLI.
     """
     if model_name == "unet":
         from ml.models.segmentation import build_unet
@@ -117,13 +117,13 @@ def _build_model(model_name: str, num_classes: int, target_size: int) -> tuple[n
 
 
 def _forward(model: nn.Module, model_name: str, batch: dict[str, Any], device: torch.device):
-    """Ejecuta el forward adaptado a la firma de cada modelo.
+    """Runs the forward adapted to each model's signature.
 
     Args:
-        model: Modelo a evaluar.
-        model_name: ``unet`` (2D) o ``anysat`` (temporal con fechas).
-        batch: Batch del DataLoader con ``image`` y opcionalmente ``dates``.
-        device: Dispositivo destino.
+        model: Model to evaluate.
+        model_name: ``unet`` (2D) or ``anysat`` (temporal with dates).
+        batch: DataLoader batch with ``image`` and optionally ``dates``.
+        device: Target device.
 
     Returns:
         Logits ``(B, num_classes, H, W)``.
@@ -148,10 +148,11 @@ def _make_loader(
     num_workers: int,
     pin_memory: bool = False,
 ) -> DataLoader:
-    """Construye un ``DataLoader`` sobre un :class:`PASTISDataset`.
+    """Builds a ``DataLoader`` over a :class:`PASTISDataset`.
 
-    Con GPU conviene ``pin_memory`` (acelera la transferencia a la GPU) y, si hay
-    varios workers, ``persistent_workers`` para no recrearlos en cada epoca.
+    With a GPU, ``pin_memory`` is advisable (speeds up the transfer to the GPU)
+    and, if there are several workers, ``persistent_workers`` to avoid recreating
+    them on each epoch.
     """
     dataset = PASTISDataset(
         patch_ids,
@@ -180,14 +181,14 @@ def _evaluate(
     ignore_index: int,
     group_lut: np.ndarray | None = None,
 ) -> dict[str, float]:
-    """Evalua el modelo y devuelve mIoU/F1-macro/pixel-accuracy.
+    """Evaluates the model and returns mIoU/F1-macro/pixel-accuracy.
 
-    Si se pasa ``group_lut`` (LUT 18 clases -> 6 grupos HCAT), tambien computa las
-    mismas tres metricas sobre los 6 grupos agronomicos (sufijo ``_grouped``),
-    para comparabilidad con el baseline. El fondo y el void no entran en esas
-    metricas; predecir fondo sobre un pixel de cultivo se penaliza con una clase
-    extra "no-cultivo" (id 6) que nunca es objetivo, de modo que el macro promedia
-    solo los 6 grupos de cultivo.
+    If ``group_lut`` is passed (LUT 18 classes -> 6 HCAT groups), it also computes
+    the same three metrics over the 6 agronomic groups (suffix ``_grouped``), for
+    comparability with the baseline. Background and void do not enter those
+    metrics; predicting background over a crop pixel is penalized with an extra
+    "non-crop" class (id 6) that is never a target, so the macro averages only
+    the 6 crop groups.
     """
     model.eval()
     acc = DenseConfusionAccumulator(num_classes, ignore_index=ignore_index, device=str(device))
@@ -197,7 +198,7 @@ def _evaluate(
         acc_grouped = DenseConfusionAccumulator(7, ignore_index=255, device=str(device))
         lut_target = torch.as_tensor(group_lut, device=device)
         _pred_lut = group_lut.copy()
-        _pred_lut[_pred_lut == 255] = 6  # fondo/void predichos -> clase "no-cultivo"
+        _pred_lut[_pred_lut == 255] = 6  # predicted background/void -> "non-crop" class
         lut_pred = torch.as_tensor(_pred_lut, device=device)
     iterator = loader
     if tqdm is not None:
@@ -218,15 +219,16 @@ def _evaluate(
 
 
 def _upsert_comparison_row(row: dict[str, Any], comparison_path: Path) -> None:
-    """Inserta/actualiza la fila de metricas del modelo en el parquet comparativo.
+    """Inserts/updates the model's metrics row in the comparison parquet.
 
-    Lee el parquet existente (si hay), elimina cualquier fila previa del mismo
-    ``model`` y escribe la version nueva. Este parquet lo consume el notebook
-    integrador ``Avance4.Equipo17.ipynb`` para la tabla comparativa de los 6.
+    Reads the existing parquet (if any), removes any previous row for the same
+    ``model`` and writes the new version. This parquet is consumed by the
+    integrator notebook ``Avance4.Equipo17.ipynb`` for the comparison table of
+    the 6 models.
 
     Args:
-        row: Fila de metricas del modelo recien entrenado.
-        comparison_path: Ruta del parquet comparativo.
+        row: Metrics row of the just-trained model.
+        comparison_path: Path of the comparison parquet.
     """
     comparison_path.parent.mkdir(parents=True, exist_ok=True)
     new = pl.DataFrame([row])
@@ -246,17 +248,17 @@ def _save_checkpoint(
     best: dict[str, float],
     config: dict[str, Any],
 ) -> None:
-    """Guarda el estado completo para poder reanudar el entrenamiento.
+    """Saves the full state to be able to resume training.
 
-    Persiste modelo, optimizer, scaler, la ultima epoca completada, las mejores
-    metricas y la config (para validar que el checkpoint corresponde a la misma
-    corrida). Se sobreescribe cada epoca; en Colab conviene apuntarlo a Drive
-    para que sobreviva el reinicio de la sesion.
+    Persists model, optimizer, scaler, the last completed epoch, the best metrics
+    and the config (to validate that the checkpoint corresponds to the same run).
+    It is overwritten each epoch; on Colab it is advisable to point it to Drive so
+    that it survives a session restart.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
-    # Escritura atomica: primero a un .tmp y luego rename, para no corromper el
-    # checkpoint si la sesion se corta justo durante el guardado.
+    # Atomic write: first to a .tmp and then rename, to avoid corrupting the
+    # checkpoint if the session is cut off right during the save.
     torch.save(
         {
             "epoch": epoch,
@@ -292,42 +294,42 @@ def run_training(
     checkpoint_every: int = 1,
     on_epoch: Callable[[int, dict[str, float]], None] | None = None,
 ) -> dict[str, Any]:
-    """Entrena un modelo de segmentacion densa y registra metricas en MLflow.
+    """Trains a dense segmentation model and logs metrics to MLflow.
 
-    Funcion reutilizable por el CLI (:func:`main`) y por el notebook Colab, de
-    modo que ambos ejecuten exactamente la misma logica de entrenamiento.
+    Function reusable by the CLI (:func:`main`) and by the Colab notebook, so that
+    both run exactly the same training logic.
 
     Args:
-        model: ``unet`` o ``anysat``.
-        epochs: Numero de epocas de entrenamiento.
-        batch_size: Tamano de batch.
-        lr: Learning rate de AdamW.
-        weight_decay: Weight decay de AdamW.
-        target_size: Resolucion espacial objetivo (256 por convencion del equipo).
-        train_folds: Folds oficiales PASTIS asignados a train (ej. ``"1,2,3"``).
-        val_folds: Folds asignados a validacion (ej. ``"4"``).
-        subset: Limita el numero de patches por split (dev/CI; 0 = todos).
-        device: ``cpu``, ``cuda`` o ``auto``.
-        num_workers: Workers del DataLoader (0 recomendado en Windows).
-        root: Raiz del dataset PASTIS-R.
-        output_dir: Directorio destino de los checkpoints ``.pt``.
-        comparison_path: Parquet comparativo que consume el notebook integrador.
-        mlflow_uri: Override del tracking URI MLflow (vacio = autoresolucion).
-        on_epoch: Callback opcional ``(epoch, metrics)`` invocado tras evaluar
-            cada epoca. Lo usa el ajuste fino con Optuna para reportar la metrica
-            intermedia y podar trials malos (``optuna.TrialPruned``); si lanza,
-            la excepcion se propaga y aborta el entrenamiento de ese trial.
+        model: ``unet`` or ``anysat``.
+        epochs: Number of training epochs.
+        batch_size: Batch size.
+        lr: AdamW learning rate.
+        weight_decay: AdamW weight decay.
+        target_size: Target spatial resolution (256 by team convention).
+        train_folds: Official PASTIS folds assigned to train (e.g. ``"1,2,3"``).
+        val_folds: Folds assigned to validation (e.g. ``"4"``).
+        subset: Limits the number of patches per split (dev/CI; 0 = all).
+        device: ``cpu``, ``cuda`` or ``auto``.
+        num_workers: DataLoader workers (0 recommended on Windows).
+        root: Root of the PASTIS-R dataset.
+        output_dir: Target directory for the ``.pt`` checkpoints.
+        comparison_path: Comparison parquet consumed by the integrator notebook.
+        mlflow_uri: Override of the MLflow tracking URI (empty = auto-resolution).
+        on_epoch: Optional callback ``(epoch, metrics)`` invoked after evaluating
+            each epoch. Used by the Optuna fine-tuning to report the intermediate
+            metric and prune bad trials (``optuna.TrialPruned``); if it raises,
+            the exception propagates and aborts the training of that trial.
 
     Returns:
-        Diccionario con ``model``, ``miou``, ``f1_macro``, ``pixel_accuracy``,
-        ``train_time_s`` y ``checkpoint_path``.
+        Dictionary with ``model``, ``miou``, ``f1_macro``, ``pixel_accuracy``,
+        ``train_time_s`` and ``checkpoint_path``.
 
     Raises:
-        FileNotFoundError: si la raiz PASTIS-R no existe.
-        RuntimeError: si el split de train/val queda vacio.
+        FileNotFoundError: if the PASTIS-R root does not exist.
+        RuntimeError: if the train/val split is empty.
     """
     if not root.exists():
-        raise FileNotFoundError(f"Raiz PASTIS-R no encontrada: {root}")
+        raise FileNotFoundError(f"PASTIS-R root not found: {root}")
 
     dev = _resolve_device(device)
     tr_folds = _parse_folds(train_folds)
@@ -338,13 +340,13 @@ def run_training(
         train_ids, val_ids = train_ids[:subset], val_ids[: max(1, subset // 2)]
     if not train_ids or not val_ids:
         raise RuntimeError(
-            f"Split PASTIS vacio (n_train={len(train_ids)}, n_val={len(val_ids)}). "
-            "Verifica los folds y que metadata.geojson tenga el campo Fold."
+            f"Empty PASTIS split (n_train={len(train_ids)}, n_val={len(val_ids)}). "
+            "Check the folds and that metadata.geojson has the Fold field."
         )
 
     seg_model, reduction = _build_model(model, PASTIS_NUM_CLASSES, target_size)
     seg_model = seg_model.to(dev)
-    # Normalizacion con stats de los folds de train (sin leakage del fold de val).
+    # Normalization with stats from the train folds (no leakage from the val fold).
     norm = load_norm_stats(root, folds=tr_folds)
 
     pin = dev.type == "cuda"
@@ -357,10 +359,10 @@ def run_training(
         batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin,
     )
 
-    # Materializa parametros Lazy (la cabeza Conv1x1 de AnySat usa nn.LazyConv2d,
-    # que infiere sus canales en el primer forward) con un batch real ANTES de
-    # construir el optimizer; de lo contrario el conteo de params y AdamW fallan
-    # sobre UninitializedParameter.
+    # Materialize Lazy parameters (the AnySat Conv1x1 head uses nn.LazyConv2d,
+    # which infers its channels on the first forward) with a real batch BEFORE
+    # building the optimizer; otherwise the param count and AdamW fail
+    # over UninitializedParameter.
     seg_model.train()
     with torch.no_grad():
         _forward(seg_model, model, next(iter(train_loader)), dev)
@@ -371,8 +373,8 @@ def run_training(
     use_amp = dev.type == "cuda"
     scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
 
-    # Reanudacion: si hay un checkpoint de la misma corrida, continua desde la
-    # epoca siguiente en vez de empezar de cero (clave en Colab, sesion efimera).
+    # Resume: if there is a checkpoint from the same run, continue from the
+    # next epoch instead of starting from scratch (key in Colab, ephemeral session).
     resume_ckpt_path = output_dir / f"{model}_ckpt.pt"
     final_model_path = output_dir / f"{model}_pastis.pt"
     ckpt_config = {"model": model, "target_size": target_size, "epochs": epochs}
@@ -390,7 +392,7 @@ def run_training(
                 logger.info("segmentation_resume", model=model, start_epoch=start_epoch, **best)
             else:
                 logger.warning("segmentation_ckpt_config_mismatch", path=str(resume_ckpt_path))
-        except Exception as exc:  # noqa: BLE001 - checkpoint corrupto: arrancar de cero
+        except Exception as exc:  # noqa: BLE001 - corrupt checkpoint: start from scratch
             logger.warning(
                 "segmentation_ckpt_load_failed", path=str(resume_ckpt_path), error=str(exc)
             )
@@ -434,11 +436,11 @@ def run_training(
             }
         )
 
-        # LUT 18 clases -> 6 grupos HCAT para reportar tambien la metrica agrupada
-        # (comparable con el baseline). Ver ml.analysis.hcat_grouping.
+        # LUT 18 classes -> 6 HCAT groups to also report the grouped metric
+        # (comparable with the baseline). See ml.analysis.hcat_grouping.
         group_lut = hcat6_dense_lut()
-        # Historial por epoca para las curvas de loss/mIoU. Se persiste a Drive
-        # junto al parquet comparativo y se reanuda si ya existe (sobrevive cortes).
+        # Per-epoch history for the loss/mIoU curves. It is persisted to Drive
+        # alongside the comparison parquet and resumed if it already exists (survives cutoffs).
         history_path = comparison_path.with_name(
             comparison_path.name.replace("model_comparison_avance4", "history")
         )
@@ -448,10 +450,10 @@ def run_training(
         for epoch in range(start_epoch, epochs):
             seg_model.train()
             if model == "anysat":
-                # El encoder congelado permanece en eval; solo la head entrena.
+                # The frozen encoder stays in eval; only the head trains.
                 seg_model.encoder.eval()
             epoch_loss = 0.0
-            # Barra de progreso por batch dentro de la epoca (avance, it/s, loss).
+            # Per-batch progress bar within the epoch (progress, it/s, loss).
             bar = train_loader
             if tqdm is not None:
                 bar = tqdm(
@@ -484,15 +486,15 @@ def run_training(
             if metrics["miou"] >= best["miou"]:
                 best = metrics
             logger.info("segmentation_epoch", epoch=epoch, loss=epoch_loss, **metrics)
-            # Hook por epoca (ajuste fino Optuna: reporta metrica intermedia y poda).
-            # Si lanza (TrialPruned), la excepcion se propaga y corta este entrenamiento.
+            # Per-epoch hook (Optuna fine-tuning: reports intermediate metric and prunes).
+            # If it raises (TrialPruned), the exception propagates and cuts off this training.
             if on_epoch is not None:
                 on_epoch(epoch, metrics)
-            # Registro del historial por epoca (para las curvas) + persistencia a Drive.
+            # Per-epoch history logging (for the curves) + persistence to Drive.
             history.append({"epoch": epoch, "train_loss": train_loss, **metrics})
             comparison_path.parent.mkdir(parents=True, exist_ok=True)
             pl.DataFrame(history).write_parquet(history_path)
-            # Checkpoint reanudable cada `checkpoint_every` epocas (y en la ultima).
+            # Resumable checkpoint every `checkpoint_every` epochs (and on the last one).
             if (epoch + 1) % checkpoint_every == 0 or epoch == epochs - 1:
                 _save_checkpoint(
                     resume_ckpt_path, epoch=epoch, model=seg_model, optimizer=optimizer,
@@ -540,9 +542,9 @@ def run_training(
 
 
 # ===========================================================================
-# Entrenadores US-025: DeepLabv3+ (2D) y TSViT (temporal, + rama fenologica).
-# APIs propias (train_segmentation / build_and_train) que invocan los notebooks
-# 5a/5b por subprocess con --model deeplabv3plus|tsvit|tsvit-pheno.
+# US-025 trainers: DeepLabv3+ (2D) and TSViT (temporal, + phenology branch).
+# Own APIs (train_segmentation / build_and_train) that the 5a/5b notebooks
+# invoke by subprocess with --model deeplabv3plus|tsvit|tsvit-pheno.
 # ===========================================================================
 
 def phenology_contrastive_loss(
@@ -554,43 +556,42 @@ def phenology_contrastive_loss(
     temperature: float = 0.07,
     max_pixels: int = 4096,
 ) -> torch.Tensor:
-    """InfoNCE simetrico pixel-visual <-> prototipo-de-clase (Wen et al. 2025).
+    """Symmetric InfoNCE pixel-visual <-> class-prototype (Wen et al. 2025).
 
-    Alinea cada feature visual por pixel ``visual_proj[:, :, i, j]`` con el
-    prototipo semantico de la **clase de ese pixel** (``target[:, i, j]``),
-    siguiendo la alineacion contrastiva del paper (ec. 15-16, ``L_cl =
-    (L_v + L_s) / 2``). A diferencia de la concatenacion tabular (que degrado
-    el baseline), el contraste empuja las features visuales hacia el cluster
-    semantico de su clase sin inflar la dimensionalidad del head.
+    Aligns each per-pixel visual feature ``visual_proj[:, :, i, j]`` with the
+    semantic prototype of **that pixel's class** (``target[:, i, j]``), following
+    the paper's contrastive alignment (eq. 15-16, ``L_cl = (L_v + L_s) / 2``).
+    Unlike the tabular concatenation (which degraded the baseline), the contrast
+    pushes the visual features toward the semantic cluster of their class without
+    inflating the head's dimensionality.
 
-    Implementacion:
+    Implementation:
 
-    1. Se aplanan los pixeles validos (``target != ignore_index`` y dentro de
-       ``[0, num_prototipos)``).
-    2. Se submuestrean ``max_pixels`` pixeles (memoria acotada en GPU; el
-       contraste no necesita todos los pixeles del batch para una senal de
-       gradiente estable).
-    3. ``visual_proj`` y ``prototypes`` se L2-normalizan; la matriz de
-       similitud ``logits = (v @ p^T) / temperature`` se compara contra la
-       etiqueta de clase de cada pixel con CrossEntropy en **ambas
-       direcciones** (pixel->prototipo y prototipo->pixel agregado), promediadas.
+    1. The valid pixels are flattened (``target != ignore_index`` and within
+       ``[0, num_prototypes)``).
+    2. ``max_pixels`` pixels are subsampled (bounded GPU memory; the contrast
+       does not need all the pixels in the batch for a stable gradient signal).
+    3. ``visual_proj`` and ``prototypes`` are L2-normalized; the similarity
+       matrix ``logits = (v @ p^T) / temperature`` is compared against each
+       pixel's class label with CrossEntropy in **both directions**
+       (pixel->prototype and prototype->aggregated pixel), then averaged.
 
     Args:
-        visual_proj: Proyeccion visual por pixel ``(B, S, H, W)`` con ``S`` =
-            dimension del espacio semantico (384) de los prototipos.
-        target: Etiquetas por pixel ``(B, H, W)`` int; ``ignore_index`` y
-            clases fuera de rango se excluyen.
-        prototypes: Matriz de prototipos por clase ``(K, S)`` (uno por clase,
-            indexable por la etiqueta de clase).
-        ignore_index: Etiqueta de pixeles a ignorar (Background/Void).
-        temperature: Temperatura del softmax contrastivo (0.07, estandar
-            CLIP/InfoNCE).
-        max_pixels: Numero maximo de pixeles validos a usar por llamada
-            (submuestreo determinista por ``torch.randperm`` para acotar VRAM).
+        visual_proj: Per-pixel visual projection ``(B, S, H, W)`` with ``S`` =
+            dimension of the prototypes' semantic space (384).
+        target: Per-pixel labels ``(B, H, W)`` int; ``ignore_index`` and
+            out-of-range classes are excluded.
+        prototypes: Per-class prototype matrix ``(K, S)`` (one per class,
+            indexable by the class label).
+        ignore_index: Label of pixels to ignore (Background/Void).
+        temperature: Temperature of the contrastive softmax (0.07, CLIP/InfoNCE
+            standard).
+        max_pixels: Maximum number of valid pixels to use per call (deterministic
+            subsampling via ``torch.randperm`` to bound VRAM).
 
     Returns:
-        Escalar ``torch.Tensor`` con la perdida contrastiva simetrica. Si no
-        hay pixeles validos en el batch, devuelve ``0.0`` (tensor con grad).
+        Scalar ``torch.Tensor`` with the symmetric contrastive loss. If there are
+        no valid pixels in the batch, returns ``0.0`` (tensor with grad).
     """
     device = visual_proj.device
     semantic_dim = visual_proj.shape[1]
@@ -605,13 +606,13 @@ def phenology_contrastive_loss(
 
     valid = (y_flat != ignore_index) & (y_flat >= 0) & (y_flat < n_proto)
     if not bool(valid.any()):
-        # Sin pixeles validos: termino neutro que conserva el grafo de grad.
+        # No valid pixels: neutral term that preserves the grad graph.
         return visual_proj.sum() * 0.0
 
     v_valid = v_flat[valid]
     y_valid = y_flat[valid]
 
-    # Submuestreo determinista para acotar la matriz de similitud en VRAM.
+    # Deterministic subsampling to bound the similarity matrix in VRAM.
     n_valid = v_valid.shape[0]
     if n_valid > max_pixels:
         gen = torch.Generator(device="cpu").manual_seed(0)
@@ -621,19 +622,19 @@ def phenology_contrastive_loss(
 
     v_valid = nn.functional.normalize(v_valid, dim=1)  # (P, S)
 
-    # Similitud pixel x prototipo -> logits (P, K).
+    # Pixel x prototype similarity -> logits (P, K).
     logits = (v_valid @ protos.t()) / temperature
 
-    # Direccion 1 (visual): cada pixel debe clasificar a su prototipo de clase.
+    # Direction 1 (visual): each pixel must classify to its class prototype.
     loss_v = nn.functional.cross_entropy(logits, y_valid)
 
-    # Direccion 2 (semantica): por cada clase presente, el prototipo debe
-    # recuperar sus pixeles. Se promedia la similitud prototipo->pixeles de su
-    # clase contra todos los pixeles del batch (InfoNCE simetrico del paper).
+    # Direction 2 (semantic): for each present class, the prototype must
+    # recover its pixels. The prototype->pixels similarity of its class is
+    # averaged against all pixels in the batch (symmetric InfoNCE from the paper).
     present = torch.unique(y_valid)
     proto_logits = (protos[present] @ v_valid.t()) / temperature  # (Kp, P)
-    # Target multi-positivo: para cada prototipo presente, los pixeles de su
-    # clase son los positivos; se usa la media de log-softmax sobre positivos.
+    # Multi-positive target: for each present prototype, the pixels of its
+    # class are the positives; the mean of log-softmax over positives is used.
     log_prob = nn.functional.log_softmax(proto_logits, dim=1)  # (Kp, P)
     pos_mask = (y_valid.unsqueeze(0) == present.unsqueeze(1)).to(log_prob.dtype)
     pos_counts = pos_mask.sum(dim=1).clamp_min(1.0)
@@ -645,19 +646,19 @@ def phenology_contrastive_loss(
 
 
 # ---------------------------------------------------------------------------
-# Helpers de device / forward
+# Device / forward helpers
 # ---------------------------------------------------------------------------
 
 
 def _resolve_device(requested: str) -> torch.device:
-    """Resuelve el device priorizando CUDA cuando esta disponible.
+    """Resolves the device, prioritizing CUDA when available.
 
     Args:
-        requested: ``"cuda"``, ``"cpu"`` o ``"auto"``. ``"cuda"`` sin GPU
-            degrada a ``"cpu"`` con un warning estructurado.
+        requested: ``"cuda"``, ``"cpu"`` or ``"auto"``. ``"cuda"`` without a GPU
+            degrades to ``"cpu"`` with a structured warning.
 
     Returns:
-        ``torch.device`` resuelto.
+        Resolved ``torch.device``.
     """
     if requested in ("auto", "cuda"):
         if torch.cuda.is_available():
@@ -674,26 +675,26 @@ def _forward_model(
     *,
     return_visual_proj: bool,
 ) -> tuple[torch.Tensor, torch.Tensor | None]:
-    """Hace ``forward`` del modelo devolviendo logits y proyeccion visual.
+    """Runs the model's ``forward`` returning logits and visual projection.
 
-    TSViT acepta el kwarg ``return_visual_proj`` y, cuando es ``True``,
-    devuelve la tupla ``(logits, visual_proj)``. DeepLabv3+ (smp) no acepta el
-    kwarg: se llama de forma estandar y ``visual_proj`` queda ``None``.
+    TSViT accepts the kwarg ``return_visual_proj`` and, when it is ``True``,
+    returns the tuple ``(logits, visual_proj)``. DeepLabv3+ (smp) does not accept
+    the kwarg: it is called in the standard way and ``visual_proj`` is ``None``.
 
     Args:
-        model: Segmentador (DeepLabv3+ o TSViT).
-        x: Entrada ``(B, C, H, W)`` (2D) o ``(B, T, C, H, W)`` (temporal).
-        return_visual_proj: Si ``True`` y el modelo lo soporta, pide la rama
-            visual contrastiva.
+        model: Segmenter (DeepLabv3+ or TSViT).
+        x: Input ``(B, C, H, W)`` (2D) or ``(B, T, C, H, W)`` (temporal).
+        return_visual_proj: If ``True`` and the model supports it, requests the
+            contrastive visual branch.
 
     Returns:
-        Tupla ``(logits (B, K, H, W), visual_proj | None)``.
+        Tuple ``(logits (B, K, H, W), visual_proj | None)``.
     """
     if return_visual_proj:
         out = model(x, return_visual_proj=True)
         if isinstance(out, tuple):
             return out[0], out[1]
-        # El modelo no honro el flag (caso defensivo): solo logits.
+        # The model did not honor the flag (defensive case): only logits.
         return out, None
     out = model(x)
     return out, None
@@ -713,23 +714,24 @@ def _run_epoch(
     scaler: torch.cuda.amp.GradScaler | None,
     use_amp: bool,
 ) -> float:
-    """Corre una epoca de train (con ``optimizer``) o de eval (sin el).
+    """Runs one train epoch (with ``optimizer``) or eval epoch (without it).
 
     Args:
-        model: Segmentador.
-        loader: DataLoader del split.
-        criterion: Perdida de segmentacion (Dice + CE).
-        device: Device resuelto.
-        use_phenology: Activa la rama contrastiva (solo si el modelo la expone).
-        prototypes: Matriz de prototipos ``(K, S)`` o ``None``.
-        lambda_contrast: Peso del termino contrastivo.
-        ignore_index: Etiqueta ignorada (Background/Void).
-        optimizer: Optimizador para train; ``None`` para eval (no backward).
-        scaler: ``GradScaler`` de AMP o ``None``.
-        use_amp: Si ``True`` usa autocast (solo efectivo en CUDA).
+        model: Segmenter.
+        loader: DataLoader of the split.
+        criterion: Segmentation loss (Dice + CE).
+        device: Resolved device.
+        use_phenology: Enables the contrastive branch (only if the model exposes
+            it).
+        prototypes: Prototype matrix ``(K, S)`` or ``None``.
+        lambda_contrast: Weight of the contrastive term.
+        ignore_index: Ignored label (Background/Void).
+        optimizer: Optimizer for train; ``None`` for eval (no backward).
+        scaler: AMP ``GradScaler`` or ``None``.
+        use_amp: If ``True`` uses autocast (only effective on CUDA).
 
     Returns:
-        Loss media de la epoca (escalar Python).
+        Mean loss of the epoch (Python scalar).
     """
     is_train = optimizer is not None
     model.train(is_train)
@@ -763,11 +765,11 @@ def _run_epoch(
                     )
 
             if optimizer is not None:
-                # Gradient clipping (max_norm=1.0): imprescindible para TSViT
-                # (transformer) — sin el, los gradientes explotan y el loss
-                # diverge a NaN tras ~8 epochs. Con AMP hay que `unscale_`
-                # antes de clipear. DeepLabv3+ (CNN) tolera no clipear, pero
-                # aplicarlo a ambos es seguro y estabiliza.
+                # Gradient clipping (max_norm=1.0): essential for TSViT
+                # (transformer) — without it, the gradients explode and the loss
+                # diverges to NaN after ~8 epochs. With AMP you must `unscale_`
+                # before clipping. DeepLabv3+ (CNN) tolerates not clipping, but
+                # applying it to both is safe and stabilizes.
                 if scaler is not None and amp_enabled:
                     scaler.scale(loss).backward()
                     scaler.unscale_(optimizer)
@@ -794,25 +796,26 @@ def _evaluate_dense(
     ignore_index: int,
     use_phenology: bool,
 ) -> dict[str, float]:
-    """Evalua el modelo acumulando la matriz de confusion densa del split.
+    """Evaluates the model accumulating the split's dense confusion matrix.
 
-    Acumula la confusion de todo el split (no por-batch) para que mIoU/F1 sean
-    exactos a nivel de conjunto. Reusa los helpers de :mod:`ml.eval.metrics`.
+    Accumulates the confusion over the whole split (not per-batch) so that
+    mIoU/F1 are exact at the set level. Reuses the helpers from
+    :mod:`ml.eval.metrics`.
 
     Args:
-        model: Segmentador.
-        loader: DataLoader del split de validacion.
-        device: Device resuelto.
-        num_classes: Numero de clases del logit denso (18 o 6).
-        ignore_index: Etiqueta ignorada.
-        use_phenology: Si ``True`` se hace forward pidiendo la rama visual
-            (se descarta para la metrica; solo importan los logits).
+        model: Segmenter.
+        loader: DataLoader of the validation split.
+        device: Resolved device.
+        num_classes: Number of classes of the dense logit (18 or 6).
+        ignore_index: Ignored label.
+        use_phenology: If ``True`` the forward is run requesting the visual branch
+            (discarded for the metric; only the logits matter).
 
     Returns:
-        Tupla ``(metrics, cm)``: el diccionario completo de metricas
-        (``miou``, ``f1_macro``, ``pixel_acc``, ``balanced_acc``,
-        ``cohen_kappa``, ``per_class_iou``, ``per_class_f1``) y la matriz de
-        confusion densa acumulada del split (para artefactos al final).
+        Tuple ``(metrics, cm)``: the full metrics dictionary (``miou``,
+        ``f1_macro``, ``pixel_acc``, ``balanced_acc``, ``cohen_kappa``,
+        ``per_class_iou``, ``per_class_f1``) and the split's accumulated dense
+        confusion matrix (for artifacts at the end).
     """
     model.eval()
     cm = np.zeros((num_classes, num_classes), dtype=np.int64)
@@ -829,7 +832,7 @@ def _evaluate_dense(
 
 
 # ---------------------------------------------------------------------------
-# Checkpointing por epoch (resume tras interrupcion).
+# Per-epoch checkpointing (resume after interruption).
 # ---------------------------------------------------------------------------
 
 
@@ -843,20 +846,19 @@ def _save_checkpoint_seg(
     scheduler: torch.optim.lr_scheduler.LRScheduler | None,
     best_metrics: dict[str, float],
 ) -> None:
-    """Persiste el estado completo de entrenamiento para reanudar.
+    """Persists the full training state for resuming.
 
-    Guarda ``model``/``optimizer``/``scaler`` state_dicts + el ``epoch`` ya
-    completado + las mejores metricas, de forma atomica (escribe a ``.tmp`` y
-    renombra) para no corromper el checkpoint si el proceso muere a mitad de
-    la escritura.
+    Saves ``model``/``optimizer``/``scaler`` state_dicts + the already-completed
+    ``epoch`` + the best metrics, atomically (writes to ``.tmp`` and renames) so
+    as not to corrupt the checkpoint if the process dies mid-write.
 
     Args:
-        path: Ruta destino del checkpoint (``.pt``).
-        epoch: Indice del ultimo epoch COMPLETADO (0-based).
-        model: Modelo cuyo state_dict se guarda.
-        optimizer: Optimizador AdamW.
-        scaler: GradScaler AMP (o ``None`` si no se usa AMP).
-        best_metrics: Mejores metricas de validacion hasta ahora.
+        path: Target path of the checkpoint (``.pt``).
+        epoch: Index of the last COMPLETED epoch (0-based).
+        model: Model whose state_dict is saved.
+        optimizer: AdamW optimizer.
+        scaler: AMP GradScaler (or ``None`` if AMP is not used).
+        best_metrics: Best validation metrics so far.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -881,18 +883,18 @@ def _load_checkpoint_seg(
     scheduler: torch.optim.lr_scheduler.LRScheduler | None,
     device: torch.device,
 ) -> tuple[int, dict[str, float]]:
-    """Carga un checkpoint y restaura el estado de entrenamiento.
+    """Loads a checkpoint and restores the training state.
 
     Args:
-        path: Ruta del checkpoint ``.pt``.
-        model: Modelo a restaurar (in-place).
-        optimizer: Optimizador a restaurar (in-place).
-        scaler: GradScaler a restaurar (in-place) o ``None``.
-        device: Dispositivo destino para mapear los tensores.
+        path: Path of the ``.pt`` checkpoint.
+        model: Model to restore (in-place).
+        optimizer: Optimizer to restore (in-place).
+        scaler: GradScaler to restore (in-place) or ``None``.
+        device: Target device to map the tensors.
 
     Returns:
-        ``(start_epoch, best_metrics)``: el epoch desde el que continuar
-        (= ultimo completado + 1) y las mejores metricas previas.
+        ``(start_epoch, best_metrics)``: the epoch from which to continue
+        (= last completed + 1) and the previous best metrics.
     """
     ckpt = torch.load(path, map_location=device, weights_only=False)
     model.load_state_dict(ckpt["model_state"])
@@ -923,19 +925,19 @@ def _log_final_artifacts(
     best_metrics: dict[str, float],
     num_classes: int,
 ) -> None:
-    """Genera y loguea a MLflow los artefactos finales del mejor epoch.
+    """Generates and logs to MLflow the final artifacts of the best epoch.
 
-    Produce dos artefactos del mejor modelo en validacion:
-    1. ``confusion_matrix.png``: matriz de confusion normalizada (recall),
-       util para ver que clases/grupos confunde el modelo.
-    2. ``per_class_metrics.json``: IoU y F1 por clase + las metricas macro.
+    Produces two artifacts of the best validation model:
+    1. ``confusion_matrix.png``: normalized confusion matrix (recall), useful to
+       see which classes/groups the model confuses.
+    2. ``per_class_metrics.json``: per-class IoU and F1 + the macro metrics.
 
     Args:
-        ckpt_dir: Directorio donde escribir los artefactos antes de subirlos.
-        best_cm: Matriz de confusion densa del mejor epoch.
-        best_metrics: Diccionario de metricas del mejor epoch (incluye
-            ``per_class_iou`` y ``per_class_f1``).
-        num_classes: Numero de clases (18 o 6).
+        ckpt_dir: Directory where the artifacts are written before uploading them.
+        best_cm: Dense confusion matrix of the best epoch.
+        best_metrics: Metrics dictionary of the best epoch (includes
+            ``per_class_iou`` and ``per_class_f1``).
+        num_classes: Number of classes (18 or 6).
     """
     import json
 
@@ -944,8 +946,8 @@ def _log_final_artifacts(
 
     ckpt_dir.mkdir(parents=True, exist_ok=True)
 
-    # Matriz de confusion (figura). Reconstruye y_true/y_pred desde la cm
-    # expandiendo conteos seria caro; en su lugar dibujamos la cm directamente.
+    # Confusion matrix (figure). Reconstructing y_true/y_pred from the cm by
+    # expanding counts would be costly; instead we draw the cm directly.
     cm_f = best_cm.astype(np.float64)
     row_sums = cm_f.sum(axis=1, keepdims=True)
     with np.errstate(divide="ignore", invalid="ignore"):
@@ -986,7 +988,7 @@ def _log_final_artifacts(
 
 
 # ---------------------------------------------------------------------------
-# API publica
+# Public API
 # ---------------------------------------------------------------------------
 
 
@@ -1016,61 +1018,61 @@ def train_segmentation(
     lr_min: float = 5e-6,
     patience: int = 0,
 ) -> dict[str, float]:
-    """Entrena un segmentador denso PASTIS-R con logging MLflow.
+    """Trains a PASTIS-R dense segmenter with MLflow logging.
 
-    Loop compartido por DeepLabv3+ (2D) y TSViT (temporal + opcional rama
-    fenologica-contrastiva). En cada epoch entrena sobre ``train_ds``, evalua
-    en ``val_ds`` y loguea ``loss``/``miou``/``f1_macro``/``pixel_acc`` a
-    MLflow (tags ``data_version`` + ``code_version`` via
-    :func:`ml.utils.mlflow_utils.track_experiment`). Conserva el mejor epoch
-    por mIoU de validacion y devuelve sus metricas.
+    Loop shared by DeepLabv3+ (2D) and TSViT (temporal + optional
+    phenology-contrastive branch). On each epoch it trains over ``train_ds``,
+    evaluates on ``val_ds`` and logs ``loss``/``miou``/``f1_macro``/``pixel_acc``
+    to MLflow (tags ``data_version`` + ``code_version`` via
+    :func:`ml.utils.mlflow_utils.track_experiment`). Keeps the best epoch by
+    validation mIoU and returns its metrics.
 
     Args:
-        model: Segmentador construido (``build_deeplabv3plus_mobilenet`` o
-            ``build_tsvit``). Para la rama contrastiva debe aceptar
+        model: Built segmenter (``build_deeplabv3plus_mobilenet`` or
+            ``build_tsvit``). For the contrastive branch it must accept
             ``return_visual_proj=True`` (TSViT).
-        train_ds: Dataset de entrenamiento (``PASTISSegmentationDataset`` en
-            modo 2D o temporal segun el modelo).
-        val_ds: Dataset de validacion (folds disjuntos del train).
-        mlflow_run_name: Nombre del run MLflow
-            (``"alt-deeplabv3plus-mobilenet-v1"`` o ``"alt-tsvit-v1"`` /
+        train_ds: Training dataset (``PASTISSegmentationDataset`` in 2D or
+            temporal mode depending on the model).
+        val_ds: Validation dataset (folds disjoint from train).
+        mlflow_run_name: MLflow run name
+            (``"alt-deeplabv3plus-mobilenet-v1"`` or ``"alt-tsvit-v1"`` /
             ``"alt-tsvit-pheno-v1"``).
-        epochs: Numero de epochs.
-        batch_size: Tamano de batch del ``DataLoader``.
-        device: ``"cuda"``, ``"cpu"`` o ``"auto"``. CUDA con GPU ausente
-            degrada a CPU.
-        lr: Learning rate del optimizador AdamW.
-        use_phenology: Si ``True`` agrega el termino contrastivo
-            ``lambda_contrast * L_contrast`` (requiere ``prototypes`` y un
-            modelo que exponga la rama visual).
-        prototypes: Matriz de prototipos por clase ``(K, S)`` (numpy, lista o
-            tensor). Obligatoria si ``use_phenology=True``.
-        lambda_contrast: Peso del termino contrastivo en la suma.
-        num_workers: Workers del ``DataLoader`` (0 en Windows/CI para evitar
-            el coste de spawn).
-        use_amp: Si ``True`` usa mixed-precision autocast (solo efectivo en
-            CUDA; en CPU es no-op).
-        ignore_index: Etiqueta ignorada (Background/Void).
-        num_classes: Numero de clases del logit denso. Si es ``None`` se
-            infiere de ``train_ds.num_classes`` (o 18 por defecto).
-        mlflow_uri: Override del tracking URI MLflow; ``None`` delega en
+        epochs: Number of epochs.
+        batch_size: Batch size of the ``DataLoader``.
+        device: ``"cuda"``, ``"cpu"`` or ``"auto"``. CUDA with a missing GPU
+            degrades to CPU.
+        lr: Learning rate of the AdamW optimizer.
+        use_phenology: If ``True`` adds the contrastive term
+            ``lambda_contrast * L_contrast`` (requires ``prototypes`` and a model
+            that exposes the visual branch).
+        prototypes: Per-class prototype matrix ``(K, S)`` (numpy, list or
+            tensor). Mandatory if ``use_phenology=True``.
+        lambda_contrast: Weight of the contrastive term in the sum.
+        num_workers: ``DataLoader`` workers (0 on Windows/CI to avoid the spawn
+            cost).
+        use_amp: If ``True`` uses mixed-precision autocast (only effective on
+            CUDA; no-op on CPU).
+        ignore_index: Ignored label (Background/Void).
+        num_classes: Number of classes of the dense logit. If ``None`` it is
+            inferred from ``train_ds.num_classes`` (or 18 by default).
+        mlflow_uri: Override of the MLflow tracking URI; ``None`` delegates to
             :func:`ml.utils.mlflow_utils.resolve_tracking_uri`.
-        dice_weight: Peso del termino Dice en la perdida de segmentacion.
-        ce_weight: Peso del termino CrossEntropy en la perdida de segmentacion.
+        dice_weight: Weight of the Dice term in the segmentation loss.
+        ce_weight: Weight of the CrossEntropy term in the segmentation loss.
 
     Returns:
-        Diccionario ``{"miou", "f1_macro", "pixel_acc"}`` del **mejor epoch**
-        de validacion (por mIoU).
+        Dictionary ``{"miou", "f1_macro", "pixel_acc"}`` of the **best
+        validation epoch** (by mIoU).
 
     Raises:
-        ValueError: si ``use_phenology=True`` pero no se pasan ``prototypes``,
-            o si ``epochs`` no es positivo.
+        ValueError: if ``use_phenology=True`` but ``prototypes`` is not passed,
+            or if ``epochs`` is not positive.
     """
     if epochs <= 0:
-        raise ValueError(f"epochs debe ser positivo, recibido {epochs}.")
+        raise ValueError(f"epochs must be positive, received {epochs}.")
     if use_phenology and prototypes is None:
         raise ValueError(
-            "use_phenology=True requiere `prototypes` (matriz (K, S) por clase)."
+            "use_phenology=True requires `prototypes` (per-class (K, S) matrix)."
         )
 
     resolved_device = _resolve_device(device)
@@ -1090,10 +1092,10 @@ def train_segmentation(
             else torch.as_tensor(np.asarray(prototypes), dtype=torch.float32)
         ).to(resolved_device)
 
-    # `persistent_workers` evita re-spawn de los workers en cada epoch (coste
-    # alto en Windows con spawn); `prefetch_factor` precarga varios batches por
-    # worker para solapar el colapso temporal (np.median ~79ms/patch) con el
-    # paso GPU. Solo aplican con num_workers > 0.
+    # `persistent_workers` avoids re-spawning the workers on each epoch (high
+    # cost on Windows with spawn); `prefetch_factor` preloads several batches per
+    # worker to overlap the temporal collapse (np.median ~79ms/patch) with the
+    # GPU step. They only apply with num_workers > 0.
     loader_kwargs: dict[str, object] = {
         "pin_memory": resolved_device.type == "cuda",
     }
@@ -1129,11 +1131,11 @@ def train_segmentation(
     amp_enabled = use_amp and resolved_device.type == "cuda"
     scaler = torch.cuda.amp.GradScaler(enabled=amp_enabled) if amp_enabled else None
 
-    # LR schedule de Tarasiou et al. 2023 (TSViT, §4.1 "Implementation
-    # details"): warmup lineal 0 -> lr hasta `warmup_epochs`, luego cosine
-    # decay a `lr_min`. El warmup es lo que estabiliza el transformer (sin el,
-    # el LR alto desde el step 0 hace divergir el loss a NaN ~epoch 8). Aplica
-    # por epoch; para DeepLabv3+ (CNN) tambien ayuda pero no es critico.
+    # LR schedule from Tarasiou et al. 2023 (TSViT, §4.1 "Implementation
+    # details"): linear warmup 0 -> lr up to `warmup_epochs`, then cosine
+    # decay to `lr_min`. The warmup is what stabilizes the transformer (without it,
+    # the high LR from step 0 makes the loss diverge to NaN ~epoch 8). Applied
+    # per epoch; for DeepLabv3+ (CNN) it also helps but is not critical.
     scheduler = torch.optim.lr_scheduler.SequentialLR(
         optimizer,
         schedulers=[
@@ -1152,8 +1154,8 @@ def train_segmentation(
         milestones=[max(1, warmup_epochs)],
     )
 
-    # Checkpoints por epoch: `last.pt` (siempre) + `best.pt` (mejor mIoU).
-    # Permiten reanudar tras interrupcion (la VM L4 se apago una vez).
+    # Per-epoch checkpoints: `last.pt` (always) + `best.pt` (best mIoU).
+    # They allow resuming after interruption (the L4 VM shut down once).
     resolved_ckpt_dir = (
         Path(ckpt_dir)
         if ckpt_dir is not None
@@ -1190,7 +1192,7 @@ def train_segmentation(
         patience=patience,
     )
 
-    # Estado de early stopping y cm del mejor epoch (para artefactos finales).
+    # Early stopping state and cm of the best epoch (for final artifacts).
     epochs_no_improve = 0
     best_cm = np.zeros((resolved_classes, resolved_classes), dtype=np.int64)
 
@@ -1268,13 +1270,13 @@ def train_segmentation(
             if is_best:
                 best_metrics = dict(val_metrics)
                 best_metrics["best_epoch"] = float(epoch + 1)
-                best_cm = val_cm.copy()  # cm del mejor epoch (para artefactos)
+                best_cm = val_cm.copy()  # cm of the best epoch (for artifacts)
                 epochs_no_improve = 0
             else:
                 epochs_no_improve += 1
 
-            # Checkpoint por epoch: `last.pt` siempre (para resume), `best.pt`
-            # cuando mejora el mIoU de validacion (para inferencia posterior).
+            # Per-epoch checkpoint: `last.pt` always (for resume), `best.pt`
+            # when the validation mIoU improves (for later inference).
             _save_checkpoint_seg(
                 last_ckpt,
                 epoch=epoch,
@@ -1295,11 +1297,11 @@ def train_segmentation(
                     best_metrics=best_metrics,
                 )
 
-            # Avanza el LR schedule (warmup -> cosine) al final de cada epoch.
+            # Advance the LR schedule (warmup -> cosine) at the end of each epoch.
             scheduler.step()
 
-            # Early stopping: corta si val_miou no mejora en `patience` epochs
-            # (DeepLabv3+ tiende a sobreajustar tras ~7 epochs). 0 = desactivado.
+            # Early stopping: cuts off if val_miou does not improve in `patience` epochs
+            # (DeepLabv3+ tends to overfit after ~7 epochs). 0 = disabled.
             if patience > 0 and epochs_no_improve >= patience:
                 logger.info(
                     "early_stopping",
@@ -1310,7 +1312,7 @@ def train_segmentation(
                 )
                 break
 
-        # mIoU inicial -1.0 indica que ningun epoch corrio (no deberia pasar).
+        # Initial mIoU -1.0 indicates no epoch ran (should not happen).
         if best_metrics["miou"] < 0.0:
             best_metrics = {"miou": 0.0, "f1_macro": 0.0, "pixel_acc": 0.0}
 
@@ -1320,8 +1322,8 @@ def train_segmentation(
         mlflow.log_metric("best_val_balanced_acc", best_metrics.get("balanced_acc", 0.0))
         mlflow.log_metric("best_val_cohen_kappa", best_metrics.get("cohen_kappa", 0.0))
 
-        # Artefactos del mejor epoch: matriz de confusion (figura PNG) +
-        # metricas por clase (JSON). Para el notebook y el analisis.
+        # Best epoch artifacts: confusion matrix (PNG figure) +
+        # per-class metrics (JSON). For the notebook and the analysis.
         _log_final_artifacts(
             resolved_ckpt_dir,
             best_cm=best_cm,
@@ -1329,8 +1331,8 @@ def train_segmentation(
             num_classes=resolved_classes,
         )
 
-        # Sube el mejor checkpoint a MLflow como artefacto (para inferencia
-        # reproducible desde el run, no solo desde el disco local).
+        # Upload the best checkpoint to MLflow as an artifact (for reproducible
+        # inference from the run, not only from the local disk).
         if best_ckpt.exists():
             mlflow.log_artifact(str(best_ckpt), artifact_path="checkpoint")
 
@@ -1345,16 +1347,16 @@ def train_segmentation(
 
 
 # ---------------------------------------------------------------------------
-# Orquestacion CLI: construye dataset + modelo + prototipos y entrena.
-# El notebook `notebooks/models/5_*` invoca esta interfaz por subprocess para
-# que los runs queden documentados en MLflow sin reimplementar logica.
+# CLI orchestration: builds dataset + model + prototypes and trains.
+# The notebook `notebooks/models/5_*` invokes this interface by subprocess so
+# that the runs are documented in MLflow without reimplementing logic.
 # ---------------------------------------------------------------------------
 
-#: Folds oficiales PASTIS-R para train/val/test (split canonico del benchmark).
+#: Official PASTIS-R folds for train/val/test (canonical benchmark split).
 _DEFAULT_TRAIN_FOLDS: tuple[int, ...] = (1, 2, 3)
 _DEFAULT_VAL_FOLDS: tuple[int, ...] = (4,)
 
-#: Nombres de run MLflow por defecto segun el modelo.
+#: Default MLflow run names according to the model.
 _DEFAULT_RUN_NAMES: dict[str, str] = {
     "deeplabv3plus": "alt-deeplabv3plus-mobilenet-v1",
     "tsvit": "alt-tsvit-v1",
@@ -1381,35 +1383,35 @@ def build_and_train(
     mlflow_run_name: str | None = None,
     mlflow_uri: str | None = None,
 ) -> dict[str, float]:
-    """Construye dataset + modelo + prototipos y lanza el entrenamiento.
+    """Builds dataset + model + prototypes and launches the training.
 
-    Orquestador de alto nivel para la CLI: segun ``model_kind`` arma el
-    ``PASTISSegmentationDataset`` en el modo correcto (2D para DeepLabv3+,
-    temporal para TSViT), instancia el modelo, carga los prototipos
-    fenologicos si se pide la rama contrastiva, y delega en
+    High-level orchestrator for the CLI: depending on ``model_kind`` it assembles
+    the ``PASTISSegmentationDataset`` in the correct mode (2D for DeepLabv3+,
+    temporal for TSViT), instantiates the model, loads the phenology prototypes if
+    the contrastive branch is requested, and delegates to
     :func:`train_segmentation`.
 
     Args:
-        model_kind: ``"deeplabv3plus"`` (CNN 2D), ``"tsvit"`` (temporal sin
-            fenologia) o ``"tsvit-pheno"`` (temporal con rama contrastiva).
-        train_folds: Folds PASTIS-R de entrenamiento.
-        val_folds: Folds de validacion (disjuntos del train).
-        epochs: Numero de epochs.
-        batch_size: Tamano de batch.
-        n_timesteps: T submuestreado para los modelos temporales.
-        target: ``"semantic18"`` (18 clases) o ``"hcat6"`` (6 grupos HCAT).
-        device: ``"auto"``, ``"cuda"`` o ``"cpu"``.
-        lr: Learning rate AdamW.
-        lambda_contrast: Peso del termino contrastivo (solo tsvit-pheno).
-        mlflow_run_name: Override del nombre del run; ``None`` usa el default
-            por modelo.
-        mlflow_uri: Override del tracking URI MLflow.
+        model_kind: ``"deeplabv3plus"`` (2D CNN), ``"tsvit"`` (temporal without
+            phenology) or ``"tsvit-pheno"`` (temporal with contrastive branch).
+        train_folds: PASTIS-R training folds.
+        val_folds: Validation folds (disjoint from train).
+        epochs: Number of epochs.
+        batch_size: Batch size.
+        n_timesteps: Subsampled T for the temporal models.
+        target: ``"semantic18"`` (18 classes) or ``"hcat6"`` (6 HCAT groups).
+        device: ``"auto"``, ``"cuda"`` or ``"cpu"``.
+        lr: AdamW learning rate.
+        lambda_contrast: Weight of the contrastive term (tsvit-pheno only).
+        mlflow_run_name: Override of the run name; ``None`` uses the per-model
+            default.
+        mlflow_uri: Override of the MLflow tracking URI.
 
     Returns:
-        Metricas del mejor epoch de validacion ``{miou, f1_macro, pixel_acc}``.
+        Metrics of the best validation epoch ``{miou, f1_macro, pixel_acc}``.
 
     Raises:
-        ValueError: si ``model_kind`` no es reconocido.
+        ValueError: if ``model_kind`` is not recognized.
     """
     from ml.data.pastis_seg_dataset import PASTISSegmentationDataset
     from ml.models.deeplabv3plus import build_deeplabv3plus_mobilenet
@@ -1418,8 +1420,8 @@ def build_and_train(
 
     if model_kind not in _DEFAULT_RUN_NAMES:
         raise ValueError(
-            f"model_kind no reconocido: {model_kind!r}. "
-            f"Opciones: {sorted(_DEFAULT_RUN_NAMES)}."
+            f"model_kind not recognized: {model_kind!r}. "
+            f"Options: {sorted(_DEFAULT_RUN_NAMES)}."
         )
 
     n_classes = 6 if target == "hcat6" else 18
@@ -1557,7 +1559,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:  # pragma: no cover
     return p
 
 def main_legacy(argv: list[str] | None = None) -> int:  # pragma: no cover
-    """Punto de entrada CLI. Invocado por el notebook ``5_*`` via subprocess."""
+    """CLI entry point. Invoked by the ``5_*`` notebook via subprocess."""
     args = _build_arg_parser().parse_args(argv)
     train_folds = tuple(int(x) for x in args.train_folds.split(","))
     val_folds = tuple(int(x) for x in args.val_folds.split(","))
@@ -1607,7 +1609,7 @@ def main(
         int, typer.Option(help="Guardar checkpoint cada N epocas.")
     ] = 1,
 ) -> None:
-    """Wrapper CLI de :func:`run_training` (ver su docstring para los argumentos)."""
+    """CLI wrapper of :func:`run_training` (see its docstring for the arguments)."""
     try:
         result = run_training(
             model=model,
@@ -1639,10 +1641,10 @@ def main(
     )
 
 
-if __name__ == "__main__":  # pragma: no cover - dispatcher CLI
-    # Dos CLIs coexisten en este modulo: el Typer de UNet/AnySat (Aaron) y el
-    # argparse de DeepLab/TSViT (us-025). Se rutea por el valor de --model para
-    # que `python -m ml.train.train_segmentation --model X` funcione para ambos.
+if __name__ == "__main__":  # pragma: no cover - CLI dispatcher
+    # Two CLIs coexist in this module: the UNet/AnySat Typer (Aaron) and the
+    # DeepLab/TSViT argparse (us-025). Routing is by the --model value so
+    # that `python -m ml.train.train_segmentation --model X` works for both.
     _US025_MODELS = {"deeplabv3plus", "tsvit", "tsvit-pheno"}
     _argv = sys.argv[1:]
     _model = None

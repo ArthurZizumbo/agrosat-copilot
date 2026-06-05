@@ -1,7 +1,7 @@
-"""Estadísticas resumidas por banda Sentinel-2 sobre DataFrames Polars.
+"""Summary statistics per Sentinel-2 band over Polars DataFrames.
 
-Provee `summarize_bands` (means, std, percentiles) y `ndvi_temporal`
-(curva mensual NDVI por clase x ROI) para los notebooks de EDA.
+Provides `summarize_bands` (means, std, percentiles) and `ndvi_temporal`
+(monthly NDVI curve per class x ROI) for the EDA notebooks.
 """
 
 from __future__ import annotations
@@ -14,23 +14,23 @@ def summarize_bands(
     band_col: str = "band",
     value_col: str = "value",
 ) -> pl.DataFrame:
-    """Calcula estadísticas resumidas por banda.
+    """Compute summary statistics per band.
 
     Args:
-        df: DataFrame long-format con columnas `band_col` y `value_col`.
-        band_col: Nombre de la columna que contiene el código de banda.
-        value_col: Nombre de la columna numérica a resumir.
+        df: Long-format DataFrame with columns `band_col` and `value_col`.
+        band_col: Name of the column containing the band code.
+        value_col: Name of the numeric column to summarize.
 
     Returns:
-        DataFrame con columnas `band, mean, std, min, max, p5, p25, p50,
-        p75, p95` (10 estadísticos por banda).
+        DataFrame with columns `band, mean, std, min, max, p5, p25, p50,
+        p75, p95` (10 statistics per band).
 
     Raises:
-        ValueError: Si `df` no contiene las columnas requeridas.
+        ValueError: If `df` does not contain the required columns.
     """
     if band_col not in df.columns or value_col not in df.columns:
         raise ValueError(
-            f"Columnas requeridas no encontradas: {band_col}, {value_col}"
+            f"Required columns not found: {band_col}, {value_col}"
         )
 
     return (
@@ -57,23 +57,23 @@ def ndvi_temporal(
     nir_band: str = "B08",
     red_band: str = "B04",
 ) -> pl.DataFrame:
-    """Calcula NDVI agregado temporalmente para curvas mensuales.
+    """Compute temporally aggregated NDVI for monthly curves.
 
-    Espera DataFrame long-format con columnas `date` (YYYYMMDD int o str),
-    `band`, `value` y cualquier columna de agrupación adicional.
+    Expects a long-format DataFrame with columns `date` (YYYYMMDD int or str),
+    `band`, `value` and any additional grouping column.
 
     Args:
-        df: DataFrame long-format.
-        group_by: Columnas para agrupar (default `["month", "class_name"]`).
-        nir_band: Código de la banda NIR (default B08).
-        red_band: Código de la banda Roja (default B04).
+        df: Long-format DataFrame.
+        group_by: Columns to group by (default `["month", "class_name"]`).
+        nir_band: Code of the NIR band (default B08).
+        red_band: Code of the Red band (default B04).
 
     Returns:
-        DataFrame con `group_by + [ndvi_mean, ndvi_std, n]`.
+        DataFrame with `group_by + [ndvi_mean, ndvi_std, n]`.
     """
     group_by = group_by or ["month", "class_name"]
 
-    # Pivot para obtener NIR y Red por píxel
+    # Pivot to obtain NIR and Red per pixel
     pivoted = df.filter(pl.col("band").is_in([nir_band, red_band])).pivot(
         on="band",
         index=[c for c in df.columns if c not in ("band", "value")],
@@ -92,7 +92,7 @@ def ndvi_temporal(
     )
 
     if "month" in group_by and "month" not in pivoted.columns and "date" in pivoted.columns:
-        # date asumido int YYYYMMDD; extraer mes
+        # date assumed int YYYYMMDD; extract month
         pivoted = pivoted.with_columns(
             ((pl.col("date").cast(pl.Int64) // 100) % 100).alias("month")
         )

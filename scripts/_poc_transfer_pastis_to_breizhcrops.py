@@ -1,38 +1,38 @@
-"""PoC de transfer cross-region: PASTIS-R (2019) -> BreizhCrops (2017).
+"""Cross-region transfer PoC: PASTIS-R (2019) -> BreizhCrops (2017).
 
-De-risk honesto del re-pivote cross-region del proyecto. Mide si un modelo
-tabular entrenado en PASTIS-R generaliza a BreizhCrops (otra region de
-Francia, otro anio) sobre el subconjunto de clases comunes, SIN reentrenar.
+Honest de-risk of the project's cross-region re-pivot. Measures whether a
+tabular model trained on PASTIS-R generalizes to BreizhCrops (another region of
+France, another year) on the subset of common classes, WITHOUT retraining.
 
-Por que es un test de generalizacion duro
------------------------------------------
-- Region distinta: PASTIS-R cubre el sur/centro-este de Francia; BreizhCrops
-  cubre Bretaña (frh01 + frh04), clima oceanico, calendario agricola distinto.
-- Anio distinto: PASTIS-R 2019 vs BreizhCrops 2017 (otra fenologia, otras
-  condiciones de nubosidad).
-- Procesado distinto: BreizhCrops trae bandas crudas DN sin mascara de nubes;
-  PASTIS-R llega filtrado. El adaptador escala a reflectancia pero NO
-  re-enmascara, asi que NDVI satura mas (peor caso para el modelo).
+Why it is a hard generalization test
+------------------------------------
+- Different region: PASTIS-R covers southern/central-eastern France; BreizhCrops
+  covers Brittany (frh01 + frh04), oceanic climate, a different agricultural calendar.
+- Different year: PASTIS-R 2019 vs BreizhCrops 2017 (different phenology, different
+  cloud conditions).
+- Different processing: BreizhCrops brings raw DN bands without a cloud mask;
+  PASTIS-R arrives filtered. The adapter scales to reflectance but does NOT
+  re-mask, so NDVI saturates more (worst case for the model).
 
-Espacio de features compartido
-------------------------------
-Las 185 features base del proyecto (153 estadisticas de 17 indices + 24 FFT
-+ 8 fenologicas) se calculan con EL MISMO pipeline en ambos datasets:
+Shared feature space
+--------------------
+The project's 185 base features (153 statistics of 17 indices + 24 FFT
++ 8 phenological) are computed with THE SAME pipeline on both datasets:
 
-- PASTIS-R: subset US-018 ya materializado
+- PASTIS-R: US-018 subset already materialized
   (``data/test_fixtures/feature_selection_parcels_subset.parquet``).
-- BreizhCrops: bandas crudas -> ``ml.features.breizhcrops_features
-  .build_breizhcrops_features`` (reusa ``compute_index`` +
-  ``extract_temporal_features``, los mismos modulos que PASTIS).
+- BreizhCrops: raw bands -> ``ml.features.breizhcrops_features
+  .build_breizhcrops_features`` (reuses ``compute_index`` +
+  ``extract_temporal_features``, the same modules as PASTIS).
 
-AlphaEarth NO entra al transfer: BreizhCrops no tiene embeddings AlphaEarth,
-asi que el unico espacio comun honesto son las 185 features tabulares.
+AlphaEarth does NOT enter the transfer: BreizhCrops has no AlphaEarth embeddings,
+so the only honest common space is the 185 tabular features.
 
-Mapeo de las 7 clases comunes
------------------------------
-Interseccion semantica PASTIS-R <-> BreizhCrops::
+Mapping of the 7 common classes
+-------------------------------
+Semantic intersection PASTIS-R <-> BreizhCrops::
 
-    clase comun   PASTIS-R class_id           BreizhCrops class_name
+    common class  PASTIS-R class_id           BreizhCrops class_name
     -----------   -----------------           ----------------------
     wheat         2 (Soft winter wheat),      "wheat"
                   11 (Winter durum wheat)
@@ -45,16 +45,16 @@ Interseccion semantica PASTIS-R <-> BreizhCrops::
                                               "temporary meadows"
     orchard       16 (Orchard)                "orchards"
 
-``sunflower`` casi no existe en BreizhCrops (1-2 parcelas en frh01/frh04):
-se mantiene en el mapeo por completitud pero su F1 sera 0 o ruido; se reporta
-explicitamente.
+``sunflower`` barely exists in BreizhCrops (1-2 parcels in frh01/frh04):
+it is kept in the mapping for completeness but its F1 will be 0 or noise; it is
+reported explicitly.
 
-Salida
+Output
 ------
-- ``reports/transfer/pastis_to_breizhcrops.parquet``: F1 por clase + F1-macro
-  para transfer directo (y pheno-text si fue viable).
+- ``reports/transfer/pastis_to_breizhcrops.parquet``: per-class F1 + F1-macro
+  for direct transfer (and pheno-text if feasible).
 
-Uso::
+Usage::
 
     python scripts/poc_transfer_pastis_to_breizhcrops.py
     python scripts/poc_transfer_pastis_to_breizhcrops.py --n-breiz 2500
@@ -87,10 +87,10 @@ _PASTIS_SUBSET = (
 _OUTPUT = _REPO_ROOT / "reports" / "transfer" / "pastis_to_breizhcrops.parquet"
 
 # ---------------------------------------------------------------------------
-# Mapeo explicito a las 7 clases comunes (ver docstring).
+# Explicit mapping to the 7 common classes (see docstring).
 # ---------------------------------------------------------------------------
 
-#: Las 7 clases comunes en orden canonico estable.
+#: The 7 common classes in stable canonical order.
 COMMON_CLASSES: tuple[str, ...] = (
     "wheat",
     "barley",
@@ -101,8 +101,8 @@ COMMON_CLASSES: tuple[str, ...] = (
     "orchard",
 )
 
-#: PASTIS-R class_id -> clase comun. Los class_id ausentes (8 Grapevine,
-#: 9 Beet, etc.) se descartan: no tienen contraparte en BreizhCrops.
+#: PASTIS-R class_id -> common class. The absent class_id values (8 Grapevine,
+#: 9 Beet, etc.) are discarded: they have no counterpart in BreizhCrops.
 PASTIS_ID_TO_COMMON: dict[int, str] = {
     2: "wheat",  # Soft winter wheat
     11: "wheat",  # Winter durum wheat
@@ -115,8 +115,8 @@ PASTIS_ID_TO_COMMON: dict[int, str] = {
     16: "orchard",  # Orchard
 }
 
-#: BreizhCrops class_name -> clase comun. Las clases sin contraparte en
-#: PASTIS (nuts) se descartan.
+#: BreizhCrops class_name -> common class. The classes without a counterpart in
+#: PASTIS (nuts) are discarded.
 BREIZ_NAME_TO_COMMON: dict[str, str] = {
     "wheat": "wheat",
     "barley": "barley",
@@ -130,19 +130,19 @@ BREIZ_NAME_TO_COMMON: dict[str, str] = {
 
 
 # ---------------------------------------------------------------------------
-# Carga + preparacion de PASTIS-R (train).
+# Load + preparation of PASTIS-R (train).
 # ---------------------------------------------------------------------------
 
 
 def _load_pastis_common(subset_path: Path) -> tuple[pl.DataFrame, list[str]]:
-    """Carga el subset PASTIS-R y lo restringe a las 7 clases comunes.
+    """Loads the PASTIS-R subset and restricts it to the 7 common classes.
 
     Args:
-        subset_path: Ruta al parquet de features US-018.
+        subset_path: Path to the US-018 features parquet.
 
     Returns:
-        Tupla ``(df, feature_cols)`` con el DataFrame filtrado (con columna
-        ``common_class``) y la lista ordenada de columnas de feature.
+        Tuple ``(df, feature_cols)`` with the filtered DataFrame (with a
+        ``common_class`` column) and the ordered list of feature columns.
     """
     df = pl.read_parquet(subset_path)
     df = df.filter(pl.col("class_id").is_in(list(PASTIS_ID_TO_COMMON.keys())))
@@ -162,7 +162,7 @@ def _load_pastis_common(subset_path: Path) -> tuple[pl.DataFrame, list[str]]:
 
 
 def _feature_columns(df: pl.DataFrame) -> list[str]:
-    """Devuelve las columnas de feature numericas (excluye metadata)."""
+    """Returns the numeric feature columns (excludes metadata)."""
     meta = {
         "parcel_id",
         "year",
@@ -186,7 +186,7 @@ def _feature_columns(df: pl.DataFrame) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Carga + extraccion de features de BreizhCrops (test).
+# Load + feature extraction of BreizhCrops (test).
 # ---------------------------------------------------------------------------
 
 
@@ -196,16 +196,16 @@ def _sample_breizhcrops_parcels(
     regions: tuple[str, ...] = ("frh04", "frh01"),
     seed: int = 42,
 ) -> pl.DataFrame:
-    """Muestrea parcelas BreizhCrops estratificadas por clase comun.
+    """Samples BreizhCrops parcels stratified by common class.
 
     Args:
-        n_target: Numero objetivo total de parcelas a muestrear.
-        regions: Regiones BreizhCrops a usar.
-        seed: Semilla del muestreo.
+        n_target: Total target number of parcels to sample.
+        regions: BreizhCrops regions to use.
+        seed: Sampling seed.
 
     Returns:
-        DataFrame con ``parcel_id, region, class_id, class_name, common_class``
-        de las parcelas seleccionadas (las que caen en las 7 clases comunes).
+        DataFrame with ``parcel_id, region, class_id, class_name, common_class``
+        of the selected parcels (those falling in the 7 common classes).
     """
     frames: list[pl.DataFrame] = []
     for region in regions:
@@ -216,7 +216,7 @@ def _sample_breizhcrops_parcels(
         frames.append(idx)
     if not frames:
         raise RuntimeError(
-            "BreizhCrops no disponible en disco. Ejecuta scripts/download_breizhcrops.sh."
+            "BreizhCrops not available on disk. Run scripts/download_breizhcrops.sh."
         )
 
     index = pl.concat(frames, how="vertical_relaxed")
@@ -227,7 +227,7 @@ def _sample_breizhcrops_parcels(
         .alias("common_class")
     )
 
-    # Muestreo estratificado: cuota uniforme por clase comun, hasta agotar.
+    # Stratified sampling: uniform quota per common class, until exhausted.
     n_classes = index.get_column("common_class").n_unique()
     per_class = max(1, n_target // n_classes)
     sampled: list[pl.DataFrame] = []
@@ -248,19 +248,19 @@ def _extract_breizhcrops_features(
     *,
     seed: int = 42,
 ) -> pl.DataFrame:
-    """Carga las series de las parcelas muestreadas y extrae las 185 features.
+    """Loads the series of the sampled parcels and extracts the 185 features.
 
-    Carga las series por region (subset por ``parcel_id`` muestreado) y aplica
-    el adaptador. El muestreo de ``breizhcrops_pixel_series`` es por posicion,
-    asi que cargamos TODA la region y luego filtramos por los ids elegidos
-    para garantizar que extraemos exactamente las parcelas estratificadas.
+    Loads the series per region (subset by sampled ``parcel_id``) and applies
+    the adapter. The sampling of ``breizhcrops_pixel_series`` is positional,
+    so we load the WHOLE region and then filter by the chosen ids
+    to guarantee that we extract exactly the stratified parcels.
 
     Args:
-        sampled_index: Salida de :func:`_sample_breizhcrops_parcels`.
-        seed: Semilla (reservado; el filtrado es determinista por id).
+        sampled_index: Output of :func:`_sample_breizhcrops_parcels`.
+        seed: Seed (reserved; the filtering is deterministic by id).
 
     Returns:
-        DataFrame de features (185 cols) + ``parcel_id, year, class_id,
+        Features DataFrame (185 cols) + ``parcel_id, year, class_id,
         class_name, common_class``.
     """
     feature_frames: list[pl.DataFrame] = []
@@ -275,8 +275,8 @@ def _extract_breizhcrops_features(
             region=region_name,
             n_parcels=len(wanted_ids),
         )
-        # Extrae SOLO las parcelas muestreadas (lectura eficiente del H5, sin
-        # expandir cientos de miles de parcelas de la region completa).
+        # Extract ONLY the sampled parcels (efficient H5 read, without
+        # expanding hundreds of thousands of parcels of the full region).
         series = breizhcrops_pixel_series(
             region=str(region_name),
             year=2017,
@@ -294,28 +294,28 @@ def _extract_breizhcrops_features(
         feature_frames.append(feats)
 
     if not feature_frames:
-        raise RuntimeError("No se extrajeron features de ninguna parcela BreizhCrops.")
+        raise RuntimeError("No features were extracted from any BreizhCrops parcel.")
     out = pl.concat(feature_frames, how="vertical_relaxed")
     logger.info("breizhcrops_features_extracted", n_parcels=out.height)
     return out
 
 
 # ---------------------------------------------------------------------------
-# Transfer directo.
+# Direct transfer.
 # ---------------------------------------------------------------------------
 
 
 def _align_features(
     pastis_cols: list[str], breiz_cols: list[str]
 ) -> list[str]:
-    """Devuelve las features presentes en AMBOS datasets, en orden estable."""
+    """Returns the features present in BOTH datasets, in stable order."""
     breiz_set = set(breiz_cols)
     shared = [c for c in pastis_cols if c in breiz_set]
     return shared
 
 
 def _matrix(df: pl.DataFrame, cols: list[str]) -> np.ndarray:
-    """Extrae matriz float64 con imputacion de no-finitos por mediana."""
+    """Extracts a float64 matrix with median imputation of non-finite values."""
     mat = df.select(cols).to_numpy().astype(np.float64)
     finite = np.where(np.isfinite(mat), mat, np.nan)
     medians = np.nanmedian(finite, axis=0)
@@ -332,17 +332,17 @@ def run_direct_transfer(
     breiz_df: pl.DataFrame,
     feature_cols: list[str],
 ) -> tuple[dict[str, float], dict[str, float], int]:
-    """Entrena XGBoost en PASTIS y evalua en BreizhCrops sin reentrenar.
+    """Trains XGBoost on PASTIS and evaluates on BreizhCrops without retraining.
 
     Args:
-        pastis_df: DataFrame PASTIS con ``common_class`` + features.
-        breiz_df: DataFrame BreizhCrops con ``common_class`` + features.
-        feature_cols: Features compartidas (mismo orden en ambos).
+        pastis_df: PASTIS DataFrame with ``common_class`` + features.
+        breiz_df: BreizhCrops DataFrame with ``common_class`` + features.
+        feature_cols: Shared features (same order in both).
 
     Returns:
-        Tupla ``(per_class_f1, summary, n_shared_features)`` donde
-        ``per_class_f1`` mapea cada clase comun a su F1, ``summary`` tiene
-        ``f1_macro``, ``accuracy`` y ``f1_macro_no_sunflower``.
+        Tuple ``(per_class_f1, summary, n_shared_features)`` where
+        ``per_class_f1`` maps each common class to its F1, ``summary`` has
+        ``f1_macro``, ``accuracy`` and ``f1_macro_no_sunflower``.
     """
     encoder = LabelEncoder().fit(list(COMMON_CLASSES))
 
@@ -364,7 +364,7 @@ def run_direct_transfer(
         "random_state": 42,
     }
     model = build_estimator("xgb", params)
-    # sample_weight inverso a frecuencia (clases muy desbalanceadas en PASTIS).
+    # sample_weight inverse to frequency (highly imbalanced classes in PASTIS).
     classes, counts = np.unique(y_train, return_counts=True)
     w_per_class = {
         int(c): y_train.size / (classes.size * cnt)
@@ -383,8 +383,8 @@ def run_direct_transfer(
     f1_macro = float(f1_score(y_test, y_pred, labels=labels, average="macro", zero_division=0))
     accuracy = float((y_pred == y_test).mean())
 
-    # F1-macro sin sunflower (casi inexistente en BreizhCrops): metrica mas
-    # representativa de la senal real de transfer.
+    # F1-macro without sunflower (almost nonexistent in BreizhCrops): a metric more
+    # representative of the real transfer signal.
     no_sf = [c for c in COMMON_CLASSES if c != "sunflower"]
     no_sf_idx = encoder.transform(no_sf)
     f1_macro_no_sf = float(
@@ -412,7 +412,7 @@ def run_direct_transfer(
 
 
 # ---------------------------------------------------------------------------
-# Persistencia.
+# Persistence.
 # ---------------------------------------------------------------------------
 
 
@@ -425,7 +425,7 @@ def _persist(
     n_features: int,
     output: Path,
 ) -> None:
-    """Persiste el reporte de transfer a parquet (una fila por clase + macro)."""
+    """Persists the transfer report to parquet (one row per class + macro)."""
     rows: list[dict[str, object]] = []
     for cls in COMMON_CLASSES:
         rows.append(

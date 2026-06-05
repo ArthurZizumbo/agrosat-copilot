@@ -1,37 +1,36 @@
-"""DataLoader comun de segmentacion densa PASTIS-R (US-025, Tarea 1).
+"""Common PASTIS-R dense segmentation DataLoader (US-025, Task 1).
 
-``PASTISSegmentationDataset`` es la pieza compartida que destraba a los tres
-segmentadores de EPIC 5: expone los patches Sentinel-2 multitemporales como
-tensores listos para PyTorch en dos modos intercambiables sin reescribir el
-pipeline de datos:
+``PASTISSegmentationDataset`` is the shared piece that unblocks the three EPIC 5
+segmenters: it exposes the multitemporal Sentinel-2 patches as PyTorch-ready
+tensors in two interchangeable modes without rewriting the data pipeline:
 
-- **Modo 2D** (``collapse_time="median"|"pick"``): colapsa el eje temporal a
-  un unico frame ``(10, H, W)`` para los segmentadores CNN puros
+- **2D mode** (``collapse_time="median"|"pick"``): collapses the temporal axis
+  to a single frame ``(10, H, W)`` for the pure CNN segmenters
   (DeepLabv3+ MobileNetV3, U-Net, SegFormer).
-- **Modo temporal** (``collapse_time=None``): submuestrea ``n_timesteps``
-  fechas equiespaciadas de forma determinista y entrega ``(T_sub, 10, H, W)``
-  para los segmentadores temporales (TSViT, U-TAE).
+- **Temporal mode** (``collapse_time=None``): deterministically subsamples
+  ``n_timesteps`` equispaced dates and delivers ``(T_sub, 10, H, W)`` for the
+  temporal segmenters (TSViT, U-TAE).
 
-La etiqueta ``y (H, W)`` int64 da la **clase semantica por pixel**, lo que
-ademas habilita la rama fenologica-contrastiva de TSViT (Wen et al. 2025): el
-modelo indexa el prototipo de la clase de cada pixel directamente con ``y``,
-sin necesitar ``ParcelIDs``.
+The label ``y (H, W)`` int64 gives the **per-pixel semantic class**, which also
+enables the TSViT phenology-contrastive branch (Wen et al. 2025): the model
+indexes each pixel's class prototype directly with ``y``, without needing
+``ParcelIDs``.
 
-Decisiones de diseno verificadas (verdad-de-tierra PASTIS-R, 31-may-2026):
+Verified design decisions (PASTIS-R ground truth, 31-may-2026):
 
-- ``DATA_S2/S2_<pid>.npy`` = ``(T, 10, 128, 128)`` int16, escala ``/10000``.
-- ``ANNOTATIONS/TARGET_<pid>.npy`` = ``(3, 128, 128)`` uint8; canal 0 es la
-  clase semantica (0=Background, 1..18 cultivos, 19=Void).
-- El split por fold es **oficial** (campo ``Fold`` por ``ID_PATCH`` en
-  ``metadata.geojson``), nunca aleatorio, para evitar leakage espacial.
-- La normalizacion usa ``NORM_S2_patch.json`` por fold
-  (``{"Fold_N": {"mean": [10], "std": [10]}}``) si esta disponible; si no, se
-  cae a la escala simple ``/10000``.
-- ``metadata.geojson`` (19 MB) se lee con ``json.load`` puro (~0.1 s), nunca
-  con ``geopandas.read_file`` (parsea 2433 geometrias y cuelga el proceso).
+- ``DATA_S2/S2_<pid>.npy`` = ``(T, 10, 128, 128)`` int16, scale ``/10000``.
+- ``ANNOTATIONS/TARGET_<pid>.npy`` = ``(3, 128, 128)`` uint8; channel 0 is the
+  semantic class (0=Background, 1..18 crops, 19=Void).
+- The fold split is **official** (``Fold`` field per ``ID_PATCH`` in
+  ``metadata.geojson``), never random, to avoid spatial leakage.
+- Normalization uses ``NORM_S2_patch.json`` per fold
+  (``{"Fold_N": {"mean": [10], "std": [10]}}``) if available; otherwise it falls
+  back to the simple ``/10000`` scale.
+- ``metadata.geojson`` (19 MB) is read with plain ``json.load`` (~0.1 s), never
+  with ``geopandas.read_file`` (parses 2433 geometries and hangs the process).
 
-Convencion del proyecto: ``torch``/``numpy`` solo en el borde del modelo;
-logging via ``structlog``; sin pandas.
+Project convention: ``torch``/``numpy`` only at the model boundary; logging via
+``structlog``; no pandas.
 """
 
 from __future__ import annotations
@@ -56,13 +55,13 @@ logger = structlog.get_logger(__name__)
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _DEFAULT_ROOT = _REPO_ROOT / "data" / "PASTIS-R"
 
-#: Escala de reflectancia PASTIS-R: los int16 estan en 0..10000.
+#: PASTIS-R reflectance scale: the int16 values are in 0..10000.
 _S2_SCALE = 10000.0
 
-#: Numero de bandas Sentinel-2 conservadas en PASTIS-R.
+#: Number of Sentinel-2 bands kept in PASTIS-R.
 _N_BANDS = 10
 
-#: Clases no agronomicas (Background, Void) que se mapean a ``ignore_index``.
+#: Non-agronomic classes (Background, Void) mapped to ``ignore_index``.
 _BACKGROUND_ID = 0
 _VOID_ID = 19
 
@@ -71,17 +70,17 @@ TargetMode = Literal["semantic18", "hcat6"]
 
 
 def _build_semantic18_lut(ignore_index: int) -> np.ndarray:
-    """Construye la LUT ``class_id PASTIS (0..19) -> etiqueta de entrenamiento``.
+    """Builds the LUT ``class_id PASTIS (0..19) -> training label``.
 
-    Las 18 clases agronomicas (1..18) se remapean al rango contiguo ``[0..17]``;
-    Background (0) y Void (19) se mapean a ``ignore_index`` para que la perdida
-    los excluya.
+    The 18 agronomic classes (1..18) are remapped to the contiguous range
+    ``[0..17]``; Background (0) and Void (19) are mapped to ``ignore_index`` so
+    that the loss excludes them.
 
     Args:
-        ignore_index: Valor para los pixeles ignorados (Background/Void).
+        ignore_index: Value for the ignored pixels (Background/Void).
 
     Returns:
-        Array int64 de longitud 20 indexable por ``class_id``.
+        int64 array of length 20 indexable by ``class_id``.
     """
     lut = np.full(20, ignore_index, dtype=np.int64)
     for cid in range(1, 19):
@@ -90,21 +89,21 @@ def _build_semantic18_lut(ignore_index: int) -> np.ndarray:
 
 
 def _build_hcat6_lut(ignore_index: int) -> np.ndarray:
-    """Construye la LUT ``class_id PASTIS (0..19) -> grupo HCAT [0..5]``.
+    """Builds the LUT ``class_id PASTIS (0..19) -> HCAT group [0..5]``.
 
-    Reusa el mapeo 18->6 de :mod:`ml.analysis.hcat_grouping`. Los ids de grupo
-    de ``hcat_group_id_map`` viven en ``[1, 6]`` (evitan colision con la clase 0
-    del baseline); aqui se desplazan a ``[0, 5]`` contiguo para indexar logits
-    de segmentacion. Background/Void y cualquier clase sin grupo van a
+    Reuses the 18->6 mapping from :mod:`ml.analysis.hcat_grouping`. The group ids
+    from ``hcat_group_id_map`` live in ``[1, 6]`` (they avoid collision with the
+    baseline's class 0); here they are shifted to a contiguous ``[0, 5]`` to index
+    segmentation logits. Background/Void and any class without a group go to
     ``ignore_index``.
 
     Args:
-        ignore_index: Valor para los pixeles ignorados.
+        ignore_index: Value for the ignored pixels.
 
     Returns:
-        Array int64 de longitud 20 indexable por ``class_id``.
+        int64 array of length 20 indexable by ``class_id``.
     """
-    name_to_id = hcat_group_id_map()  # nombre -> [1..6]
+    name_to_id = hcat_group_id_map()  # name -> [1..6]
     lut = np.full(20, ignore_index, dtype=np.int64)
     for cid, group_name in PASTIS_CLASS_TO_HCAT_L1.items():
         lut[cid] = name_to_id[group_name] - 1  # [1..6] -> [0..5]
@@ -112,16 +111,16 @@ def _build_hcat6_lut(ignore_index: int) -> np.ndarray:
 
 
 def _load_fold_index(metadata_path: Path) -> dict[str, int]:
-    """Lee ``metadata.geojson`` y devuelve ``{patch_id: fold}``.
+    """Reads ``metadata.geojson`` and returns ``{patch_id: fold}``.
 
-    Usa ``json.load`` puro (no ``geopandas.read_file``, que cuelga parseando
-    las 2433 geometrias del archivo de 19 MB).
+    Uses plain ``json.load`` (not ``geopandas.read_file``, which hangs parsing
+    the 2433 geometries of the 19 MB file).
 
     Args:
-        metadata_path: Ruta al ``metadata.geojson`` de PASTIS-R.
+        metadata_path: Path to the PASTIS-R ``metadata.geojson``.
 
     Returns:
-        Diccionario ``{patch_id (str): fold (int)}``. Vacio si no existe.
+        Dictionary ``{patch_id (str): fold (int)}``. Empty if it does not exist.
     """
     if not metadata_path.exists():
         return {}
@@ -130,11 +129,11 @@ def _load_fold_index(metadata_path: Path) -> dict[str, int]:
     out: dict[str, int] = {}
     for feat in gj.get("features", []):
         props = feat.get("properties", {}) or {}
-        # `ID_PATCH` es el identificador real del patch (coincide con el nombre
-        # `S2_<ID_PATCH>.npy`). Se prioriza sobre `feat["id"]` porque el
-        # metadata oficial de Zenodo usa `feat["id"]` como indice secuencial
-        # (0, 1, 2, ...) que NO coincide con los nombres de archivo; solo
-        # algunos metadata derivados ponen el patch_id en `feat["id"]`.
+        # `ID_PATCH` is the real patch identifier (matches the name
+        # `S2_<ID_PATCH>.npy`). It is prioritized over `feat["id"]` because the
+        # official Zenodo metadata uses `feat["id"]` as a sequential index
+        # (0, 1, 2, ...) that does NOT match the file names; only
+        # some derived metadata put the patch_id in `feat["id"]`.
         pid_raw = props.get("ID_PATCH")
         if pid_raw is None:
             pid_raw = feat.get("id")
@@ -148,16 +147,16 @@ def _load_fold_index(metadata_path: Path) -> dict[str, int]:
 def _load_fold_norm_stats(
     norm_path: Path,
 ) -> dict[int, tuple[np.ndarray, np.ndarray]]:
-    """Lee ``NORM_S2_patch.json`` y devuelve ``{fold: (mean[10], std[10])}``.
+    """Reads ``NORM_S2_patch.json`` and returns ``{fold: (mean[10], std[10])}``.
 
-    Estructura del archivo: ``{"Fold_N": {"mean": [10], "std": [10]}}``.
+    File structure: ``{"Fold_N": {"mean": [10], "std": [10]}}``.
 
     Args:
-        norm_path: Ruta al ``NORM_S2_patch.json`` de PASTIS-R.
+        norm_path: Path to the PASTIS-R ``NORM_S2_patch.json``.
 
     Returns:
-        Diccionario ``{fold (int): (mean float32[10], std float32[10])}``.
-        Vacio si el archivo no existe.
+        Dictionary ``{fold (int): (mean float32[10], std float32[10])}``.
+        Empty if the file does not exist.
     """
     if not norm_path.exists():
         return {}
@@ -165,7 +164,7 @@ def _load_fold_norm_stats(
         raw = json.load(fh)
     out: dict[int, tuple[np.ndarray, np.ndarray]] = {}
     for key, stats in raw.items():
-        # key tipo "Fold_3" -> 3
+        # key like "Fold_3" -> 3
         try:
             fold = int(str(key).split("_")[-1])
         except (ValueError, IndexError):
@@ -177,19 +176,18 @@ def _load_fold_norm_stats(
 
 
 def _equispaced_indices(n_available: int, n_select: int) -> np.ndarray:
-    """Selecciona ``n_select`` indices equiespaciados deterministas de ``[0, n)``.
+    """Selects ``n_select`` deterministic equispaced indices from ``[0, n)``.
 
-    Si hay menos fechas que las pedidas, devuelve todas las disponibles. El
-    muestreo es ``np.linspace`` redondeado a entero (determinista, sin RNG),
-    de modo que siempre incluye la primera y la ultima fecha y cubre la
-    estacion de forma uniforme.
+    If there are fewer dates than requested, returns all available ones. The
+    sampling is ``np.linspace`` rounded to integer (deterministic, no RNG), so it
+    always includes the first and last date and covers the season uniformly.
 
     Args:
-        n_available: Numero de fechas disponibles en el patch (T).
-        n_select: Numero de fechas a conservar (``n_timesteps``).
+        n_available: Number of dates available in the patch (T).
+        n_select: Number of dates to keep (``n_timesteps``).
 
     Returns:
-        Array int de indices unicos ordenados ascendentemente.
+        int array of unique indices sorted ascending.
     """
     if n_select >= n_available:
         return np.arange(n_available)
@@ -198,30 +196,30 @@ def _equispaced_indices(n_available: int, n_select: int) -> np.ndarray:
 
 
 class PASTISSegmentationDataset(Dataset):
-    """Dataset PyTorch de segmentacion densa sobre PASTIS-R.
+    """PyTorch dense segmentation dataset over PASTIS-R.
 
-    Cada item es ``(x, y)`` donde ``y (128, 128)`` int64 es la clase por pixel
-    (lista para indexar prototipos fenologicos) y ``x`` es:
+    Each item is ``(x, y)`` where ``y (128, 128)`` int64 is the per-pixel class
+    (ready to index phenology prototypes) and ``x`` is:
 
-    - ``(10, 128, 128)`` float32 en modo 2D (``collapse_time`` distinto de
-      ``None``): el eje temporal se colapsa por mediana o se elige el frame
-      central.
-    - ``(T_sub, 10, 128, 128)`` float32 en modo temporal
-      (``collapse_time=None``): ``T_sub = min(n_timesteps, T)`` fechas
-      equiespaciadas deterministas.
+    - ``(10, 128, 128)`` float32 in 2D mode (``collapse_time`` other than
+      ``None``): the temporal axis is collapsed by median or the central frame
+      is picked.
+    - ``(T_sub, 10, 128, 128)`` float32 in temporal mode
+      (``collapse_time=None``): ``T_sub = min(n_timesteps, T)`` deterministic
+      equispaced dates.
 
-    El split por fold es oficial (campo ``Fold`` de ``metadata.geojson``); la
-    normalizacion usa ``NORM_S2_patch.json`` por fold si existe, si no escala
-    ``/10000``.
+    The fold split is official (``Fold`` field of ``metadata.geojson``);
+    normalization uses ``NORM_S2_patch.json`` per fold if it exists, otherwise it
+    scales by ``/10000``.
 
     Attributes:
-        root: Raiz del dataset PASTIS-R.
-        folds: Folds incluidos en este split.
-        n_timesteps: Numero de fechas a conservar en modo temporal.
-        collapse_time: ``"median"``/``"pick"`` (2D) o ``None`` (temporal).
-        target: ``"semantic18"`` (18 clases) o ``"hcat6"`` (6 grupos HCAT).
-        ignore_index: Etiqueta para Background/Void y clases sin grupo.
-        patch_ids: Lista ordenada de ``patch_id`` incluidos en este split.
+        root: Root of the PASTIS-R dataset.
+        folds: Folds included in this split.
+        n_timesteps: Number of dates to keep in temporal mode.
+        collapse_time: ``"median"``/``"pick"`` (2D) or ``None`` (temporal).
+        target: ``"semantic18"`` (18 classes) or ``"hcat6"`` (6 HCAT groups).
+        ignore_index: Label for Background/Void and classes without a group.
+        patch_ids: Sorted list of ``patch_id`` included in this split.
     """
 
     def __init__(
@@ -234,39 +232,39 @@ class PASTISSegmentationDataset(Dataset):
         ignore_index: int = 255,
         seed: int = 42,
     ) -> None:
-        """Inicializa el dataset filtrando los patches por fold oficial.
+        """Initializes the dataset filtering the patches by official fold.
 
         Args:
-            root: Raiz del dataset PASTIS-R (``data/PASTIS-R/`` por defecto).
-            folds: Folds oficiales a incluir (subconjunto de 1..5).
-            n_timesteps: Fechas a conservar en modo temporal (submuestreo
-                equiespaciado determinista).
-            collapse_time: Modo de colapso temporal. ``"median"`` y ``"pick"``
-                producen ``(10, H, W)``; ``None`` produce ``(T_sub, 10, H, W)``.
-            target: ``"semantic18"`` mapea a ``[0..17]``; ``"hcat6"`` remapea a
-                los 6 grupos HCAT Level-1 ``[0..5]``.
-            ignore_index: Valor de etiqueta para Background/Void (y clases sin
-                grupo HCAT). Default 255.
-            seed: Semilla para reproducibilidad. El submuestreo temporal ya es
-                determinista (equiespaciado); ``seed`` se conserva para futuras
-                variantes estocasticas y queda registrado.
+            root: Root of the PASTIS-R dataset (``data/PASTIS-R/`` by default).
+            folds: Official folds to include (subset of 1..5).
+            n_timesteps: Dates to keep in temporal mode (deterministic equispaced
+                subsampling).
+            collapse_time: Temporal collapse mode. ``"median"`` and ``"pick"``
+                produce ``(10, H, W)``; ``None`` produces ``(T_sub, 10, H, W)``.
+            target: ``"semantic18"`` maps to ``[0..17]``; ``"hcat6"`` remaps to
+                the 6 HCAT Level-1 groups ``[0..5]``.
+            ignore_index: Label value for Background/Void (and classes without an
+                HCAT group). Default 255.
+            seed: Seed for reproducibility. The temporal subsampling is already
+                deterministic (equispaced); ``seed`` is kept for future stochastic
+                variants and is recorded.
 
         Raises:
-            ValueError: si ``collapse_time`` o ``target`` no son validos, o si
-                ``n_timesteps`` no es positivo.
-            FileNotFoundError: si ``root`` no contiene ``DATA_S2/``.
+            ValueError: if ``collapse_time`` or ``target`` are invalid, or if
+                ``n_timesteps`` is not positive.
+            FileNotFoundError: if ``root`` does not contain ``DATA_S2/``.
         """
         if collapse_time not in ("median", "pick", None):
             raise ValueError(
-                f"collapse_time invalido: {collapse_time!r}; "
-                "use 'median', 'pick' o None."
+                f"invalid collapse_time: {collapse_time!r}; "
+                "use 'median', 'pick' or None."
             )
         if target not in ("semantic18", "hcat6"):
             raise ValueError(
-                f"target invalido: {target!r}; use 'semantic18' o 'hcat6'."
+                f"invalid target: {target!r}; use 'semantic18' or 'hcat6'."
             )
         if n_timesteps <= 0:
-            raise ValueError(f"n_timesteps debe ser positivo, recibido {n_timesteps}.")
+            raise ValueError(f"n_timesteps must be positive, received {n_timesteps}.")
 
         self.root = Path(root)
         self.folds = tuple(int(f) for f in folds)
@@ -278,9 +276,9 @@ class PASTISSegmentationDataset(Dataset):
 
         s2_dir = self.root / "DATA_S2"
         if not s2_dir.exists():
-            raise FileNotFoundError(f"No existe el directorio S2: {s2_dir}")
+            raise FileNotFoundError(f"S2 directory does not exist: {s2_dir}")
 
-        # LUT de remapeo de clases (precomputada una sola vez).
+        # Class remapping LUT (precomputed only once).
         self._label_lut: np.ndarray = (
             _build_semantic18_lut(self.ignore_index)
             if target == "semantic18"
@@ -288,12 +286,12 @@ class PASTISSegmentationDataset(Dataset):
         )
         self.num_classes: int = 18 if target == "semantic18" else 6
 
-        # Indice de folds oficial y stats de normalizacion por fold.
+        # Official fold index and per-fold normalization stats.
         fold_index = _load_fold_index(self.root / "metadata.geojson")
         self._fold_of: dict[str, int] = fold_index
         self._norm_stats = _load_fold_norm_stats(self.root / "NORM_S2_patch.json")
 
-        # patch_ids del split = los presentes en disco cuyo fold esta en `folds`.
+        # split patch_ids = those present on disk whose fold is in `folds`.
         wanted = set(self.folds)
         available = {p.stem.split("_", 1)[1] for p in s2_dir.glob("S2_*.npy")}
         self.patch_ids: list[str] = sorted(
@@ -312,40 +310,41 @@ class PASTISSegmentationDataset(Dataset):
         )
 
     def __len__(self) -> int:
-        """Numero de patches en este split."""
+        """Number of patches in this split."""
         return len(self.patch_ids)
 
     def _normalize(self, s2: np.ndarray, fold: int | None) -> np.ndarray:
-        """Normaliza el tensor S2 ``(T, 10, H, W)`` segun el fold.
+        """Normalizes the S2 tensor ``(T, 10, H, W)`` according to the fold.
 
-        Si hay stats del fold en ``NORM_S2_patch.json`` aplica estandarizacion
-        ``(x/scale - mean) / std`` por banda; si no, escala simple ``/10000``.
+        If there are fold stats in ``NORM_S2_patch.json`` it applies per-band
+        standardization ``(x/scale - mean) / std``; otherwise the simple
+        ``/10000`` scale.
 
         Args:
-            s2: Tensor int16 ``(T, 10, H, W)``.
-            fold: Fold del patch (para elegir las stats) o ``None``.
+            s2: int16 tensor ``(T, 10, H, W)``.
+            fold: Fold of the patch (to pick the stats) or ``None``.
 
         Returns:
-            Tensor float32 ``(T, 10, H, W)`` normalizado.
+            Normalized float32 tensor ``(T, 10, H, W)``.
         """
         x = s2.astype(np.float32) / _S2_SCALE
         if fold is not None and fold in self._norm_stats:
             mean, std = self._norm_stats[fold]
-            # mean/std en escala de reflectancia 0..10000 -> pasar a 0..1.
+            # mean/std in reflectance scale 0..10000 -> convert to 0..1.
             mean = (mean / _S2_SCALE).reshape(1, _N_BANDS, 1, 1)
             std = (std / _S2_SCALE).reshape(1, _N_BANDS, 1, 1)
             x = (x - mean) / np.where(std == 0.0, 1.0, std)
         return x.astype(np.float32)
 
     def _collapse(self, x: np.ndarray) -> np.ndarray:
-        """Aplica el modo temporal configurado al tensor ``(T, 10, H, W)``.
+        """Applies the configured temporal mode to the tensor ``(T, 10, H, W)``.
 
         Args:
-            x: Tensor float32 normalizado ``(T, 10, H, W)``.
+            x: Normalized float32 tensor ``(T, 10, H, W)``.
 
         Returns:
-            ``(10, H, W)`` si ``collapse_time`` es ``"median"``/``"pick"``;
-            ``(T_sub, 10, H, W)`` submuestreado si es ``None``.
+            ``(10, H, W)`` if ``collapse_time`` is ``"median"``/``"pick"``;
+            subsampled ``(T_sub, 10, H, W)`` if it is ``None``.
         """
         n_t = x.shape[0]
         if self.collapse_time == "median":
@@ -353,42 +352,42 @@ class PASTISSegmentationDataset(Dataset):
             return collapsed.astype(np.float32)
         if self.collapse_time == "pick":
             return np.asarray(x[n_t // 2], dtype=np.float32)
-        # Modo temporal: submuestreo equiespaciado determinista.
+        # Temporal mode: deterministic equispaced subsampling.
         idx = _equispaced_indices(n_t, self.n_timesteps)
         return np.asarray(x[idx], dtype=np.float32)
 
     def _remap_labels(self, semantic: np.ndarray) -> np.ndarray:
-        """Remapea la mascara de clase PASTIS ``(H, W)`` a etiquetas de entrenamiento.
+        """Remaps the PASTIS class mask ``(H, W)`` to training labels.
 
         Args:
-            semantic: Mascara uint8 ``(H, W)`` con ``class_id`` en ``0..19``.
+            semantic: uint8 mask ``(H, W)`` with ``class_id`` in ``0..19``.
 
         Returns:
-            Mascara int64 ``(H, W)`` en ``[0..num_classes-1]`` union
+            int64 mask ``(H, W)`` in ``[0..num_classes-1]`` union
             ``{ignore_index}``.
         """
         sem = np.clip(semantic.astype(np.int64), 0, 19)
         return self._label_lut[sem]
 
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
-        """Carga y transforma el patch ``idx`` a ``(x, y)`` tensores.
+        """Loads and transforms patch ``idx`` into ``(x, y)`` tensors.
 
         Args:
-            idx: Indice en ``self.patch_ids``.
+            idx: Index into ``self.patch_ids``.
 
         Returns:
-            Tupla ``(x, y)``:
-                - ``x``: float32 ``(10, H, W)`` (2D) o ``(T_sub, 10, H, W)``
+            Tuple ``(x, y)``:
+                - ``x``: float32 ``(10, H, W)`` (2D) or ``(T_sub, 10, H, W)``
                   (temporal).
-                - ``y``: int64 ``(H, W)`` con la clase por pixel.
+                - ``y``: int64 ``(H, W)`` with the per-pixel class.
 
         Raises:
-            IndexError: si ``idx`` esta fuera de rango.
+            IndexError: if ``idx`` is out of range.
         """
         if idx < 0:
             idx += len(self.patch_ids)
         if not 0 <= idx < len(self.patch_ids):
-            raise IndexError(f"idx fuera de rango: {idx}")
+            raise IndexError(f"idx out of range: {idx}")
 
         pid = self.patch_ids[idx]
         patch = load_pastis_patch(pid, root=self.root, load_annotations=True)
@@ -400,7 +399,7 @@ class PASTISSegmentationDataset(Dataset):
 
         semantic = patch["semantic"]
         if semantic is None:
-            # Sin anotacion: todo ignorado (no deberia ocurrir en folds 1-5).
+            # No annotation: everything ignored (should not happen in folds 1-5).
             h, w = x.shape[-2:]
             y = np.full((h, w), self.ignore_index, dtype=np.int64)
         else:

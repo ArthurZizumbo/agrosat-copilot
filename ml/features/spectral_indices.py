@@ -1,51 +1,51 @@
-"""Biblioteca canónica de los 17 índices espectrales del proyecto AgroSatCopilot.
+"""Canonical library of the 17 spectral indices of the AgroSatCopilot project.
 
-Esta es la **única fuente de verdad** para el cómputo de NDVI, NDWI, NDMI,
+This is the **single source of truth** for computing NDVI, NDWI, NDMI,
 EVI, SAVI, MSAVI2, NBR, MCARI, CCCI, LAI, FAPAR, PSRI, NDCI, GCVI, RENDVI,
-NDRE y TSAVI sobre tensores Sentinel-2 en formato ``xarray.DataArray``.
-Cualquier consumidor del repo (notebooks, Dagster assets, agente ADK, paper)
-debe invocar este módulo y nunca recalcular fórmulas a mano.
+NDRE and TSAVI on Sentinel-2 tensors in ``xarray.DataArray`` format.
+Any consumer of the repo (notebooks, Dagster assets, ADK agent, paper)
+must invoke this module and never recompute formulas by hand.
 
-Convención de bandas
---------------------
+Band convention
+---------------
 
-El input es un ``xarray.DataArray`` con dimensión ``band`` cuyos labels
-canónicos son los importados desde
+The input is an ``xarray.DataArray`` with a ``band`` dimension whose
+canonical labels are those imported from
 :data:`ml.ingest.pastis_loader.PASTIS_S2_BANDS`::
 
     ("B02","B03","B04","B05","B06","B07","B08","B8A","B11","B12")
 
-El mapeo interno a la nomenclatura de ``spyndex`` (`B`, `G`, `R`, `RE1`,
-`RE2`, `RE3`, `N`, `RE4`, `S1`, `S2`) se aplica de forma transparente en
+The internal mapping to the ``spyndex`` nomenclature (`B`, `G`, `R`, `RE1`,
+`RE2`, `RE3`, `N`, `RE4`, `S1`, `S2`) is applied transparently in
 :data:`_BAND_TO_SPYNDEX`.
 
-Contrato del caller (responsabilidad **fuera** de este módulo)
----------------------------------------------------------------
+Caller contract (responsibility **outside** this module)
+--------------------------------------------------------
 
-El EDA del Avance 1 (`notebooks/eda/Avance1.Equipo17.ipynb`, §3 Bivariado y
-§5 Conclusiones globales) reportó:
+The Avance 1 EDA (`notebooks/eda/Avance1.Equipo17.ipynb`, §3 Bivariate and
+§5 Global conclusions) reported:
 
-- NDVI satura a 1.0 en 75 % de parcelas si no se aplica máscara SCL ⇒ el
-  caller debe filtrar nubes/sombras/nieve antes de llamar a ``compute_index``.
-- Las bandas Sentinel-2 distribuidas como DN (0-10000) deben dividirse por
-  10000 para entrar como reflectancia en [0, 1].
-- Redundancia fuerte detectada en el cuarteto {NDVI, NDRE, NDWI, SAVI}
-  (Pearson 0.95-0.97); la selección final (US-018) retiene {NDVI, NDMI, EVI}.
-  Este módulo entrega los 17 candidatos íntegros; la selección no es su
-  responsabilidad.
+- NDVI saturates to 1.0 in 75 % of parcels if no SCL mask is applied => the
+  caller must filter clouds/shadows/snow before calling ``compute_index``.
+- The Sentinel-2 bands distributed as DN (0-10000) must be divided by
+  10000 to enter as reflectance in [0, 1].
+- Strong redundancy detected in the quartet {NDVI, NDRE, NDWI, SAVI}
+  (Pearson 0.95-0.97); the final selection (US-018) retains {NDVI, NDMI, EVI}.
+  This module delivers the 17 candidates in full; the selection is not its
+  responsibility.
 
-Backends soportados
+Supported backends
 -------------------
 
-1. ``spyndex`` 0.10 (motor principal, offline sobre xarray) — cubre 14/17:
-   11 índices literales + 3 alias (MSAVI2→MSAVI, NDRE→NDREI, GCVI→CIG).
-2. Fórmulas custom auditadas con DOI para los 3 restantes (LAI Boegh 2002,
+1. ``spyndex`` 0.10 (main engine, offline over xarray) — covers 14/17:
+   11 literal indices + 3 aliases (MSAVI2->MSAVI, NDRE->NDREI, GCVI->CIG).
+2. Custom formulas audited with DOI for the remaining 3 (LAI Boegh 2002,
    FAPAR Myneni 1997, CCCI Barnes 2000).
-3. ``eemont`` (wrapper opcional, server-side GEE) vía :func:`compute_index_ee`
-   para pipelines de ingesta US-006/US-009. Import lazy: no falla si las
-   credenciales GEE no están disponibles localmente.
+3. ``eemont`` (optional wrapper, server-side GEE) via :func:`compute_index_ee`
+   for ingestion pipelines US-006/US-009. Lazy import: does not fail if the
+   GEE credentials are not available locally.
 
-Referencias completas con DOI por índice en
+Full references with DOI per index in
 :doc:`docs/spectral_indices.md </spectral_indices>`.
 """
 
@@ -57,7 +57,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
-import spyndex  # type: ignore[import-untyped]  # sin py.typed marker upstream
+import spyndex  # type: ignore[import-untyped]  # no py.typed marker upstream
 import xarray as xr
 
 from ml.ingest.pastis_loader import PASTIS_S2_BANDS
@@ -77,7 +77,7 @@ __all__ = [
 ]
 
 
-# Orden canónico literal del plan v6 línea 1104 (CA US-014).
+# Literal canonical order from plan v6 line 1104 (CA US-014).
 INDEX_NAMES: list[str] = [
     "NDVI",
     "NDWI",
@@ -101,7 +101,7 @@ INDEX_NAMES: list[str] = [
 ReduceMethod = Literal["mean", "median", "max", "min", "p10", "p50", "p90", "p95"]
 
 
-# Mapeo bandas canónicas Sentinel-2 (PASTIS_S2_BANDS) → nomenclatura spyndex.
+# Mapping of canonical Sentinel-2 bands (PASTIS_S2_BANDS) -> spyndex nomenclature.
 _BAND_TO_SPYNDEX: dict[str, str] = {
     "B02": "B",
     "B03": "G",
@@ -118,11 +118,11 @@ _BAND_TO_SPYNDEX: dict[str, str] = {
 
 @dataclass(frozen=True)
 class _IndexEntry:
-    """Entrada del registro canónico de un índice."""
+    """Entry of the canonical registry for an index."""
 
     name: str
     backend: Literal["spyndex", "custom"]
-    spyndex_name: str | None  # solo para backend='spyndex' (alias permitidos)
+    spyndex_name: str | None  # only for backend='spyndex' (aliases allowed)
     custom_fn: Callable[[xr.DataArray], xr.DataArray] | None = None
     required_bands: tuple[str, ...] = field(default_factory=tuple)
     formula: str = ""
@@ -133,24 +133,24 @@ class _IndexEntry:
 
 
 # ---------------------------------------------------------------------------
-# Fórmulas custom auditadas (no presentes en spyndex 0.10).
-# Versión canónica única del proyecto — no revisitar sin ADR.
-# Referencias completas en docs/spectral_indices.md.
+# Audited custom formulas (not present in spyndex 0.10).
+# Single canonical version of the project -- do not revisit without ADR.
+# Full references in docs/spectral_indices.md.
 # ---------------------------------------------------------------------------
 
 
 def _ndvi_array(da: xr.DataArray) -> xr.DataArray:
-    """Helper interno: NDVI sin pasar por spyndex (evita recursión)."""
+    """Internal helper: NDVI without going through spyndex (avoids recursion)."""
     n = da.sel(band="B08").astype(np.float32)
     r = da.sel(band="B04").astype(np.float32)
     denom = n + r
-    # división segura: 0/0 → NaN, no inf
+    # safe division: 0/0 -> NaN, not inf
     ndvi = xr.where(denom != 0, (n - r) / denom, np.float32(np.nan))
     return cast(xr.DataArray, ndvi.astype(np.float32))
 
 
 def _ndre_array(da: xr.DataArray) -> xr.DataArray:
-    """Helper interno: NDRE/NDREI sin pasar por spyndex."""
+    """Internal helper: NDRE/NDREI without going through spyndex."""
     n = da.sel(band="B08").astype(np.float32)
     re1 = da.sel(band="B05").astype(np.float32)
     denom = n + re1
@@ -168,7 +168,7 @@ def _lai_boegh_2002(da: xr.DataArray) -> xr.DataArray:
     DOI: 10.1016/S0034-4257(01)00342-X.
     """
     ndvi = _ndvi_array(da)
-    # arg = 1 - (NDVI - 0.05) / 0.95. Si NDVI≥1.0 → arg≤0 → log indefinido → NaN.
+    # arg = 1 - (NDVI - 0.05) / 0.95. If NDVI>=1.0 -> arg<=0 -> log undefined -> NaN.
     arg = 1.0 - (ndvi - 0.05) / 0.95
     safe = xr.where(arg > 0, arg, np.float32(np.nan))
     lai = -xr.apply_ufunc(np.log, safe, dask="allowed") / 0.5
@@ -176,13 +176,13 @@ def _lai_boegh_2002(da: xr.DataArray) -> xr.DataArray:
 
 
 def _fapar_myneni_1997(da: xr.DataArray) -> xr.DataArray:
-    """FAPAR = 1.24 * NDVI - 0.168 -- Myneni & Williams 1994 (ajuste lineal).
+    """FAPAR = 1.24 * NDVI - 0.168 -- Myneni & Williams 1994 (linear fit).
 
     Myneni, R.B., Williams, D.L. (1994). *On the relationship between FAPAR
     and NDVI*. Remote Sensing of Environment 49(3), 200-211.
-    DOI: 10.1016/0034-4257(94)90016-7. La constante 1.24 / -0.168 es el ajuste
-    lineal sobre bosques templados frecuentemente citado en literatura
-    posterior (Myneni 1997, Ross 1981).
+    DOI: 10.1016/0034-4257(94)90016-7. The constant 1.24 / -0.168 is the linear
+    fit over temperate forests frequently cited in later literature
+    (Myneni 1997, Ross 1981).
     """
     ndvi = _ndvi_array(da)
     return cast(xr.DataArray, (1.24 * ndvi - 0.168).astype(np.float32))
@@ -196,7 +196,7 @@ def _ccci_barnes_2000(da: xr.DataArray) -> xr.DataArray:
     Li, H., Moran, M.S. (2000). *Coincident detection of crop water stress,
     nitrogen status and canopy density using ground-based multispectral data*.
     Proceedings of the 5th International Conference on Precision Agriculture.
-    Ratio normalizado que corrige NDRE por la densidad de canopy estimada con NDVI.
+    Normalized ratio that corrects NDRE by the canopy density estimated with NDVI.
     """
     ndvi = _ndvi_array(da)
     ndre = _ndre_array(da)
@@ -205,7 +205,7 @@ def _ccci_barnes_2000(da: xr.DataArray) -> xr.DataArray:
 
 
 # ---------------------------------------------------------------------------
-# Registro canónico de los 17 índices.
+# Canonical registry of the 17 indices.
 # ---------------------------------------------------------------------------
 
 _INDEX_REGISTRY: dict[str, _IndexEntry] = {
@@ -264,7 +264,7 @@ _INDEX_REGISTRY: dict[str, _IndexEntry] = {
     "MSAVI2": _IndexEntry(
         name="MSAVI2",
         backend="spyndex",
-        spyndex_name="MSAVI",  # alias: spyndex MSAVI ≡ Qi 1994 MSAVI2
+        spyndex_name="MSAVI",  # alias: spyndex MSAVI == Qi 1994 MSAVI2
         required_bands=("B04", "B08"),
         formula="0.5·(2N+1 - √((2N+1)² - 8(N-R)))",
         agronomic_use="SAVI auto-calibrado, no requiere ajustar L.",
@@ -389,20 +389,20 @@ _INDEX_REGISTRY: dict[str, _IndexEntry] = {
 
 
 # ---------------------------------------------------------------------------
-# Helpers privados.
+# Private helpers.
 # ---------------------------------------------------------------------------
 
 
 def _validate_input(da: xr.DataArray, required_bands: Sequence[str]) -> None:
-    """Valida que ``da`` tiene dim 'band' con los labels requeridos.
+    """Validate that ``da`` has dim 'band' with the required labels.
 
     Args:
-        da: DataArray a validar.
-        required_bands: Bandas que el índice necesita (e.g. ('B04','B08')).
+        da: DataArray to validate.
+        required_bands: Bands the index needs (e.g. ('B04','B08')).
 
     Raises:
-        ValueError: si falta la dimensión 'band' o no es indexable por string.
-        KeyError: si alguna banda requerida no está presente.
+        ValueError: if the 'band' dimension is missing or not string-indexable.
+        KeyError: if any required band is not present.
     """
     if "band" not in da.dims:
         raise ValueError(
@@ -424,11 +424,11 @@ def _compute_via_spyndex(
     required_bands: Sequence[str],
     extra_params: dict[str, float],
 ) -> xr.DataArray:
-    """Computa un índice delegando a ``spyndex.computeIndex``.
+    """Compute an index by delegating to ``spyndex.computeIndex``.
 
-    Construye el dict ``params`` con bandas mapeadas a la nomenclatura
-    spyndex (B/G/R/RE1/.../S2) y constantes (L, g, C1, ...). Reconstruye
-    el ``DataArray`` resultante preservando coords del input.
+    Builds the ``params`` dict with bands mapped to the spyndex
+    nomenclature (B/G/R/RE1/.../S2) and constants (L, g, C1, ...). Rebuilds
+    the resulting ``DataArray`` preserving the input coords.
     """
     params: dict[str, Any] = {}
     for band in required_bands:
@@ -436,8 +436,8 @@ def _compute_via_spyndex(
     params.update(extra_params)
     result = spyndex.computeIndex(index=spyndex_name, params=params)
 
-    # Defensiva: spyndex puede devolver numpy en algunos paths; reconstruimos
-    # DataArray con coords espaciales del input (excluye 'band').
+    # Defensive: spyndex may return numpy in some paths; we rebuild the
+    # DataArray with spatial coords from the input (excludes 'band').
     if not isinstance(result, xr.DataArray):
         spatial_dims = tuple(d for d in da.dims if d != "band")
         spatial_coords = {d: da.coords[d] for d in spatial_dims if d in da.coords}
@@ -450,7 +450,7 @@ def _compute_via_spyndex(
 
 
 def _attach_attrs(result: xr.DataArray, entry: _IndexEntry, backend: str) -> xr.DataArray:
-    """Adjunta metadatos académicos en ``result.attrs``."""
+    """Attach academic metadata to ``result.attrs``."""
     result.attrs.update(
         {
             "index_name": entry.name,
@@ -465,34 +465,34 @@ def _attach_attrs(result: xr.DataArray, entry: _IndexEntry, backend: str) -> xr.
 
 
 # ---------------------------------------------------------------------------
-# API pública.
+# Public API.
 # ---------------------------------------------------------------------------
 
 
 def compute_index(da: xr.DataArray, index: str) -> xr.DataArray:
-    """Computa uno de los 17 índices espectrales canónicos del proyecto.
+    """Compute one of the 17 canonical spectral indices of the project.
 
     Args:
-        da: ``xarray.DataArray`` con dimensión 'band' cuyos labels son los
-            de :data:`ml.ingest.pastis_loader.PASTIS_S2_BANDS` y reflectancia
-            escalada al rango [0, 1]. El caller debe haber aplicado máscara
-            SCL y dividido valores DN /10000 previamente
-            (ver ``notebooks/eda/Avance1.Equipo17.ipynb`` §5 Conclusiones).
-        index: Nombre canónico (uno de :data:`INDEX_NAMES`). Case-sensitive.
+        da: ``xarray.DataArray`` with a 'band' dimension whose labels are
+            those of :data:`ml.ingest.pastis_loader.PASTIS_S2_BANDS` and
+            reflectance scaled to the range [0, 1]. The caller must have
+            applied the SCL mask and divided DN values /10000 beforehand
+            (see ``notebooks/eda/Avance1.Equipo17.ipynb`` §5 Conclusions).
+        index: Canonical name (one of :data:`INDEX_NAMES`). Case-sensitive.
 
     Returns:
-        DataArray con el índice calculado, preservando coords espaciales del
-        input (y/x o lat/lon). Si ``da`` tiene dimensión 'time', el broadcast
-        natural devuelve shape (time, y, x). Dtype ``float32``. Atributos:
-        ``{"index_name", "formula", "reference", "computed_with",
+        DataArray with the computed index, preserving the input spatial
+        coords (y/x or lat/lon). If ``da`` has a 'time' dimension, the
+        natural broadcast returns shape (time, y, x). Dtype ``float32``.
+        Attributes: ``{"index_name", "formula", "reference", "computed_with",
         "agronomic_use", "expected_range"}``.
 
     Raises:
-        ValueError: si ``index`` no está en :data:`INDEX_NAMES`.
-        KeyError: si ``da`` carece de alguna banda requerida.
+        ValueError: if ``index`` is not in :data:`INDEX_NAMES`.
+        KeyError: if ``da`` lacks any required band.
 
     References:
-        Tabla académica completa con DOIs por índice en
+        Full academic table with DOIs per index in
         ``docs/spectral_indices.md``.
     """
     if index not in _INDEX_REGISTRY:
@@ -524,23 +524,23 @@ def compute_index_timeseries(
     index: str,
     reduce: ReduceMethod | None = None,
 ) -> xr.DataArray:
-    """Computa un índice sobre serie temporal con reducción opcional.
+    """Compute an index over a time series with optional reduction.
 
     Args:
-        da: DataArray dims ('time', 'band', y, x) en reflectancia [0, 1].
-        index: Nombre canónico del índice.
-        reduce: Estrategia de agregación temporal:
+        da: DataArray dims ('time', 'band', y, x) in reflectance [0, 1].
+        index: Canonical index name.
+        reduce: Temporal aggregation strategy:
 
-            - ``None`` (default): conserva el eje 'time', shape salida (T, y, x).
-            - ``'mean'``, ``'median'``, ``'max'``, ``'min'``: reducción simple.
-            - ``'p10'``, ``'p50'``, ``'p90'``, ``'p95'``: percentil temporal.
+            - ``None`` (default): keeps the 'time' axis, output shape (T, y, x).
+            - ``'mean'``, ``'median'``, ``'max'``, ``'min'``: simple reduction.
+            - ``'p10'``, ``'p50'``, ``'p90'``, ``'p95'``: temporal percentile.
 
     Returns:
-        DataArray con índice computado. Sin reduce: dims (time, y, x).
-        Con reduce: dims (y, x).
+        DataArray with the computed index. Without reduce: dims (time, y, x).
+        With reduce: dims (y, x).
 
     Raises:
-        ValueError: si ``reduce`` no es un valor reconocido.
+        ValueError: if ``reduce`` is not a recognized value.
     """
     full = compute_index(da, index)
     if reduce is None:
@@ -568,21 +568,21 @@ def compute_index_cached(
     redis_client: redis.Redis | None = None,
     ttl_seconds: int = 86_400,
 ) -> xr.DataArray:
-    """Variante de :func:`compute_index` con caché Redis opcional.
+    """Variant of :func:`compute_index` with optional Redis cache.
 
-    Clave: ``"{scene_id}:{index}"``. Si ``redis_client`` es ``None`` o el cache
-    falla, degrada graceful y simplemente computa el índice.
+    Key: ``"{scene_id}:{index}"``. If ``redis_client`` is ``None`` or the
+    cache fails, it degrades gracefully and simply computes the index.
 
     Args:
-        da: DataArray Sentinel-2 (ver :func:`compute_index`).
-        index: Nombre canónico.
-        scene_id: Identificador único de la escena (e.g. patch_id PASTIS o
-            tile_id GEE) usado como prefijo de la clave.
-        redis_client: Cliente Redis (o ``fakeredis.FakeRedis`` en tests).
-        ttl_seconds: TTL del cache en segundos (default 24h).
+        da: Sentinel-2 DataArray (see :func:`compute_index`).
+        index: Canonical name.
+        scene_id: Unique scene identifier (e.g. PASTIS patch_id or GEE
+            tile_id) used as the key prefix.
+        redis_client: Redis client (or ``fakeredis.FakeRedis`` in tests).
+        ttl_seconds: Cache TTL in seconds (default 24h).
 
     Returns:
-        Mismo resultado que :func:`compute_index`.
+        Same result as :func:`compute_index`.
     """
     if redis_client is None:
         return compute_index(da, index)
@@ -590,7 +590,7 @@ def compute_index_cached(
     key = f"{scene_id}:{index}"
     try:
         cached = redis_client.get(key)
-    except Exception:  # noqa: BLE001 — degradación graceful si Redis cae
+    except Exception:  # noqa: BLE001 — graceful degradation if Redis goes down
         return compute_index(da, index)
 
     if cached is not None:
@@ -601,8 +601,8 @@ def compute_index_cached(
                 dims=payload["dims"],
                 attrs=payload.get("attrs", {}),
             )
-        except Exception:  # noqa: BLE001, S110 — fallback si cache corrupto
-            pass  # falla silenciosamente al recompute (cache es best-effort)
+        except Exception:  # noqa: BLE001, S110 — fallback if cache is corrupt
+            pass  # silently falls through to recompute (cache is best-effort)
 
     result = compute_index(da, index)
     try:
@@ -613,37 +613,38 @@ def compute_index_cached(
             "attrs": dict(result.attrs),
         }
         redis_client.setex(key, ttl_seconds, pickle.dumps(payload))
-    except Exception:  # noqa: BLE001, S110 — cache es best-effort, no bloquear
-        pass  # SET falló: devolvemos el cómputo igual
+    except Exception:  # noqa: BLE001, S110 — cache is best-effort, do not block
+        pass  # SET failed: we return the computation anyway
     return result
 
 
 def compute_index_ee(ee_image: ee.Image, index: str) -> ee.Image:
-    """Wrapper server-side GEE: computa el índice vía ``eemont.spectralIndices``.
+    """Server-side GEE wrapper: compute the index via ``eemont.spectralIndices``.
 
-    Útil para pipelines de ingesta US-006/US-009 donde el cómputo vive en
-    Earth Engine y no se descarga al cliente. **Lazy import** de ``eemont``
-    para no romper si las credenciales GEE no están configuradas localmente.
+    Useful for ingestion pipelines US-006/US-009 where the computation lives
+    in Earth Engine and is not downloaded to the client. **Lazy import** of
+    ``eemont`` so as not to break if the GEE credentials are not configured
+    locally.
 
     Args:
-        ee_image: ``ee.Image`` Sentinel-2 con bandas escaladas (eemont escala
-            automáticamente si se llamó previamente ``.scale()``).
-        index: Nombre canónico del proyecto (se traduce a alias spyndex si aplica).
+        ee_image: Sentinel-2 ``ee.Image`` with scaled bands (eemont scales
+            automatically if ``.scale()`` was previously called).
+        index: Canonical project name (translated to the spyndex alias if applicable).
 
     Returns:
-        ``ee.Image`` con la(s) banda(s) del índice añadida(s).
+        ``ee.Image`` with the index band(s) added.
 
     Raises:
-        ImportError: si ``eemont`` no está instalado o la inicialización de
-            Earth Engine falla.
-        ValueError: si ``index`` no está en :data:`INDEX_NAMES`.
+        ImportError: if ``eemont`` is not installed or the Earth Engine
+            initialization fails.
+        ValueError: if ``index`` is not in :data:`INDEX_NAMES`.
     """
     if index not in _INDEX_REGISTRY:
         raise ValueError(
             f"Índice desconocido '{index}'. Disponibles: {INDEX_NAMES}."
         )
     try:
-        import eemont  # noqa: F401  # registra .spectralIndices() en ee.Image
+        import eemont  # noqa: F401  # registers .spectralIndices() on ee.Image
     except Exception as exc:
         raise ImportError(
             "eemont no está disponible o falló al inicializar Earth Engine. "
@@ -656,13 +657,13 @@ def compute_index_ee(ee_image: ee.Image, index: str) -> ee.Image:
         assert entry.spyndex_name is not None
         ee_name = entry.spyndex_name
     else:
-        # Custom: eemont no lo conoce, lanzamos error explícito.
+        # Custom: eemont does not know it, we raise an explicit error.
         raise ValueError(
             f"Índice '{index}' es custom-formula del proyecto (sin equivalente "
             f"en eemont/awesome-spectral-indices). Computar offline con "
             f"compute_index() en su lugar."
         )
 
-    # eemont añade dinámicamente `spectralIndices` a ee.Image al importarse,
-    # por lo que el atributo no existe en los stubs estáticos de earthengine-api.
+    # eemont dynamically adds `spectralIndices` to ee.Image on import,
+    # so the attribute does not exist in the static stubs of earthengine-api.
     return cast("ee.Image", ee_image.spectralIndices([ee_name]))  # type: ignore[attr-defined]

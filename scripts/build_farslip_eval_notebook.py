@@ -1,18 +1,19 @@
-"""Construye notebooks/features/04_farslip_eval_pastis.ipynb (US-022-c P1 B-3).
+"""Build notebooks/features/04_farslip_eval_pastis.ipynb (US-022-c P1 B-3).
 
-Builder programatico del notebook que evalua mIoU de FarSLIP vs RemoteCLIP
-sobre PASTIS-R. Replica el patron de ``build_reencuadre_notebook.py``:
-celdas declarativas + papermill end-to-end despues.
+Programmatic builder of the notebook that evaluates mIoU of FarSLIP vs
+RemoteCLIP over PASTIS-R. Replicates the pattern of
+``build_reencuadre_notebook.py``: declarative cells + papermill end-to-end
+afterwards.
 
-Gate B-3 del plan canonico US-022-c sec 2.1:
+Gate B-3 of the canonical plan US-022-c sec 2.1:
 
     mIoU_farslip - mIoU_remoteclip >= +0.05
 
-Si el gate falla, **es aceptable** (R2 del plan) — el notebook documenta el
-resultado negativo honesto y FarSLIP queda como base learner opcional del
-stacking ensemble en EPIC 6.
+If the gate fails, **it is acceptable** (R2 of the plan) — the notebook
+documents the honest negative result and FarSLIP remains an optional base
+learner of the stacking ensemble in EPIC 6.
 
-Ejecucion (build + papermill):
+Execution (build + papermill):
 
     poetry run python scripts/build_farslip_eval_notebook.py
     MPLBACKEND=Agg poetry run papermill \\
@@ -31,12 +32,12 @@ app = typer.Typer(add_completion=False)
 
 
 def _md(source: str) -> nbf.NotebookNode:
-    """Crea celda markdown."""
+    """Create a markdown cell."""
     return nbf.v4.new_markdown_cell(source)
 
 
 def _code(source: str, tags: list[str] | None = None) -> nbf.NotebookNode:
-    """Crea celda codigo (strip leading/trailing newlines)."""
+    """Create a code cell (strip leading/trailing newlines)."""
     cell = nbf.v4.new_code_cell(source.strip("\n"))
     if tags:
         cell.metadata["tags"] = tags
@@ -322,7 +323,7 @@ def build(
         help="Ruta destino del .ipynb generado.",
     ),
 ) -> None:
-    """Construye el notebook 04 desde ``CELLS`` (declarativo, idempotente)."""
+    """Build notebook 04 from ``CELLS`` (declarative, idempotent)."""
     nb = nbf.v4.new_notebook()
     nb.cells = CELLS
     nb.metadata.update(

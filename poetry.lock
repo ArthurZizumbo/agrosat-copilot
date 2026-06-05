@@ -4362,6 +4362,21 @@ test-full = ["adlfs", "aiohttp (!=4.0.0a0,!=4.0.0a1)", "backports-zstd ; python_
 tqdm = ["tqdm"]
 
 [[package]]
+name = "ftfy"
+version = "6.3.1"
+description = "Fixes mojibake and other problems with Unicode, after the fact"
+optional = false
+python-versions = ">=3.9"
+groups = ["ml"]
+files = [
+    {file = "ftfy-6.3.1-py3-none-any.whl", hash = "sha256:7c70eb532015cd2f9adb53f101fb6c7945988d023a085d127d1573dc49dd0083"},
+    {file = "ftfy-6.3.1.tar.gz", hash = "sha256:9b3c3d90f84fb267fe64d375a07b7f8912d817cf86009ae134aa03e1819506ec"},
+]
+
+[package.dependencies]
+wcwidth = "*"
+
+[[package]]
 name = "funcy"
 version = "2.0"
 description = "A fancy and practical functional tools"
@@ -9266,6 +9281,32 @@ files = [
 [package.dependencies]
 antlr4-python3-runtime = "==4.9.*"
 PyYAML = ">=5.1.0"
+
+[[package]]
+name = "open-clip-torch"
+version = "3.3.0"
+description = "Open reproduction of consastive language-image pretraining (CLIP) and related."
+optional = false
+python-versions = ">=3.9"
+groups = ["ml"]
+files = [
+    {file = "open_clip_torch-3.3.0-py3-none-any.whl", hash = "sha256:c549ad5ed6bfc119cc11105033c0a2b9d7a2a4afeb40a58a09aab3da1a0043ce"},
+    {file = "open_clip_torch-3.3.0.tar.gz", hash = "sha256:904b1a9f909df8281bb3de60ab95491cd2994a509177ea4f9d6292a84fe24d6d"},
+]
+
+[package.dependencies]
+ftfy = "*"
+huggingface-hub = "*"
+regex = "*"
+safetensors = "*"
+timm = ">=1.0.17"
+torch = ">=2.0"
+torchvision = "*"
+tqdm = "*"
+
+[package.extras]
+test = ["open_clip_torch[training]", "pytest", "pytest-split", "requests"]
+training = ["fsspec", "pandas", "timm (>=1.0.17)", "torch (>=2.0)", "transformers[sentencepiece]", "webdataset (>=0.2.5,<=0.2.86)"]
 
 [[package]]
 name = "openai"
@@ -16928,4 +16969,4 @@ test = ["pytest"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12,<3.13"
-content-hash = "2784038c70ba742d24e56482909a08b09595fc3a06f5ab9bcbd43ebcb542c09c"
+content-hash = "827f3e2db9854b953eef3a836b61c7fc0db1029d3641bbed7acea2a52ce5507b"

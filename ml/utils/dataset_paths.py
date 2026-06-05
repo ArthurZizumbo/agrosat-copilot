@@ -1,18 +1,18 @@
-"""Resolucion de rutas de datasets con compatibilidad de nomenclatura.
+"""Dataset path resolution with naming-convention compatibility.
 
-Los artefactos de features se generaron originalmente con el sufijo
-``_italy`` (nombre heredado), pero su contenido es **PASTIS-R frances**: los
-``parcel_id`` tienen formato ``{patch_id}_{instance_id}`` (ej ``10000_1``),
-no parcelas italianas. La nomenclatura correcta es ``_pastis``.
+The feature artifacts were originally generated with the ``_italy`` suffix
+(inherited name), but their content is **French PASTIS-R**: the ``parcel_id``
+have the format ``{patch_id}_{instance_id}`` (e.g. ``10000_1``), not Italian
+parcels. The correct naming is ``_pastis``.
 
-Este modulo permite migrar el codigo a ``_pastis`` sin romper los artefactos
-``_italy`` ya materializados en disco (ni los notebooks ejecutados que los
-referencian, que se conservan con sus salidas). La estrategia es un alias de
-compatibilidad: el codigo nuevo pide la ruta canonica ``_pastis`` y
-:func:`resolve_dataset_path` devuelve la primera que exista, prefiriendo
-``_pastis`` y cayendo a ``_italy`` (legacy) si la primera no esta presente.
+This module allows migrating the code to ``_pastis`` without breaking the
+``_italy`` artifacts already materialized on disk (nor the executed notebooks
+that reference them, which are kept with their outputs). The strategy is a
+compatibility alias: new code requests the canonical ``_pastis`` path and
+:func:`resolve_dataset_path` returns the first one that exists, preferring
+``_pastis`` and falling back to ``_italy`` (legacy) if the first is not present.
 
-Migracion del rename: documentada en
+Rename migration: documented in
 ``docs/product-backlog/rename-italy-to-pastis.md``.
 """
 
@@ -24,21 +24,21 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
-#: Sufijo legacy (nombre heredado, contenido PASTIS) y el canonico.
+#: Legacy suffix (inherited name, PASTIS content) and the canonical one.
 _LEGACY_SUFFIX = "_italy"
 _CANONICAL_SUFFIX = "_pastis"
 
 
 def to_pastis_name(path: Path | str) -> Path:
-    """Devuelve la variante canonica ``_pastis`` de una ruta ``_italy``.
+    """Returns the canonical ``_pastis`` variant of an ``_italy`` path.
 
-    Si la ruta no contiene ``_italy`` se devuelve sin cambios.
+    If the path does not contain ``_italy`` it is returned unchanged.
 
     Args:
-        path: Ruta con posible sufijo ``_italy`` en el nombre de archivo.
+        path: Path with a possible ``_italy`` suffix in the file name.
 
     Returns:
-        ``Path`` con ``_italy`` reemplazado por ``_pastis`` en el ``stem``.
+        ``Path`` with ``_italy`` replaced by ``_pastis`` in the ``stem``.
     """
     p = Path(path)
     if _LEGACY_SUFFIX not in p.name:
@@ -47,15 +47,15 @@ def to_pastis_name(path: Path | str) -> Path:
 
 
 def to_legacy_name(path: Path | str) -> Path:
-    """Devuelve la variante legacy ``_italy`` de una ruta ``_pastis``.
+    """Returns the legacy ``_italy`` variant of a ``_pastis`` path.
 
-    Si la ruta no contiene ``_pastis`` se devuelve sin cambios.
+    If the path does not contain ``_pastis`` it is returned unchanged.
 
     Args:
-        path: Ruta con posible sufijo ``_pastis`` en el nombre de archivo.
+        path: Path with a possible ``_pastis`` suffix in the file name.
 
     Returns:
-        ``Path`` con ``_pastis`` reemplazado por ``_italy`` en el ``stem``.
+        ``Path`` with ``_pastis`` replaced by ``_italy`` in the ``stem``.
     """
     p = Path(path)
     if _CANONICAL_SUFFIX not in p.name:
@@ -64,26 +64,26 @@ def to_legacy_name(path: Path | str) -> Path:
 
 
 def resolve_dataset_path(path: Path | str) -> Path:
-    """Resuelve una ruta de dataset prefiriendo ``_pastis`` sobre ``_italy``.
+    """Resolves a dataset path preferring ``_pastis`` over ``_italy``.
 
-    Reglas de resolucion (para lectura de artefactos existentes):
+    Resolution rules (for reading existing artifacts):
 
-    1. Se normaliza la entrada a su forma canonica ``_pastis``.
-    2. Si el archivo ``_pastis`` existe, se devuelve.
-    3. Si no, y existe la variante legacy ``_italy``, se devuelve esa (con un
-       log informativo de que se uso el fallback).
-    4. Si ninguna existe, se devuelve la forma canonica ``_pastis`` (para que
-       el caller materialice con el nombre correcto).
+    1. The input is normalized to its canonical ``_pastis`` form.
+    2. If the ``_pastis`` file exists, it is returned.
+    3. If not, and the legacy ``_italy`` variant exists, that one is returned
+       (with an informative log that the fallback was used).
+    4. If neither exists, the canonical ``_pastis`` form is returned (so that the
+       caller materializes with the correct name).
 
-    Esto permite que el codigo migrado pida siempre ``_pastis`` y siga
-    encontrando los datos ``_italy`` ya generados, sin renombrarlos en disco.
+    This allows the migrated code to always request ``_pastis`` and still find the
+    already-generated ``_italy`` data, without renaming it on disk.
 
     Args:
-        path: Ruta del dataset (puede traer ``_italy`` o ``_pastis``).
+        path: Dataset path (may carry ``_italy`` or ``_pastis``).
 
     Returns:
-        ``Path`` resuelta a la primera variante existente, o la canonica
-        ``_pastis`` si no existe ninguna.
+        ``Path`` resolved to the first existing variant, or the canonical
+        ``_pastis`` if neither exists.
     """
     canonical = to_pastis_name(path)
     if canonical.exists():

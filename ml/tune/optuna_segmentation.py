@@ -1,31 +1,31 @@
-"""Ajuste fino (Optuna) por warm-start de un segmentador temporal ya entrenado.
+"""Fine-tuning (Optuna) by warm-start of an already-trained temporal segmenter.
 
-A diferencia de :mod:`ml.tune.anysat_head_tuning` (encoder congelado, se tunea
-solo una cabeza Conv 1x1 sobre features cacheadas), los modelos temporales
-end-to-end del equipo us-025 (``tsvit`` / ``tsvit-pheno``) no tienen un encoder
-congelado: cada paso toca todos los pesos. Entrenar 30 trials desde cero (30
-epochs c/u) costaria ~16 h de L4, inviable para el presupuesto.
+Unlike :mod:`ml.tune.anysat_head_tuning` (frozen encoder, only a Conv 1x1 head
+is tuned over cached features), the end-to-end temporal models of team us-025
+(``tsvit`` / ``tsvit-pheno``) have no frozen encoder: every step touches all the
+weights. Training 30 trials from scratch (30 epochs each) would cost ~16 h of
+L4, unfeasible for the budget.
 
-Estrategia de **warm-start**: se parte del mejor checkpoint ya entrenado
-(``best.pt``, p.ej. tsvit-pheno mIoU 0.6253 @ epoch 28) y cada trial hace un
-*fine-tuning corto* de pocas epocas variando ``lr`` / ``weight_decay`` /
-``batch_size``. Como se parte de un modelo bueno, 3 epocas son significativas
-(se refina, no se aprende de cero), el ranking de trials es informativo y el
-estudio completo de >=30 trials corre en ~2-3 h. El ``MedianPruner`` aborta los
-trials peores en la 2a epoca.
+**Warm-start** strategy: start from the best already-trained checkpoint
+(``best.pt``, e.g. tsvit-pheno mIoU 0.6253 @ epoch 28) and each trial does a
+*short fine-tuning* of a few epochs varying ``lr`` / ``weight_decay`` /
+``batch_size``. Since it starts from a good model, 3 epochs are meaningful (it
+refines, it does not learn from scratch), the trial ranking is informative and
+the full study of >=30 trials runs in ~2-3 h. The ``MedianPruner`` aborts the
+worst trials in the 2nd epoch.
 
-Reusa el loop de entrenamiento (:func:`ml.train.train_segmentation._run_epoch`)
-y la evaluacion densa (:func:`ml.train.train_segmentation._evaluate_dense`) del
-pipeline principal, de modo que el ``miou`` que optimiza Optuna sea exactamente
-el que reporta el modelo final (separation of concerns, regla CLAUDE.md 8). No
-modifica ``train_segmentation`` (codigo compartido del equipo).
+Reuses the training loop (:func:`ml.train.train_segmentation._run_epoch`) and
+the dense evaluation (:func:`ml.train.train_segmentation._evaluate_dense`) of
+the main pipeline, so that the ``miou`` Optuna optimizes is exactly the one the
+final model reports (separation of concerns, CLAUDE.md rule 8). It does not
+modify ``train_segmentation`` (shared team code).
 
-El estudio se persiste en un parquet
-``reports/segmentation/metrics/tuning_<model>.parquet`` con una fila por trial
-(value + params + estado), que consume la celda de Ajuste fino de
+The study is persisted to a parquet
+``reports/segmentation/metrics/tuning_<model>.parquet`` with one row per trial
+(value + params + state), consumed by the fine-tuning cell of
 ``Avance4.Equipo17.ipynb``.
 
-Uso (en la VM L4)::
+Usage (on the L4 VM)::
 
     poetry run python -m ml.tune.optuna_segmentation \\
         --model tsvit-pheno \\
@@ -65,14 +65,14 @@ logger = structlog.get_logger(__name__)
 
 __all__ = ["build_objective", "build_objective_utae", "run_study"]
 
-#: Modelos soportados. tsvit/tsvit-pheno (us-025) reusan el loop principal;
-#: utae (Isaac) usa su propio dataset+loop (forward con batch_positions).
+#: Supported models. tsvit/tsvit-pheno (us-025) reuse the main loop;
+#: utae (Isaac) uses its own dataset+loop (forward with batch_positions).
 _TSVIT_MODELS = ("tsvit", "tsvit-pheno")
 _SUPPORTED = (*_TSVIT_MODELS, "utae")
 
-#: Espacio de busqueda (mismo set que el tuning de AnySat de Aaron: lr +
-#: weight_decay + batch_size), acotado para fine-tuning desde un modelo bueno:
-#: lr bajo (no destruir los pesos), weight_decay y batch discretos.
+#: Search space (same set as Aaron's AnySat tuning: lr +
+#: weight_decay + batch_size), bounded for fine-tuning from a good model:
+#: low lr (do not destroy the weights), discrete weight_decay and batch.
 _LR_RANGE = (1e-5, 5e-4)
 _WD_RANGE = (1e-6, 1e-2)
 _BATCH_CHOICES = (4, 8, 16)
@@ -86,10 +86,10 @@ def _build_model_and_data(
     train_folds: tuple[int, ...],
     val_folds: tuple[int, ...],
 ) -> tuple[nn.Module, Any, Any, torch.Tensor | None, int]:
-    """Construye modelo TSViT + datasets train/val + prototipos (si pheno).
+    """Build TSViT model + train/val datasets + prototypes (if pheno).
 
     Returns:
-        Tupla ``(model, train_ds, val_ds, prototypes|None, num_classes)``.
+        Tuple ``(model, train_ds, val_ds, prototypes|None, num_classes)``.
     """
     from ml.data.pastis_seg_dataset import PASTISSegmentationDataset
     from ml.models.pheno_semantic_branch import PhenoSemanticBranch
@@ -118,15 +118,15 @@ def _build_model_and_data(
 
 
 def _load_init_weights(model: nn.Module, init_ckpt: Path, device: torch.device) -> dict[str, float]:
-    """Carga los pesos del checkpoint base (warm-start) y devuelve sus metricas.
+    """Load the base checkpoint weights (warm-start) and return its metrics.
 
     Args:
-        model: Modelo recien construido (pesos aleatorios).
-        init_ckpt: Ruta al ``best.pt`` del modelo ya entrenado.
-        device: Device destino.
+        model: Freshly built model (random weights).
+        init_ckpt: Path to the ``best.pt`` of the already-trained model.
+        device: Target device.
 
     Returns:
-        ``best_metrics`` del checkpoint (mIoU/F1/pixel_acc del modelo base).
+        ``best_metrics`` of the checkpoint (mIoU/F1/pixel_acc of the base model).
     """
     ckpt = torch.load(init_ckpt, map_location=device, weights_only=False)
     state = ckpt.get("model_state", ckpt.get("model_state_dict", ckpt))
@@ -149,15 +149,16 @@ def build_objective(
     num_workers: int,
     lambda_contrast: float,
 ):
-    """Construye el ``objective`` de Optuna para warm-start fine-tuning.
+    """Build the Optuna ``objective`` for warm-start fine-tuning.
 
-    El dataset y la evaluacion son fijos entre trials; lo que varia por trial es
-    ``lr`` / ``weight_decay`` / ``batch_size``. Cada trial recarga los pesos
-    base (warm-start limpio, sin contaminacion entre trials), entrena ``epochs``
-    epocas y reporta el mejor ``miou`` de validacion. Soporta pruning por epoca.
+    The dataset and the evaluation are fixed across trials; what varies per
+    trial is ``lr`` / ``weight_decay`` / ``batch_size``. Each trial reloads the
+    base weights (clean warm-start, no contamination between trials), trains
+    ``epochs`` epochs and reports the best validation ``miou``. Supports
+    per-epoch pruning.
 
     Returns:
-        Callable ``objective(trial) -> float`` (mIoU a maximizar).
+        Callable ``objective(trial) -> float`` (mIoU to maximize).
     """
     dev = _resolve_device(device)
     use_phenology = model_kind == "tsvit-pheno"
@@ -171,7 +172,7 @@ def build_objective(
     model = model.to(dev)
     if prototypes is not None:
         prototypes = prototypes.to(dev)
-    # Snapshot de los pesos base en CPU para recargar por trial sin re-leer disco.
+    # Snapshot of the base weights on CPU to reload per trial without re-reading disk.
     base_metrics = _load_init_weights(model, init_ckpt, dev)
     base_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
 
@@ -183,7 +184,7 @@ def build_objective(
         weight_decay = trial.suggest_float("weight_decay", *_WD_RANGE, log=True)
         batch_size = trial.suggest_categorical("batch_size", list(_BATCH_CHOICES))
 
-        # Warm-start: recargar los pesos base (cada trial parte del mismo punto).
+        # Warm-start: reload the base weights (each trial starts from the same point).
         model.load_state_dict(base_state)
         optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
         scaler = torch.cuda.amp.GradScaler(enabled=amp_enabled) if amp_enabled else None
@@ -239,21 +240,21 @@ def build_objective(
 
 
 # ---------------------------------------------------------------------------
-# U-TAE (Isaac): dataset multi-temporal con day-of-year + objective propio.
-# El forward de U-TAE es `model(imgs, batch_positions)` con imgs (B,T,C,H,W) y
-# positions (B,T); difiere del loop principal (model(x)), por eso tiene su
-# propio dataset y mini-loop, replica fiel de notebooks/segmentation/04j.
+# U-TAE (Isaac): multi-temporal dataset with day-of-year + its own objective.
+# U-TAE's forward is `model(imgs, batch_positions)` with imgs (B,T,C,H,W) and
+# positions (B,T); it differs from the main loop (model(x)), which is why it has
+# its own dataset and mini-loop, a faithful replica of notebooks/segmentation/04j.
 # ---------------------------------------------------------------------------
 
-#: Normalizacion S2 por banda usada por Isaac (PASTIS escala ~0-10000).
+#: Per-band S2 normalization used by Isaac (PASTIS scales ~0-10000).
 _UTAE_S2_MEAN = (1158.0, 1244.7, 1416.3, 1374.8, 1619.0, 2075.1, 2263.1, 2311.0, 2108.6, 817.4)
 _UTAE_S2_STD = (671.7, 698.1, 761.3, 830.8, 795.3, 907.5, 981.1, 993.7, 882.0, 504.2)
 
 
 class PASTISMultiTempDataset(Dataset):
-    """Dataset multi-temporal PASTIS-R para U-TAE (port fiel del notebook 04j).
+    """Multi-temporal PASTIS-R dataset for U-TAE (faithful port of notebook 04j).
 
-    Devuelve T timesteps equiespaciados por parche, con day-of-year proxy.
+    Returns T equispaced timesteps per patch, with day-of-year proxy.
     ``__getitem__`` -> ``(imgs (T,C,H,W), labels (H,W), positions (T,))``.
     """
 
@@ -275,7 +276,7 @@ class PASTISMultiTempDataset(Dataset):
         self.augment = augment
         meta_path = self.root / "metadata.geojson"
         if not meta_path.exists():
-            raise FileNotFoundError(f"metadata.geojson no encontrado en {self.root}")
+            raise FileNotFoundError(f"metadata.geojson not found in {self.root}")
         with open(meta_path) as f:
             meta = json.load(f)
         self.patch_ids = [
@@ -324,10 +325,10 @@ class PASTISMultiTempDataset(Dataset):
         return t_imgs, t_mask.squeeze(0)
 
     def _augment(self, imgs: torch.Tensor, mask: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        if random.random() > 0.5:  # noqa: S311 - data augmentation, no criptografia
+        if random.random() > 0.5:  # noqa: S311 - data augmentation, not cryptography
             imgs = torch.flip(imgs, dims=[-1])
             mask = torch.flip(mask.unsqueeze(0), dims=[-1]).squeeze(0)
-        if random.random() > 0.5:  # noqa: S311 - data augmentation, no criptografia
+        if random.random() > 0.5:  # noqa: S311 - data augmentation, not cryptography
             imgs = torch.flip(imgs, dims=[-2])
             mask = torch.flip(mask.unsqueeze(0), dims=[-2]).squeeze(0)
         angle = random.choice([0, 90, 180, 270])  # noqa: S311 - augmentation
@@ -363,14 +364,14 @@ def build_objective_utae(
     num_workers: int,
     ignore_index: int = 19,
 ):
-    """Construye el ``objective`` de Optuna para warm-start de U-TAE.
+    """Build the Optuna ``objective`` for warm-start of U-TAE.
 
-    Replica el setup de Isaac (CrossEntropy, clip_grad 5.0, dataset
-    multi-temporal con day-of-year) y parte del checkpoint base; cada trial
-    varia lr/weight_decay/batch_size y entrena ``epochs`` epocas cortas.
+    Replicates Isaac's setup (CrossEntropy, clip_grad 5.0, multi-temporal
+    dataset with day-of-year) and starts from the base checkpoint; each trial
+    varies lr/weight_decay/batch_size and trains ``epochs`` short epochs.
 
     Returns:
-        Tupla ``(objective, base_metrics)``.
+        Tuple ``(objective, base_metrics)``.
     """
     from ml.models.utae import build_utae
 
@@ -470,27 +471,27 @@ def run_study(
     utae_ignore_index: int = 19,
     out_dir: Path = Path("reports/segmentation/metrics"),
 ) -> Path:
-    """Corre el estudio Optuna de warm-start y persiste los trials a parquet.
+    """Run the warm-start Optuna study and persist the trials to parquet.
 
     Args:
-        model_kind: ``"tsvit"``, ``"tsvit-pheno"`` o ``"utae"``.
-        init_ckpt: ``best.pt`` (tsvit) / ``best_model.pt`` (utae) del modelo base.
-        n_trials: Numero de trials (rubrica Ajuste fino: >=30).
-        epochs: Epocas de fine-tuning por trial (cortas: warm-start).
+        model_kind: ``"tsvit"``, ``"tsvit-pheno"`` or ``"utae"``.
+        init_ckpt: ``best.pt`` (tsvit) / ``best_model.pt`` (utae) of the base model.
+        n_trials: Number of trials (fine-tuning rubric: >=30).
+        epochs: Fine-tuning epochs per trial (short: warm-start).
         device: ``auto`` / ``cuda`` / ``cpu``.
-        pastis_root: Raiz de PASTIS-R (solo utae; usa metadata.geojson/DATA_S2).
-        utae_num_classes: Clases de salida de utae (20 en el ckpt de Isaac).
-        utae_ignore_index: Etiqueta ignorada en utae (void).
-        out_dir: Carpeta de salida del parquet de trials.
+        pastis_root: PASTIS-R root (utae only; uses metadata.geojson/DATA_S2).
+        utae_num_classes: utae output classes (20 in Isaac's ckpt).
+        utae_ignore_index: Ignored label in utae (void).
+        out_dir: Output folder for the trials parquet.
 
     Returns:
-        Ruta del parquet ``tuning_<model>.parquet`` escrito.
+        Path of the written ``tuning_<model>.parquet`` parquet.
 
     Raises:
-        ValueError: si ``model_kind`` no esta soportado.
+        ValueError: if ``model_kind`` is not supported.
     """
     if model_kind not in _SUPPORTED:
-        raise ValueError(f"model_kind {model_kind!r} no soportado; usa {_SUPPORTED}.")
+        raise ValueError(f"model_kind {model_kind!r} not supported; use {_SUPPORTED}.")
 
     if model_kind == "utae":
         objective, base_metrics = build_objective_utae(
@@ -560,7 +561,7 @@ def run_study(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Punto de entrada CLI."""
+    """CLI entry point."""
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--model", choices=_SUPPORTED, default="tsvit-pheno")
     p.add_argument("--init-ckpt", type=Path, required=True, help="best.pt del modelo base.")

@@ -1,11 +1,11 @@
-"""Extrae figuras PNG inline de un notebook Jupyter a un directorio destino.
+"""Extract inline PNG figures from a Jupyter notebook to a target directory.
 
-Recorre las salidas de cada celda buscando ``image/png`` (base64) y las exporta
-con un nombre estable ``cell_{idx:03d}_{output_idx}.png``. Sirve para alimentar
-el reporte PDF del Avance 1 desde notebooks que generan sus figuras inline
-(sin ``plt.savefig`` explicito), como ``Avance1.Equipo17.ipynb``.
+Walks the outputs of each cell looking for ``image/png`` (base64) and exports
+them with a stable name ``cell_{idx:03d}_{output_idx}.png``. Used to feed the
+Avance 1 PDF report from notebooks that generate their figures inline
+(without explicit ``plt.savefig``), like ``Avance1.Equipo17.ipynb``.
 
-Uso::
+Usage::
 
     python -m ml.report.extract_notebook_figures \\
         notebooks/eda/Avance1.Equipo17.ipynb \\
@@ -29,14 +29,14 @@ app = typer.Typer(add_completion=False, help="Extrae figuras PNG inline de noteb
 
 
 def _slugify(text: str, max_len: int = 60) -> str:
-    """Convierte un heading markdown a un slug ASCII seguro para nombres de archivo.
+    """Convert a markdown heading to an ASCII slug safe for filenames.
 
     Args:
-        text: Texto fuente (puede contener acentos, ``#``, numeros de seccion).
-        max_len: Longitud maxima del slug resultante.
+        text: Source text (may contain accents, ``#``, section numbers).
+        max_len: Maximum length of the resulting slug.
 
     Returns:
-        Slug en minusculas con guiones bajos. Vacio si el input es vacio.
+        Lowercase slug with underscores. Empty if the input is empty.
     """
     text = text.lstrip("#").strip()
     text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
@@ -45,14 +45,14 @@ def _slugify(text: str, max_len: int = 60) -> str:
 
 
 def _nearest_heading(cells: list[dict], cell_idx: int) -> str:
-    """Devuelve el heading markdown mas cercano (hacia atras) a ``cell_idx``.
+    """Return the nearest markdown heading (backwards) to ``cell_idx``.
 
     Args:
-        cells: Lista de celdas del notebook.
-        cell_idx: Indice de la celda con figura.
+        cells: List of notebook cells.
+        cell_idx: Index of the cell with the figure.
 
     Returns:
-        Primera linea no vacia del markdown previo, o cadena vacia si no hay.
+        First non-empty line of the previous markdown, or an empty string if none.
     """
     for j in range(cell_idx, -1, -1):
         cell = cells[j]
@@ -67,27 +67,27 @@ def _nearest_heading(cells: list[dict], cell_idx: int) -> str:
 
 
 def extract_png_outputs(notebook_path: Path, output_dir: Path) -> list[Path]:
-    """Extrae todas las imagenes PNG inline de un notebook a ``output_dir``.
+    """Extract all inline PNG images from a notebook into ``output_dir``.
 
     Args:
-        notebook_path: Path al archivo .ipynb.
-        output_dir: Directorio destino donde se escriben los PNG.
+        notebook_path: Path to the .ipynb file.
+        output_dir: Target directory where the PNGs are written.
 
     Returns:
-        Lista de paths PNG creados, ordenados por celda y output_idx.
+        List of created PNG paths, ordered by cell and output_idx.
 
     Raises:
-        FileNotFoundError: Si el notebook no existe.
-        ValueError: Si el JSON del notebook esta corrupto.
+        FileNotFoundError: If the notebook does not exist.
+        ValueError: If the notebook JSON is corrupted.
     """
     if not notebook_path.exists():
-        raise FileNotFoundError(f"Notebook no existe: {notebook_path}")
+        raise FileNotFoundError(f"Notebook does not exist: {notebook_path}")
 
     with notebook_path.open("r", encoding="utf-8") as fh:
         try:
             nb = json.load(fh)
         except json.JSONDecodeError as exc:
-            raise ValueError(f"Notebook JSON invalido: {notebook_path}") from exc
+            raise ValueError(f"Invalid notebook JSON: {notebook_path}") from exc
 
     output_dir.mkdir(parents=True, exist_ok=True)
     created: list[Path] = []
@@ -115,7 +115,7 @@ def extract_png_outputs(notebook_path: Path, output_dir: Path) -> list[Path]:
             used_slugs[slug] = count + 1
             target = output_dir / f"cell_{cell_idx:03d}_{slug}_{count}.png"
             if count == 0:
-                # Para evitar siempre el sufijo _0 en el caso comun.
+                # To avoid always having the _0 suffix in the common case.
                 target = output_dir / f"cell_{cell_idx:03d}_{slug}.png"
             target.write_bytes(png_bytes)
             created.append(target)
@@ -136,7 +136,7 @@ def main(
         help="Directorio destino para las figuras PNG.",
     ),
 ) -> None:
-    """Extrae figuras PNG inline de un notebook al directorio destino."""
+    """Extract inline PNG figures from a notebook to the target directory."""
     notebook = notebook.resolve()
     output = output.resolve()
 

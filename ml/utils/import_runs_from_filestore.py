@@ -1,21 +1,21 @@
-"""Importa runs MLflow desde un file store local al servidor MLflow (Postgres).
+"""Imports MLflow runs from a local file store into the MLflow server (Postgres).
 
-Caso de uso (US-025): los runs reales de TSViT se entrenaron en la VM L4 y su
-tracking quedo en un file store ``./mlruns/<exp>/`` (formato de archivos),
-mientras el servidor MLflow local del proyecto es un Docker con backend
-Postgres (``http://localhost:5010``). Ambos almacenes son distintos: el servidor
-no lee la carpeta ``./mlruns/``. Este modulo reconstruye cada run del file store
-en el experimento del servidor via :class:`mlflow.tracking.MlflowClient`,
-preservando params, tags (incluidos ``code_version`` y ``data_version``,
-exigidos por la regla 10 de ``CLAUDE.md``), las series de metricas por epoch y
-los timestamps originales.
+Use case (US-025): the real TSViT runs were trained on the L4 VM and their
+tracking ended up in a file store ``./mlruns/<exp>/`` (file format), while the
+project's local MLflow server is a Docker with a Postgres backend
+(``http://localhost:5010``). The two stores are different: the server does not
+read the ``./mlruns/`` folder. This module reconstructs each run from the file
+store in the server's experiment via :class:`mlflow.tracking.MlflowClient`,
+preserving params, tags (including ``code_version`` and ``data_version``,
+required by rule 10 of ``CLAUDE.md``), the per-epoch metric series and the
+original timestamps.
 
-Operativo permanente (no es un script ``scripts/_*.py`` ad-hoc): la seleccion de
-runs se hace por *allowlist* de ``run_id`` para no arrastrar smokes ni intentos
-abandonados que comparten ``run_name`` con los reales. La importacion es
-idempotente: re-ejecutar detecta el ``run_name`` ya presente y lo omite.
+Permanent operational tool (not an ad-hoc ``scripts/_*.py`` script): the run
+selection is done by an *allowlist* of ``run_id`` so as not to drag in smokes or
+abandoned attempts that share a ``run_name`` with the real ones. The import is
+idempotent: re-running detects the already-present ``run_name`` and skips it.
 
-Uso CLI::
+CLI usage::
 
     python -m ml.utils.import_runs_from_filestore \\
         --src-experiment-dir mlruns/965679031955557780 \\
@@ -40,23 +40,23 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger(__name__)
 
-#: Mapa de status del file store (entero) al status string de MLflow.
+#: Map from file store status (integer) to the MLflow status string.
 _STATUS_MAP = {"1": "RUNNING", "2": "SCHEDULED", "3": "FINISHED", "4": "FAILED", "5": "KILLED"}
 
-#: Tags que NO se copian: ``mlflow.runName`` lo inyecta ``create_run`` via
-#: ``run_name=`` (copiarlo de nuevo lo duplicaria).
+#: Tags that are NOT copied: ``mlflow.runName`` is injected by ``create_run`` via
+#: ``run_name=`` (copying it again would duplicate it).
 _SKIP_TAGS = frozenset({"mlflow.runName"})
 
 
 @contextlib.contextmanager
 def _silence_mlflow_url() -> Iterator[None]:
-    """Suprime el ``print`` de URL de MLflow (contiene un emoji).
+    """Suppresses the MLflow URL ``print`` (it contains an emoji).
 
-    ``MlflowClient.set_terminated``/``create_run`` escriben en ``stdout`` una
-    linea decorada con un emoji (``\\U0001f3c3``); en consolas Windows con
-    codificacion cp1252 eso lanza ``UnicodeEncodeError``. Redirige ``stdout`` a
-    un buffer durante la llamada para que el log estructurado (structlog, en
-    ``stderr``) siga visible sin romper la importacion.
+    ``MlflowClient.set_terminated``/``create_run`` write to ``stdout`` a line
+    decorated with an emoji (``\\U0001f3c3``); on Windows consoles with cp1252
+    encoding that raises ``UnicodeEncodeError``. Redirects ``stdout`` to a buffer
+    during the call so that the structured log (structlog, on ``stderr``) stays
+    visible without breaking the import.
     """
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
@@ -64,22 +64,22 @@ def _silence_mlflow_url() -> Iterator[None]:
 
 
 def _read_run_dir(run_dir: Path) -> dict:
-    """Parsea un directorio de run del file store a un dict estructurado.
+    """Parses a file store run directory into a structured dict.
 
     Args:
-        run_dir: Ruta al directorio del run (``<exp>/<run_id>/``).
+        run_dir: Path to the run directory (``<exp>/<run_id>/``).
 
     Returns:
-        Dict con ``meta`` (start_time, end_time, status, run_name, user_id),
-        ``params`` (dict), ``tags`` (dict) y ``metrics`` (dict
-        ``nombre -> list[(value, timestamp_ms, step)]`` con las series por epoch).
+        Dict with ``meta`` (start_time, end_time, status, run_name, user_id),
+        ``params`` (dict), ``tags`` (dict) and ``metrics`` (dict
+        ``name -> list[(value, timestamp_ms, step)]`` with the per-epoch series).
 
     Raises:
-        FileNotFoundError: si falta ``meta.yaml``.
+        FileNotFoundError: if ``meta.yaml`` is missing.
     """
     meta_path = run_dir / "meta.yaml"
     if not meta_path.is_file():
-        raise FileNotFoundError(f"no existe meta.yaml en {run_dir}")
+        raise FileNotFoundError(f"meta.yaml does not exist in {run_dir}")
     meta = yaml.safe_load(meta_path.read_text(encoding="utf-8"))
 
     params: dict[str, str] = {}
@@ -104,7 +104,7 @@ def _read_run_dir(run_dir: Path) -> dict:
                 continue
             points: list[tuple[float, int, int]] = []
             for line in m.read_text(encoding="utf-8").splitlines():
-                if not line.strip():  # blinda lineas vacias / CRLF en Windows
+                if not line.strip():  # guards against empty lines / CRLF on Windows
                     continue
                 ts, val, step = line.split()
                 points.append((float(val), int(ts), int(step)))
@@ -114,18 +114,18 @@ def _read_run_dir(run_dir: Path) -> dict:
 
 
 def _run_exists(client: MlflowClient, experiment_id: str, run_name: str) -> str | None:
-    """Devuelve el run_id existente con ese ``run_name`` en el experimento, o None.
+    """Returns the existing run_id with that ``run_name`` in the experiment, or None.
 
-    El match es por ``run_name`` (no por ``run_id``) porque ``create_run`` genera
-    un id nuevo en Postgres: el id del file store no se preserva.
+    The match is by ``run_name`` (not by ``run_id``) because ``create_run``
+    generates a new id in Postgres: the file store id is not preserved.
 
     Args:
-        client: Cliente MLflow apuntando al servidor destino.
-        experiment_id: Id del experimento destino.
-        run_name: Nombre del run a buscar.
+        client: MLflow client pointing to the destination server.
+        experiment_id: Id of the destination experiment.
+        run_name: Name of the run to search for.
 
     Returns:
-        El ``run_id`` del primer match, o ``None`` si no existe.
+        The ``run_id`` of the first match, or ``None`` if it does not exist.
     """
     existing = client.search_runs(
         [experiment_id],
@@ -143,23 +143,26 @@ def import_run(
     recreate: bool = False,
     upload_artifacts: bool = False,
 ) -> str | None:
-    """Reconstruye un run del file store en el experimento destino del servidor.
+    """Reconstructs a file store run in the server's destination experiment.
 
-    Idempotente: si ya existe un run con el mismo ``run_name`` en el destino, lo
-    omite (o lo borra y recrea si ``recreate=True``). La creacion se envuelve en
-    try/except que borra el run si algo falla antes de ``set_terminated``, para
-    no dejar un run ``RUNNING`` incompleto que bloquearia futuras corridas.
+    Idempotent: if a run with the same ``run_name`` already exists in the
+    destination, it skips it (or deletes and recreates it if ``recreate=True``).
+    The creation is wrapped in a try/except that deletes the run if something
+    fails before ``set_terminated``, so as not to leave an incomplete ``RUNNING``
+    run that would block future runs.
 
     Args:
-        client: Cliente MLflow apuntando al servidor destino.
-        run_dir: Directorio del run en el file store.
-        dest_experiment_id: Id del experimento destino.
-        recreate: Si ``True`` y el run ya existe, lo borra y vuelve a crear.
-        upload_artifacts: Si ``True`` sube ``best.pt`` via ``log_artifact``
-            (requiere proxied-artifacts habilitado en el servidor).
+        client: MLflow client pointing to the destination server.
+        run_dir: Run directory in the file store.
+        dest_experiment_id: Id of the destination experiment.
+        recreate: If ``True`` and the run already exists, it deletes and recreates
+            it.
+        upload_artifacts: If ``True`` uploads ``best.pt`` via ``log_artifact``
+            (requires proxied-artifacts enabled on the server).
 
     Returns:
-        El ``run_id`` creado, o ``None`` si se omitio (ya existia y no recreate).
+        The created ``run_id``, or ``None`` if it was skipped (already existed and
+        not recreate).
     """
     from mlflow.entities import Metric, Param
 
@@ -177,7 +180,7 @@ def import_run(
         client.delete_run(existing_id)
         logger.info("import_run_deleted_for_recreate", run_name=run_name, deleted=existing_id[:12])
 
-    # Tags a copiar (excluye mlflow.runName, que pone create_run via run_name=).
+    # Tags to copy (excludes mlflow.runName, which create_run sets via run_name=).
     run_tags = {k: v for k, v in parsed["tags"].items() if k not in _SKIP_TAGS}
 
     with _silence_mlflow_url():
@@ -189,14 +192,14 @@ def import_run(
         )
     run_id = str(run.info.run_id)
     try:
-        # Params en un solo batch.
+        # Params in a single batch.
         params = [Param(k, str(v)) for k, v in parsed["params"].items()]
-        # Metricas: todas las series por epoch, preservando timestamp y step.
+        # Metrics: all the per-epoch series, preserving timestamp and step.
         metric_entities: list[Metric] = []
         for name, points in parsed["metrics"].items():
             for value, ts, step in points:
                 metric_entities.append(Metric(name, value, ts, step))
-        # log_batch admite <1000 metricas / <100 params por llamada.
+        # log_batch accepts <1000 metrics / <100 params per call.
         client.log_batch(run_id, metrics=metric_entities, params=params, tags=[])
 
         if upload_artifacts:
@@ -210,7 +213,7 @@ def import_run(
         with _silence_mlflow_url():
             client.set_terminated(run_id, status=status, end_time=int(meta["end_time"]))
     except Exception:
-        # No dejar un run RUNNING incompleto: borrarlo para mantener idempotencia.
+        # Do not leave an incomplete RUNNING run: delete it to keep idempotency.
         client.delete_run(run_id)
         logger.error("import_run_failed_rolled_back", run_name=run_name, run_id=run_id[:12])
         raise
@@ -235,20 +238,20 @@ def import_runs_from_filestore(
     recreate: bool = False,
     upload_artifacts: bool = False,
 ) -> dict[str, str | None]:
-    """Importa una allowlist de runs de un file store al servidor MLflow.
+    """Imports an allowlist of runs from a file store to the MLflow server.
 
     Args:
-        src_experiment_dir: Directorio del experimento en el file store
+        src_experiment_dir: Directory of the experiment in the file store
             (``mlruns/<exp_id>/``).
-        run_ids: Allowlist de ``run_id`` a importar (los demas se ignoran).
-        dest_experiment_id: Id del experimento destino en el servidor.
-        tracking_uri: URI del servidor; si ``None`` usa
+        run_ids: Allowlist of ``run_id`` to import (the rest are ignored).
+        dest_experiment_id: Id of the destination experiment on the server.
+        tracking_uri: URI of the server; if ``None`` uses
             :func:`ml.utils.mlflow_utils.resolve_tracking_uri`.
-        recreate: Recrear runs ya existentes en vez de omitirlos.
-        upload_artifacts: Subir ``best.pt`` (requiere proxied-artifacts).
+        recreate: Recreate already-existing runs instead of skipping them.
+        upload_artifacts: Upload ``best.pt`` (requires proxied-artifacts).
 
     Returns:
-        Dict ``run_id_origen -> run_id_destino`` (``None`` si se omitio).
+        Dict ``source_run_id -> destination_run_id`` (``None`` if skipped).
     """
     import mlflow
     from mlflow.tracking import MlflowClient
@@ -279,7 +282,7 @@ def import_runs_from_filestore(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Punto de entrada CLI."""
+    """CLI entry point."""
     parser = argparse.ArgumentParser(
         description="Importa runs MLflow de un file store local al servidor Postgres."
     )

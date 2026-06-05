@@ -1,31 +1,30 @@
-"""Clasificacion de errores GCS para fallback graceful (US-017+).
+"""GCS error classification for graceful fallback (US-017+).
 
-Centraliza la deteccion de excepciones de autenticacion / permisos / red
-contra ``google.cloud.storage`` para que tanto el extractor en runtime
-(``ml/extractors/farslip_extractor.py``) como los assets Dagster
-(``dagster_project/assets/farslip.py``) compartan un solo contrato.
+Centralizes the detection of authentication / permission / network exceptions
+against ``google.cloud.storage`` so that both the runtime extractor
+(``ml/extractors/farslip_extractor.py``) and the Dagster assets
+(``dagster_project/assets/farslip.py``) share a single contract.
 
-Cubre tres familias:
+Covers three families:
 
-- ``google.auth.exceptions``: credenciales por defecto ausentes o
-  caducadas (``DefaultCredentialsError``, ``GoogleAuthError``,
-  ``RefreshError``).
-- ``google.api_core.exceptions``: respuestas HTTP de denegacion
-  (``Forbidden`` 403, ``Unauthenticated`` 401, ``PermissionDenied``,
-  ``NotFound`` 404 — esta ultima cubre bucket/objeto inexistente).
-- Stubs en tests sin las libs google.* instaladas: deteccion por nombre
-  de clase canonico.
+- ``google.auth.exceptions``: missing or expired default credentials
+  (``DefaultCredentialsError``, ``GoogleAuthError``, ``RefreshError``).
+- ``google.api_core.exceptions``: HTTP denial responses (``Forbidden`` 403,
+  ``Unauthenticated`` 401, ``PermissionDenied``, ``NotFound`` 404 — the latter
+  covers a nonexistent bucket/object).
+- Stubs in tests without the google.* libs installed: detection by canonical
+  class name.
 
-Cualquier otra excepcion (``AttributeError``, ``KeyError``, ``ValueError``,
-errores reales del extractor) NO se clasifica como auth y debe burbujear
-para no enmascarar bugs.
+Any other exception (``AttributeError``, ``KeyError``, ``ValueError``, real
+errors from the extractor) is NOT classified as auth and must bubble up so as
+not to mask bugs.
 """
 
 from __future__ import annotations
 
-#: Nombres canonicos usados como fallback cuando las libs google.* no estan
-#: disponibles (CI minimo, tests con stubs). Mantener sincronizado con los
-#: bloques try/except de abajo.
+#: Canonical names used as fallback when the google.* libs are not
+#: available (minimal CI, tests with stubs). Keep in sync with the
+#: try/except blocks below.
 _GCS_AUTH_EXC_NAMES = frozenset(
     {
         "DefaultCredentialsError",
@@ -40,15 +39,15 @@ _GCS_AUTH_EXC_NAMES = frozenset(
 
 
 def is_gcs_auth_error(exc: BaseException) -> bool:
-    """Devuelve ``True`` si ``exc`` indica un fallo de auth/permiso/red GCS.
+    """Return ``True`` if ``exc`` indicates a GCS auth/permission/network failure.
 
     Args:
-        exc: excepcion a clasificar.
+        exc: exception to classify.
 
     Returns:
-        ``True`` para errores google.auth / google.api_core que justifican
-        degradar a modo offline (cache local o teacher fallback);
-        ``False`` para todo lo demas, que debe burbujear.
+        ``True`` for google.auth / google.api_core errors that justify degrading
+        to offline mode (local cache or teacher fallback); ``False`` for
+        everything else, which must bubble up.
     """
     try:
         from google.auth.exceptions import (  # type: ignore[import-not-found]

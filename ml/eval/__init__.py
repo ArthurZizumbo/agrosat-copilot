@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-# Interpretabilidad (shap), comparativa y curvas dependen de paquetes que no
-# siempre estan instalados (p. ej. un entorno de segmentacion en Colab). Se
-# importan de forma tolerante: las metricas densas (dense_metrics) y la matriz de
-# confusion (metrics) se importan como submodulos directos y no necesitan esto.
+# Interpretability (shap), comparison and curves depend on packages that are
+# not always installed (e.g. a segmentation environment in Colab). They are
+# imported tolerantly: the dense metrics (dense_metrics) and the confusion
+# matrix (metrics) are imported as direct submodules and do not need this.
 try:
     from ml.eval.comparison import (
         ComparisonResult,
@@ -68,5 +68,5 @@ try:
         "shap_summary_plot",
         "shap_waterfall_plot",
     ]
-except ImportError:  # pragma: no cover - dependencias opcionales ausentes
+except ImportError:  # pragma: no cover - optional dependencies absent
     __all__ = []

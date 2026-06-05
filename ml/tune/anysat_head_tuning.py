@@ -1,15 +1,15 @@
-"""Ajuste fino de la cabeza lineal de AnySat sobre features del encoder cacheadas.
+"""Fine-tune the AnySat linear head over cached encoder features.
 
-El encoder de AnySat esta congelado, asi que sus features densas no cambian entre
-trials de Optuna. Re-ejecutarlo por trial (decenas de minutos por epoca a batch 1
-sobre la serie temporal) es el cuello de botella del tuning. Aqui se precomputan
-las features **una sola vez** y cada trial entrena unicamente la cabeza Conv 1x1
-sobre ellas (segundos), de modo que >=30 trials corren en minutos en vez de horas.
+The AnySat encoder is frozen, so its dense features do not change between
+Optuna trials. Re-running it per trial (tens of minutes per epoch at batch 1
+over the time series) is the tuning bottleneck. Here the features are
+precomputed **only once** and each trial trains only the Conv 1x1 head over
+them (seconds), so >=30 trials run in minutes instead of hours.
 
-Reusa las metricas densas (:mod:`ml.eval.dense_metrics`) y el agrupamiento HCAT 18
-clases -> 6 grupos (:mod:`ml.analysis.hcat_grouping`) del pipeline principal, para
-que el ``miou_grouped`` que optimiza Optuna sea el mismo que reporta el modelo
-final (separation of concerns, regla CLAUDE.md 8).
+Reuses the dense metrics (:mod:`ml.eval.dense_metrics`) and the HCAT 18-class
+-> 6-group grouping (:mod:`ml.analysis.hcat_grouping`) from the main pipeline,
+so that the ``miou_grouped`` Optuna optimizes is the same one reported by the
+final model (separation of concerns, CLAUDE.md rule 8).
 """
 
 from __future__ import annotations
@@ -32,25 +32,25 @@ from ml.ingest.pastis_dataset import (
     PASTISDataset,
 )
 
-if TYPE_CHECKING:  # pragma: no cover - solo para anotaciones de tipo
+if TYPE_CHECKING:  # pragma: no cover - only for type annotations
     from ml.models.anysat_wrapper import AnySatSegmenter
 
 logger = structlog.get_logger(__name__)
 
 __all__ = ["CachedFeatures", "cache_encoder_features", "train_head"]
 
-# Clase "no-cultivo" para las metricas agrupadas (fondo/void predichos sobre un
-# pixel de cultivo): nunca es objetivo, asi el macro promedia solo los 6 grupos.
+# "Non-crop" class for the grouped metrics (background/void predicted over a
+# crop pixel): never a target, so the macro averages only the 6 groups.
 _NON_CROP_GROUP = 6
 _GROUPED_CLASSES = 7
 
 
 class CachedFeatures:
-    """Par ``(features, labels)`` precomputado del encoder congelado, en CPU.
+    """Precomputed ``(features, labels)`` pair from the frozen encoder, on CPU.
 
     Attributes:
-        features: ``(N, D, h, w)`` float16 en CPU (mapa denso del encoder).
-        labels: ``(N, target_size, target_size)`` long en CPU (semantico 0-19).
+        features: ``(N, D, h, w)`` float16 on CPU (dense encoder map).
+        labels: ``(N, target_size, target_size)`` long on CPU (semantic 0-19).
     """
 
     def __init__(self, features: torch.Tensor, labels: torch.Tensor) -> None:
@@ -59,7 +59,7 @@ class CachedFeatures:
 
     @property
     def feature_dim(self) -> int:
-        """Numero de canales ``D`` de las features densas del encoder."""
+        """Number of channels ``D`` of the dense encoder features."""
         return int(self.features.shape[1])
 
     def __len__(self) -> int:
@@ -78,22 +78,23 @@ def cache_encoder_features(
     batch_size: int = 4,
     num_workers: int = 0,
 ) -> CachedFeatures:
-    """Ejecuta el encoder congelado una vez por patch y cachea ``(features, labels)``.
+    """Run the frozen encoder once per patch and cache ``(features, labels)``.
 
     Args:
-        model: :class:`~ml.models.anysat_wrapper.AnySatSegmenter` (o compatible con
-            ``extract_features(image, dates)``), con el encoder ya cargado.
-        patch_ids: Ids de los patches PASTIS a cachear.
-        root: Raiz del dataset PASTIS-R.
-        target_size: Lado espacial de los labels (debe coincidir con el del modelo).
-        norm: Stats de normalizacion por banda (de ``load_norm_stats``).
-        device: ``cpu``, ``cuda`` o ``auto``.
-        batch_size: Batch para la pasada del encoder (mayor = mas rapido si entra).
-        num_workers: Workers del DataLoader.
+        model: :class:`~ml.models.anysat_wrapper.AnySatSegmenter` (or one
+            compatible with ``extract_features(image, dates)``), with the
+            encoder already loaded.
+        patch_ids: Ids of the PASTIS patches to cache.
+        root: Root of the PASTIS-R dataset.
+        target_size: Spatial side of the labels (must match the model's).
+        norm: Per-band normalization stats (from ``load_norm_stats``).
+        device: ``cpu``, ``cuda`` or ``auto``.
+        batch_size: Batch for the encoder pass (larger = faster if it fits).
+        num_workers: DataLoader workers.
 
     Returns:
-        :class:`CachedFeatures` con las features ``(N, D, h, w)`` en float16 (CPU) y
-        los labels ``(N, target_size, target_size)`` long (CPU).
+        :class:`CachedFeatures` with the features ``(N, D, h, w)`` in float16
+        (CPU) and the labels ``(N, target_size, target_size)`` long (CPU).
     """
     dev = _resolve_device(device)
     model.to(dev)
@@ -129,18 +130,18 @@ def cache_encoder_features(
 
 
 def _resolve_device(device: str) -> torch.device:
-    """Resuelve el dispositivo (``auto`` -> cuda si disponible, sino cpu)."""
+    """Resolve the device (``auto`` -> cuda if available, otherwise cpu)."""
     if device == "auto":
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
     return torch.device(device)
 
 
 def _build_group_luts(device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
-    """Construye los LUT 18 clases -> 6 grupos para target y para prediccion."""
+    """Build the 18-class -> 6-group LUTs for target and for prediction."""
     group_lut = hcat6_dense_lut()
     lut_target = torch.as_tensor(group_lut, device=device)
     pred_lut = group_lut.copy()
-    pred_lut[pred_lut == 255] = _NON_CROP_GROUP  # fondo/void predichos -> "no-cultivo"
+    pred_lut[pred_lut == 255] = _NON_CROP_GROUP  # background/void predicted -> "non-crop"
     lut_pred = torch.as_tensor(pred_lut, device=device)
     return lut_target, lut_pred
 
@@ -153,7 +154,7 @@ def _evaluate_head(
     device: torch.device,
     batch_size: int,
 ) -> dict[str, float]:
-    """Evalua la cabeza sobre features cacheadas: mIoU/F1/pixacc planos y agrupados."""
+    """Evaluate the head over cached features: flat and grouped mIoU/F1/pixacc."""
     head.eval()
     acc = DenseConfusionAccumulator(
         PASTIS_NUM_CLASSES, ignore_index=PASTIS_IGNORE_INDEX, device=str(device)
@@ -192,28 +193,30 @@ def train_head(
     seed: int = 0,
     on_epoch: Callable[[int, dict[str, float]], None] | None = None,
 ) -> dict[str, float]:
-    """Entrena una cabeza Conv 1x1 sobre features cacheadas y devuelve la mejor metrica.
+    """Train a Conv 1x1 head over cached features and return the best metric.
 
-    Cada epoca entrena la cabeza (AdamW + CrossEntropy con ``ignore_index`` void) y
-    evalua mIoU/F1/pixel-accuracy planos y agrupados sobre el cache de validacion. La
-    metrica de seleccion es ``miou_grouped`` (comparable con el baseline y el modelo
-    final). Es la unidad de trabajo de cada trial de Optuna.
+    Each epoch trains the head (AdamW + CrossEntropy with ``ignore_index``
+    void) and evaluates flat and grouped mIoU/F1/pixel-accuracy over the
+    validation cache. The selection metric is ``miou_grouped`` (comparable
+    with the baseline and the final model). It is the unit of work of each
+    Optuna trial.
 
     Args:
-        train_cache: Features+labels de train (de :func:`cache_encoder_features`).
-        val_cache: Features+labels de validacion.
-        num_classes: Numero de clases de salida (20 en PASTIS-R).
-        target_size: Lado espacial de los logits/labels.
-        lr: Learning rate de AdamW.
-        weight_decay: Weight decay de AdamW.
-        epochs: Numero de epocas de la cabeza.
-        batch_size: Batch sobre las features cacheadas (barato; puede ser alto).
-        device: ``cpu``, ``cuda`` o ``auto``.
-        seed: Semilla para el orden de los minibatches (reproducibilidad por trial).
-        on_epoch: Callback ``(epoch, metrics)`` tras evaluar cada epoca (pruning Optuna).
+        train_cache: Train features+labels (from :func:`cache_encoder_features`).
+        val_cache: Validation features+labels.
+        num_classes: Number of output classes (20 in PASTIS-R).
+        target_size: Spatial side of the logits/labels.
+        lr: AdamW learning rate.
+        weight_decay: AdamW weight decay.
+        epochs: Number of head epochs.
+        batch_size: Batch over the cached features (cheap; can be large).
+        device: ``cpu``, ``cuda`` or ``auto``.
+        seed: Seed for the minibatch order (per-trial reproducibility).
+        on_epoch: Callback ``(epoch, metrics)`` after evaluating each epoch
+            (Optuna pruning).
 
     Returns:
-        Diccionario con las mejores metricas (mayor ``miou_grouped``) observadas.
+        Dictionary with the best metrics (highest ``miou_grouped``) observed.
     """
     dev = _resolve_device(device)
     feature_dim = train_cache.feature_dim

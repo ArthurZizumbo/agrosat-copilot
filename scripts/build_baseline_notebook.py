@@ -1,42 +1,39 @@
-"""Constructor programatico de ``notebooks/04_baseline.ipynb`` (EPIC 4, US-019).
+"""Programmatic builder of ``notebooks/04_baseline.ipynb`` (EPIC 4, US-019).
 
-Genera el notebook del baseline RF/XGB celda a celda con ``nbformat.v4``,
-ejecutable end-to-end con papermill y reproducible byte-a-byte. El notebook
-es el entregable visual del Avance 3.
+Generates the RF/XGB baseline notebook cell by cell with ``nbformat.v4``,
+executable end-to-end with papermill and byte-by-byte reproducible. The notebook
+is the visual deliverable of Avance 3.
 
-Secciones que produce US-019:
-  - 1: Setup y carga del vector de features del EPIC 3.
-  - 2: Justificacion del algoritmo (criterio "Algoritmo", 40 pts).
-  - 6: Desempeno minimo vs umbral F1-macro >= 0.60 (criterio 10 pts).
+Sections produced by US-019:
+  - 1: Setup and load of the EPIC 3 feature vector.
+  - 2: Algorithm justification ("Algorithm" criterion, 40 pts).
+  - 6: Minimum performance vs F1-macro threshold >= 0.60 (criterion 10 pts).
 
-Secciones que produce US-020 (criterio "Caracteristicas importantes", 20 pts):
-  - 3: Importancia de features nativa (RF Gini / XGB gain, barplot top-20).
-  - 4: Analisis SHAP (summary + dependence top-5 + waterfall + dominancia
-    AlphaEarth).
-  - 5: Conclusiones de feature engineering (cruce con el FE de US-018).
+Sections produced by US-020 ("Important features" criterion, 20 pts):
+  - 3: Native feature importance (RF Gini / XGB gain, top-20 barplot).
+  - 4: SHAP analysis (summary + top-5 dependence + waterfall + AlphaEarth
+    dominance).
+  - 5: Feature engineering conclusions (cross-check with the US-018 FE).
 
-Seccion que produce US-021 (criterio "Sub/sobreajuste", 10 pts):
-  - 5b: Curvas de aprendizaje (RF+XGB) + 3 curvas de validacion +
-    diagnostico textual de sub/sobreajuste (`diagnose_fit`) + criterio de
-    validacion cruzada espacial.
+Section produced by US-021 ("Under/overfitting" criterion, 10 pts):
+  - 5b: Learning curves (RF+XGB) + 3 validation curves + textual under/overfit
+    diagnosis (`diagnose_fit`) + spatial cross-validation criterion.
 
-Secciones que produce US-022 (criterio "Metrica", 20 pts; ultimo extend):
-  - 7: Comparativa de los 3 escenarios de features (AlphaEarth puro vs
-    Sentinel-2 crudo vs vector combinado) con `build_comparison_table` +
-    barplot + export LaTeX.
-  - 8: Discusion del valor incremental de AlphaEarth + conclusiones para
-    el EPIC 5 + cierre de la fase Modeling de CRISP-ML(Q).
+Sections produced by US-022 ("Metric" criterion, 20 pts; last extend):
+  - 7: Comparison of the 3 feature scenarios (pure AlphaEarth vs raw Sentinel-2
+    vs combined vector) with `build_comparison_table` + barplot + LaTeX export.
+  - 8: Discussion of the incremental value of AlphaEarth + conclusions for
+    EPIC 5 + closing of the CRISP-ML(Q) Modeling phase.
 
-Patron: ``scripts/build_us018_notebook.py``.
+Pattern: ``scripts/build_us018_notebook.py``.
 
-Uso:
+Usage:
     poetry run python scripts/build_baseline_notebook.py --out notebooks/baseline/04_baseline.ipynb
 
-Notas US-023-preview:
-- El path canonico se movio a ``notebooks/baseline/`` (decision D-6).
-- P8 agrega celdas v2 que reentrenan los 3 modelos del A3 (XGBoost +
-  TempCNN + InceptionTime) sobre el conjunto de features ganador post
-  ablation P2/P3/P4/P5.
+US-023-preview notes:
+- The canonical path moved to ``notebooks/baseline/`` (decision D-6).
+- P8 adds v2 cells that retrain the 3 A3 models (XGBoost + TempCNN +
+  InceptionTime) on the winning feature set after the P2/P3/P4/P5 ablation.
 """
 
 from __future__ import annotations
@@ -50,24 +47,24 @@ app = typer.Typer(add_completion=False, help=__doc__)
 
 
 def _md(source: str) -> nbf.NotebookNode:
-    """Crea una celda markdown."""
+    """Create a markdown cell."""
     return nbf.v4.new_markdown_cell(source)
 
 
 def _code(source: str) -> nbf.NotebookNode:
-    """Crea una celda de codigo."""
+    """Create a code cell."""
     return nbf.v4.new_code_cell(source)
 
 
 def _params_code(source: str) -> nbf.NotebookNode:
-    """Crea la celda de parametros (tag ``parameters`` para papermill)."""
+    """Create the parameters cell (``parameters`` tag for papermill)."""
     cell = nbf.v4.new_code_cell(source)
     cell.metadata["tags"] = ["parameters"]
     return cell
 
 
 # ---------------------------------------------------------------------------
-# Celdas del notebook.
+# Notebook cells.
 # ---------------------------------------------------------------------------
 
 CELLS: list[nbf.NotebookNode] = [
@@ -109,7 +106,7 @@ CELLS: list[nbf.NotebookNode] = [
         "| 7 | Comparativa AlphaEarth vs Sentinel-2 crudo |\n"
         "| 8 | Conclusiones |\n"
     ),
-    # --- Seccion 1 -------------------------------------------------------
+    # --- Section 1 -------------------------------------------------------
     _md(
         "## 1. Carga del conjunto de datos\n"
         "\n"
@@ -169,7 +166,7 @@ CELLS: list[nbf.NotebookNode] = [
         ")\n"
         "class_counts"
     ),
-    # --- Seccion 2 -------------------------------------------------------
+    # --- Section 2 -------------------------------------------------------
     _md(
         "## 2. Por qué Random Forest y XGBoost\n"
         "\n"
@@ -202,7 +199,7 @@ CELLS: list[nbf.NotebookNode] = [
         "CPU de forma transparente; Random Forest corre siempre en CPU "
         "multinucleo. El experimento es reproducible en cualquier laptop."
     ),
-    # --- Seccion 3 — Importancia de caracteristicas ---------------------
+    # --- Section 3 — Feature importance ---------------------------------
     _md(
         "## 3. Importancia de características\n"
         "\n"
@@ -274,7 +271,7 @@ CELLS: list[nbf.NotebookNode] = [
         "                dpi=200, bbox_inches='tight')\n"
         "    plt.show()"
     ),
-    # --- Seccion 4 — Analisis SHAP (US-020) ------------------------------
+    # --- Section 4 — SHAP analysis (US-020) ------------------------------
     _md(
         "## 4. Análisis SHAP\n"
         "\n"
@@ -382,7 +379,7 @@ CELLS: list[nbf.NotebookNode] = [
         "    print(f'Lideran: ' + ', '.join(top_ae))\n"
         "family_counts"
     ),
-    # --- Seccion 5 — Conclusiones de feature engineering (US-020) --------
+    # --- Section 5 — Feature engineering conclusions (US-020) ------------
     _md(
         "## 5. Conclusiones de ingeniería de características\n"
         "\n"
@@ -457,7 +454,7 @@ CELLS: list[nbf.NotebookNode] = [
         "siguientes la incorporen antes de entrenar modelos mas "
         "complejos."
     ),
-    # --- Seccion 5b (US-021) --------------------------------------------
+    # --- Section 5b (US-021) --------------------------------------------
     _md(
         "## 5b. Curvas de aprendizaje y validacion — diagnostico de "
         "sub/sobreajuste\n"
@@ -573,7 +570,7 @@ CELLS: list[nbf.NotebookNode] = [
         "el sobreajuste — esto justifica que las fases siguientes "
         "incorporen arquitecturas temporales con mayor capacidad."
     ),
-    # --- Seccion 6 -------------------------------------------------------
+    # --- Section 6 -------------------------------------------------------
     _md(
         "## 6. Desempeño del baseline\n"
         "\n"
@@ -651,7 +648,7 @@ CELLS: list[nbf.NotebookNode] = [
         "lenguaje-vision) para recuperar senal complementaria que ningun "
         "modelo aislado captura."
     ),
-    # --- Seccion 7 — Comparativa de 3 escenarios (US-022) ----------------
+    # --- Section 7 — Comparison of 3 scenarios (US-022) ------------------
     _md(
         "## 7. Comparativa AlphaEarth vs Sentinel-2 crudo\n"
         "\n"
@@ -805,7 +802,7 @@ CELLS: list[nbf.NotebookNode] = [
         "else:\n"
         "    print('Sin delta — comparativa omitida.')"
     ),
-    # --- Seccion 8 — Conclusiones ---------------------------------------
+    # --- Section 8 — Conclusions ----------------------------------------
     _md(
         "## 8. Conclusiones\n"
         "\n"
@@ -875,23 +872,23 @@ CELLS: list[nbf.NotebookNode] = [
         "metrica principal que el resto del proyecto puede heredar."
     ),
     # ----------------------------------------------------------------------
-    # NOTA US-023-preview corrida 3: la seccion 9 (Baseline v2 con 3 modelos)
-    # se movio al notebook standalone `notebooks/baseline/04b_baseline_v2.ipynb`,
-    # que lee los artefactos persistidos en `reports/baseline/model_comparison_v2/`.
-    # Las celdas eliminadas reentrenaban modelos pesados (~90 min CUDA) y dejaban
-    # el notebook 04 con dependencias condicionales de MLflow/CUDA. El training
-    # real vive ahora en `scripts/run_baseline_v2_standalone.py`.
+    # NOTE US-023-preview run 3: section 9 (Baseline v2 with 3 models)
+    # was moved to the standalone notebook `notebooks/baseline/04b_baseline_v2.ipynb`,
+    # which reads the artifacts persisted in `reports/baseline/model_comparison_v2/`.
+    # The removed cells retrained heavy models (~90 min CUDA) and left
+    # notebook 04 with conditional MLflow/CUDA dependencies. The real training
+    # now lives in `scripts/run_baseline_v2_standalone.py`.
     # ----------------------------------------------------------------------
 ]
 
 
-# Stub interno: las celdas de la antigua seccion 9 (Baseline v2 con 3 modelos
-# canonicos, US-023-preview P8) se movieron al notebook standalone
-# `notebooks/baseline/04b_baseline_v2.ipynb` en la corrida 3 (2026-05-26).
-# El bloque condicional (`RUN_BASELINE_V2`) y sus celdas de training fueron
-# eliminados del builder; el lector encuentra las metricas v2 reales en
-# `reports/baseline/model_comparison_v2/model_comparison_v2.parquet` y el
-# training se regenera con `scripts/run_baseline_v2_standalone.py` o el
+# Internal stub: the cells of the former section 9 (Baseline v2 with 3 canonical
+# models, US-023-preview P8) were moved to the standalone notebook
+# `notebooks/baseline/04b_baseline_v2.ipynb` in run 3 (2026-05-26).
+# The conditional block (`RUN_BASELINE_V2`) and its training cells were
+# removed from the builder; the reader finds the real v2 metrics in
+# `reports/baseline/model_comparison_v2/model_comparison_v2.parquet` and the
+# training is regenerated with `scripts/run_baseline_v2_standalone.py` or the
 # target `make baseline-v2-full`.
 
 _REMOVED_V2_PARAMS_DROPPED = (
@@ -902,10 +899,10 @@ _REMOVED_V2_PARAMS_DROPPED = (
 
 
 def build_notebook(out_path: Path) -> None:
-    """Construye el notebook del baseline y lo escribe en ``out_path``.
+    """Build the baseline notebook and write it to ``out_path``.
 
     Args:
-        out_path: Ruta destino del fichero ``.ipynb``.
+        out_path: Destination path of the ``.ipynb`` file.
     """
     nb = nbf.v4.new_notebook()
     nb.cells = CELLS
@@ -930,7 +927,7 @@ def main(
         help="Ruta destino del notebook .ipynb.",
     ),
 ) -> None:
-    """Reconstruye ``notebooks/04_baseline.ipynb`` desde cero."""
+    """Rebuild ``notebooks/04_baseline.ipynb`` from scratch."""
     build_notebook(out)
     typer.echo(f"Notebook escrito en {out}")
 

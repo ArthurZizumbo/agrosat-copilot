@@ -1,26 +1,26 @@
-"""Assets Dagster para US-016 — Fusión multisensor a nivel parcela.
+"""Dagster assets for US-016 — Parcel-level multisensor fusion.
 
-Materializa tres artefactos versionables del pipeline de feature engineering:
+Materializes three versionable artifacts of the feature engineering pipeline:
 
 1. ``parcel_features_fused`` → ``data/features/features_fused_v1.parquet``
-   matriz tabular (N, 2 + 189) con bloques AlphaEarth (64), índices×stats (85),
-   Sentinel-1 (10), SRTM (3), ERA5 mensual (24) y geometría (3). Bloque
-   opcional FarSLIP (512) si ``data/farslip/embeddings_italy.parquet`` existe.
+   tabular matrix (N, 2 + 189) with AlphaEarth blocks (64), indices x stats (85),
+   Sentinel-1 (10), SRTM (3), monthly ERA5 (24) and geometry (3). Optional
+   FarSLIP block (512) if ``data/farslip/embeddings_pastis.parquet`` exists.
 
 2. ``parcel_splits_spatial_kfold`` → ``data/splits/spatial_kfold_v1/fold_{0..4}/``
-   K=5 folds espaciales no contiguos generados con tessellation H3 res 5 +
-   KMeans sobre centroides hex + buffer de exclusión de 1 km. Sin leakage
-   espacial entre folds.
+   K=5 non-contiguous spatial folds generated with H3 res 5 tessellation +
+   KMeans over hex centroids + a 1 km exclusion buffer. No spatial leakage
+   between folds.
 
 3. ``parcel_features_scaler`` → ``artifacts/scaler_v1.pkl``
-   ``StandardScaler`` (joblib) ajustado **solo** sobre el split train del
-   ``fold_0`` para evitar fuga de val/test a la normalización global.
+   ``StandardScaler`` (joblib) fitted **only** on the train split of ``fold_0``
+   to avoid val/test leakage into the global normalization.
 
-Los tres assets delegan la lógica de negocio en ``ml.features.fusion``,
-``ml.features.spatial_split`` y ``ml.features.scaler`` (DRY: el script CLI
-``scripts/build_parcel_features.py`` consume las mismas funciones).
+The three assets delegate the business logic to ``ml.features.fusion``,
+``ml.features.spatial_split`` and ``ml.features.scaler`` (DRY: the CLI script
+``scripts/build_parcel_features.py`` consumes the same functions).
 
-Lineage declarada vía ``deps=[...]``:
+Lineage declared via ``deps=[...]``:
 
 ::
 
@@ -30,11 +30,11 @@ Lineage declarada vía ``deps=[...]``:
                                                               ├─→ parcel_features_scaler
     parcels ─→ parcel_splits_spatial_kfold ───────────────────┘
 
-Las dependencias upstream ``alphaearth_embeddings_italy``, ``features_parcels``
-y ``parcels`` son ``SourceAsset`` lógicas — los nombres existen como contrato
-hacia US-006/US-015; cuando esos assets concretos se registren en
-``definitions.py`` la lineage se enlazará automáticamente sin tocar este
-módulo.
+The upstream dependencies ``alphaearth_embeddings_italy``, ``features_parcels``
+and ``parcels`` are logical ``SourceAsset``s — the names exist as a contract
+toward US-006/US-015; when those concrete assets are registered in
+``definitions.py`` the lineage will be linked automatically without touching this
+module.
 """
 
 import hashlib
@@ -51,17 +51,17 @@ from dagster import (
 
 log = structlog.get_logger(__name__)
 
-# Convenciones de paths (relativos a la raíz del repo). Los assets resuelven
-# las rutas desde ``Path.cwd()`` o desde ``DAGSTER_HOME`` si está configurado.
+# Path conventions (relative to the repo root). The assets resolve
+# the paths from ``Path.cwd()`` or from ``DAGSTER_HOME`` if configured.
 DATA_FEATURES_DIR = Path("data/features")
 DATA_SPLITS_DIR = Path("data/splits/spatial_kfold_v1")
 ARTIFACTS_DIR = Path("artifacts")
 DEFAULT_FUSED_PATH = DATA_FEATURES_DIR / "features_fused_v1.parquet"
 DEFAULT_SCALER_PATH = ARTIFACTS_DIR / "scaler_v1.pkl"
 DEFAULT_PARCELS_FIXTURE = Path("data/test_fixtures/parcels_demo_3regions.parquet")
-DEFAULT_FARSLIP_PATH = Path("data/farslip/embeddings_italy.parquet")
+DEFAULT_FARSLIP_PATH = Path("data/farslip/embeddings_pastis.parquet")
 
-# Bloques activos para la materialización por defecto (sin FarSLIP).
+# Active blocks for the default materialization (without FarSLIP).
 DEFAULT_BLOCKS: tuple[str, ...] = (
     "alphaearth",
     "indices_stats",
@@ -76,7 +76,7 @@ CODE_VERSION_LABEL = "us-016"
 
 
 def _hash_file_md5(path: Path) -> str:
-    """Calcula el hash MD5 de un fichero existente para metadata de lineage."""
+    """Computes the MD5 hash of an existing file for lineage metadata."""
     hasher = hashlib.md5(usedforsecurity=False)
     with path.open("rb") as fh:
         for chunk in iter(lambda: fh.read(1 << 20), b""):
@@ -85,19 +85,19 @@ def _hash_file_md5(path: Path) -> str:
 
 
 def _load_parcels_geodataframe(parcels_path: Path):
-    """Carga el GeoDataFrame de parcelas desde un parquet o fixture demo.
+    """Loads the parcels GeoDataFrame from a parquet or demo fixture.
 
     Args:
-        parcels_path: ruta al parquet con columnas ``parcel_id``, ``year``,
-            ``geom`` (WKT EPSG:4326). En producción será un asset upstream
-            ``parcels`` materializado desde Postgres; en local/CI se usa el
-            fixture demo de 9 parcelas.
+        parcels_path: path to the parquet with columns ``parcel_id``, ``year``,
+            ``geom`` (WKT EPSG:4326). In production it will be an upstream asset
+            ``parcels`` materialized from Postgres; in local/CI the demo fixture
+            of 9 parcels is used.
 
     Returns:
-        GeoDataFrame en CRS EPSG:4326 listo para ``build_fused_features``.
+        GeoDataFrame in CRS EPSG:4326 ready for ``build_fused_features``.
 
     Raises:
-        FileNotFoundError: si el parquet no existe en disco.
+        FileNotFoundError: if the parquet does not exist on disk.
     """
     import geopandas as gpd
     import polars as pl
@@ -105,8 +105,8 @@ def _load_parcels_geodataframe(parcels_path: Path):
 
     if not parcels_path.exists():
         raise FileNotFoundError(
-            f"parcels fixture not found at {parcels_path}; ejecuta el script "
-            "de generación o monta el asset upstream `parcels`."
+            f"parcels fixture not found at {parcels_path}; run the generation "
+            "script or mount the upstream `parcels` asset."
         )
     frame = pl.read_parquet(parcels_path).to_pandas()
     geoms = [wkt.loads(g) for g in frame["geom"].tolist()]
@@ -124,19 +124,19 @@ def _load_parcels_geodataframe(parcels_path: Path):
     group_name="feature_engineering",
     description=(
         "Vector tabular fusionado por (parcel_id, year) con 6 bloques "
-        "heterogéneos alineados (AE 64 + idx×stats 85 + S1 10 + SRTM 3 + "
+        "heterogéneos alineados (AE 64 + idx x stats 85 + S1 10 + SRTM 3 + "
         "ERA5 24 + geom 3 = 189 cols). Bloque opcional FarSLIP (+512)."
     ),
 )
 def parcel_features_fused(context: AssetExecutionContext) -> MaterializeResult:
-    """Materializa ``data/features/features_fused_v1.parquet``.
+    """Materializes ``data/features/features_fused_v1.parquet``.
 
     Args:
-        context: contexto de ejecución Dagster. ``context.log`` emite a la UI
-            mientras ``structlog`` registra estructurado para CI/observabilidad.
+        context: Dagster execution context. ``context.log`` emits to the UI while
+            ``structlog`` logs structured for CI/observability.
 
     Returns:
-        ``MaterializeResult`` con metadata ``rows``, ``cols``, ``md5``,
+        ``MaterializeResult`` with metadata ``rows``, ``cols``, ``md5``,
         ``year``, ``regions``, ``blocks``, ``data_version``, ``code_version``.
     """
     from ml.features.fusion import build_fused_features  # type: ignore[import-not-found]
@@ -162,7 +162,7 @@ def parcel_features_fused(context: AssetExecutionContext) -> MaterializeResult:
             farslip_path=str(DEFAULT_FARSLIP_PATH),
         )
         context.log.warning(
-            "FarSLIP block omitido: no existe data/farslip/embeddings_italy.parquet"
+            "FarSLIP block omitido: no existe data/farslip/embeddings_pastis.parquet"
         )
 
     df = build_fused_features(
@@ -222,14 +222,14 @@ def parcel_features_fused(context: AssetExecutionContext) -> MaterializeResult:
     ),
 )
 def parcel_splits_spatial_kfold(context: AssetExecutionContext) -> MaterializeResult:
-    """Materializa ``data/splits/spatial_kfold_v1/fold_{0..4}/*.parquet``.
+    """Materializes ``data/splits/spatial_kfold_v1/fold_{0..4}/*.parquet``.
 
     Args:
-        context: contexto Dagster.
+        context: Dagster context.
 
     Returns:
-        ``MaterializeResult`` con metadata por fold (sizes train/val/test +
-        balance de clases).
+        ``MaterializeResult`` with per-fold metadata (train/val/test sizes +
+        class balance).
     """
     import polars as pl
 
@@ -310,13 +310,13 @@ def parcel_splits_spatial_kfold(context: AssetExecutionContext) -> MaterializeRe
     ),
 )
 def parcel_features_scaler(context: AssetExecutionContext) -> MaterializeResult:
-    """Materializa ``artifacts/scaler_v1.pkl``.
+    """Materializes ``artifacts/scaler_v1.pkl``.
 
     Args:
-        context: contexto Dagster.
+        context: Dagster context.
 
     Returns:
-        ``MaterializeResult`` con metadata ``feature_cols``, ``n_train``,
+        ``MaterializeResult`` with metadata ``feature_cols``, ``n_train``,
         ``mean_summary``, ``std_summary``.
     """
     import polars as pl
@@ -336,13 +336,13 @@ def parcel_features_scaler(context: AssetExecutionContext) -> MaterializeResult:
     )
     if not features_path.exists():
         raise FileNotFoundError(
-            f"features parquet ausente: {features_path}. Materializa primero "
-            "parcel_features_fused."
+            f"features parquet missing: {features_path}. Materialize "
+            "parcel_features_fused first."
         )
     if not fold_train_path.exists():
         raise FileNotFoundError(
-            f"fold_0 train ids ausente: {fold_train_path}. Materializa primero "
-            "parcel_splits_spatial_kfold."
+            f"fold_0 train ids missing: {fold_train_path}. Materialize "
+            "parcel_splits_spatial_kfold first."
         )
 
     df = pl.read_parquet(features_path)

@@ -1,26 +1,26 @@
-"""Integra los artefactos de los modelos de segmentacion descargados del Drive
-del equipo (unet, anysat, segformer, utae) al repo, en el formato que consume
-``Avance4.Equipo17.ipynb``.
+"""Integrate the segmentation model artifacts downloaded from the team
+Drive (unet, anysat, segformer, utae) into the repo, in the format consumed
+by ``Avance4.Equipo17.ipynb``.
 
-Fuente: una carpeta local con la estructura del Drive compartido (``reports/
-segmentation/{metrics,figures}`` para unet/anysat, ``outputs/<modelo>/`` con
-``results.json`` + figuras para segformer/utae).
+Source: a local folder with the structure of the shared Drive (``reports/
+segmentation/{metrics,figures}`` for unet/anysat, ``outputs/<model>/`` with
+``results.json`` + figures for segformer/utae).
 
-Acciones:
+Actions:
 
-- Copia tal cual los parquets ``model_comparison_avance4_{unet,anysat_fast}.parquet``
-  y sus figuras (ya tienen el formato/nombres que espera el integrador).
-- Convierte el ``results.json`` de segformer y utae a un parquet
-  ``model_comparison_avance4_{modelo}.parquet`` con el esquema del integrador, y
-  copia sus figuras renombrandolas al patron ``{key}_{modelo}.png``
+- Copies as-is the parquets ``model_comparison_avance4_{unet,anysat_fast}.parquet``
+  and their figures (they already have the format/names the integrator expects).
+- Converts the ``results.json`` of segformer and utae to a parquet
+  ``model_comparison_avance4_{model}.parquet`` with the integrator schema, and
+  copies its figures renaming them to the pattern ``{key}_{model}.png``
   (``training_curves`` -> ``curves``, ``qualitative`` -> ``samples``).
 
-El ``miou_grouped`` de segformer/utae se promedia de su ``hcat_group_iou`` (6
-grupos HCAT), coherente con la columna *_grouped de la tabla.
+The ``miou_grouped`` of segformer/utae is averaged from its ``hcat_group_iou``
+(6 HCAT groups), consistent with the *_grouped column of the table.
 
-Operativo permanente y parametrizable por ``--src``. No reentrena nada.
+Permanent operational script, parameterizable by ``--src``. Retrains nothing.
 
-Uso::
+Usage::
 
     poetry run python scripts/import_avance4_from_drive.py \\
         --src "C:/Users/arthu/Downloads/avance_drive_pi"
@@ -35,7 +35,7 @@ from pathlib import Path
 
 import polars as pl
 
-# Esquema del integrador (espejo de run_training de Aaron).
+# Integrator schema (mirror of Aaron's run_training).
 _SCHEMA = {
     "model": pl.Utf8,
     "miou": pl.Float64, "f1_macro": pl.Float64, "pixel_accuracy": pl.Float64,
@@ -46,19 +46,19 @@ _SCHEMA = {
     "target_size": pl.Int64, "device": pl.Utf8,
 }
 
-#: Modelos con parquet+figuras ya en formato integrador (solo copiar).
+#: Models with parquet+figures already in integrator format (just copy).
 _READY = {
     "model_comparison_avance4_unet.parquet": "model_comparison_avance4_unet.parquet",
     "model_comparison_avance4_anysat_fast.parquet": "model_comparison_avance4_anysat_fast.parquet",
 }
 
-#: Modelos con solo results.json en outputs/<dir>/ (convertir).
+#: Models with only results.json in outputs/<dir>/ (to convert).
 _FROM_RESULTS = {
     "segformer": "segformer_b0_pastis",
     "utae": "utae_pastis",
 }
 
-#: Mapeo de nombre de figura del output al patron del integrador.
+#: Mapping of the output figure name to the integrator pattern.
 _FIG_MAP = {
     "training_curves.png": "curves",
     "per_class_iou.png": "per_class_iou",
@@ -67,15 +67,15 @@ _FIG_MAP = {
 
 
 def _row_from_results(model: str, res: dict) -> dict:
-    """Construye una fila del integrador desde un results.json de segformer/utae.
+    """Build an integrator row from a segformer/utae results.json.
 
     Args:
-        model: Nombre canonico del modelo (``segformer`` / ``utae``).
-        res: Contenido del ``results.json``.
+        model: Canonical model name (``segformer`` / ``utae``).
+        res: Contents of the ``results.json``.
 
     Returns:
-        Dict con el esquema del integrador. ``miou_grouped`` se promedia del
-        ``hcat_group_iou`` (mIoU sobre los 6 grupos HCAT).
+        Dict with the integrator schema. ``miou_grouped`` is averaged from
+        ``hcat_group_iou`` (mIoU over the 6 HCAT groups).
     """
     grouped = res.get("hcat_group_iou") or {}
     miou_grouped = (
@@ -97,7 +97,7 @@ def _row_from_results(model: str, res: dict) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Punto de entrada CLI."""
+    """CLI entry point."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--src", required=True, help="Carpeta local con la estructura del Drive.")
     parser.add_argument(
@@ -116,20 +116,20 @@ def main(argv: list[str] | None = None) -> int:
     dst_metrics.mkdir(parents=True, exist_ok=True)
     dst_figures.mkdir(parents=True, exist_ok=True)
 
-    # 1. Parquets ya listos (unet, anysat_fast).
+    # 1. Parquets already ready (unet, anysat_fast).
     for src_name, dst_name in _READY.items():
         p = src_metrics / src_name
         if p.is_file():
             shutil.copy2(p, dst_metrics / dst_name)
             print(f"copiado parquet {dst_name}")
 
-    # 2. Figuras ya con nombre correcto (unet, anysat_fast).
+    # 2. Figures already with the correct name (unet, anysat_fast).
     if src_figures.is_dir():
         for fig in src_figures.glob("*.png"):
             shutil.copy2(fig, dst_figures / fig.name)
             print(f"copiada figura {fig.name}")
 
-    # 3. segformer / utae: convertir results.json -> parquet + figuras renombradas.
+    # 3. segformer / utae: convert results.json -> parquet + renamed figures.
     for model, out_dir in _FROM_RESULTS.items():
         odir = src / "outputs" / out_dir
         rj = odir / "results.json"
@@ -142,7 +142,7 @@ def main(argv: list[str] | None = None) -> int:
         out_parquet = dst_metrics / f"model_comparison_avance4_{model}.parquet"
         df.write_parquet(out_parquet)
         print(f"convertido {model}: results.json -> {out_parquet.name} (miou={row['miou']})")
-        # Figuras: renombrar al patron del integrador.
+        # Figures: rename to the integrator pattern.
         for orig, key in _FIG_MAP.items():
             fp = odir / orig
             if fp.is_file():

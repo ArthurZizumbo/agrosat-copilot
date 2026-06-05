@@ -1,14 +1,14 @@
-"""Metricas pixel-level para segmentacion semantica densa (EPIC 5/6).
+"""Pixel-level metrics for dense semantic segmentation (EPIC 5/6).
 
-Complementa :mod:`ml.eval.metrics` (que opera a nivel parcela) con las tres
-metricas de segmentacion exigidas por la rubrica del Avance 4: **mIoU**,
-**F1-macro** y **pixel-accuracy**, calculadas a nivel pixel sobre mapas 2D.
+Complements :mod:`ml.eval.metrics` (which operates at the parcel level) with the
+three segmentation metrics required by the Avance 4 rubric: **mIoU**,
+**F1-macro** and **pixel-accuracy**, computed at the pixel level over 2D maps.
 
-La implementacion acumula una matriz de confusion ``(C, C)`` en torch puro (sin
-dependencia de ``torchmetrics``), lo que permite agregar batches en streaming
-durante la validacion y derivar las tres metricas de forma exacta al final. La
-clase ``ignore_index`` (void = 19 en PASTIS-R) se excluye tanto de la
-acumulacion como del promedio macro.
+The implementation accumulates a ``(C, C)`` confusion matrix in pure torch (no
+``torchmetrics`` dependency), which allows aggregating batches in streaming
+during validation and deriving the three metrics exactly at the end. The
+``ignore_index`` class (void = 19 in PASTIS-R) is excluded from both the
+accumulation and the macro average.
 """
 
 from __future__ import annotations
@@ -27,22 +27,24 @@ __all__ = [
 
 
 def _as_long_tensor(x: torch.Tensor | np.ndarray) -> torch.Tensor:
-    """Convierte una entrada numpy/torch a ``torch.Tensor`` ``long`` en CPU."""
+    """Convert a numpy/torch input to a ``torch.Tensor`` ``long`` on CPU."""
     if isinstance(x, np.ndarray):
         return torch.from_numpy(x).long()
     return x.detach().long()
 
 
 class DenseConfusionAccumulator:
-    """Acumulador de matriz de confusion pixel-level para metricas densas.
+    """Pixel-level confusion matrix accumulator for dense metrics.
 
-    Permite ``update`` por batch durante la validacion y ``compute`` al final,
-    derivando mIoU, F1-macro y pixel-accuracy de la matriz acumulada. La clase
-    ``ignore_index`` se filtra del ground truth antes de acumular.
+    Allows ``update`` per batch during validation and ``compute`` at the end,
+    deriving mIoU, F1-macro and pixel-accuracy from the accumulated matrix. The
+    ``ignore_index`` class is filtered out of the ground truth before
+    accumulating.
 
     Attributes:
-        num_classes: Numero de clases del problema.
-        ignore_index: Clase a ignorar (no contribuye a la confusion ni al macro).
+        num_classes: Number of classes in the problem.
+        ignore_index: Class to ignore (contributes neither to the confusion nor
+            to the macro).
     """
 
     def __init__(
@@ -52,12 +54,12 @@ class DenseConfusionAccumulator:
         ignore_index: int | None = None,
         device: str | torch.device = "cpu",
     ) -> None:
-        """Inicializa el acumulador con una matriz ``(C, C)`` en ceros.
+        """Initialize the accumulator with a ``(C, C)`` zeroed matrix.
 
         Args:
-            num_classes: Numero de clases ``C``.
-            ignore_index: Clase a ignorar (``None`` para no ignorar ninguna).
-            device: Dispositivo donde mantener la matriz acumulada.
+            num_classes: Number of classes ``C``.
+            ignore_index: Class to ignore (``None`` to ignore none).
+            device: Device on which to keep the accumulated matrix.
         """
         self.num_classes = num_classes
         self.ignore_index = ignore_index
@@ -65,33 +67,33 @@ class DenseConfusionAccumulator:
         self.reset()
 
     def reset(self) -> None:
-        """Reinicia la matriz de confusion acumulada a ceros."""
+        """Reset the accumulated confusion matrix to zeros."""
         self._confusion = torch.zeros(
             self.num_classes, self.num_classes, dtype=torch.int64, device=self._device
         )
 
     def update(self, preds: torch.Tensor | np.ndarray, target: torch.Tensor | np.ndarray) -> None:
-        """Acumula un batch de predicciones contra el ground truth.
+        """Accumulate a batch of predictions against the ground truth.
 
         Args:
-            preds: Mapa(s) de clases predichas, enteros de cualquier forma.
-            target: Mapa(s) de clases verdaderas, misma forma que ``preds``.
+            preds: Predicted class map(s), integers of any shape.
+            target: Ground truth class map(s), same shape as ``preds``.
 
         Raises:
-            ValueError: si ``preds`` y ``target`` difieren en forma.
+            ValueError: if ``preds`` and ``target`` differ in shape.
         """
         preds_t = _as_long_tensor(preds).to(self._device).reshape(-1)
         target_t = _as_long_tensor(target).to(self._device).reshape(-1)
         if preds_t.shape != target_t.shape:
             raise ValueError(
-                f"`preds` y `target` deben tener el mismo numero de pixeles; "
-                f"recibido {preds_t.numel()} vs {target_t.numel()}."
+                f"`preds` and `target` must have the same number of pixels; "
+                f"received {preds_t.numel()} vs {target_t.numel()}."
             )
 
         valid = torch.ones_like(target_t, dtype=torch.bool)
         if self.ignore_index is not None:
             valid &= target_t != self.ignore_index
-        # Defensivo: descarta pixeles fuera de rango (p.ej. pred==num_classes).
+        # Defensive: discard out-of-range pixels (e.g. pred==num_classes).
         valid &= (target_t >= 0) & (target_t < self.num_classes)
         valid &= (preds_t >= 0) & (preds_t < self.num_classes)
 
@@ -104,15 +106,15 @@ class DenseConfusionAccumulator:
         self._confusion += binned.reshape(self.num_classes, self.num_classes)
 
     def compute(self) -> dict[str, float]:
-        """Deriva mIoU, F1-macro y pixel-accuracy de la matriz acumulada.
+        """Derive mIoU, F1-macro and pixel-accuracy from the accumulated matrix.
 
-        El promedio macro (mIoU y F1) se toma solo sobre las clases presentes en
-        el ground truth (soporte > 0), excluyendo ``ignore_index``. Esto evita
-        sesgar la metrica hacia abajo por clases ausentes en el split de val.
+        The macro average (mIoU and F1) is taken only over the classes present in
+        the ground truth (support > 0), excluding ``ignore_index``. This avoids
+        biasing the metric downward due to classes absent from the val split.
 
         Returns:
-            Diccionario con ``miou``, ``f1_macro`` y ``pixel_accuracy`` (floats
-            en ``[0, 1]``). Si no se acumulo ningun pixel valido, devuelve ceros.
+            Dictionary with ``miou``, ``f1_macro`` and ``pixel_accuracy`` (floats
+            in ``[0, 1]``). If no valid pixel was accumulated, it returns zeros.
         """
         conf = self._confusion.double()
         total = conf.sum()
@@ -120,8 +122,8 @@ class DenseConfusionAccumulator:
             return {"miou": 0.0, "f1_macro": 0.0, "pixel_accuracy": 0.0}
 
         diag = torch.diag(conf)
-        row_sum = conf.sum(dim=1)  # soporte real por clase
-        col_sum = conf.sum(dim=0)  # predicciones por clase
+        row_sum = conf.sum(dim=1)  # real support per class
+        col_sum = conf.sum(dim=0)  # predictions per class
 
         union = row_sum + col_sum - diag
         iou = torch.where(union > 0, diag / union, torch.zeros_like(diag))
@@ -142,11 +144,12 @@ class DenseConfusionAccumulator:
         return {"miou": miou, "f1_macro": f1_macro, "pixel_accuracy": pixel_accuracy}
 
     def per_class_iou(self) -> dict[int, float]:
-        """Devuelve el IoU por clase (para el barplot de IoU por clase).
+        """Return the per-class IoU (for the per-class IoU barplot).
 
         Returns:
-            Diccionario ``{class_id: iou}`` solo para las clases con soporte en el
-            ground truth (excluyendo ``ignore_index``). Vacio si no hay pixeles.
+            Dictionary ``{class_id: iou}`` only for the classes with support in
+            the ground truth (excluding ``ignore_index``). Empty if there are no
+            pixels.
         """
         conf = self._confusion.double()
         if conf.sum() <= 0:
@@ -171,19 +174,19 @@ def compute_dense_metrics(
     num_classes: int,
     ignore_index: int | None = None,
 ) -> dict[str, float]:
-    """Calcula mIoU + F1-macro + pixel-accuracy en una sola pasada (one-shot).
+    """Compute mIoU + F1-macro + pixel-accuracy in a single pass (one-shot).
 
-    Conveniencia sobre :class:`DenseConfusionAccumulator` para evaluar un par
-    ``(preds, target)`` completo de una vez (tests, evaluacion final).
+    Convenience over :class:`DenseConfusionAccumulator` to evaluate a full
+    ``(preds, target)`` pair at once (tests, final evaluation).
 
     Args:
-        preds: Mapa(s) de clases predichas.
-        target: Mapa(s) de clases verdaderas.
-        num_classes: Numero de clases ``C``.
-        ignore_index: Clase a ignorar (default ``None``).
+        preds: Predicted class map(s).
+        target: Ground truth class map(s).
+        num_classes: Number of classes ``C``.
+        ignore_index: Class to ignore (default ``None``).
 
     Returns:
-        Diccionario con ``miou``, ``f1_macro`` y ``pixel_accuracy``.
+        Dictionary with ``miou``, ``f1_macro`` and ``pixel_accuracy``.
     """
     acc = DenseConfusionAccumulator(num_classes, ignore_index=ignore_index)
     acc.update(preds, target)
@@ -198,21 +201,21 @@ def dense_confusion_figure(
     ignore_index: int | None = None,
     normalize: bool = True,
 ) -> Figure:
-    """Matriz de confusion pixel-level reutilizando :func:`confusion_matrix_figure`.
+    """Pixel-level confusion matrix reusing :func:`confusion_matrix_figure`.
 
-    Aplana los mapas 2D a vectores de pixeles, descarta los pixeles cuyo ground
-    truth es ``ignore_index`` y delega el render en el helper ya existente del
-    baseline (DRY, mismo estilo visual que las matrices a nivel parcela).
+    Flattens the 2D maps into pixel vectors, discards the pixels whose ground
+    truth is ``ignore_index`` and delegates the rendering to the existing
+    baseline helper (DRY, same visual style as the parcel-level matrices).
 
     Args:
-        preds: Mapa(s) de clases predichas.
-        target: Mapa(s) de clases verdaderas.
-        class_names: Mapa ``{class_id: nombre}`` para rotular ejes.
-        ignore_index: Clase a excluir del plot (default ``None``).
-        normalize: Si ``True`` normaliza por fila (recall por clase).
+        preds: Predicted class map(s).
+        target: Ground truth class map(s).
+        class_names: Map ``{class_id: name}`` to label the axes.
+        ignore_index: Class to exclude from the plot (default ``None``).
+        normalize: If ``True`` normalizes by row (per-class recall).
 
     Returns:
-        Figura matplotlib lista para ``savefig``/``display``.
+        matplotlib figure ready for ``savefig``/``display``.
     """
     p = _as_long_tensor(preds).reshape(-1).cpu().numpy()
     t = _as_long_tensor(target).reshape(-1).cpu().numpy()

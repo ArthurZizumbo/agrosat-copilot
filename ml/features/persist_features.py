@@ -1,25 +1,25 @@
-"""Persistencia de features temporales en ``features_parcels`` (US-015).
+"""Persistence of temporal features into ``features_parcels`` (US-015).
 
-Carga el ``pl.DataFrame`` producido por
-:func:`ml.features.temporal_features.extract_temporal_features` a la tabla
-``features_parcels`` con UPSERT sobre ``(parcel_id, year)``.
+Loads the ``pl.DataFrame`` produced by
+:func:`ml.features.temporal_features.extract_temporal_features` into the
+``features_parcels`` table with UPSERT on ``(parcel_id, year)``.
 
-Convenciones de columnas
-------------------------
-La tabla ``features_parcels`` (ver ``db/migrations/*_create_features_parcels.sql``
-del plan US-015 §4.3) mezcla columnas escalares para queries frecuentes y dos
-columnas JSONB para evitar 153 columnas individuales:
+Column conventions
+------------------
+The ``features_parcels`` table (see ``db/migrations/*_create_features_parcels.sql``
+of plan US-015 §4.3) mixes scalar columns for frequent queries and two
+JSONB columns to avoid 153 individual columns:
 
-- **Escalares**: ``parcel_id``, ``year``, ``sog_doy``, ``peak_doy``,
+- **Scalars**: ``parcel_id``, ``year``, ``sog_doy``, ``peak_doy``,
   ``peak_value``, ``senescence_doy``, ``ndvi_auc``, ``ndvi_slope_pre_peak``,
   ``ndvi_slope_post_peak``, ``maturity_duration_days``.
-- **JSONB ``ndvi_stats``**: las 153 stats descriptivas (todas las
+- **JSONB ``ndvi_stats``**: the 153 descriptive stats (all the
   ``{idx}_{stat}``).
-- **JSONB ``phenology``**: las 24 columnas FFT (``{idx}_fft_amp_*`` y
+- **JSONB ``phenology``**: the 24 FFT columns (``{idx}_fft_amp_*`` and
   ``{idx}_fft_phase_*``).
 
-El campo ``alphaearth_embedding`` queda ``NULL`` en US-015 (se pobla en
-US-016 con la fusión multisensor).
+The ``alphaearth_embedding`` field is left ``NULL`` in US-015 (populated in
+US-016 with the multisensor fusion).
 """
 
 from __future__ import annotations
@@ -33,8 +33,8 @@ from sqlalchemy import Engine, text
 
 logger = structlog.get_logger(__name__)
 
-#: Columnas escalares mapeadas 1:1 con la tabla (excepto ``parcel_id`` y
-#: ``year`` que conforman la PK lógica).
+#: Scalar columns mapped 1:1 with the table (except ``parcel_id`` and
+#: ``year`` which make up the logical PK).
 _SCALAR_PHENOLOGY_COLS: Final[tuple[str, ...]] = (
     "sog_doy",
     "peak_doy",
@@ -55,28 +55,28 @@ def load_features_parcels(
     *,
     on_conflict: Literal["update", "skip", "raise"] = "update",
 ) -> int:
-    """Carga el DataFrame de features a ``features_parcels`` con UPSERT.
+    """Load the features DataFrame into ``features_parcels`` with UPSERT.
 
     Args:
-        df: salida de
+        df: output of
             :func:`ml.features.temporal_features.extract_temporal_features`.
-        engine: SQLAlchemy ``Engine`` apuntando a Postgres 15 + PostGIS +
+        engine: SQLAlchemy ``Engine`` pointing to Postgres 15 + PostGIS +
             pgvector.
-        on_conflict: comportamiento ante violación de
+        on_conflict: behavior on violation of
             ``UNIQUE(parcel_id, year)``:
 
             - ``"update"``: ``ON CONFLICT DO UPDATE SET ...`` (default).
             - ``"skip"``: ``ON CONFLICT DO NOTHING``.
-            - ``"raise"``: ``INSERT`` sin ``ON CONFLICT``; propaga
-              ``sqlalchemy.exc.IntegrityError`` al colisionar.
+            - ``"raise"``: ``INSERT`` without ``ON CONFLICT``; propagates
+              ``sqlalchemy.exc.IntegrityError`` on collision.
 
     Returns:
-        Número de filas insertadas o actualizadas. ``0`` si ``df`` está vacío.
+        Number of inserted or updated rows. ``0`` if ``df`` is empty.
 
     Raises:
-        sqlalchemy.exc.IntegrityError: en modo ``"raise"`` si la fila
-            colisiona con un par ``(parcel_id, year)`` existente.
-        ValueError: si ``df`` no contiene las columnas de PK.
+        sqlalchemy.exc.IntegrityError: in ``"raise"`` mode if the row
+            collides with an existing ``(parcel_id, year)`` pair.
+        ValueError: if ``df`` does not contain the PK columns.
     """
     if df.is_empty():
         logger.info("load_features_parcels skipped (empty frame)")
@@ -119,23 +119,23 @@ def load_features_parcels(
 
 
 # ---------------------------------------------------------------------------
-# Helpers privados
+# Private helpers
 # ---------------------------------------------------------------------------
 
 
 def _detect_stat_columns(columns: list[str]) -> list[str]:
-    """Devuelve las columnas estadísticas (``{idx}_{stat}``) en orden estable."""
+    """Return the statistical columns (``{idx}_{stat}``) in stable order."""
     stat_suffixes = ("_mean", "_std", "_min", "_max", "_p05", "_p25", "_p50", "_p75", "_p95")
     return sorted(c for c in columns if c.endswith(stat_suffixes))
 
 
 def _detect_fft_columns(columns: list[str]) -> list[str]:
-    """Devuelve las columnas FFT (``*_fft_amp_*`` y ``*_fft_phase_*``)."""
+    """Return the FFT columns (``*_fft_amp_*`` and ``*_fft_phase_*``)."""
     return sorted(c for c in columns if ("_fft_amp_" in c) or ("_fft_phase_" in c))
 
 
 def _serializable(value: object) -> object:
-    """Convierte ``NaN``/``None`` a ``None`` y numpy scalars a Python nativos."""
+    """Convert ``NaN``/``None`` to ``None`` and numpy scalars to native Python."""
     import math
 
     if value is None:
@@ -151,10 +151,10 @@ def _serializable(value: object) -> object:
 
 
 def _build_upsert_sql(*, on_conflict: Literal["update", "skip", "raise"]) -> str:
-    """Construye el ``INSERT`` con la cláusula de conflicto solicitada.
+    """Build the ``INSERT`` with the requested conflict clause.
 
-    Usa parámetros nombrados (``:param``) — SQLAlchemy + psycopg los enlazan
-    de forma segura (sin string interpolation).
+    Uses named parameters (``:param``) — SQLAlchemy + psycopg bind them
+    safely (without string interpolation).
     """
     cols = (
         "parcel_id",
@@ -165,9 +165,9 @@ def _build_upsert_sql(*, on_conflict: Literal["update", "skip", "raise"]) -> str
     )
     col_list = ", ".join(cols)
     placeholder_list = ", ".join(f":{c}" for c in cols)
-    # S608: nombres de columna provienen de constantes internas
-    # (`_SCALAR_PHENOLOGY_COLS`), no de input externo. Los valores se enlazan
-    # vía parámetros named `:param`.
+    # S608: column names come from internal constants
+    # (`_SCALAR_PHENOLOGY_COLS`), not from external input. The values are bound
+    # via named `:param` parameters.
     base = f"INSERT INTO features_parcels ({col_list}, updated_at) VALUES ({placeholder_list}, now())"  # noqa: S608, E501
 
     if on_conflict == "raise":

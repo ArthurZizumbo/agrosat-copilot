@@ -1,38 +1,38 @@
-"""Spatial K-fold split por tessellation H3 + KMeans (US-016).
+"""Spatial K-fold split via H3 tessellation + KMeans (US-016).
 
-Construye particiones train/val/test estratificadas espacialmente para evitar
-leakage entre vecinos cercanos. La estrategia:
+Builds spatially stratified train/val/test partitions to avoid leakage
+between nearby neighbors. The strategy:
 
-1. Calcula el centroide de cada parcela en EPSG:4326.
-2. Asigna cada parcela a una celda H3 de resolución ``h3_res`` (default 5,
-   ~252 km² por celda).
-3. Agrupa las celdas H3 únicas y clusteriza sus centroides con
-   ``KMeans(n_clusters=k)`` — cada cluster define un fold.
-4. Las parcelas heredan el fold de su celda H3 contenedora.
-5. Aplica buffer de exclusión: las parcelas a < ``buffer_km`` de la frontera
-   inter-fold se sacan del val/test del fold actual y se devuelven al train
-   global del fold para evitar leakage de vecinos.
-6. Dentro de cada train interno, se separa una fracción ``val_fraction`` con
+1. Computes the centroid of each parcel in EPSG:4326.
+2. Assigns each parcel to an H3 cell of resolution ``h3_res`` (default 5,
+   ~252 km2 per cell).
+3. Groups the unique H3 cells and clusters their centroids with
+   ``KMeans(n_clusters=k)`` — each cluster defines a fold.
+4. Parcels inherit the fold of their containing H3 cell.
+5. Applies an exclusion buffer: parcels within < ``buffer_km`` of the
+   inter-fold border are removed from the val/test of the current fold and
+   returned to the fold global train to avoid neighbor leakage.
+6. Within each internal train, a ``val_fraction`` is separated with
    ``np.random.default_rng(random_state)``.
 
-Devuelve K :class:`FoldAssignment` cada uno con ``train_ids``, ``val_ids``,
-``test_ids`` disjuntos por construcción.
+Returns K :class:`FoldAssignment`, each with ``train_ids``, ``val_ids``,
+``test_ids`` disjoint by construction.
 
-Referencias agronómicas:
+Agronomic references:
 
 - Lyons et al. 2018 — *A comparison of resampling methods for remote sensing
   classification and accuracy assessment*. RSE 208, 145-153. DOI
-  10.1016/j.rse.2018.02.026 — justifica spatial CV en remote sensing.
+  10.1016/j.rse.2018.02.026 — justifies spatial CV in remote sensing.
 - Roberts et al. 2017 — *Cross-validation strategies for data with temporal,
   spatial, hierarchical, or phylogenetic structure*. Ecography 40, 913-929.
 
-Dependencia ``h3``
-------------------
-``h3-py`` 4.4.2 está declarado en ``pyproject.toml`` grupo ``geo`` desde
-US-016 (aprobado por Arthur 2026-05-17). El import sigue siendo condicional
-para que el módulo se cargue en entornos minimalistas que solo necesiten
-el dataclass; si ``h3`` no está disponible, la API lanza ``ImportError``
-con instrucciones explícitas.
+``h3`` dependency
+-----------------
+``h3-py`` 4.4.2 is declared in ``pyproject.toml`` group ``geo`` since
+US-016 (approved by Arthur 2026-05-17). The import remains conditional so
+the module can load in minimalist environments that only need the
+dataclass; if ``h3`` is not available, the API raises ``ImportError``
+with explicit instructions.
 """
 
 from __future__ import annotations
@@ -46,10 +46,10 @@ import structlog
 from shapely.geometry import Point
 from sklearn.cluster import KMeans
 
-# Import diferido para no romper colectores que solo necesiten el dataclass.
+# Deferred import to avoid breaking collectors that only need the dataclass.
 try:
     import h3  # type: ignore[import-not-found]
-except ImportError:  # pragma: no cover - cubierto por test condicional
+except ImportError:  # pragma: no cover - covered by conditional test
     h3 = None  # type: ignore[assignment]
 
 logger = structlog.get_logger(__name__)
@@ -61,21 +61,21 @@ __all__ = [
 
 
 # ---------------------------------------------------------------------------
-# Dataclass de salida.
+# Output dataclass.
 # ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
 class FoldAssignment:
-    """Asignación de parcel_ids por fold (train/val/test disjuntos).
+    """Assignment of parcel_ids per fold (disjoint train/val/test).
 
     Attributes:
-        fold_id: Identificador entero del fold ``[0, k)``.
-        train_ids: Tupla de ``parcel_id`` en el split train (los demás folds
-            menos los excluidos por buffer).
-        val_ids: Subset del train interno reservado como validación.
-        test_ids: Tupla de ``parcel_id`` cuyas celdas H3 pertenecen al
-            cluster KMeans del fold (excluyendo los buffereados).
+        fold_id: Integer fold identifier ``[0, k)``.
+        train_ids: Tuple of ``parcel_id`` in the train split (the other folds
+            minus those excluded by buffer).
+        val_ids: Subset of the internal train reserved as validation.
+        test_ids: Tuple of ``parcel_id`` whose H3 cells belong to the fold's
+            KMeans cluster (excluding the buffered ones).
     """
 
     fold_id: int
@@ -85,7 +85,7 @@ class FoldAssignment:
 
 
 # ---------------------------------------------------------------------------
-# API pública.
+# Public API.
 # ---------------------------------------------------------------------------
 
 
@@ -98,47 +98,47 @@ def build_spatial_kfold(
     val_fraction: float = 0.2,
     random_state: int = 42,
 ) -> list[FoldAssignment]:
-    """Construye K folds espaciales con tessellation H3 + KMeans.
+    """Build K spatial folds with H3 tessellation + KMeans.
 
     Args:
-        parcels: GeoDataFrame con columnas ``parcel_id`` y ``geometry`` en
-            EPSG:4326 (POLYGON o POINT). El centroide se calcula con
-            ``GeoSeries.centroid`` interno.
-        k: Número de folds (default 5). Debe ser ≥ 2 y ≤ número de celdas
-            H3 únicas. Si hay menos celdas que ``k``, KMeans degrada
-            asignando una celda por fold y rellenando con vacíos.
-        h3_res: Resolución H3 (default 5 ≈ 252 km²). Valores válidos
-            ``[0, 15]``; 5 da ~30 hex en Italia agrícola.
-        buffer_km: Distancia mínima en km para excluir parcelas cercanas a
-            la frontera entre folds. ``0.0`` desactiva la exclusión.
-        val_fraction: Fracción del train interno usada como validación por
-            fold. Default 0.2 (20% de train → val).
-        random_state: Seed determinista para KMeans y val shuffle.
+        parcels: GeoDataFrame with columns ``parcel_id`` and ``geometry`` in
+            EPSG:4326 (POLYGON or POINT). The centroid is computed with
+            an internal ``GeoSeries.centroid``.
+        k: Number of folds (default 5). Must be >= 2 and <= the number of
+            unique H3 cells. If there are fewer cells than ``k``, KMeans
+            degrades by assigning one cell per fold and filling with empties.
+        h3_res: H3 resolution (default 5 ~= 252 km2). Valid values
+            ``[0, 15]``; 5 gives ~30 hex in agricultural Italy.
+        buffer_km: Minimum distance in km to exclude parcels near the
+            border between folds. ``0.0`` disables the exclusion.
+        val_fraction: Fraction of the internal train used as validation per
+            fold. Default 0.2 (20% of train -> val).
+        random_state: Deterministic seed for KMeans and val shuffle.
 
     Returns:
-        Lista de K :class:`FoldAssignment` con ``train_ids``, ``val_ids``,
-        ``test_ids`` disjuntos. Garantiza ``parcel_id`` no se repite en
-        más de un fold (sumando train+val+test ⊆ parcels).
+        List of K :class:`FoldAssignment` with disjoint ``train_ids``,
+        ``val_ids``, ``test_ids``. Guarantees ``parcel_id`` is not repeated
+        in more than one fold (summing train+val+test is a subset of parcels).
 
     Raises:
-        ImportError: si ``h3-py`` no está instalado (la US-016 documenta
-            ``h3 ^4.1.2`` como dependencia pendiente de aprobación).
-        ValueError: si ``k < 2`` o si ``parcels`` no contiene las columnas
-            requeridas.
+        ImportError: if ``h3-py`` is not installed (US-016 documents
+            ``h3 ^4.1.2`` as a dependency pending approval).
+        ValueError: if ``k < 2`` or if ``parcels`` does not contain the
+            required columns.
     """
     if h3 is None:
         raise ImportError(
-            "El paquete `h3` no está instalado. US-016 requiere `h3 ^4.1.2` "
-            "(coordinar con Arthur antes del coding). Fallback documentado en "
-            "`docs/us-planning/us-016.md` §2.4 (grid rectangular)."
+            "The `h3` package is not installed. US-016 requires `h3 ^4.1.2` "
+            "(coordinate with Arthur before coding). Fallback documented in "
+            "`docs/us-planning/us-016.md` section 2.4 (rectangular grid)."
         )
     if k < 2:
-        raise ValueError(f"`k` debe ser ≥ 2; recibido {k}.")
+        raise ValueError(f"`k` must be >= 2; received {k}.")
     if "parcel_id" not in parcels.columns:
-        raise ValueError("`parcels` debe contener la columna `parcel_id`.")
+        raise ValueError("`parcels` must contain the `parcel_id` column.")
     if parcels.geometry.name not in parcels.columns:
         raise ValueError(
-            "`parcels` debe tener geometría activa (parcels.set_geometry('geom'))."
+            "`parcels` must have an active geometry (parcels.set_geometry('geom'))."
         )
     if parcels.crs is None:
         logger.warning("spatial_kfold_crs_missing", note="Asumiendo EPSG:4326")
@@ -146,22 +146,22 @@ def build_spatial_kfold(
     elif parcels.crs.to_epsg() != 4326:
         parcels = parcels.to_crs("EPSG:4326")
 
-    # Centroide en EPSG:3857 (métrico) para evitar UserWarning de geopandas
-    # sobre operaciones geométricas en CRS geográfico. Re-proyectamos a 4326
-    # para alimentar h3 (que espera lat/lng).
+    # Centroid in EPSG:3857 (metric) to avoid geopandas UserWarning about
+    # geometric operations in a geographic CRS. We re-project to 4326 to
+    # feed h3 (which expects lat/lng).
     centroids = parcels.geometry.to_crs("EPSG:3857").centroid.to_crs("EPSG:4326")
     parcel_ids = parcels["parcel_id"].astype("int64").to_numpy()
     n_parcels = len(parcel_ids)
     if n_parcels == 0:
         return [FoldAssignment(fold_id=i, train_ids=(), val_ids=(), test_ids=()) for i in range(k)]
 
-    # 1) Asigna cada parcela a una celda H3.
+    # 1) Assign each parcel to an H3 cell.
     h3_cells = np.array(
         [_assign_h3_cell(c, h3_res) for c in centroids],
         dtype=object,
     )
 
-    # 2) Clusteriza las celdas únicas con KMeans.
+    # 2) Cluster the unique cells with KMeans.
     unique_cells, inv = np.unique(h3_cells, return_inverse=True)
     cell_centroids = np.array(
         [_cell_to_latlng(c) for c in unique_cells],
@@ -183,7 +183,7 @@ def build_spatial_kfold(
     cell_folds = kmeans.fit_predict(cell_centroids)
     parcel_folds = cell_folds[inv]
 
-    # 3) Aplica buffer de exclusión sobre fronteras inter-fold.
+    # 3) Apply exclusion buffer over inter-fold borders.
     excluded_mask = _apply_buffer_exclusion(
         parcel_ids=parcel_ids,
         parcel_folds=parcel_folds,
@@ -246,17 +246,17 @@ def build_spatial_kfold(
 
 
 # ---------------------------------------------------------------------------
-# Helpers privados.
+# Private helpers.
 # ---------------------------------------------------------------------------
 
 
 def _assign_h3_cell(centroid: Point, h3_res: int) -> str:
-    """Devuelve la celda H3 que contiene el centroide.
+    """Return the H3 cell containing the centroid.
 
-    Compatible con h3-py 4.x (``latlng_to_cell``) y 3.x (``geo_to_h3``).
-    Si la API 4.x no está disponible, hace fallback.
+    Compatible with h3-py 4.x (``latlng_to_cell``) and 3.x (``geo_to_h3``).
+    If the 4.x API is not available, falls back.
     """
-    assert h3 is not None  # garantizado por guard en build_spatial_kfold
+    assert h3 is not None  # guaranteed by the guard in build_spatial_kfold
     lat = float(centroid.y)
     lng = float(centroid.x)
     fn: Any
@@ -266,15 +266,15 @@ def _assign_h3_cell(centroid: Point, h3_res: int) -> str:
         fn = h3.geo_to_h3
     else:  # pragma: no cover
         raise ImportError(
-            "h3-py expone una API desconocida; ni `latlng_to_cell` ni `geo_to_h3`."
+            "h3-py exposes an unknown API; neither `latlng_to_cell` nor `geo_to_h3`."
         )
     return str(fn(lat, lng, h3_res))
 
 
 def _cell_to_latlng(cell: str) -> tuple[float, float]:
-    """Devuelve ``(lat, lng)`` del centroide de la celda H3.
+    """Return ``(lat, lng)`` of the H3 cell centroid.
 
-    Compatible con h3-py 4.x (``cell_to_latlng``) y 3.x (``h3_to_geo``).
+    Compatible with h3-py 4.x (``cell_to_latlng``) and 3.x (``h3_to_geo``).
     """
     assert h3 is not None
     fn: Any
@@ -283,7 +283,7 @@ def _cell_to_latlng(cell: str) -> tuple[float, float]:
     elif hasattr(h3, "h3_to_geo"):  # h3-py 3.x fallback
         fn = h3.h3_to_geo
     else:  # pragma: no cover
-        raise ImportError("h3-py expone una API desconocida; no se halló accessor centroide.")
+        raise ImportError("h3-py exposes an unknown API; no centroid accessor found.")
     lat, lng = fn(cell)
     return float(lat), float(lng)
 
@@ -295,35 +295,35 @@ def _apply_buffer_exclusion(
     centroids: np.ndarray,
     buffer_km: float,
 ) -> np.ndarray:
-    """Marca parcelas excluidas por estar < ``buffer_km`` de la frontera inter-fold.
+    """Mark parcels excluded for being < ``buffer_km`` from the inter-fold border.
 
-    Implementación O(N) usando distancia haversine aproximada con conversión
-    lon/lat → metros vía equirectangular (suficiente para Italia continental;
-    error < 1% en latitudes 38-46°N). Para datasets > 10k parcelas, una
-    implementación con KDTree en EPSG:3857 sería más rápida — diferido a
-    una optimización futura.
+    O(N) implementation using approximate haversine distance with
+    lon/lat -> meters equirectangular conversion (sufficient for continental
+    Italy; error < 1% at latitudes 38-46 deg N). For datasets > 10k parcels, a
+    KDTree implementation in EPSG:3857 would be faster — deferred to a
+    future optimization.
 
     Args:
-        parcel_ids: Vector ``(N,)`` de identificadores.
-        parcel_folds: Vector ``(N,)`` de fold asignado por parcela.
-        centroids: Matrix ``(N, 2)`` con ``(lon, lat)`` en EPSG:4326.
-        buffer_km: Radio de exclusión. Si ``0.0`` no se excluye nada.
+        parcel_ids: Vector ``(N,)`` of identifiers.
+        parcel_folds: Vector ``(N,)`` of fold assigned per parcel.
+        centroids: Matrix ``(N, 2)`` with ``(lon, lat)`` in EPSG:4326.
+        buffer_km: Exclusion radius. If ``0.0`` nothing is excluded.
 
     Returns:
-        Array boolean ``(N,)`` donde ``True`` marca parcela a excluir.
+        Boolean array ``(N,)`` where ``True`` marks a parcel to exclude.
     """
     n = len(parcel_ids)
     excluded = np.zeros(n, dtype=bool)
     if buffer_km <= 0.0 or n == 0:
         return excluded
 
-    # Conversión equirectangular (centro Italia ~ 43°N).
+    # Equirectangular conversion (central Italy ~ 43 deg N).
     deg_per_km_lat = 1.0 / 111.0
     mid_lat = float(np.mean(centroids[:, 1]))
     deg_per_km_lon = 1.0 / (111.320 * max(np.cos(np.radians(mid_lat)), 1e-3))
     buffer_deg_lat = buffer_km * deg_per_km_lat
     buffer_deg_lon = buffer_km * deg_per_km_lon
-    # Norma adimensional: trabajamos en grados; bbox-prefilter + distancia.
+    # Dimensionless norm: we work in degrees; bbox-prefilter + distance.
     for i in range(n):
         if excluded[i]:
             continue
@@ -333,13 +333,13 @@ def _apply_buffer_exclusion(
         bbox_mask = (np.abs(dlat) < buffer_deg_lat) & (np.abs(dlon) < buffer_deg_lon)
         cross_fold = bbox_mask & (parcel_folds != parcel_folds[i])
         if cross_fold.any():
-            # Distancia métrica real con equirectangular.
+            # Real metric distance with equirectangular.
             dist_km = np.sqrt(
                 (dlon[cross_fold] / deg_per_km_lon) ** 2
                 + (dlat[cross_fold] / deg_per_km_lat) ** 2
             )
             if (dist_km < buffer_km).any():
-                # Excluimos la parcela actual y sus vecinas dentro del buffer.
+                # Exclude the current parcel and its neighbors within the buffer.
                 idxs = np.where(cross_fold)[0][dist_km < buffer_km]
                 excluded[i] = True
                 excluded[idxs] = True

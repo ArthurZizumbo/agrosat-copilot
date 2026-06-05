@@ -81,7 +81,7 @@ Training único $262 spot — $602 on-demand USD. Operativo **~$115 USD/mes** co
 ## Reglas Globales NON-NEGOTIABLE
 
 1. **Decisiones irrevocables**: NO se cambian sin consultar al equipo.
-2. **Idioma**: código en inglés; docstrings/docs en español neutro; UI it+es+en simultáneo vía `@nuxtjs/i18n`.
+2. **Idioma**: todo el código en inglés (identificadores, comentarios in-code Y docstrings Google-style); el texto visible al lector de notebooks (markdown, prints, `display`, títulos de plot, portadas, conclusiones) en español neutro; docs `.md` en español; UI it+es+en simultáneo vía `@nuxtjs/i18n`.
 3. **Multi-tenant por `session_id`** (no `wedding_id`). Toda query filtra por sesión/usuario.
 4. **Sin emojis** en código, comentarios, prints, commits ni logs estructurados.
 5. **Secrets**: jamás hardcodear. `.env.local` en dev, Secret Manager (GCP) o Key Vault (Azure) en prod.
@@ -167,7 +167,7 @@ CI replica `make check` en cada PR a `develop` y `main`. Comandos completos en [
 
 - [ ] Rama `feature/E{epic}-US-XXX-{slug}` mergeada vía PR a `develop`
 - [ ] Conventional Commit `feat(EX): ...`
-- [ ] Código en inglés; docstrings Google style en español con type hints
+- [ ] Todo el código en inglés (comentarios in-code y docstrings Google style) con type hints
 - [ ] Tests cobertura ≥70 % backend, ≥50 % frontend
 - [ ] `make check` limpio (lint + secrets + i18n)
 - [ ] Si la US incluye notebook: ejecutado end-to-end con papermill + commiteado con outputs poblados (HTML tables + PNG inline)
