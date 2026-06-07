@@ -31,6 +31,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
+from ml.farslip.bands import BandSelection
 from ml.utils.git_meta import dvc_data_version, git_sha
 from ml.utils.seed import propagate_seed
 
@@ -270,7 +271,12 @@ class FarSLIPTrainerConfig:
         device: ``"cuda"`` | ``"cpu"`` | ``"auto"``.
         time_cap_hours: hard cap 8 h (warning at 6 h).
         num_workers: DataLoader workers default 4.
-        n_in_channels: 4 (B02 B03 B04 B08).
+        n_in_channels: 4 (B02 B03 B04 B08). US-035: DERIVED from
+            ``band_selection`` by the caller (3 for rgb/nir_rgb, 4 for 4band) —
+            single source of truth, never set independently.
+        band_selection: US-035 band-ablation variant (``rgb``/``nir_rgb``/
+            ``4band``). Logged as an MLflow param; drives ``n_in_channels`` and
+            the dataset ``transform`` upstream (``train.py``).
         n_regions: 3.
         n_categories: 32.
     """
@@ -295,6 +301,10 @@ class FarSLIPTrainerConfig:
     warning_hours: float = 6.0
     num_workers: int = 4
     n_in_channels: int = 4
+    #: US-035 band-ablation variant; ``n_in_channels`` is derived from it by the
+    #: caller (``train.py``). Default ``"4band"`` matches the default
+    #: ``n_in_channels=4`` so the two stay coherent out of the box.
+    band_selection: BandSelection = "4band"
     n_regions: int = 3
     n_categories: int = 32
     #: Extra MLflow params/tags (US-034: proto_source, proto_proj, caveat,
@@ -704,6 +714,7 @@ class FarSLIPDistillationTrainer:
                         "warmup_ratio": self.config.warmup_ratio,
                         "seed": self.config.seed,
                         "n_in_channels": self.config.n_in_channels,
+                        "band_selection": self.config.band_selection,
                         "loss_alpha": self.config.loss_weights["alpha"],
                         "loss_beta": self.config.loss_weights["beta"],
                         "loss_gamma": self.config.loss_weights["gamma"],

@@ -14,6 +14,7 @@ The ``--resume`` flag loads a previous checkpoint (local path or GCS) and resume
 
 from __future__ import annotations
 
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Literal
 
@@ -28,6 +29,11 @@ except ImportError as exc:  # pragma: no cover
 
 from torch.utils.data import ConcatDataset
 
+from ml.farslip.bands import (
+    BandSelection,
+    n_in_channels_for,
+    select_and_reorder_bands,
+)
 from ml.farslip.cap_pastis_mapping import expand_to_cap, load_cap_to_pastis
 from ml.farslip.dataset import FarSLIPDataset
 from ml.farslip.distill import FarSLIPDistillationTrainer, FarSLIPTrainerConfig
@@ -40,6 +46,15 @@ _log = structlog.get_logger(__name__)
 
 ProtoSource = Literal["pastis", "random"]
 
+#: US-035 recommended (band_selection, proto_source) pairing per variant. The
+#: two flags stay INDEPENDENT on the CLI (so any combination is reproducible);
+#: this map only documents the canonical pairing logged for the 3 runs.
+_RECOMMENDED_PROTO_SOURCE: dict[str, ProtoSource] = {
+    "rgb": "random",
+    "nir_rgb": "random",
+    "4band": "pastis",
+}
+
 # Italian ROIs hardcoded for --rois italy (the 3 zones of the US-017 paper).
 # When France is added (us-022-e), expand this mapping to {"italy": [...], "france": [...]}.
 _ROIS_BY_KEY: dict[str, tuple[str, ...]] = {
@@ -48,7 +63,7 @@ _ROIS_BY_KEY: dict[str, tuple[str, ...]] = {
 
 
 def _build_dataset(
-    dataset_root: Path, rois_key: str
+    dataset_root: Path, rois_key: str, band_selection: BandSelection = "4band"
 ) -> tuple[ConcatDataset, int, int, list[str]]:
     """Concatenate the Italian ROI manifests into a PyTorch Dataset.
 
@@ -58,9 +73,15 @@ def _build_dataset(
     this each child dataset derives its own indices and region_id would be
     ambiguous when concatenating.
 
+    US-035: the band-ablation slice is wired as the per-crop ``transform`` of
+    each child :class:`FarSLIPDataset` (applied AFTER the resize, on the float
+    ``(C, H, W)`` crop) so the dataset yields exactly ``n_in_channels_for(
+    band_selection)`` channels.
+
     Args:
         dataset_root: path to `data/farslip_pairs/`.
         rois_key: key in `_ROIS_BY_KEY` (default "italy").
+        band_selection: US-035 band variant; selects/reorders the crop channels.
 
     Returns:
         Tuple (ConcatDataset, n_regions, n_categories, all_cap_classes) where
@@ -101,6 +122,7 @@ def _build_dataset(
                 all_regions.append(r)
                 seen_regs.add(r)
 
+    band_transform = partial(select_and_reorder_bands, sel=band_selection)
     parts = []
     for roi in roi_slugs:
         manifest = dataset_root / roi / "manifest.parquet"
@@ -109,6 +131,7 @@ def _build_dataset(
                 manifest_path=manifest,
                 cap_classes=all_cap_classes,
                 regions=all_regions,
+                transform=band_transform,
             )
         )
     return ConcatDataset(parts), len(all_regions), len(all_cap_classes), all_cap_classes
@@ -286,12 +309,41 @@ def train(
             help="Fuente de prototipos: 'pastis' (fenologicos US-033) o 'random' (A/B)"
         ),
     ] = "pastis",
+    band_selection: Annotated[
+        str,
+        typer.Option(
+            help=(
+                "Ablacion de bandas US-035: 'rgb' (B04-B03-B02, 3 canales), "
+                "'nir_rgb' (B08-B04-B03 falso color, 3 canales) o '4band' "
+                "(B02-B03-B04-B08, 4 canales, identidad). Recomendado: rgb/nir_rgb "
+                "con --proto-source random, 4band con --proto-source pastis "
+                "(flags independientes)."
+            )
+        ),
+    ] = "4band",
     mlflow_run_name: Annotated[
         str, typer.Option(help="Nombre del run MLflow")
     ] = "farslip-pheno-fix-v1",
 ) -> None:
     """Train FarSLIP with the provided configuration."""
     propagate_seed(seed)
+    # US-035: validate band_selection and DERIVE n_in_channels from it (single
+    # source of truth, R-NCHAN). rgb/nir_rgb -> 3 (patch_embed no-op);
+    # 4band -> 4 (3->4 mean-RGB adaptation, US-034).
+    if band_selection not in ("rgb", "nir_rgb", "4band"):
+        raise typer.BadParameter("band-selection must be 'rgb', 'nir_rgb' or '4band'")
+    band_selection_typed: BandSelection = band_selection  # type: ignore[assignment]
+    n_in_channels = n_in_channels_for(band_selection_typed)
+    recommended_proto = _RECOMMENDED_PROTO_SOURCE[band_selection_typed]
+    if proto_source != recommended_proto:
+        # Informational only: the flags are intentionally independent so any
+        # combination remains reproducible; we just surface the canonical pairing.
+        _log.info(
+            "band_selection/proto_source pairing differs from recommended",
+            band_selection=band_selection_typed,
+            proto_source=proto_source,
+            recommended_proto_source=recommended_proto,
+        )
     _log.info(
         "starting farslip training",
         rois=rois,
@@ -299,18 +351,24 @@ def train(
         batch_size=batch_size,
         lr=lr,
         seed=seed,
+        band_selection=band_selection_typed,
+        n_in_channels=n_in_channels,
+        proto_source=proto_source,
         device="cuda" if torch.cuda.is_available() else "cpu",
     )
     # US-022-c P1 fix (2026-05-24): instantiate FarSLIPDataset + ConcatDataset for the
     # 3 Italian ROIs. The previous CLI only instantiated the trainer without a dataset, which
     # triggered RuntimeError("dataset y dataloader nulos: nada que entrenar") in distill.py:534.
-    dataset, n_regions, n_categories, cap_classes = _build_dataset(dataset_root, rois)
+    dataset, n_regions, n_categories, cap_classes = _build_dataset(
+        dataset_root, rois, band_selection=band_selection_typed
+    )
     _log.info(
         "dataset built",
         n_samples=len(dataset),
         rois=rois,
         n_regions=n_regions,
         n_categories=n_categories,
+        band_selection=band_selection_typed,
     )
 
     # US-034: build prototypes BEFORE the trainer so the meta (caveat params) can
@@ -327,6 +385,12 @@ def train(
         cap_classes=cap_classes,
     )
 
+    # US-035: surface band_selection in extra_params too (the dedicated config
+    # field is already logged as a top-level MLflow param; this keeps the band
+    # ablation context together with the prototype meta in the tags table).
+    extra_params = dict(proto_meta)
+    extra_params["band_selection"] = band_selection_typed
+    extra_params["recommended_proto_source"] = recommended_proto
     cfg = FarSLIPTrainerConfig(
         teacher_model_id=teacher_model_id,
         dataset_root=dataset_root,
@@ -337,10 +401,12 @@ def train(
         lr=lr,
         seed=seed,
         time_cap_hours=time_cap_hours,
+        n_in_channels=n_in_channels,
+        band_selection=band_selection_typed,
         n_regions=n_regions,
         n_categories=n_categories,
         mlflow_run_name=mlflow_run_name,
-        extra_params=proto_meta,
+        extra_params=extra_params,
     )
     trainer = FarSLIPDistillationTrainer(cfg, dataset=dataset)
     if resume:
@@ -364,7 +430,11 @@ def train(
             seed=seed,
             proto_source="random",
         )
-        cfg.extra_params = proto_meta
+        # Preserve the US-035 band-ablation keys when refreshing the proto meta.
+        rebuilt = dict(proto_meta)
+        rebuilt["band_selection"] = band_selection_typed
+        rebuilt["recommended_proto_source"] = recommended_proto
+        cfg.extra_params = rebuilt
     trainer.set_text_prototypes(prototypes)
     _log.info(
         "text_prototypes initialized",
