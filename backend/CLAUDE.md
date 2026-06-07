@@ -1,145 +1,72 @@
 # Backend Sub-Agent — AgroSatCopilot
 
-> Sobreescribe al orquestador root cuando haya conflicto en contexto backend.
+> Scope `backend/`. Sobreescribe al orquestador root solo en conflicto local. NO repite las reglas NON-NEGOTIABLE: ver [`../CLAUDE.md`](../CLAUDE.md) (idioma, secrets, multi-tenant por `session_id`, router->service->model, inferencia pesada via Pub/Sub).
 
-**Rol**: API REST + Tiling COG + Workers asíncronos. Integra el agente Google ADK del módulo `ml/agent/` vía service layer.
+**Rol**: API REST + Tiling COG + workers asincronos. Integrara el agente Google ADK de `ml/agent/` via service layer.
 
-## Skills References
+## Estado
 
-- [agrosat-backend-api](../.claude/skills/agrosat-backend-api/SKILL.md) — Endpoints FastAPI, routers por epica
-- [agrosat-backend-services](../.claude/skills/agrosat-backend-services/SKILL.md) — Service layer, workers Pub/Sub
-- [agrosat-titiler-cog](../.claude/skills/agrosat-titiler-cog/SKILL.md) — TiTiler dinámico, COG overlays
-- [agrosat-google-adk-agent](../.claude/skills/agrosat-google-adk-agent/SKILL.md) — Integración del agente ADK
-- [agrosat-db-migrations](../.claude/skills/agrosat-db-migrations/SKILL.md) — dbmate workflow
-- [agrosat-db-models](../.claude/skills/agrosat-db-models/SKILL.md) — SQLModel + GeoAlchemy2
-- [agrosat-security](../.claude/skills/agrosat-security/SKILL.md) — Clerk OAuth, RBAC, rate limit, CSP
-- [agrosat-security-audit](../.claude/skills/agrosat-security-audit/SKILL.md) — OWASP, CIS GCP
-- [agrosat-testing](../.claude/skills/agrosat-testing/SKILL.md) — pytest, mocks Vertex AI + GEE + vLLM
-- [agrosat-code-review](../.claude/skills/agrosat-code-review/SKILL.md) — PR checklist
+SKELETON. Solo existe el bootstrap; casi todo `app/` es `__init__.py` vacio.
 
-## Auto-Invoke
+- Reales: `app/main.py` (factory `create_app()` + `lifespan` + CORS endurecido), `app/core/config.py` (`Settings` + `get_settings()`), `app/core/logging.py`, `app/api/health.py` (`/healthz`, `/readyz`).
+- Vacios (placeholders): `app/api/`, `app/models/`, `app/services/`, `app/workers/`, `app/middleware/`, `app/utils/`.
+- NO existen aun (no asumir, crear via skill al abrir su US): routers `/chat`, `/aois`, `/timeseries`, `/stac`, `/llm/switch`, `/jobs`; `_check_session_owner`; middleware de rate-limit/auth; `adk_client`; modelos SQLModel; capa de servicios.
 
-| Acción | Skill |
-|--------|-------|
-| Crear/modificar endpoint FastAPI | `agrosat-backend-api` |
-| Crear/modificar service class | `agrosat-backend-services` |
-| Crear endpoint `/chat` SSE con ADK | `agrosat-backend-api` + `agrosat-google-adk-agent` |
-| Servir tiles COG via TiTiler | `agrosat-titiler-cog` |
-| Crear Pub/Sub worker (inference-jobs) | `agrosat-backend-services` |
-| Crear migración dbmate | `agrosat-db-migrations` |
-| Crear/modificar modelo SQLModel + GeoAlchemy2 | `agrosat-db-models` |
-| Agregar Clerk auth + RBAC | `agrosat-security` |
-| Configurar rate limit en endpoint | `agrosat-security` |
-| Validar GeoJSON / coordenadas en input | `agrosat-security` |
-| Audit logging | `agrosat-security` |
-| Testing endpoint con mocks ADK | `agrosat-testing` |
-
-## Critical Rules
-
-- **ALWAYS**: Validar `session_id` en cada endpoint con `_check_session_owner()`
-- **ALWAYS**: Usar `Depends(get_current_user)` con Clerk JWT en endpoints protegidos
-- **ALWAYS**: Return Pydantic response models, jamás `SQLModel` crudo
-- **ALWAYS**: GeoJSON validado con Pydantic `Feature` schema antes de pasar a service
-- **ALWAYS**: Endpoint `/chat` retorna `StreamingResponse` con `Content-Type: text/event-stream`
-- **ALWAYS**: Llamadas a Gemini / vLLM / GEE viven en service layer, jamás en router
-- **ALWAYS**: Inferencia >2 s → Pub/Sub `inference-jobs` topic, jamás síncrono en request handler
-- **ALWAYS**: Structured logging con `structlog`, jamás `print()`
-- **ALWAYS**: Usar `poetry add` para dependencias
-- **NEVER**: Lógica de negocio en routers (delegar a services)
-- **NEVER**: Llamar Vertex AI / vLLM directo desde router
-- **NEVER**: `SQLModel.metadata.create_all()` en producción
-- **NEVER**: Modificar migraciones aplicadas — crear `dbmate new` forward
-- **NEVER**: Raw SQL con string formatting — siempre parametrizado
-- **NEVER**: Aceptar GeoTIFF / archivos pesados sin validar MIME + tamaño
-
-## Project Structure
-
-```
-backend/
-├── app/
-│   ├── api/              # Routers por epica (chat.py, aois.py, timeseries.py, stac.py, llm_switch.py, tiles.py)
-│   ├── models/           # SQLModel + GeoAlchemy2 (geometry, geography columns)
-│   ├── services/         # Business logic (chat_service.py, aoi_service.py, stac_service.py)
-│   ├── workers/          # Cloud Run jobs disparados por Pub/Sub (inference_worker.py, drift_worker.py)
-│   ├── core/             # config.py, security.py, database.py, sse.py, adk_client.py
-│   ├── middleware/       # security_headers.py, rate_limit.py, audit.py, request_id.py
-│   └── utils/            # Reusable (gcs.py, redis.py, geo.py, sanitize.py)
-├── tests/                # unit/, integration/, e2e/, fixtures/
-├── pyproject.toml        # Poetry: grupos dev, test, ml (subset), geo
-└── Dockerfile            # Multi-stage: builder (wheels) + slim runtime
-```
-
-## Decision Trees
-
-```
-¿Latencia esperada del endpoint?
-  < 2 s    → Síncrono en handler
-  > 2 s    → Pub/Sub topic `inference-jobs` → Cloud Run worker GPU L4
-            Frontend hace polling `/jobs/{id}/status` o se suscribe a SSE
-
-¿Tipo de respuesta del agente?
-  Single message   → JSON normal
-  Streaming chat   → SSE (StreamingResponse) con eventos:
-                     plan_created | tool_call | tool_result | final_answer
-
-¿Visualización de raster?
-  Estática (PNG)       → backend genera y sirve PNG cached en GCS/Redis
-  Interactiva en mapa  → TiTiler /tiles/{z/x/y}.png?url={cog_uri}&rescale=...
-
-¿Función reutilizable?
-  Usada 1x         → Mantener en service
-  Usada 2x+        → Mover a app/utils/
-
-¿Donde corre la lógica de un tool ADK?
-  Definición + schema  → ml/agent/tools/*.py
-  Invocación desde API → backend service llama a `agrosat_agent.run(query)`
-```
-
-## Endpoints clave (por epica)
-
-```
-GET    /healthz                        → smoke test
-POST   /chat                           → SSE streaming, body: {query, aoi_geojson, llm_variant, session_id}
-GET    /aois/{id}                      → AOI + classification cached
-POST   /aois                           → crear AOI (GeoJSON) + lanzar pipeline async
-GET    /aois/{id}/segmentation         → máscara polígonos JSON o COG URL
-GET    /timeseries?aoi=...&index=NDVI  → serie temporal con Polars LazyFrame
-GET    /stac/search                    → STAC API spec (bbox, datetime, collection)
-GET    /tiles/{z}/{x}/{y}.png          → TiTiler dinámico, query params url, rescale, colormap
-POST   /llm/switch                     → cambia variante A (Gemini) ↔ B (Qwen3.5)
-GET    /jobs/{id}                      → estado de Pub/Sub worker job
-GET    /llm/health                     → estado vLLM Qwen3.5 + Gemini
-```
-
-## Commands
+## Comandos
 
 ```bash
-make test                   # pytest backend con coverage (≥70%)
-make test-unit              # solo unit tests, sin DB
-make lint                   # ruff check + ruff format --check + mypy
-make format                 # ruff format
-make migrate                # dbmate up
-make migrate-down           # dbmate down
-make db-new name=xxx        # dbmate new create_xxx_table
-make seed                   # python scripts/seed.py
-poetry add <pkg>
-poetry add --group dev <pkg>
-poetry run pip-audit        # CVE scan
+make lint               # ruff check + ruff format --check + mypy app/
+make test               # pytest --cov=app --cov-fail-under=70
+make test-unit          # pytest tests/unit -v (vacio hoy)
+make test-integration   # pytest tests/integration -v (requiere Docker)
+make db-seed            # poetry run python scripts/seed.py
+make format             # ruff format .
 ```
 
-## QA Checklist Backend
+Un solo test: `cd backend && poetry run pytest tests/integration/test_seed_smoke.py -q`
 
-- [ ] Todos los endpoints tienen `Depends(get_current_user)` con Clerk JWT
-- [ ] `session_id` validado en cada query / mutation
-- [ ] GeoJSON validado con Pydantic antes de pasar a service
-- [ ] Services con docstrings Google style + type hints
-- [ ] Inferencia ML pesada delegada a Pub/Sub workers
-- [ ] `/chat` retorna SSE con eventos ADK (`plan_created`, `tool_call`, `tool_result`, `final_answer`)
-- [ ] TiTiler endpoints con cache Redis (ttl 1h para tiles, 24h para mosaicJSON)
-- [ ] Rate limit configurado en `/chat` (10 req/min) y `/llm/switch` (5 req/min)
-- [ ] Audit logging en operaciones mutativas
-- [ ] Tests unitarios cobertura ≥70%
-- [ ] Tests E2E Playwright para flujo `/chat` con AOI fija
-- [ ] `make lint` limpio
-- [ ] Mocks Vertex AI + vLLM + GEE en tests (no llamadas reales)
-- [ ] Migraciones con dbmate, índices GIST en columnas geometry
+## Stack local
+
+- FastAPI `^0.136` + Pydantic `^2.13` / pydantic-settings; respuestas tipadas con `BaseModel`.
+- `structlog` `^25.5` para logging estructurado.
+- SQLModel `^0.0.38` + GeoAlchemy2 `^0.20` + asyncpg `^0.31` — capa de datos **async** (geometry/geography columns).
+- Config via `get_settings()` con `@lru_cache(maxsize=1)`; `Settings` tiene `extra="forbid"` (toda var de `.env.local` debe declararse) y rechaza defaults de dev si `env != dev`.
+- Imports absolutos desde `backend.app...` (ej. `from backend.app.core.config import get_settings`).
+- Arranque: `poetry run uvicorn backend.app.main:app --reload --port 8000`.
+
+## Convenciones (✅/❌)
+
+- ✅ `structlog.get_logger()` para todo log — ❌ `print()` en codigo de app.
+- ✅ `async`/`await` end-to-end; lifecycle via `@asynccontextmanager lifespan` (no eventos `on_event` deprecados).
+- ✅ Flujo router -> service -> model; la logica de negocio vive en `app/services/`, nunca en routers.
+- ✅ Retornar Pydantic response models, jamas `SQLModel` crudo al cliente.
+- ✅ Llamadas a Vertex/Gemini, vLLM o GEE viven en service layer.
+- ❌ Leer `os.environ` directo en router/service — siempre `get_settings()`.
+- ❌ Agregar variable a `.env.local` sin declararla en `Settings` (rompe el arranque por `extra="forbid"`).
+
+## No tocar
+
+- Migraciones aplicadas en `db/migrations/*.sql` (ej. `20260511213942_initial_schema.sql`) — solo `dbmate new` rollforward.
+- `.env.local` (secrets locales) — nunca commitear ni hardcodear.
+- Pins congelados en `pyproject.toml`: `torch 2.11.0+cu130` (index `pytorch-cu130`), `pyarrow ^23` (mlflow no soporta 24), `vllm`/`flash-attn` con marker `sys_platform == 'linux'` (no instalan en Win). No cambiarlos sin coordinar con el equipo.
+
+## Tests
+
+- Real: `tests/integration/test_seed_smoke.py` — levanta PostGIS efimero con `testcontainers`, aplica el bloque `migrate:up` de la migracion inicial y corre `scripts/seed.py` dos veces (exito + idempotencia). Se auto-skipea sin Docker. Marca `pytest.mark.integration`.
+- `tests/unit/` y `tests/e2e/` estan vacios — crearlos al cerrar cada US.
+- Mockear Vertex AI / vLLM / GEE / Clerk via `pytest-httpx`; Redis via `fakeredis`. Nunca llamadas reales en tests.
+- Cobertura objetivo `--cov-fail-under=70` (root NON-NEGOTIABLE).
+
+## Skills
+
+| Accion | Skill |
+|--------|-------|
+| Endpoint/router FastAPI | `agrosat-backend-api` |
+| Service class / worker Pub/Sub | `agrosat-backend-services` |
+| `/chat` SSE con agente ADK | `agrosat-backend-api` + `agrosat-google-adk-agent` |
+| Tiles COG via TiTiler | `agrosat-titiler-cog` |
+| Migracion dbmate | `agrosat-db-migrations` |
+| Modelo SQLModel + GeoAlchemy2 | `agrosat-db-models` |
+| Clerk auth / rate limit / validacion GeoJSON | `agrosat-security` |
+| Tests con mocks | `agrosat-testing` |
+| Review pre-PR | `agrosat-code-review` |

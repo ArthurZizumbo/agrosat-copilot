@@ -32,12 +32,15 @@ provider "google-beta" {
 module "gcp" {
   source = "../../modules/gcp"
 
-  project_id             = var.project_id
-  region                 = var.gcp_region
-  environment            = "dev"
-  db_name                = "agrosat"
-  db_user                = "agrosat"
-  db_tier                = "db-f1-micro"
+  project_id  = var.project_id
+  region      = var.gcp_region
+  environment = "dev"
+  db_name     = "agrosat"
+  db_user     = "agrosat"
+  db_tier     = "db-f1-micro"
+  # NEVER detiene la instancia Cloud SQL (conserva datos) para no facturar
+  # cuando dev esta idle. Subir a "ALWAYS" antes de retomar trabajo que use la DB.
+  db_activation_policy   = "NEVER"
   cloudrun_min_instances = 0
   cloudrun_max_instances = 10
 

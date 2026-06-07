@@ -1,128 +1,75 @@
-# Infrastructure Sub-Agent — AgroSatCopilot
+# infrastructure/ — Guía del agente
 
-> Sobreescribe al orquestador root para trabajo de infra.
+> Scope: IaC del monorepo (Terraform GCP + Azure, Dockerfiles, Cloud Build). Reglas NON-NEGOTIABLE en el orquestador root [`../AGENTS.md`](../AGENTS.md) / [`../CLAUDE.md`](../CLAUDE.md) — no se repiten aquí.
 
-**Rol**: Terraform 1.9+ mono-cloud GCP primario + Azure H100 puntual. CI/CD con GitHub Actions + Cloud Build. Scale-to-zero, FinOps target ~$115 USD/mes operativo.
+## Estado
 
-## Skills References
+**ACTIVE — solo `dev`.** Por [ADR-002](../docs/decisions/ADR-002-single-env-dev.md) hay un único entorno con Terraform real. `environments/staging/` y `environments/prod/` son solo `README.md` (out of scope, sin `.tf`).
 
-- [agrosat-terraform](../.claude/skills/agrosat-terraform/SKILL.md) — Módulos, workspaces, backend state
-- [agrosat-gcp-services](../.claude/skills/agrosat-gcp-services/SKILL.md) — Cloud Run, Cloud SQL, GCS, Pub/Sub, Vertex AI
-- [agrosat-azure-h100](../.claude/skills/agrosat-azure-h100/SKILL.md) — VM Standard_NC40ads_H100_v5, scripts start/stop
-- [agrosat-finops](../.claude/skills/agrosat-finops/SKILL.md) — Auditoría de costos
-- [agrosat-security](../.claude/skills/agrosat-security/SKILL.md) — Secret Manager, Key Vault, IAM mínimo
-- [agrosat-security-audit](../.claude/skills/agrosat-security-audit/SKILL.md) — CIS GCP Benchmarks
-
-## Auto-Invoke
-
-| Acción | Skill |
-|--------|-------|
-| Crear módulo Terraform GCP | `agrosat-terraform` + `agrosat-gcp-services` |
-| Crear módulo Terraform Azure | `agrosat-terraform` + `agrosat-azure-h100` |
-| Configurar Cloud Run service | `agrosat-gcp-services` |
-| Configurar Cloud SQL PostGIS + pgvector | `agrosat-gcp-services` |
-| Configurar Pub/Sub topic + subscription | `agrosat-gcp-services` |
-| Configurar Vertex AI Agent Engine | `agrosat-gcp-services` |
-| Crear VM Azure H100 spot | `agrosat-azure-h100` |
-| Configurar Secret Manager / Key Vault | `agrosat-security` |
-| Configurar IAM bindings | `agrosat-security` |
-| Auditoría costo cloud | `agrosat-finops` |
-| Pipeline GitHub Actions deploy | `agrosat-terraform` |
-| Cloudbuild.yaml | `agrosat-gcp-services` |
-| CIS GCP Benchmarks | `agrosat-security-audit` |
-
-## Critical Rules
-
-- **ALWAYS**: Workspaces Terraform separados `dev`, `staging`, `prod`
-- **ALWAYS**: Backend state en `gs://agrosat-tfstate` con versionado activado
-- **ALWAYS**: Variables sensibles vía `terraform.tfvars` (gitignored) o Secret Manager
-- **ALWAYS**: `terraform plan` antes de `apply`, revisión por humano
-- **ALWAYS**: Cloud Run con `min_instances=0` (scale-to-zero)
-- **ALWAYS**: Cloud SQL con backups automáticos + point-in-time recovery
-- **ALWAYS**: VM Azure H100 spot con auto-shutdown timer (default 12h)
-- **ALWAYS**: NSG / firewall rules: SSH solo desde IPs de los 3 devs
-- **ALWAYS**: IAM principle of least privilege (roles específicos, no `roles/owner`)
-- **NEVER**: `terraform apply` sin plan revisado
-- **NEVER**: Hardcodear ningún secreto en .tf files
-- **NEVER**: `0.0.0.0/0` en firewall salvo Cloud Run público (HTTPS 443)
-- **NEVER**: Encender H100 manualmente sin script (gastos descontrolados)
-- **NEVER**: Mezclar recursos de envs distintos en un workspace
-
-## Project Structure
-
-```
-infrastructure/
-├── terraform/
-│   ├── modules/
-│   │   ├── gcp/
-│   │   │   ├── cloud_run/       # api, frontend, tiling, inference-worker
-│   │   │   ├── cloud_sql/       # PostgreSQL 15 + PostGIS + pgvector
-│   │   │   ├── pubsub/          # inference-jobs, inference-results
-│   │   │   ├── gcs/             # data, artifacts, dvc-remote, tfstate
-│   │   │   ├── secret_manager/  # 6 secretos base
-│   │   │   ├── vertex_ai/       # Agent Engine binding
-│   │   │   ├── artifact_registry/
-│   │   │   └── iam/
-│   │   ├── azure/
-│   │   │   ├── h100_vm/         # Standard_NC40ads_H100_v5 spot + on-demand
-│   │   │   ├── blob_storage/    # Checkpoints LoRA
-│   │   │   ├── vnet/
-│   │   │   └── key_vault/
-│   │   └── vertex/              # Reusable Vertex AI bindings
-│   └── environments/
-│       ├── dev/
-│       │   ├── main.tf
-│       │   ├── variables.tf
-│       │   ├── backend.tf       # bucket=agrosat-tfstate, prefix=dev
-│       │   └── terraform.tfvars # GITIGNORED
-│       ├── staging/
-│       └── prod/
-├── docker/
-│   ├── backend.Dockerfile
-│   ├── frontend.Dockerfile
-│   ├── inference-worker.Dockerfile
-│   └── titiler.Dockerfile
-├── cloudbuild.yaml             # Build + push + migrate + deploy
-└── docker-compose.yml          # Dev local con 8 servicios
-```
-
-## Servicios GCP
-
-| Servicio | Min instances | Max | Notas |
-|----------|---------------|-----|-------|
-| Cloud Run `api` | 0 | 10 | FastAPI, 512 MB, 1 vCPU |
-| Cloud Run `frontend` | 0 | 10 | Nuxt 4 SSR, 256 MB |
-| Cloud Run `tiling` | 0 | 5 | TiTiler, 512 MB |
-| Cloud Run `inference-worker` GPU L4 | 0 | 3 | inferencia ML pesada |
-| Cloud SQL | — | — | db-f1-micro, 20 GB, PITR |
-| Upstash Redis (externo) | — | — | Pay-as-you-go serverless · ADR-003 · secretos en Secret Manager (`agrosat-upstash-rest-url`, `agrosat-upstash-rest-token`) |
+- Capa GCP (`modules/gcp/`): Cloud Run x4 (api, frontend, tiling, inference-worker), Cloud SQL PG15, GCS, Pub/Sub, Secret Manager, Artifact Registry, IAM least-privilege. **Aplicada y viva.**
+- Capa Azure H100 (`modules/azure/`): el módulo existe completo, pero el `provider "azurerm"` y `module "azure"` están **COMENTADOS** en `environments/dev/main.tf` (US-022-c). Re-activar solo al abrir ventana H100 (rellenar `azure_subscription_id`, `allowed_ssh_cidrs`, `admin_ssh_public_key` en `terraform.tfvars`).
+- FinOps: dev SQL corre con `db_activation_policy = "NEVER"` (instancia detenida, datos preservados). Subir a `"ALWAYS"` antes de retomar trabajo que use la DB.
 
 ## Comandos
 
 ```bash
-make tf-plan env=dev          # terraform plan
-make tf-apply env=dev         # terraform apply (con confirmación)
-make tf-destroy env=dev       # cuidado, solo dev
-make azure-h100-start         # enciende H100 spot
-make azure-h100-stop          # apaga H100
-make azure-h100-status        # estado actual + auto-shutdown timer
-make cloud-build              # gcloud builds submit
-make deploy-staging
-make deploy-prod              # solo desde main
-make cost-audit               # gcloud + az CLI: costos último mes
+make tf-init env=dev          # terraform init en environments/dev
+make tf-plan env=dev          # plan -out tfplan
+make tf-apply env=dev         # apply tfplan (revisar plan antes)
+make tf-fmt                   # fmt -recursive infrastructure/terraform/
+make tf-validate env=dev      # validate
+make deploy-staging           # Cloud Build → staging
+make deploy-prod              # Cloud Build → prod (gate: rama main)
+make azure-h100-start         # enciende VM H100 spot
+make azure-h100-stop          # apaga VM H100
+make azure-h100-status        # estado + auto-shutdown timer
+make cost-audit               # scripts/cost_audit.sh (GCP + Azure)
+make scale-to-zero-check      # lista Cloud Run con minScale por servicio
 ```
 
-## QA Checklist Infra
+## Stack local
 
-- [ ] Workspace correcto (dev/staging/prod)
-- [ ] `terraform plan` revisado por humano
-- [ ] Backend state en GCS versionado
-- [ ] Secret Manager / Key Vault para todos los secretos
-- [ ] Cloud Run min_instances=0 (scale-to-zero)
-- [ ] Cloud SQL con backups + PITR
-- [ ] H100 VM con auto-shutdown
-- [ ] IAM principle of least privilege
-- [ ] CIS GCP Benchmarks pasados
-- [ ] Costo estimado dentro de presupuesto ($115/mes operativo)
-- [ ] Logs centralizados en Cloud Logging
-- [ ] Smoke tests post-deploy
+- `docker-compose.yml` vive en la **raíz del repo**, NO en `infrastructure/`. Los Dockerfiles sí viven aquí en `docker/`: `backend.Dockerfile`, `frontend.Dockerfile`, `dagster.Dockerfile`, `inference-worker.Dockerfile`, `mlflow.Dockerfile`, `postgres.Dockerfile`, `ml-train.Dockerfile`.
+- El servicio Cloud Run `tiling` usa la **imagen del backend** (TiTiler montado en FastAPI). NO existe `titiler.Dockerfile`.
+- `cloudbuild.yaml` (build + push + migrate + deploy), `cloudbuild-ml.yaml` y `cloudbuild-mlflow-only.yaml`.
+
+## Convenciones (✅/❌)
+
+- ✅ Módulos en `terraform/modules/gcp/` y `terraform/modules/azure/`; entornos en `terraform/environments/`. NO existe `modules/vertex/` (Vertex vive dentro de `gcp/`).
+- ✅ Region GCP default `us-central1` (en `modules/gcp/variables.tf` y `environments/dev/variables.tf`). ❌ NO es `europe-west1` (cualquier doc que lo diga está desactualizado).
+- ✅ SAs least-privilege con `for_each` sobre listas de roles explícitos. ❌ Nunca `roles/owner` ni `roles/editor` en SAs runtime.
+- ✅ Cloud Run `min_instances = 0` (scale-to-zero) en todos los servicios.
+- ✅ Azure H100 spot + auto-shutdown (`shutdown_time_utc`) + NSG con SSH whitelist por CIDR. ❌ Nunca `0.0.0.0/0` salvo el puerto público HTTPS de Cloud Run.
+- ✅ Secretos: TF crea solo el contenedor `google_secret_manager_secret` (los 7 no-DB en `secret_ids` quedan **vacíos**, se rellenan a mano fuera de TF). Excepción: `agrosat-db-password` sí lleva `secret_version` desde `random_password`.
+
+## No tocar
+
+- `.terraform/`, `*.tfstate`, `terraform.tfvars`, `*.auto.tfvars`, `.terraform.lock.hcl` — todos gitignored en `environments/dev/.gitignore`. Nunca commitear ni editar a mano.
+- Backend state en `gs://agrosat-tfstate` (versionado). No migrar ni borrar objetos de estado manualmente.
+- Secretos ya provisionados en Secret Manager: editar el **valor** por consola/CLI, no por TF.
+
+## FinOps gotchas
+
+- `db_activation_policy = "NEVER"` evita drift que reencendería la instancia en cada `apply` (var dedicada, no toques el recurso directo).
+- GCP no encoge discos in-place: para reducir tamaño de un PD hay que snapshot → disco nuevo → rsync → reimportar a TF (ver memoria `disk-shrink-finops-procedure`).
+- Target operativo ~$115 USD/mes: scale-to-zero + db-f1-micro + H100 spot puntual.
+
+## Tests
+
+No hay suite pytest para esta capa. La validación es Terraform nativo:
+
+```bash
+cd infrastructure/terraform/environments/dev
+terraform init -backend=false && terraform validate   # CI sin credenciales
+terraform fmt -check -recursive ../..
+```
+
+`make check` (root) cubre lint/secrets-scan/i18n; no ejecuta `terraform plan`.
+
+## Skills
+
+- [`agrosat-terraform`](../.claude/skills/agrosat-terraform/SKILL.md) — módulos, backend state, workspaces.
+- [`agrosat-gcp-services`](../.claude/skills/agrosat-gcp-services/SKILL.md) — Cloud Run, Cloud SQL, Pub/Sub, Secret Manager, IAM.
+- [`agrosat-azure-h100`](../.claude/skills/agrosat-azure-h100/SKILL.md) — VM `Standard_NC40ads_H100_v5`, scripts start/stop.
+- [`agrosat-finops`](../.claude/skills/agrosat-finops/SKILL.md) — auditoría de costos, scale-to-zero.
+- [`agrosat-security-audit`](../.claude/skills/agrosat-security-audit/SKILL.md) — CIS GCP/Azure pre-deploy.

@@ -242,6 +242,7 @@ resource "google_sql_database_instance" "postgres" {
 
   settings {
     tier              = var.db_tier
+    activation_policy = var.db_activation_policy
     availability_type = var.environment == "prod" ? "REGIONAL" : "ZONAL"
     disk_size         = var.db_disk_size_gb
     disk_type         = "PD_SSD"
@@ -592,7 +593,7 @@ resource "google_cloud_run_v2_service" "mlflow" {
   # un ingress interno: requiere ID token valido firmado por SA autorizado.
   # Cliente MLflow obtiene ID token desde metadata server y lo pasa en
   # MLFLOW_TRACKING_TOKEN (Bearer auth).
-  ingress  = "INGRESS_TRAFFIC_ALL"
+  ingress = "INGRESS_TRAFFIC_ALL"
 
   labels = local.common_labels
 
@@ -770,13 +771,19 @@ resource "google_project_iam_member" "farslip_vm_roles" {
 }
 
 # Disco persistente para dataset + checkpoints + parquets (sobrevive a stop/start).
-# 100 GB pd-ssd. Format ext4 en primer boot (idempotente en startup-script).
+# 125 GB pd-ssd. Format ext4 en primer boot (idempotente en startup-script).
 # Zone elegida via var.farslip_vm_zone (default us-central1-b por capacidad L4).
+#
+# FinOps 2026-06-05: reducido de 250 GB (sobre-provisionado, 39% uso) a 125 GB
+# tras limpiar PASTIS.zip redundante (27 GB) + caches (15 GB). Uso real ~62 GB.
+# GCP no permite shrink in-place: el disco se recreo como "farslip-data-dev-125"
+# via snapshot to disco nuevo to rsync to swap. Backup en snapshot
+# "farslip-data-pre-shrink-20260605". Por eso el nombre lleva sufijo -125.
 resource "google_compute_disk" "farslip_data" {
   project = var.project_id
-  name    = "farslip-data-${local.name_suffix}"
+  name    = "farslip-data-${local.name_suffix}-125"
   type    = "pd-ssd"
-  size    = 100
+  size    = 125
   zone    = var.farslip_vm_zone
   labels  = local.common_labels
 }

@@ -1,91 +1,64 @@
-# Database Sub-Agent — AgroSatCopilot
+# Database — AgroSatCopilot
 
-> Sobreescribe al orquestador root para trabajo de schema y migraciones.
+> Scope `db/`. Hereda y NO repite las reglas root: ver [`../AGENTS.md`](../AGENTS.md) (regla 3 multi-tenant por `session_id`, regla 11 solo `dbmate`, regla 5 secrets).
 
-**Rol**: PostgreSQL 15 + PostGIS + pgvector + pgstac, migraciones con dbmate (SQL puro, framework-agnóstico).
+PostgreSQL 15 + PostGIS + pgvector. Migraciones en SQL puro con dbmate (framework-agnóstico). El ORM aún no existe.
 
-## Skills References
+## Estado
 
-- [agrosat-db-migrations](../.claude/skills/agrosat-db-migrations/SKILL.md) — dbmate workflow, índices GIST, RLS
-- [agrosat-db-models](../.claude/skills/agrosat-db-models/SKILL.md) — SQLModel + GeoAlchemy2
-- [agrosat-security](../.claude/skills/agrosat-security/SKILL.md) — RLS, ACL
+3 migraciones aplicadas → **4 tablas reales**, nada más:
 
-## Auto-Invoke
+- `chat_sessions` (UUID, `user_id`, `llm_variant`, timestamps) — clave multi-tenant.
+- `aois` (BIGSERIAL, FK `session_id`, `geom GEOMETRY(POLYGON,4326)`, `label`, `area_ha`).
+- `parcels` (FK `session_id`/`aoi_id`, `geom`, `crop_class`, `confidence`, `area_ha`, `year`) — US-015.
+- `features_parcels` (FK `parcel_id`, `alphaearth_embedding VECTOR(64)` nullable, `ndvi_stats`/`phenology` JSONB, columnas fenológicas escalares) — US-015.
 
-| Acción | Skill |
-|--------|-------|
-| Crear migración nueva | `agrosat-db-migrations` |
-| Crear/modificar SQLModel | `agrosat-db-models` |
-| Crear índice GIST sobre geometry | `agrosat-db-migrations` |
-| Crear índice IVFFlat/HNSW sobre vector | `agrosat-db-migrations` |
-| Habilitar extensión (postgis, pgvector, pgstac) | `agrosat-db-migrations` |
-| Crear RLS policy por session_id | `agrosat-security` + `agrosat-db-migrations` |
-| Seed data demo | `agrosat-db-migrations` |
+Extensiones activas: `postgis`, `postgis_topology`, `vector`, `pg_stat_statements`. **`pgstac` NO está instalado** (CREATE EXTENSION comentado, requiere imagen Docker con la extensión).
 
-## Critical Rules
-
-- **ALWAYS**: `dbmate new <name>` para nuevas migraciones, jamás editar archivos existentes
-- **ALWAYS**: Migraciones reversibles con `-- migrate:up` y `-- migrate:down`
-- **ALWAYS**: Extensiones declaradas en migración inicial (`CREATE EXTENSION IF NOT EXISTS postgis;`)
-- **ALWAYS**: Columnas geometry con SRID explícito (4326 WGS84 por defecto)
-- **ALWAYS**: Índice GIST en cada columna geometry/geography
-- **ALWAYS**: Índice BTREE en columnas con queries `WHERE column = X`
-- **ALWAYS**: Foreign keys con `ON DELETE` y `ON UPDATE` explícitos
-- **ALWAYS**: `created_at`, `updated_at` con `TIMESTAMPTZ DEFAULT now()`
-- **NEVER**: `SQLModel.metadata.create_all()` en prod
-- **NEVER**: Modificar migración ya aplicada — crear `dbmate new` rollforward
-- **NEVER**: Raw SQL con string format en backend — siempre parametrizado
-
-## Schema Principal
-
-```sql
--- Sesiones de chat con el agente (multi-tenant key)
-chat_sessions (id, user_id, llm_variant, created_at, updated_at)
-
--- AOI dibujados por el usuario
-aois (id, session_id, geom GEOMETRY(POLYGON, 4326), label, created_at)
-
--- Catálogo STAC interno
-stac_collections (id, collection_id, title, description)
-stac_items (id, collection_id, bbox GEOGRAPHY, datetime TIMESTAMPTZ, geometry GEOMETRY, properties JSONB, storage_uri)
-
--- AlphaEarth tiles
-alphaearth_tiles (id, roi_name, year, bbox GEOMETRY, storage_uri, size_mb, download_date)
-
--- Sentinel-2 scenes
-sentinel2_scenes (id, scene_id, bbox GEOMETRY, datetime TIMESTAMPTZ, cloud_cover REAL, bands_available TEXT[], storage_uri)
-
--- Parcelas inferidas con classification + segmentation
-parcels (id, session_id, aoi_id, geom GEOMETRY, crop_class TEXT, confidence REAL, area_ha REAL, year INT)
-
--- Features pre-computadas por parcela
-features_parcels (id, parcel_id, year, alphaearth_embedding VECTOR(64), ndvi_stats JSONB, phenology JSONB)
-
--- Spatial-RAG documentos
-rag_documents (id, content TEXT, embedding VECTOR(4096), source TEXT, geom GEOMETRY)
-
--- Memory persistente del agente (ADK SessionService)
-agent_sessions (id, session_id, messages JSONB, state JSONB, updated_at)
-```
+No existen: STAC, alphaearth_tiles, sentinel2_scenes, rag_documents ni agent_sessions. Multi-tenant es **solo FK + índice** (`*_session_id_idx`); **cero RLS** (ningún `ENABLE ROW LEVEL SECURITY`).
 
 ## Comandos
 
 ```bash
-make db-migrate             # dbmate up
-make db-rollback            # dbmate down
-make db-new name=create_xxx # genera 20260511HHMMSS_create_xxx.sql
-make db-status              # dbmate status
-make db-seed                # python scripts/seed.py
-make db-shell               # psql interactiva
+make db-migrate              # dbmate up
+make db-rollback             # dbmate down
+make db-new name=create_xxx  # dbmate new -> 20260YYYYMMDDHHMMSS_create_xxx.sql
+make db-status               # dbmate status
+make db-seed                 # poetry run python scripts/seed.py (idempotente)
+make db-shell                # docker compose exec postgres psql -U agrosat -d agrosat
+make db-test-us015           # pytest round-trip migraciones US-015
 ```
 
-## QA Checklist DB
+## Stack local
 
-- [ ] Migración reversible (`-- migrate:up` y `-- migrate:down`)
-- [ ] Índices GIST en geometry columns
-- [ ] Índices BTREE en columnas de query frecuente
-- [ ] Foreign keys con ON DELETE explícito
-- [ ] `created_at` y `updated_at` TIMESTAMPTZ
-- [ ] RLS policies por session_id en tablas multi-tenant
-- [ ] Seed data demo en migración inicial
-- [ ] Tests de integración con DB efímera (testcontainers)
+Postgres vía `docker compose` (servicio `postgres`). DSN en `.env.local` (`DATABASE_URL`); el seed normaliza `postgresql+asyncpg://` → `postgresql://`. Tests usan testcontainers con imagen `agrosat-postgres:15-3.4-pgvector` (fallback `postgis/postgis:15-3.4`, se saltan si falta pgvector/Docker).
+
+## Convenciones (✅/❌)
+
+- ✅ Migración reversible: `-- migrate:up` + `-- migrate:down`, idempotente con `IF NOT EXISTS`.
+- ✅ Geometría `GEOMETRY(POLYGON,4326)` + índice GIST (`USING GIST (geom)`).
+- ✅ Embeddings `VECTOR(64)` nullable y **sin índice** (se poblará en US-016; IVFFlat/HNSW vendrá después).
+- ✅ Timestamps `TIMESTAMPTZ NOT NULL DEFAULT now()`.
+- ✅ Enum-like vía `TEXT CHECK (llm_variant IN ('gemini','qwen35'))`, **no** un ENUM nativo de PG.
+- ✅ FK con `ON DELETE` explícito (`CASCADE` en features/aois, `SET NULL` en `parcels.aoi_id`).
+- ✅ BTREE en columnas de filtro frecuente (`session_id`, `year`, `parcel_id`).
+- ❌ Editar una migración ya aplicada → siempre `dbmate new` rollforward.
+- ❌ `SQLModel.metadata.create_all()` en prod (regla root 11).
+
+## No tocar
+
+- Historial `schema_migrations` (lo gestiona dbmate; no editar a mano).
+- Dimensión `VECTOR(64)` bloqueada: `test_dbmate_up_creates_features_parcels` asegura `atttypmod == 64`.
+- `UNIQUE (parcel_id, year)` (`features_parcels_parcel_year_uniq`): una fila por parcela/año; multi-ciclo añadirá `season` por rollforward.
+- Idempotencia del seed: `DEMO_AOI_LABEL` ("Demo parcel - Tuscany") es la clave de skip; `DEMO_USER_ID`, `DEMO_AOI_WKT` y SRID 4326 son contrato del demo.
+
+## Tests
+
+- `tests/db/test_migrations_us015.py` — testcontainers: tipos vía `information_schema`, `VECTOR(64)`, FK CASCADE, UNIQUE, índices GIST/BTREE y round-trip up→down→up. Ejecuta `make db-test-us015`.
+- `backend/app/models/` sigue **vacío** (solo `__init__.py`): no hay modelos SQLModel/GeoAlchemy2 aún. Cualquier ORM debe reflejar exactamente este schema.
+
+## Skills
+
+- [agrosat-db-migrations](../.claude/skills/agrosat-db-migrations/SKILL.md) — dbmate, índices GIST/IVFFlat/HNSW, extensiones, seed.
+- [agrosat-db-models](../.claude/skills/agrosat-db-models/SKILL.md) — SQLModel + GeoAlchemy2 (futuro ORM).
+- [agrosat-security](../.claude/skills/agrosat-security/SKILL.md) — RLS/ACL (aún no aplicado en `db/`).
