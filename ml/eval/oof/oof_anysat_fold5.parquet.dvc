@@ -1,0 +1,5 @@
+outs:
+- md5: 9f9c173c43c12a75f16dcb5ea269a00b
+  size: 256973340
+  hash: md5
+  path: oof_anysat_fold5.parquet

@@ -1,0 +1,5 @@
+outs:
+- md5: 9fb4ad5710778db32ad8acefedf423a2
+  size: 251728386
+  hash: md5
+  path: oof_utae_fold5.parquet

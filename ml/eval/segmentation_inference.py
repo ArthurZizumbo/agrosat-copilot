@@ -347,6 +347,89 @@ def _ordinal_positions(n_timesteps: int, *, device: torch.device) -> torch.Tenso
 
 
 @torch.no_grad()
+def _forward_logits(
+    model: torch.nn.Module,
+    x: torch.Tensor,
+    *,
+    model_kind: str,
+) -> torch.Tensor:
+    """Run the per-architecture forward and return the raw class logits.
+
+    Single source of truth for the forward dispatch shared by
+    :func:`predict_patch_for_kind` (which adds an ``argmax``) and
+    :func:`softmax_patch_for_kind` (which adds a ``softmax``). Keeping the
+    dispatch here avoids duplicating the unet/utae/anysat branches and guarantees
+    both consumers see byte-identical logits (so ``argmax(softmax) == argmax``).
+
+    The forward matches the upstream harness contract (the dataset builds the
+    correct ``x`` per architecture):
+
+    - ``unet`` / ``deeplabv3plus``: 2D input ``(10, H, W)`` -> ``model(xb)``.
+    - ``tsvit`` / ``tsvit-pheno``: temporal ``(T, 10, H, W)`` -> ``model(xb)``
+      (ordinal temporal PE, ``doy`` not supplied, as trained).
+    - ``utae``: temporal ``(T, 10, H, W)`` -> ``model(xb, batch_positions)`` with
+      reconstructed day-of-year positions.
+    - ``anysat``: temporal ``(T, 10, H, W)`` resized to the 64 px encoder grid ->
+      ``model(image, dates)`` (the model upsamples its logits back to 128 px).
+
+    SegFormer is NOT handled here: it runs its own 3-RGB / 256 sub-pipeline over
+    raw S2 (see :func:`softmax_logits_segformer`).
+
+    Args:
+        model: Model loaded in ``eval()``.
+        x: Patch tensor with the architecture-appropriate shape (the batch
+            dimension is added internally).
+        model_kind: Architecture tag.
+
+    Returns:
+        Raw logits tensor ``(1, C, H, W)`` on the model device (``C`` is the
+        model's NATIVE class count; no 20->18 remap applied here).
+
+    Raises:
+        ValueError: if ``model_kind`` is not a supported (non-SegFormer) kind.
+    """
+    device = next(model.parameters()).device
+    xb = x.unsqueeze(0).to(device).float()
+
+    logits: torch.Tensor
+    if model_kind in ("unet", "deeplabv3plus"):
+        logits = model(xb)
+    elif model_kind in ("tsvit", "tsvit-pheno"):
+        out = model(xb)
+        logits = out[0] if isinstance(out, tuple) else out
+    elif model_kind == "utae":
+        positions = _ordinal_positions(xb.shape[1], device=device)
+        out = model(xb, positions)
+        logits = out[0] if isinstance(out, tuple) else out
+    elif model_kind == "anysat":
+        # Downsample the temporal series to AnySat's 64 px encoder resolution
+        # (the 0.4459 reference config) BEFORE the forward: at the native 128 px
+        # the s2 spatial-token grid is 16384 tokens and the self-attention OOMs
+        # (256 px would be ~206 GB). Each frame ``(B, T, C, H, W)`` is resized
+        # bilinearly on its spatial plane; the model upsamples its logits back to
+        # 128 px (``_ANYSAT_TARGET_SIZE``), so the logits land on the harness
+        # grid and need no external resize.
+        import torch.nn.functional as F
+
+        b, t, c, _, _ = xb.shape
+        xb_small = F.interpolate(
+            xb.reshape(b * t, c, *xb.shape[-2:]),
+            size=(_ANYSAT_ENCODER_SIZE, _ANYSAT_ENCODER_SIZE),
+            mode="bilinear",
+            align_corners=False,
+        ).reshape(b, t, c, _ANYSAT_ENCODER_SIZE, _ANYSAT_ENCODER_SIZE)
+        dates = _ordinal_positions(t, device=device)
+        out = model(xb_small, dates)
+        logits = out[0] if isinstance(out, tuple) else out
+    else:
+        raise ValueError(
+            f"_forward_logits does not handle model_kind={model_kind!r} "
+            "(SegFormer runs its own sub-pipeline)."
+        )
+    return logits
+
+
+@torch.no_grad()
 def predict_patch_for_kind(
     model: torch.nn.Module,
     x: torch.Tensor,
@@ -355,15 +438,10 @@ def predict_patch_for_kind(
 ) -> np.ndarray:
     """Predict the dense class map of a patch for any of the six architectures.
 
-    Dispatches the forward according to ``model_kind`` (the harness builds the
-    correct ``x`` per architecture upstream):
-
-    - ``unet`` / ``deeplabv3plus``: 2D input ``(10, H, W)`` -> ``model(xb)``.
-    - ``tsvit`` / ``tsvit-pheno``: temporal ``(T, 10, H, W)`` -> ``model(xb)``
-      (ordinal temporal PE, ``doy`` not supplied, as trained).
-    - ``utae``: temporal ``(T, 10, H, W)`` -> ``model(xb, batch_positions)`` with
-      reconstructed day-of-year positions.
-    - ``anysat``: temporal ``(T, 10, H, W)`` -> ``model(image, dates)``.
+    Thin wrapper over :func:`_forward_logits` plus an ``argmax`` over the class
+    axis. The forward dispatch lives in :func:`_forward_logits` (DRY); this
+    function only collapses the logits to a class map, preserving the exact
+    output the US-030 harness consumes.
 
     SegFormer is NOT handled here (it runs its own 3-RGB/256 sub-pipeline in the
     harness directly over raw S2).
@@ -381,44 +459,113 @@ def predict_patch_for_kind(
     Raises:
         ValueError: if ``model_kind`` is not a supported (non-SegFormer) kind.
     """
-    device = next(model.parameters()).device
-    xb = x.unsqueeze(0).to(device).float()
-
-    if model_kind in ("unet", "deeplabv3plus"):
-        logits = model(xb)
-    elif model_kind in ("tsvit", "tsvit-pheno"):
-        out = model(xb)
-        logits = out[0] if isinstance(out, tuple) else out
-    elif model_kind == "utae":
-        positions = _ordinal_positions(xb.shape[1], device=device)
-        out = model(xb, positions)
-        logits = out[0] if isinstance(out, tuple) else out
-    elif model_kind == "anysat":
-        # Downsample the temporal series to AnySat's 64 px encoder resolution
-        # (the 0.4459 reference config) BEFORE the forward: at the native 128 px
-        # the s2 spatial-token grid is 16384 tokens and the self-attention OOMs
-        # (256 px would be ~206 GB). Each frame ``(B, T, C, H, W)`` is resized
-        # bilinearly on its spatial plane; the model upsamples its logits back to
-        # 128 px (``_ANYSAT_TARGET_SIZE``), so the argmax map lands on the harness
-        # grid and needs no external resize.
-        import torch.nn.functional as F
-
-        b, t, c, _, _ = xb.shape
-        xb_small = F.interpolate(
-            xb.reshape(b * t, c, *xb.shape[-2:]),
-            size=(_ANYSAT_ENCODER_SIZE, _ANYSAT_ENCODER_SIZE),
-            mode="bilinear",
-            align_corners=False,
-        ).reshape(b, t, c, _ANYSAT_ENCODER_SIZE, _ANYSAT_ENCODER_SIZE)
-        dates = _ordinal_positions(t, device=device)
-        out = model(xb_small, dates)
-        logits = out[0] if isinstance(out, tuple) else out
-    else:
-        raise ValueError(
-            f"predict_patch_for_kind does not handle model_kind={model_kind!r} "
-            "(SegFormer runs its own sub-pipeline)."
-        )
+    logits = _forward_logits(model, x, model_kind=model_kind)
     return logits.argmax(dim=1).squeeze(0).cpu().numpy().astype(np.int64)
+
+
+@torch.no_grad()
+def softmax_patch_for_kind(
+    model: torch.nn.Module,
+    x: torch.Tensor,
+    *,
+    model_kind: str,
+) -> np.ndarray:
+    """Return the POST-softmax probability map of a patch for any architecture.
+
+    Twin of :func:`predict_patch_for_kind` but, instead of the argmax, applies
+    ``torch.softmax(logits, dim=1)`` on the class axis and returns the full
+    probability tensor. Shares the per-architecture forward via the private
+    :func:`_forward_logits` helper (no duplicated unet/utae/anysat dispatch), so
+    ``softmax_patch_for_kind(...).argmax(0) == predict_patch_for_kind(...)``.
+
+    The probabilities are POST-softmax by ensemble anti-leakage convention
+    (US-040: never average logits). The class count is the model's NATIVE space
+    (20 for unet/utae/anysat, 18 for deeplabv3plus/tsvit-pheno); the 20->18 remap
+    and 128 resample happen DOWNSTREAM in probability space
+    (:func:`ml.eval.class_remap.remap_probs_20_to_18` /
+    :func:`ml.eval.class_remap.resample_probs_128_bilinear`).
+
+    SegFormer is NOT handled here (it runs its own 3-RGB / 256 sub-pipeline; see
+    :func:`softmax_logits_segformer`).
+
+    Args:
+        model: Model loaded in ``eval()``.
+        x: Patch tensor with the architecture-appropriate shape (the batch
+            dimension is added internally).
+        model_kind: Architecture tag.
+
+    Returns:
+        Probability map ``(C_native, H, W)`` float32 with ``probs.sum(0) ~ 1``.
+
+    Raises:
+        ValueError: if ``model_kind`` is not a supported (non-SegFormer) kind.
+    """
+    logits = _forward_logits(model, x, model_kind=model_kind)
+    probs = torch.softmax(logits, dim=1)
+    out: np.ndarray = probs.squeeze(0).cpu().numpy().astype(np.float32)
+    return out
+
+
+#: SegFormer (Isaac, notebook 04i) 3-RGB normalization constants and train size,
+#: reproduced verbatim from :mod:`ml.eval.dense_metrics` so the softmax dump can
+#: run SegFormer's sub-pipeline without importing (and serializing against) the
+#: US-030 harness module.
+_SEGFORMER_RGB_MEAN = np.array([1158.0, 1244.7, 1416.3], dtype=np.float32)[:, None, None]
+_SEGFORMER_RGB_STD = np.array([671.7, 698.1, 761.3], dtype=np.float32)[:, None, None]
+_SEGFORMER_SIZE = 256
+
+
+@torch.no_grad()
+def softmax_logits_segformer(
+    model: torch.nn.Module,
+    pid: str,
+    *,
+    root: Path,
+    device: torch.device,
+) -> np.ndarray:
+    """Run SegFormer's 3-RGB / 256 sub-pipeline and return its native softmax.
+
+    SegFormer (Isaac) was trained on a 3-band RGB temporal-median composite at
+    256 px with its own normalization (``_SEGFORMER_RGB_*``). This reproduces
+    that exact input pipeline (mirror of ``dense_metrics._segformer_predict_18``
+    but POST-softmax instead of argmax+remap, so the dump can remap/resample in
+    PROBABILITY space downstream). The logits are softmaxed over the 20-class
+    axis at 256 px; the caller resamples to 128 bilinear and remaps 20->18.
+
+    Args:
+        model: Loaded ``SegformerForSemanticSegmentation``.
+        pid: PASTIS patch id.
+        root: PASTIS-R root directory.
+        device: Inference device.
+
+    Returns:
+        Probability map ``(20, 256, 256)`` float32, ``probs.sum(0) ~ 1``.
+    """
+    import torch.nn.functional as F
+    import torchvision.transforms.functional as TF
+
+    s2 = np.load(root / "DATA_S2" / f"S2_{pid}.npy")  # (T, C, H, W)
+    img = np.median(s2, axis=0)[:3].astype(np.float32)  # RGB composite
+    img = (img - _SEGFORMER_RGB_MEAN) / (_SEGFORMER_RGB_STD + 1e-6)
+    t_img = (
+        TF.resize(
+            torch.from_numpy(img),
+            [_SEGFORMER_SIZE, _SEGFORMER_SIZE],
+            interpolation=TF.InterpolationMode.BILINEAR,
+        )
+        .unsqueeze(0)
+        .to(device)
+    )
+    logits = model(pixel_values=t_img).logits
+    logits = F.interpolate(
+        logits,
+        size=(_SEGFORMER_SIZE, _SEGFORMER_SIZE),
+        mode="bilinear",
+        align_corners=False,
+    )
+    probs = torch.softmax(logits, dim=1)
+    out: np.ndarray = probs.squeeze(0).cpu().numpy().astype(np.float32)
+    return out
 
 
 def prediction_figure(
