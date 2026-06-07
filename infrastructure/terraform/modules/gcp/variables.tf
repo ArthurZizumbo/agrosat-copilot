@@ -37,6 +37,17 @@ variable "db_tier" {
   default     = "db-f1-micro"
 }
 
+variable "db_activation_policy" {
+  description = "Cloud SQL activation policy. ALWAYS keeps the instance running; NEVER stops it (preserving data) to avoid charges when idle in dev."
+  type        = string
+  default     = "ALWAYS"
+
+  validation {
+    condition     = contains(["ALWAYS", "NEVER"], var.db_activation_policy)
+    error_message = "db_activation_policy must be either ALWAYS or NEVER."
+  }
+}
+
 variable "db_disk_size_gb" {
   description = "Cloud SQL disk size in GB."
   type        = number

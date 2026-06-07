@@ -1,59 +1,53 @@
-# Paper Sub-Agent — AgroSatCopilot
+# Paper — AgroSatCopilot
 
-> Sobreescribe al orquestador root para trabajo en el Paper Track opcional (semanas 10-11 post-presentación).
+Scope sub-agente `paper/`. Hereda el orquestador root ([../AGENTS.md](../AGENTS.md)) — no se repiten aqui los NON-NEGOTIABLE (idioma, secrets, DVC/MLflow, sin emojis).
 
-**Rol**: Redacción del paper en formato IEEE con LaTeX, figuras reproducibles, evaluación formal contra GEO-Bench-2, publicación del benchmark AgroMind-IT/ES en Zenodo con DOI.
+## Estado
 
-## Skills References
+ESQUELETO. Paper Track es **opcional** y arranca **post-presentacion** (semanas 10-11). Hoy no compromete ningun Avance del curso.
 
-- [agrosat-ml-evaluation](../.claude/skills/agrosat-ml-evaluation/SKILL.md) — GEO-Bench-2, AgroMind, GeoAnalystBench
-- [agrosat-llm-finetuning](../.claude/skills/agrosat-llm-finetuning/SKILL.md) — Detalles Gemma 4 / Qwen3-VL para sección Methods
-- [agrosat-dvc-mlflow](../.claude/skills/agrosat-dvc-mlflow/SKILL.md) — Reproducibilidad
+- `sections/` y `bib/` solo tienen `.gitkeep` — **no existen** `main.tex` ni `refs.bib`. No hay target LaTeX ni compilacion.
+- Unica tabla escrita a mano: [tables/us-023-preview/baseline_v2_comparison.tex](tables/us-023-preview/baseline_v2_comparison.tex) (3 modelos canonicos US-023-preview).
+- Todo lo demas en `figures/` es **generado** (extraido de notebooks o copiado de `reports/`), mas `avance1_eda_report.html`.
 
-## Critical Rules
+## Comandos
 
-- **ALWAYS**: Paper Track es **opcional** y NO compromete entregables del curso (Avance 7 y Presentación final el 21-jun-2026)
-- **ALWAYS**: Solo se inicia DESPUÉS de la presentación final, semanas 10-11 (22-jun a 3-jul-2026)
-- **ALWAYS**: Figuras reproducibles desde scripts en `paper/figures/scripts/`
-- **ALWAYS**: Bibliografía en `paper/bib/refs.bib` con entradas BibTeX completas
-- **ALWAYS**: Citar a los dos papers del profesor (TSViT y Phenology) en Related Work
-- **ALWAYS**: Publicar AgroMind-IT/ES en Zenodo con DOI antes del submission
-- **ALWAYS**: Atribución a Google DeepMind (AlphaEarth, Gemma 4), Alibaba (Qwen), Meta (DINOv3)
-- **NEVER**: Sacrificar Avances del curso por trabajo en el paper
-
-## Estructura
-
-```
-paper/
-├── main.tex                    # IEEE format
-├── sections/
-│   ├── 01_abstract.tex
-│   ├── 02_introduction.tex
-│   ├── 03_related_work.tex     # TSViT + Phenology + Google Earth AI + AgriFM
-│   ├── 04_methods.tex          # AlphaEarth + Gemma 4 LoRA + ADK + Spatial-RAG
-│   ├── 05_experiments.tex      # GEO-Bench-2 + AgroMind-IT/ES
-│   ├── 06_results.tex
-│   ├── 07_discussion.tex
-│   └── 08_conclusions.tex
-├── figures/
-│   ├── scripts/                # Python scripts reproducibles
-│   │   ├── fig1_architecture.py
-│   │   ├── fig2_lineage.py
-│   │   └── fig3_benchmarks.py
-│   └── *.pdf, *.png            # Outputs
-├── bib/
-│   └── refs.bib
-└── README.md                   # Cómo compilar
+```bash
+poetry install --with paper            # deps opcionales del paper (grupo poetry "paper")
+make avance2-figures                   # extrae figuras inline de los 3 nb FE -> figures/feature-engineering/
+make eda-figures-paper-methods         # copia 5 PNG de reports/paper_methods/ -> figures/paper-methods/
+make paper-methods-notebook            # regenera + ejecuta notebooks/eda/02e_eda_metodos_paper.ipynb (papermill)
 ```
 
-## QA Checklist Paper
+## Stack local
 
-- [ ] Avance 7 entregado + Presentación final exitosa ANTES de iniciar paper
-- [ ] Bibliografía completa con DOIs
-- [ ] Papers del profesor citados en Related Work
-- [ ] Figuras reproducibles desde scripts
-- [ ] Resultados de GEO-Bench-2 + AgroMind-IT/ES reportados
-- [ ] AgroMind-IT/ES publicado en Zenodo con DOI
-- [ ] Validación nativa italiana del benchmark (Scuola Sant'Anna vía sponsor)
-- [ ] Atribuciones legales completas
-- [ ] Sponsor (Dr. Camacho) listado como coautor o en Acknowledgments según acuerdo
+- `ml/analysis/paper_methods.py` — 8 funciones que materializan metodos de papers REALES sobre el dato del proyecto: `boundary_pixel_mask`, `boundary_interior_stats`, `compute_boundary_ratio`, `temporal_sampling_stats`, `confusion_symmetry_analysis`, `aggregate_rare_classes`, `phenology_calendar_features`, `cloud_gap_robustness`.
+- Methods cita los modelos que **de hecho** se entrenan: TSViT, U-TAE, AnySat, DeepLabv3+, SegFormer. **No** Gemma 4 LoRA aqui.
+- Atribucion AlphaEarth: `Satellite Embedding V1 Annual, data version 1.1, CC-BY-4.0` (no "v2.1").
+
+## Convenciones
+
+- ✅ Funciones de `paper_methods.py` retornan estructuras Polars / dicts; logging via `structlog`.
+- ✅ Cita por-funcion al paper origen (Russwurm & Korner, Tarasiou et al., Phenology-Aware Transformer, Qin et al. STCLN).
+- ✅ Figuras reproducibles solo desde los targets `make` de arriba; nunca editar el PNG a mano.
+- ❌ No inventar `main.tex`/`refs.bib` ni un pipeline LaTeX sin acordarlo con el equipo (Paper Track no arrancado).
+- ❌ No atribuir AlphaEarth como "v2.1"; no listar Gemma 4 LoRA en Methods.
+- ❌ No sacrificar entregables del curso por trabajo del paper.
+
+## No tocar
+
+- Figuras generadas (`figures/**`) y `avance1_eda_report.html` — son artefactos; regenerar via target, no editar.
+- El notebook `notebooks/eda/02e_eda_metodos_paper.ipynb` se edita en su **builder** (`scripts/build_paper_methods_notebook.py`), no a mano.
+- `ml/analysis/paper_methods.py` — al cambiar firmas, sincronizar `tests/ml/analysis/test_paper_methods.py`.
+
+## Tests
+
+```bash
+poetry run pytest tests/ml/analysis/test_paper_methods.py            # unit (datos sinteticos)
+poetry run pytest tests/ml/analysis/test_paper_methods.py -m empirical   # valida sobre dato real (skip si falta)
+```
+
+## Skills
+
+- [agrosat-ml-evaluation](../.claude/skills/agrosat-ml-evaluation/SKILL.md) — benchmarks y figuras interpretadas.
+- [agrosat-dvc-mlflow](../.claude/skills/agrosat-dvc-mlflow/SKILL.md) — reproducibilidad de datos/runs.

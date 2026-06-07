@@ -12,9 +12,11 @@ import numpy as np
 import polars as pl
 import pytest
 from lightgbm import LGBMClassifier
+from xgboost import XGBClassifier
 
 from ml.train.baseline import (
     BaselineResult,
+    SpatialXGBClassifier,
     build_estimator,
     evaluate_with_spatial_cv,
     train_one_model,
@@ -166,3 +168,64 @@ def test_lgbm_handles_nan_natively(synthetic_df: pl.DataFrame) -> None:
     result = train_one_model(df_with_nan, model="lgbm", k_folds=2)
     assert result.model_kind == "lgbm"
     assert np.isfinite(result.metrics["f1_macro"])
+
+
+def test_build_estimator_xgb_returns_spatial_subclass() -> None:
+    """build_estimator('xgb') devuelve SpatialXGBClassifier (subclase de XGB)."""
+    estimator = build_estimator("xgb", {"n_estimators": 10, "random_state": 42})
+    assert isinstance(estimator, SpatialXGBClassifier)
+    # Sigue siendo un XGBClassifier para isinstance/interpretabilidad/_is_xgb.
+    assert isinstance(estimator, XGBClassifier)
+
+
+def test_spatial_xgb_fits_fold_missing_classes() -> None:
+    """SpatialXGBClassifier no falla cuando faltan clases (labels no contiguos).
+
+    Reproduce el bug original: bajo CV espacial un fold puede no contener
+    todas las clases, dejando ``y`` no contiguo (p.ej. ``[0,1,2,5,7]``).
+    XGBoost >= 1.6 lanzaria ``ValueError: Invalid classes inferred``; el
+    wrapper re-encoda localmente y entrena sin error.
+    """
+    rng = np.random.default_rng(7)
+    x = rng.normal(size=(60, 6)).astype(np.float64)
+    # Etiquetas globales con huecos: faltan las clases 3, 4 y 6.
+    global_labels = np.array([0, 1, 2, 5, 7])
+    y = rng.choice(global_labels, size=60)
+
+    clf = SpatialXGBClassifier(n_estimators=10, random_state=42, device="cpu")
+    clf.fit(x, y)  # no debe lanzar ValueError
+    preds = clf.predict(x)
+
+    # Las predicciones viven en el espacio de etiquetas GLOBAL, no en [0, k).
+    assert set(np.unique(preds)).issubset(set(global_labels))
+    # `global_classes_` preserva las etiquetas originales; `classes_` queda
+    # en el espacio local [0, k) que el booster valida internamente.
+    assert set(clf.global_classes_) == set(global_labels)
+
+
+def test_spatial_xgb_predict_roundtrips_global_labels() -> None:
+    """Con todas las clases presentes el wrapper es identidad (sin remapeo)."""
+    rng = np.random.default_rng(11)
+    x = rng.normal(size=(80, 5)).astype(np.float64)
+    y = rng.integers(0, 4, size=80)  # clases 0..3 contiguas
+
+    clf = SpatialXGBClassifier(n_estimators=10, random_state=42, device="cpu")
+    clf.fit(x, y)
+    preds = clf.predict(x)
+    assert set(np.unique(preds)).issubset({0, 1, 2, 3})
+
+
+def test_train_xgb_no_nan_with_imbalanced_spatial_folds() -> None:
+    """train_one_model('xgb') produce metricas finitas con folds desbalanceados.
+
+    Antes del wrapper, los folds sin clases raras se puntuaban ``nan`` y
+    contaminaban la seleccion. Generamos un dataset con clases minoritarias
+    concentradas en pocos patches para forzar folds incompletos.
+    """
+    df = make_baseline_dataset(
+        n=400, n_classes=8, n_features=10, n_patches=20, seed=3
+    )
+    result = train_one_model(df, model="xgb", k_folds=3)
+    assert result.model_kind == "xgb"
+    assert np.isfinite(result.metrics["f1_macro"])
+    assert np.isfinite(result.cv_metrics["f1_macro"][0])

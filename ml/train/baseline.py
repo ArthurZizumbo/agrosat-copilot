@@ -50,6 +50,7 @@ logger = structlog.get_logger(__name__)
 __all__ = [
     "BaselineResult",
     "ModelKind",
+    "SpatialXGBClassifier",
     "build_estimator",
     "evaluate_with_spatial_cv",
     "train_one_model",
@@ -237,6 +238,62 @@ class BaselineResult:
 # ---------------------------------------------------------------------------
 
 
+class SpatialXGBClassifier(XGBClassifier):
+    """``XGBClassifier`` tolerant to folds missing some classes.
+
+    Under spatial cross-validation the disjoint geographic blocks may leave
+    a training fold without the rarest crops, so ``y_train`` is not the
+    contiguous ``[0, K)`` range that XGBoost >= 1.6 demands. The base
+    estimator then raises ``ValueError: Invalid classes inferred from
+    unique values of y`` and that fold is scored ``nan``, silently
+    corrupting both the GridSearchCV selection and the spatial-CV metrics.
+
+    This subclass fits a local :class:`LabelEncoder` on each ``fit`` call,
+    trains the booster on the remapped contiguous labels, and decodes the
+    predictions back to the original (global) label space on ``predict`` /
+    ``predict_proba``. To the rest of the pipeline (GridSearchCV, the manual
+    fold loop, the interpretability helpers) it behaves like a regular
+    ``XGBClassifier`` whose ``classes_`` are the original labels.
+
+    The remapping only takes effect when a fold is missing classes; when all
+    classes are present the local encoder is the identity and behaviour is
+    unchanged.
+    """
+
+    def fit(  # type: ignore[override]
+        self, X: np.ndarray, y: np.ndarray, **kwargs: object
+    ) -> "SpatialXGBClassifier":
+        """Fit on locally re-encoded labels so missing classes do not crash.
+
+        The booster keeps the local contiguous ``[0, k)`` labels internally
+        (so ``XGBClassifier.classes_`` stays consistent with its own
+        validation); the original labels are stored in ``global_classes_``
+        and restored on :meth:`predict`.
+
+        Args:
+            X: Feature matrix.
+            y: Target labels in the original (global) label space.
+            **kwargs: Forwarded to :meth:`xgboost.XGBClassifier.fit`
+                (e.g. ``sample_weight``).
+
+        Returns:
+            The fitted estimator.
+        """
+        self._local_encoder = LabelEncoder().fit(np.asarray(y))
+        self.global_classes_ = self._local_encoder.classes_
+        y_local = self._local_encoder.transform(np.asarray(y))
+        super().fit(X, y_local, **kwargs)
+        return self
+
+    def predict(  # type: ignore[override]
+        self, X: np.ndarray, **kwargs: object
+    ) -> np.ndarray:
+        """Predict and decode back to the original (global) label space."""
+        local_pred = super().predict(X, **kwargs)
+        decoded = self._local_encoder.inverse_transform(local_pred.astype(int))
+        return np.asarray(decoded)
+
+
 def build_estimator(model: ModelKind, hyperparams: dict[str, object]) -> ClassifierMixin:
     """Instantiate an RF, XGB or LGBM estimator with the given hyperparameters.
 
@@ -259,7 +316,9 @@ def build_estimator(model: ModelKind, hyperparams: dict[str, object]) -> Classif
         # acceleration on local GPU without breaking CI without CUDA (decision D3).
         xgb_params = dict(hyperparams)
         xgb_params.setdefault("device", resolve_xgb_device())
-        return XGBClassifier(**xgb_params)
+        # SpatialXGBClassifier re-encodes labels per fit so spatial folds
+        # missing rare classes do not raise "Invalid classes inferred".
+        return SpatialXGBClassifier(**xgb_params)
     if model == "lgbm":
         # LGBM stays on CPU: the PyPI wheel does not ship a CUDA build. For GPU
         # one would need `pip install lightgbm --config-settings=cmake.define...`
@@ -313,8 +372,9 @@ def train_one_model(
     encoder, y_encoded = _encode_labels(clean_df)
 
     params = dict(hyperparams) if hyperparams is not None else _base_params(model)
-    if model == "xgb":
-        params.setdefault("num_class", len(encoder.classes_))
+    # No fixed `num_class` for XGB: SpatialXGBClassifier infers the class
+    # count from each fold's locally re-encoded labels, so folds missing
+    # rare crops do not crash and no global override is needed.
 
     def factory() -> ClassifierMixin:
         return build_estimator(model, params)
@@ -408,7 +468,7 @@ def tune_baseline(
     """
     clean_df = _prepare_dataframe(df)
     feature_cols = _feature_columns(clean_df)
-    encoder, y_encoded = _encode_labels(clean_df)
+    _, y_encoded = _encode_labels(clean_df)
     matrix = _impute(_feature_matrix(clean_df, feature_cols))
 
     grid = param_grid if param_grid is not None else _default_grid(model)
@@ -417,8 +477,9 @@ def tune_baseline(
     )
 
     base_params = _base_params(model)
-    if model == "xgb":
-        base_params.setdefault("num_class", len(encoder.classes_))
+    # No fixed `num_class` for XGB: SpatialXGBClassifier re-encodes labels
+    # per fold, so the class count is inferred locally and a fold missing
+    # rare crops no longer conflicts with a global 18-class setting.
     # Remove from the base estimator the keys that the grid will overwrite.
     for key in grid:
         base_params.pop(key, None)
