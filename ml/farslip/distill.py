@@ -46,6 +46,11 @@ _log = structlog.get_logger(__name__)
 LossType = Literal["mse", "cosine", "mse_plus_cosine"]
 SaveFormat = Literal["safetensors", "pytorch"]
 
+#: Dimension of the MiniLM (all-MiniLM-L6-v2) phenological prototypes of US-033.
+#: ``set_text_prototypes`` reprojects this to the student CLS dim (768) via a
+#: frozen orthogonal map; any other non-768 input dimension is rejected.
+MINILM_DIM = 384
+
 
 # ---------------------------------------------------------------------------
 # Patch-to-patch distillation loss (AC-1, AC-7).
@@ -292,6 +297,9 @@ class FarSLIPTrainerConfig:
     n_in_channels: int = 4
     n_regions: int = 3
     n_categories: int = 32
+    #: Extra MLflow params/tags (US-034: proto_source, proto_proj, caveat,
+    #: n_protos, proto_dim_in, proto_dim_out). Logged verbatim in :meth:`train`.
+    extra_params: dict[str, Any] = field(default_factory=dict)
 
 
 def _resolve_device(device: str) -> torch.device:
@@ -454,12 +462,126 @@ class FarSLIPDistillationTrainer:
     # ------------------------------------------------------------------ API
 
     def set_text_prototypes(self, prototypes: torch.Tensor) -> None:
-        """Injects precomputed text prototypes ``(R*C, D)``.
+        """Injects precomputed text prototypes ``(R*C, D_in)``.
 
         Computed externally to avoid coupling the text encoder to the trainer
         (the text encoder is frozen, running it once per epoch is enough).
+
+        US-034 fix: the contrastive loss (:class:`RegionCategoryAlignmentLoss`)
+        contrasts ``student_cls = last_hidden_state[:, 0, :]`` (dim
+        ``teacher.config.hidden_size`` == 768 for ViT-B/16) against these
+        prototypes. The phenological prototypes of US-033 live in the MiniLM-384
+        space (:data:`MINILM_DIM`), so if ``D_in == 384`` they are reprojected
+        to 768 via a frozen orthogonal map (:meth:`_proto_to_clip_proj`). If they
+        already arrive in 768 they pass through unchanged (back-compat with the
+        random path). Any OTHER dimension (e.g. 512, the CLIP-shared inference
+        space, which is NOT the loss space) fails fast here with a clear
+        ``ValueError`` instead of the opaque ``RuntimeError`` the loss would
+        raise in its ``student_n @ protos.t()`` matmul (the loss does NOT
+        validate D). A final assert guards the stored dimension.
+
+        Args:
+            prototypes: ``(R*C, D_in)`` tensor; ``D_in`` is 384 (MiniLM, US-033)
+                or already ``hidden_size`` (768).
+
+        Raises:
+            ValueError: if ``prototypes`` is not 2-D, if ``D_in`` is neither 384
+                nor ``hidden_size``, or if after reprojection the final dimension
+                does not equal ``teacher.config.hidden_size``.
         """
-        self._text_prototypes = prototypes.to(self.device)
+        if prototypes.dim() != 2:
+            raise ValueError(
+                f"text_prototypes must be 2-D (R*C, D); got {tuple(prototypes.shape)}"
+            )
+        hidden_size = int(self.teacher.config.hidden_size)
+        d_in = prototypes.shape[1]
+        if d_in == hidden_size:
+            pass  # already in CLS space, no reprojection
+        elif d_in == MINILM_DIM:
+            prototypes = self._proto_to_clip_proj(prototypes)
+        else:
+            raise ValueError(
+                f"text_prototypes dim={d_in} unsupported. Expected MiniLM "
+                f"{MINILM_DIM} (US-033, reprojected to {hidden_size}) or "
+                f"{hidden_size} (student CLS dim) directly. The loss does NOT "
+                f"validate D, so injecting {d_in} would raise an opaque "
+                f"RuntimeError in the student_cls @ protos.t() matmul."
+            )
+        d_out = prototypes.shape[1]
+        if d_out != hidden_size:  # defensive: reprojection contract guard
+            raise ValueError(
+                f"text_prototypes final dim={d_out} != student CLS dim "
+                f"{hidden_size} (teacher.config.hidden_size)."
+            )
+        self._text_prototypes = prototypes.detach().to(self.device)
+
+    def _proto_to_clip_proj(self, emb: torch.Tensor) -> torch.Tensor:
+        """Frozen orthogonal projection MiniLM-384 -> CLS-``hidden_size`` (768).
+
+        Builds (once, cached as a non-persistent buffer) a semi-orthogonal matrix
+        ``W (hidden_size, D_in)`` seeded by ``config.seed``
+        (``requires_grad=False``), and returns ``emb @ W.t()`` -> ``hidden_size``.
+        ``W`` is generated with :func:`torch.nn.init.orthogonal_` so its columns
+        are orthonormal (``W.t() @ W == I_{D_in}`` for ``hidden_size >= D_in``);
+        the projection therefore preserves the L2 norm and the relative
+        inner-products/angles of the MiniLM subspace. The 18 phenological classes
+        stay distinguishable after the lift (unlike the ``torch.randn`` it
+        replaces, which encodes no semantics at all).
+
+        CAVEAT (US-034 AC-8 / R-APPROX): this is a crude linear embedding of the
+        MiniLM-384 space into 768, NOT the native CLIP text encoder (which would
+        produce 768 semantically aligned with the visual CLS). The paper-faithful
+        path is :meth:`_load_text_encoder` (post-delivery).
+
+        Args:
+            emb: ``(N, D_in)`` prototype matrix (D_in == 384 for MiniLM).
+
+        Returns:
+            ``(N, hidden_size)`` reprojected matrix (norm/angle preserving),
+            detached and on the same dtype as ``emb``.
+
+        Raises:
+            ValueError: if ``emb`` is not 2-D or ``D_in > hidden_size`` (the
+                orthonormal-columns guarantee requires ``hidden_size >= D_in``).
+        """
+        if emb.dim() != 2:
+            raise ValueError(f"emb must be 2-D (N, D_in); got {tuple(emb.shape)}")
+        hidden_size = int(self.teacher.config.hidden_size)
+        d_in = emb.shape[1]
+        if d_in > hidden_size:
+            raise ValueError(
+                f"orthogonal lift requires hidden_size ({hidden_size}) >= "
+                f"D_in ({d_in}); cannot preserve norm when projecting down."
+            )
+        # Cache the frozen projection per input dim (one buffer per D_in).
+        buf_name = f"_proto_proj_w_{d_in}"
+        w = getattr(self, buf_name, None)
+        if w is None:
+            gen = torch.Generator().manual_seed(int(self.config.seed))
+            w = torch.empty(hidden_size, d_in)
+            torch.nn.init.orthogonal_(w, generator=gen)  # columns orthonormal
+            w.requires_grad_(False)
+            # Plain attribute (NOT nn.Parameter / registered buffer) so it never
+            # enters the optimizer nor the student state_dict (AC-5).
+            setattr(self, buf_name, w)
+        w = w.to(device=emb.device, dtype=emb.dtype)
+        return (emb.detach() @ w.t()).detach()
+
+    def _load_text_encoder(self) -> None:  # pragma: no cover - post-delivery stub
+        """Paper-faithful prototype path (post-delivery, NOT trained in US-034).
+
+        Documented stub for the clean solution (US-034 R-APPROX / AC-8): load a
+        frozen ``CLIPTextModel`` (``self.config.teacher_model_id``), encode the
+        CAP templates of ``cap_vocabulary.yaml`` per region x category, and use
+        its native ``hidden_size`` (768) output as text prototypes aligned with
+        the visual CLS — replacing the crude orthogonal lift of
+        :meth:`_proto_to_clip_proj`. NOT invoked in the US-034 run; the
+        contrastive loss currently consumes the reprojected MiniLM prototypes.
+        """
+        raise NotImplementedError(
+            "Native CLIPTextModel prototype path is post-delivery (US-034 AC-8); "
+            "US-034 uses MiniLM-384 prototypes reprojected via _proto_to_clip_proj."
+        )
 
     def step(
         self,
@@ -587,6 +709,9 @@ class FarSLIPDistillationTrainer:
                         "loss_gamma": self.config.loss_weights["gamma"],
                     }
                 )
+                if self.config.extra_params:
+                    # US-034: proto_source/proto_proj/caveat + prototype dims.
+                    _mlflow.log_params(dict(self.config.extra_params))
             except RuntimeError as exc:  # pragma: no cover
                 _log.warning("mlflow init fallo", error=str(exc))
                 run_ctx = None

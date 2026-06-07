@@ -15,8 +15,9 @@ The ``--resume`` flag loads a previous checkpoint (local path or GCS) and resume
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated, Literal
 
+import numpy as np
 import structlog
 import torch
 
@@ -25,13 +26,19 @@ try:
 except ImportError as exc:  # pragma: no cover
     raise ImportError("typer required for the train CLI. poetry add typer") from exc
 
-from torch.utils.data import ConcatDataset, DataLoader
+from torch.utils.data import ConcatDataset
 
+from ml.farslip.cap_pastis_mapping import expand_to_cap, load_cap_to_pastis
 from ml.farslip.dataset import FarSLIPDataset
 from ml.farslip.distill import FarSLIPDistillationTrainer, FarSLIPTrainerConfig
 from ml.utils.seed import propagate_seed
 
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
 _log = structlog.get_logger(__name__)
+
+ProtoSource = Literal["pastis", "random"]
 
 # Italian ROIs hardcoded for --rois italy (the 3 zones of the US-017 paper).
 # When France is added (us-022-e), expand this mapping to {"italy": [...], "france": [...]}.
@@ -40,7 +47,9 @@ _ROIS_BY_KEY: dict[str, tuple[str, ...]] = {
 }
 
 
-def _build_dataset(dataset_root: Path, rois_key: str) -> tuple[ConcatDataset, int, int]:
+def _build_dataset(
+    dataset_root: Path, rois_key: str
+) -> tuple[ConcatDataset, int, int, list[str]]:
     """Concatenate the Italian ROI manifests into a PyTorch Dataset.
 
     Important: we pass global canonical `cap_classes` and `regions` (unified
@@ -54,9 +63,12 @@ def _build_dataset(dataset_root: Path, rois_key: str) -> tuple[ConcatDataset, in
         rois_key: key in `_ROIS_BY_KEY` (default "italy").
 
     Returns:
-        Tuple (ConcatDataset, n_regions, n_categories) where n_regions and
-        n_categories are the real sizes of the global vocabulary (needed
-        to dimension text_prototypes correctly).
+        Tuple (ConcatDataset, n_regions, n_categories, all_cap_classes) where
+        n_regions and n_categories are the real sizes of the global vocabulary
+        (needed to dimension text_prototypes correctly) and all_cap_classes is
+        the canonical CAP-slug order (``category_id`` indexing) consumed by
+        ``build_text_prototypes`` / ``expand_to_cap`` to keep the prototype rows
+        aligned with the loss targets.
 
     Raises:
         FileNotFoundError: if any of the manifests does not exist.
@@ -99,7 +111,146 @@ def _build_dataset(dataset_root: Path, rois_key: str) -> tuple[ConcatDataset, in
                 regions=all_regions,
             )
         )
-    return ConcatDataset(parts), len(all_regions), len(all_cap_classes)
+    return ConcatDataset(parts), len(all_regions), len(all_cap_classes), all_cap_classes
+
+
+def _expand_cap_classes(cap_classes: Sequence[str], n_categories: int) -> list[str]:
+    """Returns the canonical CAP class order padded to ``n_categories`` slots.
+
+    The dataset derives ``n_categories`` from the union of ``cap_class`` values
+    across the 3 manifests; the prototype matrix must have one row per category
+    in the SAME order (``category_id`` ``0..n_categories-1``). If fewer distinct
+    CAP slugs were observed than ``n_categories`` (defensive: should not happen),
+    the missing tail slots are filled with ``"altro"`` (neutral, mapped to Meadow)
+    so the cardinality always matches without a silent index shift.
+
+    Args:
+        cap_classes: distinct CAP slugs observed in the dataset, canonical order.
+        n_categories: target number of categories (loss expects this many rows
+            per region).
+
+    Returns:
+        List of length ``n_categories`` of CAP slugs in canonical order.
+    """
+    ordered = list(cap_classes)
+    if len(ordered) < n_categories:
+        ordered = ordered + ["altro"] * (n_categories - len(ordered))
+    return ordered[:n_categories]
+
+
+def build_text_prototypes(
+    *,
+    n_regions: int,
+    n_categories: int,
+    hidden_dim: int,
+    seed: int,
+    proto_source: ProtoSource = "pastis",
+    cap_classes: Sequence[str] | None = None,
+    prototype_path: Path | None = None,
+) -> tuple[torch.Tensor, dict[str, object]]:
+    """Builds the ``(n_regions * n_categories, D)`` text prototypes for the loss.
+
+    US-034 fix: replaces the legacy ``torch.randn`` prototypes (contrastive
+    alignment against noise — the bug that made FarSLIP lose 0.163 vs 0.233) with
+    the REAL phenological prototypes of US-033 (per-class MiniLM-384 embeddings).
+    Flow when ``proto_source == "pastis"``:
+
+        load_class_prototype_embeddings()  -> proto_18 (18, 384) L2-norm
+        expand_to_cap(proto_18, cap_classes(32))  -> proto_cap (32, 384)
+        np.tile(proto_cap, (n_regions, 1))  -> proto_tiled (96, 384), region-major
+
+    The 384-dim tile is returned RAW; :meth:`set_text_prototypes` reprojects it to
+    ``hidden_dim`` (768) via a frozen orthogonal map. Row order is region-major
+    (``region * n_categories + category``), matching the loss target
+    ``region_ids * n_categories + category_ids``.
+
+    Falls back to deterministic ``torch.randn(hidden_dim)`` (legacy behaviour) ONLY
+    if ``proto_source == "random"`` or the US-033 parquet is unavailable (with a
+    warning), so tests / dry-runs never break.
+
+    Args:
+        n_regions: number of regions (3 for the Italian ROIs).
+        n_categories: number of CAP categories (32).
+        hidden_dim: student CLS dimension (768); the random fallback uses it.
+        seed: determinism seed (random fallback + reprojection).
+        proto_source: ``"pastis"`` (real prototypes) or ``"random"`` (legacy).
+        cap_classes: CAP slugs in the dataset's canonical order (required for the
+            ``"pastis"`` path; defines the row order of ``expand_to_cap``).
+        prototype_path: optional override of the US-033 parquet path.
+
+    Returns:
+        Tuple ``(prototypes, meta)``. ``prototypes`` is ``(n_regions * n_categories,
+        D)``: ``D == 384`` for the ``"pastis"`` path (reprojected later) or
+        ``hidden_dim`` for the random fallback. ``meta`` carries MLflow params
+        (``proto_source``, ``proto_proj``, ``caveat``, ``n_protos``,
+        ``proto_dim_in``, ``proto_dim_out``).
+    """
+    n_protos = n_regions * n_categories
+
+    def _random_fallback(reason: str) -> tuple[torch.Tensor, dict[str, object]]:
+        gen = torch.Generator().manual_seed(seed)
+        protos = torch.randn(n_protos, hidden_dim, generator=gen)
+        meta: dict[str, object] = {
+            "proto_source": "random",
+            "proto_proj": "none",
+            "caveat": reason,
+            "n_protos": n_protos,
+            "proto_dim_in": hidden_dim,
+            "proto_dim_out": hidden_dim,
+        }
+        _log.warning("text_prototypes random fallback", reason=reason, n_protos=n_protos)
+        return protos, meta
+
+    if proto_source == "random":
+        return _random_fallback("proto_source=random (explicit A/B baseline)")
+
+    if cap_classes is None:
+        raise ValueError("cap_classes is required for proto_source='pastis'")
+
+    try:
+        from ml.features.phenology_class_prototypes import (
+            load_class_prototype_embeddings,
+        )
+
+        if prototype_path is not None:
+            proto_18, class_ids = load_class_prototype_embeddings(prototype_path)
+        else:
+            proto_18, class_ids = load_class_prototype_embeddings()
+    except (FileNotFoundError, ImportError, OSError) as exc:
+        return _random_fallback(f"US-033 parquet unavailable: {exc}")
+
+    ordered_caps = _expand_cap_classes(cap_classes, n_categories)
+    proto_cap = expand_to_cap(
+        proto_18,
+        ordered_caps,
+        mapping=load_cap_to_pastis(),
+        pastis_class_ids=class_ids,
+    )  # (n_categories, 384)
+    proto_tiled = np.tile(proto_cap, (n_regions, 1))  # (n_protos, 384), region-major
+    if proto_tiled.shape[0] != n_protos:
+        raise ValueError(
+            f"tiled prototypes rows={proto_tiled.shape[0]} != expected {n_protos}"
+        )
+    dim_in = int(proto_tiled.shape[1])
+    prototypes = torch.from_numpy(proto_tiled).float()
+    meta = {
+        "proto_source": "pastis_prototypes",
+        "proto_proj": f"ortho_{dim_in}_{hidden_dim}",
+        "caveat": "ortho_proj_crude_approx",
+        "n_protos": n_protos,
+        "proto_dim_in": dim_in,
+        "proto_dim_out": hidden_dim,
+    }
+    _log.info(
+        "text_prototypes built from pastis prototypes",
+        n_protos=n_protos,
+        proto_dim_in=dim_in,
+        proto_dim_out=hidden_dim,
+        n_pastis=int(proto_18.shape[0]),
+        n_categories=n_categories,
+    )
+    return prototypes, meta
+
 
 app = typer.Typer(add_completion=False, no_args_is_help=False)
 
@@ -129,6 +280,15 @@ def train(
         str | None, typer.Option(help="Ruta/URI a checkpoint para reanudar")
     ] = None,
     time_cap_hours: Annotated[float, typer.Option(help="Hard cap horas")] = 8.0,
+    proto_source: Annotated[
+        str,
+        typer.Option(
+            help="Fuente de prototipos: 'pastis' (fenologicos US-033) o 'random' (A/B)"
+        ),
+    ] = "pastis",
+    mlflow_run_name: Annotated[
+        str, typer.Option(help="Nombre del run MLflow")
+    ] = "farslip-pheno-fix-v1",
 ) -> None:
     """Train FarSLIP with the provided configuration."""
     propagate_seed(seed)
@@ -144,13 +304,27 @@ def train(
     # US-022-c P1 fix (2026-05-24): instantiate FarSLIPDataset + ConcatDataset for the
     # 3 Italian ROIs. The previous CLI only instantiated the trainer without a dataset, which
     # triggered RuntimeError("dataset y dataloader nulos: nada que entrenar") in distill.py:534.
-    dataset, n_regions, n_categories = _build_dataset(dataset_root, rois)
+    dataset, n_regions, n_categories, cap_classes = _build_dataset(dataset_root, rois)
     _log.info(
         "dataset built",
         n_samples=len(dataset),
         rois=rois,
         n_regions=n_regions,
         n_categories=n_categories,
+    )
+
+    # US-034: build prototypes BEFORE the trainer so the meta (caveat params) can
+    # be logged to MLflow via cfg.extra_params.
+    if proto_source not in ("pastis", "random"):
+        raise typer.BadParameter("proto-source must be 'pastis' or 'random'")
+    hidden_dim_probe = 768  # ViT-B/16 hidden_size; confirmed against the trainer below.
+    prototypes, proto_meta = build_text_prototypes(
+        n_regions=n_regions,
+        n_categories=n_categories,
+        hidden_dim=hidden_dim_probe,
+        seed=seed,
+        proto_source=proto_source,  # type: ignore[arg-type]
+        cap_classes=cap_classes,
     )
 
     cfg = FarSLIPTrainerConfig(
@@ -165,6 +339,8 @@ def train(
         time_cap_hours=time_cap_hours,
         n_regions=n_regions,
         n_categories=n_categories,
+        mlflow_run_name=mlflow_run_name,
+        extra_params=proto_meta,
     )
     trainer = FarSLIPDistillationTrainer(cfg, dataset=dataset)
     if resume:
@@ -174,16 +350,28 @@ def train(
             sd = torch.load(path, map_location=trainer.device, weights_only=True)
             trainer.student.load_state_dict(sd, strict=False)
 
-    # Text prototypes: paper §3.3 computes them with the frozen text encoder 1x per epoch.
-    # For this first CLI implementation we use deterministic random prototypes
-    # (propagated seed) — the contrastive signal holds even though the prototypes are not
-    # aligned to the CAP vocabulary. Refinement to prototypes-from-text-encoder remains a
-    # follow-up post-US-022-c (paper-faithful enhancement, ADR-007 §"Diferencias menores").
-    n_protos = cfg.n_regions * cfg.n_categories
-    hidden_dim = trainer.teacher.config.hidden_size
-    text_prototypes = torch.randn(n_protos, hidden_dim, generator=torch.Generator().manual_seed(seed))
-    trainer.set_text_prototypes(text_prototypes)
-    _log.info("text_prototypes initialized", n_protos=n_protos, hidden_dim=hidden_dim, mode="random_seeded")
+    # US-034 fix: inject the REAL phenological prototypes (US-033) instead of
+    # torch.randn (which aligned the contrastive InfoNCE against noise). The
+    # prototypes were built above; set_text_prototypes reprojects the MiniLM-384
+    # tile to the student CLS dim (768) via a frozen orthogonal map and asserts D.
+    hidden_dim = int(trainer.teacher.config.hidden_size)
+    if proto_meta.get("proto_source") == "random" and hidden_dim != hidden_dim_probe:
+        # Random fallback was sized with the probe; rebuild at the true hidden dim.
+        prototypes, proto_meta = build_text_prototypes(
+            n_regions=n_regions,
+            n_categories=n_categories,
+            hidden_dim=hidden_dim,
+            seed=seed,
+            proto_source="random",
+        )
+        cfg.extra_params = proto_meta
+    trainer.set_text_prototypes(prototypes)
+    _log.info(
+        "text_prototypes initialized",
+        n_protos=prototypes.shape[0],
+        hidden_dim=hidden_dim,
+        **{k: proto_meta[k] for k in ("proto_source", "proto_proj", "caveat")},
+    )
 
     metrics = trainer.train()
     _log.info("training done", **metrics)
