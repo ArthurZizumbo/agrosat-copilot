@@ -1,0 +1,107 @@
+{
+  "fold": 5,
+  "held_out": true,
+  "code_version": "086c4b53022066ae637ba246892b34f81072a27a",
+  "data_version": "data/PASTIS-R@untracked",
+  "dtype": "float16",
+  "num_classes": 18,
+  "size": 128,
+  "models": {
+    "unet": {
+      "model": "unet",
+      "model_kind": "unet",
+      "path": "C:\\Users\\arthu\\Proyectos\\MNA\\agro_sat_copilot\\ml\\eval\\oof\\oof_unet_fold5.parquet",
+      "parcel_path": "C:\\Users\\arthu\\Proyectos\\MNA\\agro_sat_copilot\\ml\\eval\\oof\\oof_parcel_unet_fold5.parquet",
+      "shape": [
+        18,
+        128,
+        128
+      ],
+      "dtype": "float16",
+      "n_patches": 496,
+      "status": "ok",
+      "held_out": true,
+      "reason": null
+    },
+    "deeplabv3plus": {
+      "model": "deeplabv3plus",
+      "model_kind": "deeplabv3plus",
+      "path": "C:\\Users\\arthu\\Proyectos\\MNA\\agro_sat_copilot\\ml\\eval\\oof\\oof_deeplabv3plus_fold5.parquet",
+      "parcel_path": "C:\\Users\\arthu\\Proyectos\\MNA\\agro_sat_copilot\\ml\\eval\\oof\\oof_parcel_deeplabv3plus_fold5.parquet",
+      "shape": [
+        18,
+        128,
+        128
+      ],
+      "dtype": "float16",
+      "n_patches": 496,
+      "status": "ok",
+      "held_out": true,
+      "reason": null
+    },
+    "segformer": {
+      "model": "segformer",
+      "model_kind": "segformer",
+      "path": "C:\\Users\\arthu\\Proyectos\\MNA\\agro_sat_copilot\\ml\\eval\\oof\\oof_segformer_fold5.parquet",
+      "parcel_path": "C:\\Users\\arthu\\Proyectos\\MNA\\agro_sat_copilot\\ml\\eval\\oof\\oof_parcel_segformer_fold5.parquet",
+      "shape": [
+        18,
+        128,
+        128
+      ],
+      "dtype": "float16",
+      "n_patches": 496,
+      "status": "ok",
+      "held_out": true,
+      "reason": null
+    },
+    "utae": {
+      "model": "utae",
+      "model_kind": "utae",
+      "path": "C:\\Users\\arthu\\Proyectos\\MNA\\agro_sat_copilot\\ml\\eval\\oof\\oof_utae_fold5.parquet",
+      "parcel_path": "C:\\Users\\arthu\\Proyectos\\MNA\\agro_sat_copilot\\ml\\eval\\oof\\oof_parcel_utae_fold5.parquet",
+      "shape": [
+        18,
+        128,
+        128
+      ],
+      "dtype": "float16",
+      "n_patches": 496,
+      "status": "ok",
+      "held_out": true,
+      "reason": null
+    },
+    "tsvit-pheno": {
+      "model": "tsvit-pheno",
+      "model_kind": "tsvit-pheno",
+      "path": "C:\\Users\\arthu\\Proyectos\\MNA\\agro_sat_copilot\\ml\\eval\\oof\\oof_tsvit-pheno_fold5.parquet",
+      "parcel_path": "C:\\Users\\arthu\\Proyectos\\MNA\\agro_sat_copilot\\ml\\eval\\oof\\oof_parcel_tsvit-pheno_fold5.parquet",
+      "shape": [
+        18,
+        128,
+        128
+      ],
+      "dtype": "float16",
+      "n_patches": 496,
+      "status": "ok",
+      "held_out": true,
+      "reason": null
+    },
+    "anysat": {
+      "model": "anysat",
+      "model_kind": "anysat",
+      "path": "C:\\Users\\arthu\\Proyectos\\MNA\\agro_sat_copilot\\ml\\eval\\oof\\oof_anysat_fold5.parquet",
+      "parcel_path": "C:\\Users\\arthu\\Proyectos\\MNA\\agro_sat_copilot\\ml\\eval\\oof\\oof_parcel_anysat_fold5.parquet",
+      "shape": [
+        18,
+        128,
+        128
+      ],
+      "dtype": "float16",
+      "n_patches": 496,
+      "status": "ok",
+      "held_out": true,
+      "reason": null
+    }
+  }
+}

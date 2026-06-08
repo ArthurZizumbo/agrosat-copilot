@@ -1,0 +1,5 @@
+outs:
+- md5: e9c98c5741fcb4a14a7aba7cc6d2db76
+  size: 2692
+  hash: md5
+  path: pastis_farslip_filtered_splits.parquet

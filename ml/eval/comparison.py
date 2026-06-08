@@ -34,16 +34,22 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import polars as pl
 import structlog
+
+if TYPE_CHECKING:
+    from matplotlib.figure import Figure
 
 logger = structlog.get_logger(__name__)
 
 __all__ = [
     "ComparisonResult",
     "build_comparison_table",
+    "build_fold5_comparison_table",
     "export_comparison_latex",
+    "fold5_barplot_figure",
 ]
 
 # Canonical order of the scenarios (short label -> human-readable name).
@@ -528,3 +534,219 @@ def _column_dtype(column: str) -> pl.DataType:
     if column == "n_features":
         return pl.Int64()
     return pl.Float64()
+
+
+# ---------------------------------------------------------------------------
+# US-030 — Fold-5 apples-to-apples segmentation comparison (consolidation).
+# ---------------------------------------------------------------------------
+
+# Canonical columns of the fold-5 segmentation comparison table. Mirrors the
+# schema returned by ``ml.eval.dense_metrics.rescore_all_checkpoints`` (the
+# `model/miou/f1_macro/pixel_accuracy/fold/n_patches/status` contract); any
+# extra per-class columns the harness adds are preserved on write but not
+# required by the consolidation.
+_FOLD5_TABLE_COLUMNS: tuple[str, ...] = (
+    "model",
+    "miou",
+    "f1_macro",
+    "pixel_accuracy",
+    "fold",
+    "n_patches",
+    "status",
+)
+
+#: Default destination of the fold-5 comparison CSV (relative to the repo root).
+_FOLD5_CSV_RELPATH = Path("reports/segmentation/metrics/model_comparison_fold5.csv")
+
+
+def build_fold5_comparison_table(
+    df_or_path: pl.DataFrame | str | Path,
+    out_dir: str | Path | None = None,
+) -> pl.DataFrame:
+    """Consolidate the fold-5 re-score into the Avance 4 comparison CSV.
+
+    Takes the output of
+    :func:`ml.eval.dense_metrics.rescore_all_checkpoints` (a Polars DataFrame or
+    a path to a parquet/CSV with the same schema), keeps the contract columns
+    ``model, miou, f1_macro, pixel_accuracy, fold, n_patches, status``, sorts by
+    ``miou`` descending and writes
+    ``reports/segmentation/metrics/model_comparison_fold5.csv`` (AC-5).
+
+    This is the fold-5 held-out replacement of the fold-4 parquets consolidated
+    by ``Avance4.Equipo17.ipynb`` (US-025); the fold-4 numbers are obsolete (see
+    ``scripts/export_avance4_metrics_us025.py``).
+
+    Args:
+        df_or_path: Either the re-score DataFrame (6 rows, harness schema) or a
+            path to a ``.parquet``/``.csv`` with that schema.
+        out_dir: Directory where ``model_comparison_fold5.csv`` is written.
+            Defaults to ``reports/segmentation/metrics`` relative to the repo
+            root. Created if missing.
+
+    Returns:
+        The consolidated Polars DataFrame (sorted by ``miou`` descending), with
+        the contract columns first followed by any per-class extras.
+
+    Raises:
+        FileNotFoundError: if ``df_or_path`` is a path that does not exist.
+        ValueError: if the input lacks any of the contract columns.
+    """
+    df = _load_fold5_frame(df_or_path)
+
+    missing = [c for c in _FOLD5_TABLE_COLUMNS if c not in df.columns]
+    if missing:
+        raise ValueError(
+            "The fold-5 re-score input is missing required columns "
+            f"{missing}; expected at least {list(_FOLD5_TABLE_COLUMNS)}."
+        )
+
+    # Contract columns first, then any per-class derivatives the harness added.
+    extra_cols = [c for c in df.columns if c not in _FOLD5_TABLE_COLUMNS]
+    ordered = df.select([*_FOLD5_TABLE_COLUMNS, *extra_cols]).sort(
+        "miou", descending=True, nulls_last=True
+    )
+
+    if out_dir is None:
+        out_path = _repo_root() / _FOLD5_CSV_RELPATH
+    else:
+        out_path = Path(out_dir) / _FOLD5_CSV_RELPATH.name
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # CSV cannot hold nested data (e.g. ``per_class_iou`` is a ``List(Float64)``).
+    # Write the flat scalar columns to CSV and offload nested columns to a parquet
+    # sidecar (parquet preserves lists/structs) so no metric is lost.
+    nested_cols = [
+        name
+        for name, dtype in zip(ordered.columns, ordered.dtypes, strict=True)
+        if isinstance(dtype, (pl.List, pl.Struct, pl.Array))
+    ]
+    scalar = ordered.drop(nested_cols) if nested_cols else ordered
+    scalar.write_csv(out_path)
+
+    if nested_cols:
+        parquet_path = out_path.with_suffix(".parquet")
+        ordered.write_parquet(parquet_path)
+        logger.info(
+            "fold5_comparison_nested_offloaded",
+            parquet=str(parquet_path),
+            nested_columns=nested_cols,
+        )
+
+    logger.info(
+        "fold5_comparison_table_written",
+        path=str(out_path),
+        n_rows=ordered.height,
+    )
+    return ordered
+
+
+def fold5_barplot_figure(df: pl.DataFrame) -> Figure:
+    """Build the fold-5 comparison barplot (mIoU + F1-macro per model).
+
+    Renders a grouped bar chart with one pair of bars per model (mIoU and
+    F1-macro), sorted by ``miou`` descending so the strongest model is leftmost.
+    Models with ``status != "ok"`` (e.g. ``"missing"``) are skipped from the
+    plot but kept in the table. Ports the inline notebook cell of
+    ``Avance4.Equipo17.ipynb`` to a reusable module function (AC-5).
+
+    Args:
+        df: Fold-5 comparison DataFrame with at least
+            ``model, miou, f1_macro, status``.
+
+    Returns:
+        A matplotlib :class:`~matplotlib.figure.Figure` ready for
+        ``savefig``/``display`` (caller saves to
+        ``reports/segmentation/figures/barplot_comparison_fold5.png``).
+
+    Raises:
+        ValueError: if ``df`` lacks ``model``, ``miou`` or ``f1_macro``.
+    """
+    # Deferred import: matplotlib is optional in some ml environments (mirrors
+    # the tolerant import in ``ml.eval.__init__``).
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    for col in ("model", "miou", "f1_macro"):
+        if col not in df.columns:
+            raise ValueError(
+                f"`df` must contain the column `{col}` to build the barplot."
+            )
+
+    plot_df = df
+    if "status" in df.columns:
+        plot_df = df.filter(pl.col("status") == "ok")
+    plot_df = plot_df.sort("miou", descending=True, nulls_last=True)
+
+    models = plot_df.get_column("model").to_list()
+    miou = [float(v) if v is not None else 0.0 for v in plot_df.get_column("miou")]
+    f1 = [float(v) if v is not None else 0.0 for v in plot_df.get_column("f1_macro")]
+
+    x = np.arange(len(models))
+    width = 0.38
+
+    fig, ax = plt.subplots(figsize=(max(6.0, 1.4 * len(models)), 4.5))
+    bars_miou = ax.bar(x - width / 2, miou, width, label="mIoU", color="#2b8cbe")
+    bars_f1 = ax.bar(x + width / 2, f1, width, label="F1-macro", color="#fdae61")
+
+    ax.set_ylabel("Metrica (fold-5 held-out)")
+    ax.set_xlabel("Modelo")
+    ax.set_title("Comparativa de segmentacion (fold-5, esquema 18-clase, 128px)")
+    ax.set_xticks(x)
+    ax.set_xticklabels(models, rotation=30, ha="right")
+    ax.set_ylim(0.0, 1.0)
+    ax.legend()
+    ax.grid(axis="y", linestyle=":", alpha=0.4)
+
+    for bars in (bars_miou, bars_f1):
+        ax.bar_label(bars, fmt="%.3f", padding=2, fontsize=8)
+
+    fig.tight_layout()
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# Private helpers — US-030 fold-5 consolidation.
+# ---------------------------------------------------------------------------
+
+
+def _load_fold5_frame(df_or_path: pl.DataFrame | str | Path) -> pl.DataFrame:
+    """Load the fold-5 re-score input as a Polars DataFrame.
+
+    Args:
+        df_or_path: An in-memory DataFrame or a path to a ``.parquet``/``.csv``.
+
+    Returns:
+        The loaded Polars DataFrame.
+
+    Raises:
+        FileNotFoundError: if a path is given and does not exist.
+        ValueError: if a path has an unsupported extension.
+    """
+    if isinstance(df_or_path, pl.DataFrame):
+        return df_or_path
+
+    path = Path(df_or_path)
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Fold-5 re-score input not found at {path}. Run "
+            "`rescore_all_checkpoints()` first or pass its DataFrame directly."
+        )
+    if path.suffix == ".parquet":
+        return pl.read_parquet(path)
+    if path.suffix == ".csv":
+        return pl.read_csv(path)
+    raise ValueError(
+        f"Unsupported fold-5 input extension `{path.suffix}` ({path}); "
+        "expected .parquet or .csv."
+    )
+
+
+def _repo_root() -> Path:
+    """Return the repository root (3 levels up from this module).
+
+    ``ml/eval/comparison.py`` -> ``ml/eval`` -> ``ml`` -> repo root.
+
+    Returns:
+        The :class:`~pathlib.Path` of the repository root.
+    """
+    return Path(__file__).resolve().parents[2]

@@ -1,0 +1,5 @@
+outs:
+- md5: fdc41f228bafcc0a6ff16f228fab506b
+  size: 253427636
+  hash: md5
+  path: oof_deeplabv3plus_fold5.parquet

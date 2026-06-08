@@ -24,6 +24,26 @@ Flow:
 
 The output is ``data/features/phenology_class_prototypes_pastis.parquet`` with
 18 rows ``class_id, class_name, ndvi_curve, description, emb_000..emb_383``.
+
+Regeneration (US-033 AC-8):
+    The parquet is already materialized and DVC-tracked; it is NOT regenerated
+    in normal operation. The SHA256 description cache
+    (``data/cache/phenology_descriptions/{key}.json``, keyed by
+    ``(parcel_id, curve, model, "prompt_v1")``) means cached curves do not
+    re-call Gemini, so a re-run is deterministic and free for unchanged
+    inputs. To refresh it (only with a valid key or an injected client; cost
+    ~$0.0018 for 18 descriptions at temperature=0)::
+
+        # Requires GEMINI_API_KEY / GOOGLE_GENAI_USE_VERTEXAI + project, or
+        # ml.features.phenology_description.set_llm_client(...) for an offline
+        # client. After regenerating: dvc add <parquet> + commit the .dvc.
+        poetry run python -m ml.features.phenology_class_prototypes \
+            --pastis-root data/PASTIS-R \
+            --output data/features/phenology_class_prototypes_pastis.parquet
+
+    Changing ``PROMPT_TEMPLATE`` requires bumping the ``b"prompt_v1"`` literal
+    in :func:`ml.features.phenology_description._hash_curve` to avoid silent
+    cache poisoning.
 """
 
 from __future__ import annotations

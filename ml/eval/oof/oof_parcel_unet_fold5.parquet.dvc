@@ -1,0 +1,5 @@
+outs:
+- md5: ff36268a0d9bdbaa732374fa031fcf3f
+  size: 2015608
+  hash: md5
+  path: oof_parcel_unet_fold5.parquet

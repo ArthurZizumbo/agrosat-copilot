@@ -1,0 +1,5 @@
+outs:
+- md5: dd0cdcaf34267dd26fb1d5e3752c1cd6
+  size: 344005328
+  hash: md5
+  path: best.safetensors

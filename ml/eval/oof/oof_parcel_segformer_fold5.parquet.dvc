@@ -1,0 +1,5 @@
+outs:
+- md5: 99d8b9c0e766d1a42f1cb6543bb7fba6
+  size: 2062477
+  hash: md5
+  path: oof_parcel_segformer_fold5.parquet
