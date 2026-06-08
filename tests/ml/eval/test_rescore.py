@@ -38,15 +38,21 @@ from ml.eval.comparison import (
     fold5_barplot_figure,
 )
 
-# Canonical model set of the harness (AnySat, NOT Swin-UNETR).
+# Canonical model set of the harness (AnySat, NOT Swin-UNETR). US-038 added the
+# base ``tsvit`` (Full-M retrain) alongside the original ``tsvit-pheno``: the
+# harness now re-scores 7 entries apples-to-apples (AC-9).
 _EXPECTED_MODELS: frozenset[str] = frozenset(
-    {"unet", "deeplabv3plus", "segformer", "utae", "tsvit-pheno", "anysat"}
+    {"unet", "deeplabv3plus", "segformer", "utae", "tsvit", "tsvit-pheno", "anysat"}
 )
 
-# Variants that must NEVER leak into the registry (duplicated / HCAT / alt-*).
+# Variants that must NEVER leak into the registry (duplicated / HCAT / stray
+# mlruns weights). ``alt-tsvit-fullm-v1`` is the LEGITIMATE Full-M checkpoint of
+# the ``tsvit`` entry (US-038), so the forbidden fragment is the historical
+# ``alt-tsvit-v1`` / ``alt-tsvit-pheno-v1`` L4 runs, not the ``-fullm-`` one.
 _FORBIDDEN_FRAGMENTS: tuple[str, ...] = (
     "hcat",
-    "alt-tsvit",
+    "alt-tsvit-v1",
+    "alt-tsvit-pheno",
     "tsvit-v1",
     "mlruns",
 )
@@ -105,9 +111,9 @@ def _make_fold5_frame(*, with_missing: bool = False) -> pl.DataFrame:
 
 
 def test_registry_has_exactly_six_models() -> None:
-    """El registry mapea exactamente los 6 modelos canonicos (AC-8)."""
+    """El registry mapea los modelos canonicos (US-030 6 + US-038 tsvit = 7)."""
     assert set(CHECKPOINT_REGISTRY) == _EXPECTED_MODELS
-    assert len(CHECKPOINT_REGISTRY) == 6
+    assert len(CHECKPOINT_REGISTRY) == 7
 
 
 def test_registry_excludes_duplicated_variants() -> None:
@@ -132,6 +138,7 @@ def test_registry_paths_match_contract() -> None:
         "deeplabv3plus": "checkpoints/segmentation/deeplab-18/best.pt",
         "segformer": "checkpoints/segmentation/segformer-isaac/hf_model",
         "utae": "checkpoints/segmentation/utae-isaac/best_model.pt",
+        "tsvit": "checkpoints/segmentation/alt-tsvit-fullm-v1/best.pt",
         "tsvit-pheno": "checkpoints/segmentation/tsvit-pheno-v1/best.pt",
         "anysat": "checkpoints/segmentation/anysat-aaron/anysat_pastis.pt",
     }
@@ -152,7 +159,7 @@ def test_registry_segformer_is_three_rgb_and_resize() -> None:
 
 def test_registry_native_class_conventions() -> None:
     """18-clase nativos ignore=255; 20-clase ignore=19 (R6)."""
-    for name in ("deeplabv3plus", "tsvit-pheno"):
+    for name in ("deeplabv3plus", "tsvit", "tsvit-pheno"):
         spec = CHECKPOINT_REGISTRY[name]
         assert spec.native_num_classes == 18
         assert spec.native_ignore_index == 255
