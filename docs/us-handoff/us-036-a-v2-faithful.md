@@ -1,6 +1,6 @@
 # US-036-a v2 — Handoff (REDISENO FarSLIP fiel al paper)
 
-**Status**: `planning` (plan completo escrito; CERO codigo escrito; run H100 NO lanzado)
+**Status**: `code-complete` (T1+T2+T3+T4 implementados y verdes en CI; run H100 NO lanzado — pendiente Fase A captions + Fase B/C re-entrenamiento)
 **Titulo**: REDISENO de FarSLIP FIEL al paper Li et al. 2025 (arXiv:2511.14901) — region-category multi-objeto + MPCL + caption global Gemma
 
 > **PLANNING (2026-06-08)**. Plan detallado de 11 secciones en
@@ -10,6 +10,16 @@
 > aprendio ~4 clases. v2 implementa el FarSLIP del paper: **multiples pares region-category por imagen** (via
 > `ParcelIDs`) con **Multi-Positive Contrastive Loss (MPCL, ec. 4)** + **caption global rica `L_glo`** (ec. 1-2,
 > InfoNCE) generada por **Gemma 4 31B multimodal local**. v1 NO se borra (queda como modo de ablacion).
+
+> **T4 INTEGRACION (2026-06-08)**. T1/T2/T3 (commit 6c8978a) ya estaban; T4 integra los tres en el trainer +
+> orquestador. `ml/farslip/distill.py` gana un modo aditivo `supervision="region_category"` (default `"dominant"`
+> = v1 intacto) con `step_faithful_v2` (MPCL `L_loc` + InfoNCE `L_glo`), `set_category_prototypes` (mapeo PASTIS
+> 1..18 -> [0,C) + lift 384->768 reusando el de v1) y `set_caption_encoder`/`_encode_captions`. El orquestador
+> `scripts/run_us036a_v2_farslip_faithful.py` (Typer, comando `train`, flag `--supervision faithful_v2|dominant_v1`)
+> carga captions, arma `RegionCategoryPairDataset(train)`, entrena, evalua F1/IoU por clase en el fold held-out,
+> tabla honesta v1 vs v2 y un run MLflow `:5010` `farslip-faithful-v2` CERRADO con `data_version` (PASTIS-R +
+> parquet captions) + `code_version`. **29 tests T4 verdes + suite `tests/ml/farslip/` sin regresion** (v1 sigue
+> verde). El run real en H100 sigue pendiente.
 
 ## Por que el rediseno (problema detectado por el usuario)
 
@@ -37,8 +47,24 @@
 
 ## Estado de la implementacion
 
-**CERO codigo escrito.** Esta entrega es SOLO planning (este handoff + el plan). Lo que YA EXISTE y se REUSA
-(no se reescribe):
+**T1+T2+T3+T4 implementados (code-complete).** Lo nuevo de T4 (esta entrega):
+
+- `ml/farslip/distill.py` (MOD, aditivo): `SupervisionMode` literal; campos config `supervision` (default
+  `"dominant"`), `lambda_loc` (1.0), `temperature` (0.07), `use_global_caption_loss` (True). Modulos v2
+  `MultiPositiveRegionCategoryLoss` + `GlobalImageTextLoss` instanciados siempre (baratos). Metodos nuevos:
+  `set_category_prototypes(prototypes, pastis_class_ids)` (lift 384->768 reusando `_proto_to_clip_proj` + guarda el
+  mapeo PASTIS id -> [0,C)); `set_caption_encoder`/`_encode_captions` (caption CLS al espacio CLS); `_map_region_cat_ids`
+  (PASTIS crudo -> indice de banco, falla si id ausente); `step_faithful_v2(images, region_cat_ids, region_to_patch,
+  caption_cls)` (gather `student_cls[region_to_patch]` -> `L_loc` MPCL; `L_glo` InfoNCE; `combine_losses`);
+  `_forward_batch` despacha v1/v2 segun `supervision`. **La firma publica de `RegionCategoryAlignmentLoss` y de
+  `step`/`set_text_prototypes`/`save_student` NO cambia** (back-compat v1 + tests existentes verdes).
+- `scripts/run_us036a_v2_farslip_faithful.py` (NUEVO, Typer comando `train`): `run_faithful_v2(...)`,
+  `eval_per_class_v2(...)` (patch-CLS vs banco de categorias, comparable a v1), `_v1_vs_v2_table_rows`,
+  `_log_faithful_run` (run MLflow CERRADO), guards `_validate_pastis_root`/`assert_disjoint_folds`/
+  `_require_captions_for_dataset`. Flag `--supervision faithful_v2` (default) vs `dominant_v1` (ablacion).
+- `tests/ml/farslip/test_us036a_v2_orchestrator.py` (NUEVO, 29 tests, mocks CPU, cero GPU/red/PASTIS/Gemma).
+
+Lo que YA EXISTE y se REUSA (no se reescribe):
 
 - `ml/farslip/distill.py`: `FarSLIPDistillationTrainer`, `PatchDistillationLoss` (`L_dis`, NO se toca),
   `RegionCategoryAlignmentLoss` (se reescribe a MPCL manteniendo firma), `set_text_prototypes` (reproyecta
@@ -131,7 +157,62 @@ CERRADO; best -> DVC (insumo US-037); write-set disjunto que NO rompe el path v1
 
 ## Proximo paso
 
-1. Lanzar **T1, T2, T3 en paralelo** (3 agentes ml, write-sets disjuntos) con sus tests (mocks: cero GPU/red/PASTIS/Gemma).
-2. **T4** tras merge de T1-T3: integrar en `distill.py` (flag `supervision`, `L_glo`+`L_loc`) + orquestador; `make check` + tests verdes.
-3. **H100**: `nvidia-smi`; Fase A captions (`dvc add`+push del parquet); Fase B re-entrenamiento; Fase C eval por clase + tabla v1 vs v2; best -> DVC; cerrar run MLflow.
-4. Anotar ADR-007 (salto de fidelidad); actualizar este handoff a `implemented` con resultados reales y el reporte honesto v1 vs v2.
+1. ~~T1, T2, T3 en paralelo~~ **HECHO** (commit 6c8978a).
+2. ~~T4 integracion en `distill.py` + orquestador~~ **HECHO** (esta entrega; 29 tests verdes + suite farslip sin regresion).
+3. **H100 (pendiente)**: `nvidia-smi` ANTES; parar daemon idle-shutdown.
+   - **Fase A — captions Gemma** (genera el parquet, `dvc add`+push). El orquestador de training NO genera
+     captions; usa `ml/farslip/caption_cache.generate_captions_parquet` (T1) con el `GemmaCaptionClient`.
+   - **Fase B/C — re-entrenamiento fiel + eval + best -> DVC** (comando exacto abajo).
+4. Tras el run: anotar ADR-007 (salto de fidelidad 1-positivo -> MPCL + caption global), actualizar este handoff a
+   `implemented` con `best`/`stop` reales, la tabla honesta v1 vs v2 (reporte aunque no mejore) y el muestreo de
+   20 captions auditadas; cerrar el run MLflow (verificar FINISHED, no RUNNING).
+
+## Comando exacto del re-entrenamiento fiel en H100 (cuando las captions esten listas)
+
+```bash
+# Fase A (una vez): materializa data/farslip/pastis_captions.parquet via Gemma local (T1), luego dvc add+push.
+#   (lo provee T1: caption_cache.generate_captions_parquet con GemmaCaptionClient /api/chat think=false 896px)
+# dvc add data/farslip/pastis_captions.parquet && dvc push
+
+# Fase B/C: re-entrenamiento fiel (MPCL + L_glo) + eval por clase + run MLflow CERRADO.
+poetry run python -m scripts.run_us036a_v2_farslip_faithful train \
+    --run-name farslip-faithful-v2 \
+    --supervision faithful_v2 \
+    --lambda-loc 1.0 --temperature 0.07 \
+    --n-epochs 30 --batch-size 64 --lr 1e-5 --seed 42 \
+    --folds 1,2,3 --val-folds 4 \
+    --pastis-root data/PASTIS-R \
+    --captions-path data/farslip/pastis_captions.parquet \
+    --output-dir checkpoints/farslip/faithful_v2 \
+    --time-cap-hours 8.0 --mlflow-uri http://localhost:5010
+
+# Ablacion v1 (mismo flag, path dominante): --supervision dominant_v1
+# Ablacion L_glo:                          --no-global-loss
+# Best -> DVC tras el run:
+# dvc add checkpoints/farslip/faithful_v2/best.safetensors && dvc push
+```
+
+## Ajustes de firma (T4)
+
+- `FarSLIPTrainerConfig`: campos NUEVOS `supervision` (`"dominant"` default), `lambda_loc`, `temperature`,
+  `use_global_caption_loss`. **Aditivos, defaults compatibles** -> v1 (`run_us036a_farslip_full_incremental.py`)
+  sigue funcionando sin tocarse (su `extra_params` y firma intactos).
+- `FarSLIPDistillationTrainer`: metodos NUEVOS `set_category_prototypes`, `set_caption_encoder`, `step_faithful_v2`
+  (y privados `_encode_captions`, `_map_region_cat_ids`, `_forward_batch`). `RegionCategoryAlignmentLoss`,
+  `step`, `set_text_prototypes`, `save_student`, `adapt_patch_embed_to_n_channels` **sin cambios de firma**.
+- El orquestador v2 entrena pasando un `DataLoader` con `collate_fn=collate_region_batch` (T2) a `trainer.train`,
+  que en modo `region_category` consume `images`/`region_cat_ids`/`region_to_patch`/`caption_cls`. Nota: el batch
+  v2 trae `captions` (list[str]) ya codificadas aguas arriba; si se quiere `L_glo` en el run real hay que poblar
+  `batch["caption_cls"]` (pre-encodear con MiniLM o el text-encoder via `set_caption_encoder`) — hoy el collate de
+  T2 no inyecta `caption_cls`, asi que en su ausencia `L_glo=0` y el run optimiza solo `L_loc` (ablacion). Ver
+  "Pendiente para el run real con L_glo" abajo.
+
+## Pendiente para activar L_glo en el run real (no bloquea T4)
+
+El `collate_region_batch` (T2) entrega `captions` como `list[str]` pero no `caption_cls`. Para que `L_glo` sea
+real en el run productivo hay dos opciones (ambas sin tocar T2/T3, ambas pre-encodean los CLS de caption UNA vez
+fuera del loop, plan §7): (a) un `collate_fn` envoltorio que adjunte `caption_cls` pre-encodeado por patch_id, o
+(b) `trainer.set_caption_encoder(encoder)` y encodear las captions del batch dentro de un wrapper del loader.
+Mientras tanto el trainer degrada con elegancia: sin `caption_cls`, `step_faithful_v2` pone `L_glo=0` y entrena
+`L_loc` (MPCL) — el corazon del rediseno — sin romperse. Documentado como riesgo controlado; el cierre debe
+elegir (a)/(b) y reportarlo.
