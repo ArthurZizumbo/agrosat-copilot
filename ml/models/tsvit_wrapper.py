@@ -66,12 +66,17 @@ __all__ = ["TSVIT_FULLM_CONFIG", "TSViT", "build_tsvit"]
 #: the re-score harness registry (``ml.eval.checkpoint_registry`` entry
 #: ``"tsvit"``) and the tests, so the capacity that is TRAINED, the capacity
 #: SAVED in the checkpoint and the capacity the harness REBUILDS to load the
-#: ``state_dict`` are byte-identical (US-038 R-HARNESS). ``n_timesteps=64`` keeps
-#: the ordinal temporal PE long enough for the full PASTIS-R series ``T <= ~61``
-#: (US-038 R-TLEN). These are the keyword arguments fed to :func:`build_tsvit`
-#: besides ``num_classes`` and ``in_channels``.
+#: ``state_dict`` are byte-identical (US-038 R-HARNESS). ``n_timesteps=37`` equals
+#: the REAL PASTIS-R minimum series length (T_MIN=37, T_MAX=61, T_MEDIAN=46): the
+#: dataset's ``_equispaced_indices`` only subsamples when ``n_select < T``, so a
+#: value above T_MIN leaves short patches at their native T and the per-batch
+#: ``torch.stack`` fails ("stack expects each tensor to be equal size"). 37 forces
+#: a uniform 37-date equispaced subsample on every patch (stackable batch) while
+#: covering the whole phenological cycle (US-038 R-TLEN, fixed against real data).
+#: These are the keyword arguments fed to :func:`build_tsvit` besides
+#: ``num_classes`` and ``in_channels``.
 TSVIT_FULLM_CONFIG: dict[str, int] = {
-    "n_timesteps": 64,
+    "n_timesteps": 37,
     "img_size": 128,
     "patch_size": 8,
     "dim": 192,

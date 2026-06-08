@@ -48,7 +48,9 @@ def test_registry_tsvit_carries_fullm_capacity() -> None:
     spec = CHECKPOINT_REGISTRY["tsvit"]
     assert spec.model_kwargs == TSVIT_FULLM_CONFIG
     assert spec.model_kwargs["dim"] == 192
-    assert spec.model_kwargs["n_timesteps"] == 64
+    # n_timesteps=37 = PASTIS T_MIN (US-038 fix): un valor mayor deja patches cortos
+    # a su T nativo y el batch no apila; el modelo TRAINED uso 37.
+    assert spec.model_kwargs["n_timesteps"] == 37
     assert spec.model_kwargs["depth_temporal"] == 6
     assert spec.model_kwargs["depth_spatial"] == 6
 
@@ -68,7 +70,7 @@ def test_build_model_for_kind_applies_fullm_kwargs() -> None:
     spec = CHECKPOINT_REGISTRY["tsvit"]
     model = build_model_for_kind(spec, device="cpu")
     assert model.dim == 192  # type: ignore[attr-defined]
-    assert model.n_timesteps == 64  # type: ignore[attr-defined]
+    assert model.n_timesteps == 37  # type: ignore[attr-defined]
     assert len(model.temporal_transformer.layers) == 6  # type: ignore[attr-defined]
     assert len(model.spatial_transformer.layers) == 6  # type: ignore[attr-defined]
 
