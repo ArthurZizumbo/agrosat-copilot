@@ -129,24 +129,39 @@ def build_parcel_ground_truth(
     """Reconstruct the per-parcel semantic18 ground truth from PASTIS-R.
 
     For each held-out patch, reads the semantic ``TARGET`` and the ParcelIDs
-    raster, and assigns each parcel the MAJORITY semantic label of its pixels
+    raster, and assigns each parcel the MAJORITY semantic18 label of its pixels
     (the OOF dump uses the same parcels via ``pixel_to_parcel_probs``). The
-    canonical key matches the OOF parcels: ``f"{patch_id}_{local_id}"``.
+    canonical key matches the OOF parcels: ``f"{patch_id}_{parcel_raster_id}"``.
+
+    The raw PASTIS-R semantic channel uses the 20-class convention (``0`` =
+    Background, ``1..18`` = agronomic crops, ``19`` = Void). The dense OOF members
+    and the segmentation harness, however, live in the contiguous ``semantic18``
+    space ``[0..17]`` (Background/Void dropped, agronomic ``c`` shifted to
+    ``c - 1``). This builder applies the SAME ``semantic18`` LUT that
+    :class:`ml.data.pastis_seg_dataset.PASTISSegmentationDataset` uses (the source
+    of truth Voting evaluates against), so the per-parcel GT is class-aligned with
+    every ensemble's predictions (without it the labels are off by one).
 
     Args:
         patch_ids: Held-out (fold-5) PASTIS-R patch ids to reconstruct.
         pastis_root: Root of the PASTIS-R dataset (contains ``ANNOTATIONS/``).
-        ignore_index: Semantic ignore label excluded from the majority vote
-            (default 255).
+        ignore_index: Semantic ignore label (Background/Void) excluded from the
+            majority vote (default 255).
 
     Returns:
         A Polars DataFrame with ``canonical_parcel_id`` (Utf8) + ``label``
-        (Int64), one row per parcel, sorted by the key.
+        (Int64, in the ``[0..17]`` semantic18 space), one row per parcel, sorted
+        by the key.
 
     Raises:
         FileNotFoundError: if a patch's TARGET or ParcelIDs raster is missing.
     """
+    from ml.data.pastis_seg_dataset import _build_semantic18_lut
     from ml.utils.parcel_reconcile import load_pastis_parcel_ids
+
+    # The contiguous semantic18 LUT (PASTIS 0..19 -> [0..17] U {ignore}), shared
+    # with the dataset so the parcel GT matches the dense OOF / Voting GT exactly.
+    label_lut = _build_semantic18_lut(ignore_index)
 
     root = Path(pastis_root)
     keys: list[str] = []
@@ -162,7 +177,10 @@ def build_parcel_ground_truth(
         parcel_ids = load_pastis_parcel_ids(pid, root)
 
         flat_pids = parcel_ids.reshape(-1)
-        flat_labels = target.reshape(-1).astype(np.int64)
+        # Map raw PASTIS labels (0..19) to the contiguous semantic18 space before
+        # voting; Background/Void become ``ignore_index`` and are dropped below.
+        raw = np.clip(target.reshape(-1).astype(np.int64), 0, 19)
+        flat_labels = label_lut[raw]
         valid = (flat_pids != 0) & (flat_labels != ignore_index)
         flat_pids = flat_pids[valid]
         flat_labels = flat_labels[valid]
@@ -170,7 +188,7 @@ def build_parcel_ground_truth(
             continue
 
         unique_ids, inverse = np.unique(flat_pids, return_inverse=True)
-        # Majority semantic label per parcel via a (n_parcels, num_classes) vote.
+        # Majority semantic18 label per parcel via a (n_parcels, num_classes) vote.
         votes = np.zeros((unique_ids.size, _NUM_CLASSES), dtype=np.int64)
         in_range = flat_labels < _NUM_CLASSES
         np.add.at(votes, (inverse[in_range], flat_labels[in_range]), 1)
@@ -209,6 +227,7 @@ def build_parcel_geometries(
     Raises:
         FileNotFoundError: if ``metadata.geojson`` is missing.
     """
+    from pyproj import Transformer
     from shapely.geometry import Point, shape
 
     from ml.utils.parcel_reconcile import load_pastis_parcel_ids
@@ -218,11 +237,18 @@ def build_parcel_geometries(
     if not meta_path.exists():
         raise FileNotFoundError(f"PASTIS-R metadata.geojson not found: {meta_path}.")
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    # PASTIS-R metadata.geojson is in EPSG:2154 (Lambert-93, metres); H3 / the
+    # spatial split need lon/lat (EPSG:4326), so reproject every patch centroid.
+    crs_name = (
+        meta.get("crs", {}).get("properties", {}).get("name", "EPSG:2154")
+    )
+    transformer = Transformer.from_crs(crs_name, "EPSG:4326", always_xy=True)
     centroid_by_patch: dict[str, tuple[float, float]] = {}
     for feature in meta["features"]:
         pid = str(feature["properties"]["ID_PATCH"])
         centroid = shape(feature["geometry"]).centroid
-        centroid_by_patch[pid] = (float(centroid.x), float(centroid.y))
+        lon, lat = transformer.transform(float(centroid.x), float(centroid.y))
+        centroid_by_patch[pid] = (float(lon), float(lat))
 
     keys: list[str] = []
     geoms: list[str] = []
@@ -248,6 +274,151 @@ def build_parcel_geometries(
 
 
 # ---------------------------------------------------------------------------
+# Canonical parcel id reconciliation between the tabular and dense spaces.
+# ---------------------------------------------------------------------------
+#
+# The tabular features (``features_fused_pastis.parquet``) key each parcel by its
+# PASTIS instance id (``TARGET[1]`` channel, the sequential 1..N used by
+# ``vectorize_pastis_parcels.py``), so its ``parcel_id`` column already encodes
+# ``f"{patch_id}_{instance_id}"`` (e.g. ``"10003_1"``). The dense OOF dump and the
+# ground truth instead key parcels by the SEPARATE ``ParcelIDs_<patch>.npy`` raster
+# (e.g. ``"10003_1103071"``), which is the canonical schema of
+# :mod:`ml.utils.parcel_reconcile`. The two id spaces are spatially 1:1 but
+# numerically disjoint, so every tabular key must be translated to the canonical
+# ParcelIDs space before it can align with the GT / dense OOF members. Doing this
+# in ONE place keeps Bagging, Stacking and Blending on the same canonical key.
+
+
+def _instance_to_parcel_id_map(
+    patch_id: str | int,
+    pastis_root: Path,
+) -> dict[int, int]:
+    """Map a patch's instance ids (``TARGET[1]``) to its ParcelIDs raster ids.
+
+    PASTIS-R ships two per-pixel id rasters for the same parcels: the instance
+    channel ``TARGET[1]`` (sequential ``1..N``, used by the tabular features) and
+    the ``ParcelIDs_<patch>.npy`` raster (the canonical ids used by the dense OOF
+    and the ground truth). They are spatially co-registered, so each instance id
+    maps to the ParcelIDs value that dominates its pixels (a 1:1 correspondence in
+    PASTIS-R). This bridges the tabular key space to the canonical one.
+
+    Args:
+        patch_id: PASTIS-R patch identifier.
+        pastis_root: Root of the PASTIS-R dataset (contains ``ANNOTATIONS/``).
+
+    Returns:
+        A dict ``{instance_id: parcel_raster_id}`` for every parcel of the patch.
+
+    Raises:
+        FileNotFoundError: if the patch's TARGET or ParcelIDs raster is missing.
+    """
+    from ml.utils.parcel_reconcile import load_pastis_parcel_ids
+
+    pid = str(patch_id)
+    root = Path(pastis_root)
+    target_path = root / "ANNOTATIONS" / f"TARGET_{pid}.npy"
+    if not target_path.exists():
+        raise FileNotFoundError(f"PASTIS-R semantic TARGET not found: {target_path}.")
+    target = np.load(target_path)
+    if target.ndim != 3 or target.shape[0] < 2:
+        raise FileNotFoundError(
+            f"PASTIS-R TARGET_{pid}.npy lacks the instance channel (shape {target.shape})."
+        )
+    instance = target[1]
+    parcel_raster = load_pastis_parcel_ids(pid, root)
+
+    mapping: dict[int, int] = {}
+    for inst_id in np.unique(instance):
+        inst_int = int(inst_id)
+        if inst_int == 0:
+            continue
+        mask = instance == inst_int
+        values, counts = np.unique(parcel_raster[mask], return_counts=True)
+        # The ParcelIDs value covering most of the instance pixels (1:1 in PASTIS).
+        mapping[inst_int] = int(values[counts.argmax()])
+    return mapping
+
+
+def tabular_parcel_keys(
+    df_tabular: pl.DataFrame,
+    pastis_root: Path,
+) -> list[str]:
+    """Build canonical ParcelIDs keys for the rows of a tabular parcel frame.
+
+    Translates each tabular row (keyed by ``patch_id`` + ``instance_id`` in the
+    instance-id space) into the canonical ``f"{patch_id}_{parcel_raster_id}"`` key
+    used by the dense OOF members and the ground truth, so Bagging / Stacking /
+    Blending all align on a single canonical key. The ``patch_id`` column is the
+    true patch (never re-derived from ``parcel_id`` to avoid double-prefixing).
+
+    Args:
+        df_tabular: Tabular parcel frame with ``patch_id`` and ``instance_id``
+            columns (``features_fused_pastis.parquet`` schema).
+        pastis_root: Root of the PASTIS-R dataset.
+
+    Returns:
+        A list of canonical ``canonical_parcel_id`` strings, one per row of
+        ``df_tabular`` (row order preserved).
+
+    Raises:
+        ValueError: if ``patch_id`` or ``instance_id`` is missing, or an
+            ``instance_id`` cannot be mapped to a ParcelIDs raster value.
+    """
+    for col in ("patch_id", "instance_id"):
+        if col not in df_tabular.columns:
+            raise ValueError(f"tabular features are missing the `{col}` column.")
+
+    patch_ids = df_tabular.get_column("patch_id").to_list()
+    instance_ids = df_tabular.get_column("instance_id").to_list()
+
+    cache: dict[str, dict[int, int]] = {}
+    keys: list[str] = []
+    for patch, inst in zip(patch_ids, instance_ids, strict=True):
+        pid = str(patch)
+        if pid not in cache:
+            cache[pid] = _instance_to_parcel_id_map(pid, pastis_root)
+        raster_id = cache[pid].get(int(inst))
+        if raster_id is None:
+            raise ValueError(
+                f"instance id {inst} of patch {pid} has no ParcelIDs raster match; "
+                "the tabular features and PASTIS-R rasters are out of sync."
+            )
+        keys.append(f"{pid}_{raster_id}")
+    logger.info("tabular_parcel_keys_built", n_rows=len(keys), n_patches=len(cache))
+    return keys
+
+
+def _remap_tabular_class_id(df_tabular: pl.DataFrame) -> pl.DataFrame:
+    """Remap a tabular frame's ``class_id`` to the contiguous semantic18 space.
+
+    The tabular features carry the raw PASTIS ``class_id`` (``1..18``); the dense
+    OOF members, the ground truth and every ensemble live in the contiguous
+    ``semantic18`` space ``[0..17]`` (agronomic ``c`` shifted to ``c - 1``,
+    Background/Void dropped). This applies the SAME LUT as
+    :class:`ml.data.pastis_seg_dataset.PASTISSegmentationDataset`, so the Bagging
+    member (which learns whatever ``class_id`` it is handed) predicts in the same
+    class columns as the rest. Rows whose class maps to the ignore label
+    (Background/Void) are dropped.
+
+    Args:
+        df_tabular: Tabular parcel frame with a ``class_id`` column.
+
+    Returns:
+        The frame with ``class_id`` in the ``[0..17]`` semantic18 space and the
+        Background/Void rows removed. Frames without ``class_id`` pass through.
+    """
+    if "class_id" not in df_tabular.columns:
+        return df_tabular
+    from ml.data.pastis_seg_dataset import _build_semantic18_lut
+
+    lut = _build_semantic18_lut(255)
+    pastis = np.clip(df_tabular.get_column("class_id").to_numpy().astype(np.int64), 0, 19)
+    mapped = lut[pastis]
+    remapped = df_tabular.with_columns(pl.Series("class_id", mapped, dtype=pl.Int64))
+    return remapped.filter(pl.col("class_id") != 255)
+
+
+# ---------------------------------------------------------------------------
 # xgb-alphaearth parcel OOF: materialize from tabular features when absent.
 # ---------------------------------------------------------------------------
 
@@ -256,6 +427,7 @@ def materialize_xgb_parcel_oof(
     features_path: Path,
     *,
     out_path: Path,
+    pastis_root: Path,
     random_state: int = 42,
 ) -> Path:
     """Materialize the missing ``oof_parcel_xgb-alphaearth_fold5.parquet``.
@@ -266,11 +438,18 @@ def materialize_xgb_parcel_oof(
     post-softmax ``prob_000..prob_017`` per parcel. Because the model never sees
     fold-5, the result is a true held-out OOF prediction (anti-leakage).
 
+    The parcel keys are translated to the canonical ParcelIDs space via
+    :func:`tabular_parcel_keys` so this materialized OOF aligns with the dense
+    members and the ground truth (the tabular features key parcels by the
+    instance-id space, NOT the ParcelIDs raster).
+
     Args:
         features_path: ``data/features/features_fused_pastis.parquet`` with
-            ``parcel_id``, ``patch_id``, ``class_id``, ``fold`` and the
-            AlphaEarth ``dim_000..dim_063`` columns.
+            ``parcel_id``, ``patch_id``, ``instance_id``, ``class_id``, ``fold``
+            and the AlphaEarth ``dim_000..dim_063`` columns.
         out_path: Destination ``oof_parcel_xgb-alphaearth_fold5.parquet``.
+        pastis_root: PASTIS-R root, used to translate instance ids to canonical
+            ParcelIDs keys.
         random_state: Deterministic seed.
 
     Returns:
@@ -282,6 +461,7 @@ def materialize_xgb_parcel_oof(
     """
     from sklearn.preprocessing import LabelEncoder
 
+    from ml.data.pastis_seg_dataset import _build_semantic18_lut
     from ml.train.baseline import build_estimator
 
     df = pl.read_parquet(features_path)
@@ -299,9 +479,17 @@ def materialize_xgb_parcel_oof(
     if test.height == 0:
         raise ValueError("fold-5 has no parcels in the features parquet.")
 
+    # The features carry the raw PASTIS class_id (1..18); map it to the contiguous
+    # semantic18 space [0..17] (the dense OOF / GT space) before fitting, so the
+    # materialized probabilities land in the SAME class columns as every member.
+    label_lut = _build_semantic18_lut(255)
     x_train = train.select(feature_cols).to_numpy().astype(np.float64)
     x_train = np.where(np.isfinite(x_train), x_train, 0.0)
-    y_raw = train.get_column("class_id").to_numpy().astype(np.int64)
+    pastis_train = np.clip(train.get_column("class_id").to_numpy().astype(np.int64), 0, 19)
+    y_raw = label_lut[pastis_train]
+    keep = y_raw != 255  # drop Background/Void parcels (no semantic18 class).
+    x_train = x_train[keep]
+    y_raw = y_raw[keep]
     encoder = LabelEncoder().fit(y_raw)
     y_train = encoder.transform(y_raw).astype(np.int64)
 
@@ -333,14 +521,7 @@ def materialize_xgb_parcel_oof(
     row_sums = full.sum(axis=1, keepdims=True)
     full = full / np.where(row_sums < 1e-12, 1.0, row_sums)
 
-    keys = [
-        f"{patch}_{parcel}"
-        for patch, parcel in zip(
-            test.get_column("patch_id").cast(pl.Utf8).to_list(),
-            test.get_column("parcel_id").cast(pl.Utf8).to_list(),
-            strict=True,
-        )
-    ]
+    keys = tabular_parcel_keys(test, pastis_root)
     data: dict[str, object] = {_KEY: keys}
     for c, name in enumerate(PROB_COLUMNS):
         data[name] = full[:, c].astype(np.float32)
@@ -365,6 +546,7 @@ def resolve_parcel_members(
     *,
     materialize_xgb: bool,
     features_path: Path | None,
+    pastis_root: Path,
     random_state: int,
 ) -> tuple[str, ...]:
     """Resolve the parcel base members, handling the missing xgb-alphaearth OOF.
@@ -374,6 +556,7 @@ def resolve_parcel_members(
         materialize_xgb: If ``True`` and the xgb parcel OOF is missing, build it
             from ``features_path``; if ``False`` degrade to the dense members.
         features_path: Tabular features parquet (required to materialize).
+        pastis_root: PASTIS-R root (forwarded for canonical key translation).
         random_state: Seed forwarded to the materialization.
 
     Returns:
@@ -391,7 +574,12 @@ def resolve_parcel_members(
             note="oof_parcel_xgb-alphaearth_fold5.parquet absent (US-031 did not "
             "dump it); materializing from tabular features (folds 1-4 -> fold-5).",
         )
-        materialize_xgb_parcel_oof(Path(features_path), out_path=xgb_oof, random_state=random_state)
+        materialize_xgb_parcel_oof(
+            Path(features_path),
+            out_path=xgb_oof,
+            pastis_root=pastis_root,
+            random_state=random_state,
+        )
         return PARCEL_BASE_MEMBERS
 
     degraded = tuple(m for m in PARCEL_BASE_MEMBERS if m != XGB_MEMBER)
@@ -410,7 +598,20 @@ def resolve_parcel_members(
 
 
 def _aligned_labels(parcel_ids: Sequence[str], gt_labels: pl.DataFrame) -> np.ndarray:
-    """Align the GT labels to a parcel id order (subset + reorder)."""
+    """Align the GT labels to a parcel id order (subset + reorder).
+
+    Args:
+        parcel_ids: Canonical parcel ids (ParcelIDs space) to look up, in order.
+        gt_labels: Per-parcel GT frame with ``canonical_parcel_id`` + ``label``.
+
+    Returns:
+        An ``int64`` array of labels aligned 1:1 with ``parcel_ids``.
+
+    Raises:
+        KeyError: if any parcel id is absent from the GT, with a diagnostic that
+            surfaces a canonical-id namespace mismatch (instance-id vs ParcelIDs)
+            instead of a bare missing-key error.
+    """
     lookup = dict(
         zip(
             gt_labels[_KEY].cast(pl.Utf8).to_list(),
@@ -418,6 +619,14 @@ def _aligned_labels(parcel_ids: Sequence[str], gt_labels: pl.DataFrame) -> np.nd
             strict=True,
         )
     )
+    missing = [str(p) for p in parcel_ids if str(p) not in lookup]
+    if missing:
+        raise KeyError(
+            f"{len(missing)} parcel id(s) are absent from the GT lookup "
+            f"(e.g. {missing[:5]}); the canonical_parcel_id namespaces do not "
+            "match (the GT keys by the ParcelIDs raster -- translate tabular "
+            "instance-id keys via tabular_parcel_keys before aligning)."
+        )
     return np.asarray([lookup[str(p)] for p in parcel_ids], dtype=np.int64)
 
 
@@ -481,6 +690,7 @@ def run(
         oof_dir,
         materialize_xgb=materialize_xgb,
         features_path=features,
+        pastis_root=pastis_root,
         random_state=random_state,
     )
 
@@ -508,20 +718,18 @@ def run(
         )
 
     # E2 Bagging (parcel, tabular) -------------------------------------------
-    df_tabular = pl.read_parquet(features)
+    # Remap the raw PASTIS class_id (1..18) to the contiguous semantic18 space
+    # [0..17] so Bagging's predicted columns match the dense OOF / GT class space
+    # (Bagging is class-agnostic: it learns whatever class_id it is handed).
+    df_tabular = _remap_tabular_class_id(pl.read_parquet(features))
     bagging = BaggingEnsemble(
         n_bags=n_bags, n_trials=n_trials_bagging, oof_dir=oof_dir, random_state=random_state
     ).fit(df_tabular)
     fold5_tabular = df_tabular.filter(pl.col("fold") == HELD_OUT_FOLD)
     proba_bag, t_bag = EnsembleModel.timed_predict(bagging.predict_proba, fold5_tabular)
-    bag_keys = [
-        f"{patch}_{parcel}"
-        for patch, parcel in zip(
-            fold5_tabular.get_column("patch_id").cast(pl.Utf8).to_list(),
-            fold5_tabular.get_column("parcel_id").cast(pl.Utf8).to_list(),
-            strict=True,
-        )
-    ]
+    # Translate the tabular instance-id keys to the canonical ParcelIDs space so
+    # they align with the GT (the dense OOF / GT key by the ParcelIDs raster).
+    bag_keys = tabular_parcel_keys(fold5_tabular, pastis_root)
     bag_labels = _aligned_labels(bag_keys, parcel_gt)
     bag_metrics = bagging.evaluate(y_true=bag_labels, proba=proba_bag, fold=fold)
     bag_metrics["inference_time_s"] = t_bag
