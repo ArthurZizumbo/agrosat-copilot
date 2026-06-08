@@ -457,7 +457,13 @@ def _rescore_one(
         raise FileNotFoundError(f"checkpoint path does not exist: {spec.path}")
 
     # Temporal models consume the full series; the 2D CNNs a median composite.
-    is_temporal = spec.model_kind in ("tsvit", "tsvit-pheno", "utae", "anysat")
+    is_temporal = spec.model_kind in (
+        "tsvit",
+        "tsvit-pheno",
+        "tsvit-pheno-fullm",
+        "utae",
+        "anysat",
+    )
     collapse_time = None if is_temporal else "median"
     ds_kwargs: dict[str, object] = {
         "folds": (fold,),

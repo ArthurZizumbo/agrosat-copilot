@@ -54,8 +54,43 @@ def test_registry_tsvit_carries_fullm_capacity() -> None:
 
 
 def test_tsvit_pheno_has_no_extra_kwargs() -> None:
-    """El TSViT-pheno (L4) no arrastra ``model_kwargs`` (retro-compat)."""
+    """El TSViT-pheno (L4 historico) no arrastra ``model_kwargs`` (retro-compat)."""
     assert CHECKPOINT_REGISTRY["tsvit-pheno"].model_kwargs == {}
+
+
+def test_registry_has_tsvit_pheno_fullm() -> None:
+    """La entrada US-039 ``tsvit-pheno-fullm`` existe con metadatos Full-M.
+
+    Coexiste con el ``tsvit-pheno`` L4 (R10): NO lo sobrescribe, asi la tabla
+    fold-5 publicada de US-030 sigue comparable. Lleva la MISMA capacidad Full-M
+    que la base US-038 (``tsvit``), porque la rama contrastiva es solo una loss de
+    entrenamiento -> el ``state_dict`` guardado es identico al de la topologia base
+    (re-score apples-to-apples).
+    """
+    assert "tsvit-pheno-fullm" in CHECKPOINT_REGISTRY
+    spec = CHECKPOINT_REGISTRY["tsvit-pheno-fullm"]
+    assert spec.model_kind == "tsvit-pheno-fullm"
+    assert spec.native_num_classes == 18
+    assert spec.native_ignore_index == 255
+    assert spec.in_channels == 10
+    assert spec.needs_resize is False
+    assert spec.path.parts[-2:] == ("tsvit-pheno-fullm-v1", "best.pt")
+    # Capacidad Full-M byte-identica a la base (anti R-HARNESS).
+    assert spec.model_kwargs == TSVIT_FULLM_CONFIG
+
+
+def test_build_model_for_kind_pheno_fullm_applies_fullm_kwargs() -> None:
+    """``build_model_for_kind`` reconstruye Full-M para ``tsvit-pheno-fullm``.
+
+    Sin esto, el harness reconstruiria un TSViT L4 (dim=128, depth 4+4,
+    n_timesteps=10) y ``load_state_dict`` fallaria contra el ``best.pt`` Full-M.
+    """
+    spec = CHECKPOINT_REGISTRY["tsvit-pheno-fullm"]
+    model = build_model_for_kind(spec, device="cpu")
+    assert model.dim == 192  # type: ignore[attr-defined]
+    assert model.n_timesteps == 64  # type: ignore[attr-defined]
+    assert len(model.temporal_transformer.layers) == 6  # type: ignore[attr-defined]
+    assert len(model.spatial_transformer.layers) == 6  # type: ignore[attr-defined]
 
 
 def test_build_model_for_kind_applies_fullm_kwargs() -> None:
