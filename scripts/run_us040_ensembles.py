@@ -787,9 +787,16 @@ def run(
     chosen_row = table.filter(pl.col("chosen"))
     chosen_model = chosen_row["model"][0] if chosen_row.height else INDIVIDUAL_BASELINE_NAME
 
-    # Re-tag the chosen ensemble in MLflow (if it is one of the four).
+    # Re-tag the chosen ensemble in MLflow (if it is one of the four). This is a
+    # cosmetic post-step (the comparison CSV already marks the chosen model and the
+    # per-ensemble runs are already logged): a failure here (e.g. the VM MLflow
+    # artifact-root scheme rejecting the upload) must NOT abort the pipeline before
+    # the figures are emitted.
     if use_mlflow:
-        _retag_chosen(chosen_model, results, oof_dir, random_state)
+        try:
+            _retag_chosen(chosen_model, results, oof_dir, random_state)
+        except Exception as exc:  # noqa: BLE001 - cosmetic retag, never fatal
+            logger.warning("retag_chosen_failed_skipping", chosen=chosen_model, error=str(exc))
 
     # Figures (>=4 interpretable) on the BEST ensemble's predictions ---------
     _emit_figures(
