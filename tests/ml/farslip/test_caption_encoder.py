@@ -78,6 +78,21 @@ def test_make_caption_collate_injects_caption_cls_in_order() -> None:
     assert torch.equal(batch["caption_cls"][1], emb["100"])
 
 
+def test_caption_collate_is_picklable() -> None:
+    # The DataLoader with num_workers>0 pickles the collate (Windows spawn). A
+    # local closure raised "Can't get local object"; the module-level class must
+    # round-trip through pickle.
+    import pickle
+
+    from ml.farslip.region_category_dataset import collate_region_batch
+
+    emb = encode_captions_minilm({"100": "aaa", "200": "bb"})
+    collate = make_caption_collate(collate_region_batch, emb)
+    restored = pickle.loads(pickle.dumps(collate))
+    assert restored.caption_embeddings.keys() == emb.keys()
+    assert torch.equal(restored.caption_embeddings["100"], emb["100"])
+
+
 def test_make_caption_collate_raises_on_missing_caption() -> None:
     emb = encode_captions_minilm({"100": "aaa"})
 

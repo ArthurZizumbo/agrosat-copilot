@@ -72,13 +72,10 @@ def encode_captions_minilm(
     return embeddings
 
 
-def make_caption_collate(
-    base_collate: Callable[[list[dict[str, Any]]], dict[str, Any]],
-    caption_embeddings: Mapping[str, torch.Tensor],
-) -> Callable[[list[dict[str, Any]]], dict[str, Any]]:
-    """Wraps a collate so the batch carries ``caption_cls`` ``(B, 384)``.
+class CaptionCollate:
+    """Picklable collate that injects ``caption_cls`` ``(B, 384)`` into the batch.
 
-    The wrapper runs ``base_collate`` (e.g.
+    Runs ``base_collate`` (e.g.
     :func:`ml.farslip.region_category_dataset.collate_region_batch`) and stacks
     the pre-encoded embedding of every batch ``patch_id`` into ``caption_cls``,
     in the SAME order as ``patch_ids`` / ``images`` (so the global InfoNCE pairs
@@ -86,34 +83,61 @@ def make_caption_collate(
     ``step_faithful_v2`` (without it the batch has no ``caption_cls`` and L_glo
     is skipped, leaving only MPCL).
 
+    It is a module-level callable CLASS (not a closure) so it survives the
+    ``multiprocessing`` pickling that a ``DataLoader`` with ``num_workers > 0``
+    performs on Windows ``spawn`` (a local closure raises ``AttributeError:
+    Can't get local object`` there).
+
     Args:
         base_collate: the underlying collate producing ``patch_ids``.
         caption_embeddings: ``{patch_id: tensor(384,)}`` from
             :func:`encode_captions_minilm`.
-
-    Returns:
-        A collate callable returning the base batch plus ``caption_cls``.
-
-    Raises:
-        KeyError: if a batch ``patch_id`` has no pre-encoded caption (fail fast,
-            same contract as ``_require_captions_for_dataset``).
     """
 
-    def _collate(items: list[dict[str, Any]]) -> dict[str, Any]:
-        batch = base_collate(items)
+    def __init__(
+        self,
+        base_collate: Callable[[list[dict[str, Any]]], dict[str, Any]],
+        caption_embeddings: Mapping[str, torch.Tensor],
+    ) -> None:
+        self.base_collate = base_collate
+        self.caption_embeddings = dict(caption_embeddings)
+
+    def __call__(self, items: list[dict[str, Any]]) -> dict[str, Any]:
+        batch = self.base_collate(items)
         patch_ids: Sequence[str] = batch["patch_ids"]
-        missing = [pid for pid in patch_ids if pid not in caption_embeddings]
+        missing = [pid for pid in patch_ids if pid not in self.caption_embeddings]
         if missing:
             raise KeyError(
                 f"{len(missing)} batch patch_ids have no pre-encoded caption "
                 f"(e.g. {missing[:5]}); pre-encode every caption before training."
             )
         batch["caption_cls"] = torch.stack(
-            [caption_embeddings[pid] for pid in patch_ids], dim=0
+            [self.caption_embeddings[pid] for pid in patch_ids], dim=0
         )
         return batch
 
-    return _collate
+
+def make_caption_collate(
+    base_collate: Callable[[list[dict[str, Any]]], dict[str, Any]],
+    caption_embeddings: Mapping[str, torch.Tensor],
+) -> CaptionCollate:
+    """Builds a picklable :class:`CaptionCollate` (see its docstring).
+
+    Args:
+        base_collate: the underlying collate producing ``patch_ids``.
+        caption_embeddings: ``{patch_id: tensor(384,)}`` from
+            :func:`encode_captions_minilm`.
+
+    Returns:
+        A picklable callable returning the base batch plus ``caption_cls``.
+    """
+    return CaptionCollate(base_collate, caption_embeddings)
 
 
-__all__ = ["MINILM_DIM", "SENTENCE_MODEL", "encode_captions_minilm", "make_caption_collate"]
+__all__ = [
+    "MINILM_DIM",
+    "SENTENCE_MODEL",
+    "CaptionCollate",
+    "encode_captions_minilm",
+    "make_caption_collate",
+]

@@ -825,6 +825,16 @@ def _parse_class_ids(class_ids: str) -> tuple[int, ...]:
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
 
+@app.callback()
+def _main() -> None:
+    """FarSLIP fiel al paper (US-036-a v2). Subcomando: ``train``.
+
+    El callback fuerza a Typer a exponer ``train`` como subcomando explicito
+    (sin el, un Typer de comando unico ignora el nombre e interpreta ``train``
+    como argumento extra).
+    """
+
+
 @app.command()
 def train(
     run_name: Annotated[
