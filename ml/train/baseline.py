@@ -262,7 +262,7 @@ class SpatialXGBClassifier(XGBClassifier):
 
     def fit(  # type: ignore[override]
         self, X: np.ndarray, y: np.ndarray, **kwargs: object
-    ) -> "SpatialXGBClassifier":
+    ) -> SpatialXGBClassifier:
         """Fit on locally re-encoded labels so missing classes do not crash.
 
         The booster keeps the local contiguous ``[0, k)`` labels internally
