@@ -23,6 +23,7 @@ espanol.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Annotated
 
 import structlog
 import typer
@@ -41,15 +42,17 @@ def _parse_folds(folds: str) -> tuple[int, ...]:
 
 @app.command()
 def run(
-    pastis_root: Path = typer.Option(Path("data/PASTIS-R"), "--pastis-root"),
-    out: Path = typer.Option(
-        Path("data/farslip/pastis_captions.parquet"), "--out"
+    pastis_root: Annotated[
+        Path, typer.Option("--pastis-root")
+    ] = Path("data/PASTIS-R"),
+    out: Annotated[Path, typer.Option("--out")] = Path(
+        "data/farslip/pastis_captions.parquet"
     ),
-    folds: str = typer.Option("1,2,3,4,5", "--folds"),
-    flush_every: int = typer.Option(25, "--flush-every"),
-    base_url: str = typer.Option("http://127.0.0.1:11434", "--base-url"),
-    model: str = typer.Option("gemma4:31b-it-q8_0", "--model"),
-    resume: bool = typer.Option(True, "--resume/--no-resume"),
+    folds: Annotated[str, typer.Option("--folds")] = "1,2,3,4,5",
+    flush_every: Annotated[int, typer.Option("--flush-every")] = 25,
+    base_url: Annotated[str, typer.Option("--base-url")] = "http://127.0.0.1:11434",
+    model: Annotated[str, typer.Option("--model")] = "gemma4:31b-it-q8_0",
+    resume: Annotated[bool, typer.Option("--resume/--no-resume")] = True,
 ) -> None:
     """Genera (idempotente) las captions globales y audita la fuga al terminar."""
     fold_tuple = _parse_folds(folds)
