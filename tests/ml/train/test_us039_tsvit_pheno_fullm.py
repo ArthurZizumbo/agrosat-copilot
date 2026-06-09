@@ -99,7 +99,9 @@ def test_uses_full_config_from_us038() -> None:
     run_tsvit_pheno_full(train_fn=spy, rescore_fold5=False, mlflow_uri=None)
     kw = spy.last_kwargs
     # Capacidad Full-M byte-identica a la base US-038 (apples-to-apples).
-    assert kw["n_timesteps"] == TSVIT_FULLM_CONFIG["n_timesteps"] == 64
+    # n_timesteps == PASTIS T_MIN (37): el valor con que se entrenaron los
+    # checkpoints (PE ordinal (1, 37, dim)); single source TSVIT_FULLM_CONFIG.
+    assert kw["n_timesteps"] == TSVIT_FULLM_CONFIG["n_timesteps"] == 37
     assert kw["dim"] == TSVIT_FULLM_CONFIG["dim"] == 192
     assert kw["depth_temporal"] == TSVIT_FULLM_CONFIG["depth_temporal"] == 6
     assert kw["depth_spatial"] == TSVIT_FULLM_CONFIG["depth_spatial"] == 6

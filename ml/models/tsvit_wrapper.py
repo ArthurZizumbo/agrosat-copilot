@@ -66,12 +66,17 @@ __all__ = ["TSVIT_FULLM_CONFIG", "TSViT", "build_tsvit"]
 #: the re-score harness registry (``ml.eval.checkpoint_registry`` entry
 #: ``"tsvit"``) and the tests, so the capacity that is TRAINED, the capacity
 #: SAVED in the checkpoint and the capacity the harness REBUILDS to load the
-#: ``state_dict`` are byte-identical (US-038 R-HARNESS). ``n_timesteps=64`` keeps
-#: the ordinal temporal PE long enough for the full PASTIS-R series ``T <= ~61``
-#: (US-038 R-TLEN). These are the keyword arguments fed to :func:`build_tsvit`
-#: besides ``num_classes`` and ``in_channels``.
+#: ``state_dict`` are byte-identical (US-038 R-HARNESS). ``n_timesteps=37`` =
+#: PASTIS-R ``T_MIN``: the temporal dataset subsamples every series uniformly to
+#: 37 steps (variable ``T`` in [37, 61] would break the default collate stack),
+#: so the trained/saved checkpoints carry an ordinal temporal PE of shape
+#: ``(1, 37, dim)`` (verified on ``alt-tsvit-fullm-v1`` and
+#: ``tsvit-pheno-fullm-v1`` best.pt). The harness MUST rebuild with the same 37
+#: or the ordinal PE misaligns and the re-score mIoU collapses (US-038 R-TLEN
+#: bug: 64/10 mismatch -> 0.17 instead of 0.68). These are the keyword arguments
+#: fed to :func:`build_tsvit` besides ``num_classes`` and ``in_channels``.
 TSVIT_FULLM_CONFIG: dict[str, int] = {
-    "n_timesteps": 64,
+    "n_timesteps": 37,
     "img_size": 128,
     "patch_size": 8,
     "dim": 192,

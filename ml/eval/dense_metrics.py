@@ -471,6 +471,15 @@ def _rescore_one(
         "target": "semantic18",
         "ignore_index": HARNESS_IGNORE_INDEX,
     }
+    # Temporal models MUST be re-scored with the SAME n_timesteps they trained
+    # with; otherwise the dataset subsamples to a different T and the ordinal
+    # temporal PE misaligns -> mIoU collapse (US-038 R-TLEN bug: a Full-M model
+    # trained at T=37 re-scored at the default T=10 dropped to ~0.17). Carry the
+    # trained n_timesteps from the registry spec (model_kwargs) into the dataset.
+    if is_temporal:
+        trained_t = spec.model_kwargs.get("n_timesteps")
+        if trained_t is not None:
+            ds_kwargs["n_timesteps"] = int(trained_t)
     if data_root is not None:
         ds_kwargs["root"] = data_root
 
