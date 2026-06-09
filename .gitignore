@@ -322,6 +322,13 @@ reports/baseline/**/*.onnx
 !reports/baseline/feature_ablation/
 !reports/baseline/feature_ablation/**
 
+# ── US-040 reports: ensambles (tabla comparativa + 4 figuras entregable A5) ──
+# Artefactos pequenos del Avance 5 (rubrica Graficos 20pts), van a git directo.
+!reports/ensemble/
+!reports/ensemble/**/*.png
+!reports/ensemble/**/*.csv
+!reports/ensemble/**/*.parquet
+
 # ── VM H100 provisioning (operativos locales, NO versionar) ───────────────────
 # Scripts de setup de la VM + SETUP_REPORT exponen puerto SSH, ruta de llave y
 # comandos de conexion. Se quedan locales; la guia publica saneada vive en
