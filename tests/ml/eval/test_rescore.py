@@ -5,7 +5,9 @@ fold-5 table/figure) without ever running real inference: the 6 ``best.pt`` are
 DVC/gitignored (~2 GB) and AnySat pulls its encoder over ``torch.hub``. The real
 metrics are produced at closure; here we assert the contract:
 
-- ``CHECKPOINT_REGISTRY`` maps exactly the 6 canonical models (no HCAT/alt-*).
+- ``CHECKPOINT_REGISTRY`` maps the canonical models (no HCAT/alt-* leaks): the
+  6 US-030 originals + ``tsvit`` (US-038 Full-M base) + ``tsvit-pheno-fullm``
+  (US-039 Full-M pheno) = 8 entries.
 - ``resolve_state_dict`` tolerates the 3 checkpoint conventions.
 - ``build_fold5_comparison_table`` consolidates a re-score DataFrame into the
   ``model_comparison_fold5.csv`` (6 rows, contract columns, floats in ``[0, 1]``,
@@ -39,16 +41,30 @@ from ml.eval.comparison import (
 )
 
 # Canonical model set of the harness (AnySat, NOT Swin-UNETR). US-038 added the
-# base ``tsvit`` (Full-M retrain) alongside the original ``tsvit-pheno``: the
-# harness now re-scores 7 entries apples-to-apples (AC-9).
+# base ``tsvit`` (Full-M retrain) alongside the original L4 ``tsvit-pheno``;
+# US-039 adds ``tsvit-pheno-fullm`` (Full-M + phenology contrastive branch,
+# coexisting with the L4 ``tsvit-pheno`` so the published US-030 fold-5 table
+# stays comparable, R10). The harness now re-scores 8 entries apples-to-apples.
 _EXPECTED_MODELS: frozenset[str] = frozenset(
-    {"unet", "deeplabv3plus", "segformer", "utae", "tsvit", "tsvit-pheno", "anysat"}
+    {
+        "unet",
+        "deeplabv3plus",
+        "segformer",
+        "utae",
+        "tsvit",
+        "tsvit-pheno",
+        "tsvit-pheno-fullm",
+        "anysat",
+    }
 )
 
 # Variants that must NEVER leak into the registry (duplicated / HCAT / stray
-# mlruns weights). ``alt-tsvit-fullm-v1`` is the LEGITIMATE Full-M checkpoint of
-# the ``tsvit`` entry (US-038), so the forbidden fragment is the historical
-# ``alt-tsvit-v1`` / ``alt-tsvit-pheno-v1`` L4 runs, not the ``-fullm-`` one.
+# mlruns weights). ``alt-tsvit-fullm-v1`` (US-038) and ``tsvit-pheno-fullm-v1``
+# (US-039) are LEGITIMATE Full-M checkpoints; the forbidden fragments are the
+# historical L4 / stray runs (``alt-tsvit-v1``, ``alt-tsvit-pheno``, the bare
+# ``tsvit-v1`` stray). NOTE: ``tsvit-v1`` is NOT a substring of the legitimate
+# ``tsvit-pheno-v1`` (L4 ``tsvit-pheno`` entry, R10) nor of
+# ``tsvit-pheno-fullm-v1`` (US-039), so the guard stays sharp.
 _FORBIDDEN_FRAGMENTS: tuple[str, ...] = (
     "hcat",
     "alt-tsvit-v1",
@@ -111,9 +127,9 @@ def _make_fold5_frame(*, with_missing: bool = False) -> pl.DataFrame:
 
 
 def test_registry_has_exactly_six_models() -> None:
-    """El registry mapea los modelos canonicos (US-030 6 + US-038 tsvit = 7)."""
+    """El registry mapea los canonicos (US-030 6 + US-038 tsvit + US-039 pheno = 8)."""
     assert set(CHECKPOINT_REGISTRY) == _EXPECTED_MODELS
-    assert len(CHECKPOINT_REGISTRY) == 7
+    assert len(CHECKPOINT_REGISTRY) == 8
 
 
 def test_registry_excludes_duplicated_variants() -> None:
@@ -140,6 +156,7 @@ def test_registry_paths_match_contract() -> None:
         "utae": "checkpoints/segmentation/utae-isaac/best_model.pt",
         "tsvit": "checkpoints/segmentation/alt-tsvit-fullm-v1/best.pt",
         "tsvit-pheno": "checkpoints/segmentation/tsvit-pheno-v1/best.pt",
+        "tsvit-pheno-fullm": "checkpoints/segmentation/tsvit-pheno-fullm-v1/best.pt",
         "anysat": "checkpoints/segmentation/anysat-aaron/anysat_pastis.pt",
     }
     for name, rel in expected.items():
@@ -159,7 +176,7 @@ def test_registry_segformer_is_three_rgb_and_resize() -> None:
 
 def test_registry_native_class_conventions() -> None:
     """18-clase nativos ignore=255; 20-clase ignore=19 (R6)."""
-    for name in ("deeplabv3plus", "tsvit", "tsvit-pheno"):
+    for name in ("deeplabv3plus", "tsvit", "tsvit-pheno", "tsvit-pheno-fullm"):
         spec = CHECKPOINT_REGISTRY[name]
         assert spec.native_num_classes == 18
         assert spec.native_ignore_index == 255

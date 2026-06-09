@@ -73,8 +73,12 @@ __all__ = ["TSVIT_FULLM_CONFIG", "TSViT", "build_tsvit"]
 #: ``torch.stack`` fails ("stack expects each tensor to be equal size"). 37 forces
 #: a uniform 37-date equispaced subsample on every patch (stackable batch) while
 #: covering the whole phenological cycle (US-038 R-TLEN, fixed against real data).
-#: These are the keyword arguments fed to :func:`build_tsvit` besides
-#: ``num_classes`` and ``in_channels``.
+#: The trained/saved checkpoints therefore carry an ordinal temporal PE of shape
+#: ``(1, 37, dim)`` (verified on ``alt-tsvit-fullm-v1`` and
+#: ``tsvit-pheno-fullm-v1`` best.pt); the harness MUST rebuild with the same 37 or
+#: the ordinal PE misaligns and the re-score mIoU collapses (64/10 mismatch ->
+#: 0.17 instead of 0.68, US-039 cierre). These are the keyword arguments fed to
+#: :func:`build_tsvit` besides ``num_classes`` and ``in_channels``.
 TSVIT_FULLM_CONFIG: dict[str, int] = {
     "n_timesteps": 37,
     "img_size": 128,

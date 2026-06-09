@@ -114,7 +114,7 @@ def build_model_for_kind(
         return build_deeplabv3plus_mobilenet(
             in_channels=spec.in_channels, classes=classes
         )
-    if kind in ("tsvit", "tsvit-pheno"):
+    if kind in ("tsvit", "tsvit-pheno", "tsvit-pheno-fullm"):
         from ml.models.tsvit_wrapper import build_tsvit
 
         # Default-L4 topology; ``spec.model_kwargs`` overrides it with the trained
@@ -403,7 +403,7 @@ def _forward_logits(
     logits: torch.Tensor
     if model_kind in ("unet", "deeplabv3plus"):
         logits = model(xb)
-    elif model_kind in ("tsvit", "tsvit-pheno"):
+    elif model_kind in ("tsvit", "tsvit-pheno", "tsvit-pheno-fullm"):
         out = model(xb)
         logits = out[0] if isinstance(out, tuple) else out
     elif model_kind == "utae":

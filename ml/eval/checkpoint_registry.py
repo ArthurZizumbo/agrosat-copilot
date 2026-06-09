@@ -54,6 +54,7 @@ ModelKind = Literal[
     "utae",
     "tsvit",
     "tsvit-pheno",
+    "tsvit-pheno-fullm",
     "anysat",
 ]
 
@@ -179,6 +180,30 @@ CHECKPOINT_REGISTRY: dict[str, CheckpointSpec] = {
         in_channels=10,
         needs_resize=False,
         state_key_candidates=("model_state", "model_state_dict"),
+    ),
+    "tsvit-pheno-fullm": CheckpointSpec(
+        name="tsvit-pheno-fullm",
+        model_kind="tsvit-pheno-fullm",
+        # TSViT-pheno Full-M retrain (US-039, H100): the SAME Full-M capacity as
+        # the base US-038 ``tsvit`` (n_timesteps=64, dim=192, depth 6+6, heads=6,
+        # dim_head=64) PLUS the phenology contrastive branch (lambda_contrast=0.3,
+        # Wen et al. 2025). It COEXISTS with the historical L4 ``tsvit-pheno-v1``
+        # (US-030/US-025) instead of overwriting it, so the published fold-5 table
+        # of US-030 stays comparable (US-039 R10). The capacity travels in
+        # ``model_kwargs`` (from TSVIT_FULLM_CONFIG) so build_model_for_kind
+        # rebuilds the exact trained topology before load_state_dict (R-HARNESS):
+        # the best.pt does NOT embed the capacity, and a default-L4 rebuild
+        # (dim=128, depth 4+4, n_timesteps=10) would raise a shape mismatch. The
+        # contrastive branch only adds a training-time loss (it is NOT part of the
+        # segmentation forward), so the saved ``state_dict`` is byte-identical to
+        # the base ``tsvit`` topology and re-scores apples-to-apples against it.
+        path=_CKPT_ROOT / "tsvit-pheno-fullm-v1" / "best.pt",
+        native_num_classes=18,
+        native_ignore_index=255,
+        in_channels=10,
+        needs_resize=False,
+        state_key_candidates=("model_state", "model_state_dict"),
+        model_kwargs=dict(TSVIT_FULLM_CONFIG),
     ),
     "anysat": CheckpointSpec(
         name="anysat",
