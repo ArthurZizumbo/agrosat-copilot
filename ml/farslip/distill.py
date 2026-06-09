@@ -731,6 +731,45 @@ class FarSLIPDistillationTrainer:
             pastis_ids=ids,
         )
 
+    def set_class_weights(self, class_weights: torch.Tensor) -> None:
+        """Re-weights ``L_loc`` (MPCL) by category to fight class imbalance (v2).
+
+        Rebuilds :attr:`_mpcl_loss` with per-category weights so rare-class region
+        anchors contribute more in the ``R->C`` direction, mitigating the collapse
+        to dominant classes (e.g. Meadow) on the small, heavily imbalanced PASTIS.
+        ``class_weights[c]`` must follow the SAME canonical category order ``[0, C)``
+        as the prototype bank set in :meth:`set_category_prototypes` (typically the
+        inverse-frequency weight of category ``c``, normalized to mean 1). Calling
+        with uniform weights is numerically equivalent to no weighting.
+
+        Args:
+            class_weights: ``(C,)`` non-negative per-category weight in canonical
+                order. ``C`` must equal the prototype bank row count.
+
+        Raises:
+            ValueError: if the prototype bank is unset or the length disagrees.
+        """
+        if self._category_prototypes is None:
+            raise ValueError(
+                "set_category_prototypes() must be called before set_class_weights()."
+            )
+        n_categories = int(self._category_prototypes.shape[0])
+        if class_weights.dim() != 1 or class_weights.shape[0] != n_categories:
+            raise ValueError(
+                f"class_weights must be (C,) with C={n_categories}; "
+                f"got {tuple(class_weights.shape)}"
+            )
+        self._mpcl_loss = MultiPositiveRegionCategoryLoss(
+            temperature=self.config.temperature,
+            class_weights=class_weights.detach().float().to(self.device),
+        )
+        _log.info(
+            "mpcl class weights set (v2)",
+            n_categories=n_categories,
+            min_w=round(float(class_weights.min()), 3),
+            max_w=round(float(class_weights.max()), 3),
+        )
+
     def set_caption_encoder(self, encoder: Any) -> None:
         """Injects a frozen text encoder for the v2 caption CLS of ``L_glo``.
 

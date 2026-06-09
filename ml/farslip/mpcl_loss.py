@@ -54,7 +54,11 @@ def _validate_temperature(temperature: float) -> None:
         raise ValueError(f"temperature must be a finite positive number: {temperature}")
 
 
-def _directional_mpcl(logits: torch.Tensor, positive_mask: torch.Tensor) -> torch.Tensor:
+def _directional_mpcl(
+    logits: torch.Tensor,
+    positive_mask: torch.Tensor,
+    anchor_weights: torch.Tensor | None = None,
+) -> torch.Tensor:
     """Computes one direction of the multi-positive contrastive loss.
 
     Implements, for a similarity-derived ``logits`` matrix ``(A, K)`` of anchors
@@ -74,6 +78,11 @@ def _directional_mpcl(logits: torch.Tensor, positive_mask: torch.Tensor) -> torc
         logits: tensor ``(A, K)`` of pre-softmax scores (similarity / tau).
         positive_mask: bool tensor ``(A, K)``; ``True`` where key ``j`` is a
             positive of anchor ``i``.
+        anchor_weights: optional ``(A,)`` non-negative per-anchor weight (class
+            re-weighting to fight imbalance). When ``None`` every valid anchor
+            weighs 1 (the plain SupCon mean). When given, the loss is the
+            weighted mean over valid anchors (sum of weighted losses / sum of
+            weights), so rare-class anchors contribute more.
 
     Returns:
         Scalar loss tensor (mean over anchors with at least one positive). Zero
@@ -89,11 +98,13 @@ def _directional_mpcl(logits: torch.Tensor, positive_mask: torch.Tensor) -> torc
     pos_log_prob_sum = (log_prob * mask).sum(dim=1)  # (A,)
     mean_log_prob_pos = pos_log_prob_sum / n_pos.clamp(min=1.0)  # (A,)
     per_anchor_loss = -mean_log_prob_pos  # (A,)
-    # Only average over anchors that actually have positives (SupCon convention).
-    n_valid = has_pos.sum()
-    if n_valid == 0:
+    valid = has_pos.to(per_anchor_loss.dtype)  # (A,) 1 for anchors with positives
+    if anchor_weights is not None:
+        valid = valid * anchor_weights.to(per_anchor_loss.dtype)
+    denom = valid.sum()
+    if denom <= 0:
         return logits.sum() * 0.0  # keep grad graph, value 0.0
-    return (per_anchor_loss * has_pos.to(per_anchor_loss.dtype)).sum() / n_valid
+    return (per_anchor_loss * valid).sum() / denom
 
 
 class MultiPositiveRegionCategoryLoss(nn.Module):
@@ -127,10 +138,21 @@ class MultiPositiveRegionCategoryLoss(nn.Module):
         temperature: softmax temperature ``tau`` (default 0.07, paper Section 3.3).
     """
 
-    def __init__(self, temperature: float = DEFAULT_TEMPERATURE) -> None:
+    def __init__(
+        self,
+        temperature: float = DEFAULT_TEMPERATURE,
+        class_weights: torch.Tensor | None = None,
+    ) -> None:
         super().__init__()
         _validate_temperature(temperature)
         self.temperature = temperature
+        # Optional per-category weight (C,) to fight class imbalance: rare-class
+        # region anchors contribute more in the R->C direction. None = SupCon mean
+        # (numerically identical to the paper / the CE equivalence golden test).
+        if class_weights is not None:
+            self.register_buffer("class_weights", class_weights.float())
+        else:
+            self.class_weights = None  # type: ignore[assignment]
 
     def forward(
         self,
@@ -191,7 +213,12 @@ class MultiPositiveRegionCategoryLoss(nn.Module):
         # L_{R->C}: anchor = region (rows), keys = category texts (cols).
         # Positive of region i = the text column whose category == region's id.
         pos_rc = cat_ids.unsqueeze(1) == category_axis_ids.unsqueeze(0)  # (R, C)
-        loss_rc = _directional_mpcl(logits_rc, pos_rc)
+        # Class re-weighting (imbalance): weight each region anchor by its class
+        # weight so rare-class regions count more (None -> uniform = plain SupCon).
+        anchor_w = None
+        if self.class_weights is not None:
+            anchor_w = self.class_weights.to(cat_ids.device)[cat_ids]  # (R,)
+        loss_rc = _directional_mpcl(logits_rc, pos_rc, anchor_weights=anchor_w)
 
         # L_{C->R}: anchor = category text (rows), keys = regions (cols).
         # Positive of category text c = every region whose id == c (multi-positive).

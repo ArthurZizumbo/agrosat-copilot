@@ -247,6 +247,42 @@ def _patch_majority_category(regions: list[tuple[int, int]]) -> int:
     return int(best_cat)
 
 
+def _inverse_frequency_weights(
+    dataset: RegionCategoryPairDataset, class_ids: list[int]
+) -> torch.Tensor:
+    """Computes inverse-frequency class weights (canonical order) to fight imbalance.
+
+    Counts how many regions of each category the train dataset has, then assigns
+    ``w_c = (N_total / (C * n_c))`` (the sklearn "balanced" form), normalized to
+    mean 1 so the overall loss scale is preserved. Rare categories (e.g. Sorghum)
+    get a weight > 1, dominant ones (Meadow) < 1, so the MPCL stops collapsing to
+    the majority. Categories absent from train get weight 1 (neutral).
+
+    Args:
+        dataset: the train region-category dataset.
+        class_ids: PASTIS ids in canonical category order (bank row order).
+
+    Returns:
+        ``(C,)`` float tensor of weights in canonical order, mean ~1.
+    """
+    import torch
+
+    counts = {cid: 0 for cid in class_ids}
+    for _pid, regions in dataset._samples:
+        for _inst, cat in regions:
+            if cat in counts:
+                counts[cat] += 1
+    n_total = sum(counts.values())
+    n_cat = len(class_ids)
+    raw = []
+    for cid in class_ids:
+        n_c = counts[cid]
+        raw.append(n_total / (n_cat * n_c) if n_c > 0 else 1.0)
+    weights = torch.tensor(raw, dtype=torch.float32)
+    weights = weights / weights.mean().clamp(min=1e-8)  # normalize to mean 1
+    return weights
+
+
 @torch.no_grad()
 def eval_per_class_v2(
     student: torch.nn.Module,
@@ -555,6 +591,7 @@ def run_faithful_v2(
     dominance_ratio: float | None = None,
     time_cap_hours: float = 8.0,
     use_global_caption_loss: bool = True,
+    use_class_weights: bool = False,
     prototype_path: Path | None = None,
     caption_model: str = "gemma4:31b-it-q8_0",
     prompt_version: str = "v2",
@@ -689,6 +726,13 @@ def run_faithful_v2(
     # Active category prototype bank (US-033, read-only) + PASTIS id -> [0, C) map.
     bank, class_ids = _category_prototypes(prototype_path, active_class_ids)
     trainer.set_category_prototypes(bank, class_ids)
+
+    # Optional class re-weighting (inverse frequency) to fight PASTIS imbalance:
+    # rare-class region anchors weigh more in L_loc so the model stops collapsing
+    # to the dominant categories (Meadow). Off by default (faithful baseline).
+    if use_class_weights:
+        weights = _inverse_frequency_weights(train_ds, class_ids)
+        trainer.set_class_weights(weights)
 
     # Pre-encode captions ONCE (MiniLM-384, US-033 encoder) so the batch carries
     # ``caption_cls`` and ``L_glo`` (image-text InfoNCE, eq. 1-2) is active. Without
@@ -871,6 +915,13 @@ def train(
     no_global_loss: Annotated[
         bool, typer.Option("--no-global-loss", help="Desactiva L_glo (ablacion)")
     ] = False,
+    use_class_weights: Annotated[
+        bool,
+        typer.Option(
+            "--use-class-weights",
+            help="Pondera L_loc (MPCL) por frecuencia inversa de clase (anti-desbalance)",
+        ),
+    ] = False,
     pastis_root: Annotated[
         Path, typer.Option(help="Raiz PASTIS-R (frances real)")
     ] = Path("data/PASTIS-R"),
@@ -955,6 +1006,7 @@ def train(
         dominance_ratio=dominance_ratio,
         time_cap_hours=time_cap_hours,
         use_global_caption_loss=not no_global_loss,
+        use_class_weights=use_class_weights,
         prototype_path=prototype_path,
         caption_model=caption_model,
         prompt_version=prompt_version,

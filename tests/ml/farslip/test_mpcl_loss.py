@@ -425,3 +425,38 @@ def test_combine_losses_end_to_end_with_real_losses() -> None:
     assert torch.isfinite(total)
     assert image_cls.grad is not None and torch.isfinite(image_cls.grad).all()
     assert region_visual.grad is not None and torch.isfinite(region_visual.grad).all()
+
+
+def test_mpcl_uniform_weights_equal_unweighted() -> None:
+    """class_weights uniformes == sin pesos (no altera el contrato base)."""
+    torch.manual_seed(1)
+    dim = 16
+    region_visual = torch.randn(6, dim, requires_grad=True)
+    category_text = torch.randn(3, dim)
+    region_cat_ids = torch.tensor([0, 0, 1, 1, 2, 2])
+    base = MultiPositiveRegionCategoryLoss()(
+        region_visual, category_text, region_cat_ids
+    )
+    weighted = MultiPositiveRegionCategoryLoss(class_weights=torch.ones(3))(
+        region_visual, category_text, region_cat_ids
+    )
+    assert torch.allclose(base, weighted, atol=1e-6)
+
+
+def test_mpcl_class_weights_upweight_rare_class() -> None:
+    """Subir el peso de una clase rara cambia la loss y mantiene gradiente finito."""
+    torch.manual_seed(2)
+    dim = 16
+    region_visual = torch.randn(6, dim, requires_grad=True)
+    category_text = torch.randn(3, dim)
+    # clase 2 es rara (1 region) vs clases 0,1 frecuentes.
+    region_cat_ids = torch.tensor([0, 0, 1, 1, 1, 2])
+    plain = MultiPositiveRegionCategoryLoss()(
+        region_visual, category_text, region_cat_ids
+    )
+    rare_up = MultiPositiveRegionCategoryLoss(
+        class_weights=torch.tensor([1.0, 1.0, 10.0])
+    )(region_visual, category_text, region_cat_ids)
+    assert not torch.allclose(plain, rare_up, atol=1e-4)
+    rare_up.backward()
+    assert region_visual.grad is not None and torch.isfinite(region_visual.grad).all()
