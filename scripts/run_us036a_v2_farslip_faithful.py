@@ -74,6 +74,7 @@ except ImportError as exc:  # pragma: no cover
     raise ImportError("typer required for the run CLI. poetry add typer") from exc
 
 from ml.farslip.caption_cache import load_captions
+from ml.farslip.caption_encoder import encode_captions_minilm, make_caption_collate
 from ml.farslip.distill import FarSLIPDistillationTrainer, FarSLIPTrainerConfig
 from ml.farslip.region_category_dataset import (
     RegionCategoryPairDataset,
@@ -689,6 +690,17 @@ def run_faithful_v2(
     bank, class_ids = _category_prototypes(prototype_path, active_class_ids)
     trainer.set_category_prototypes(bank, class_ids)
 
+    # Pre-encode captions ONCE (MiniLM-384, US-033 encoder) so the batch carries
+    # ``caption_cls`` and ``L_glo`` (image-text InfoNCE, eq. 1-2) is active. Without
+    # this the batch has no ``caption_cls`` and the trainer only runs MPCL (L_loc).
+    if use_global_caption_loss:
+        caption_embeddings = encode_captions_minilm(
+            captions, device=trainer.device.type
+        )
+        collate_fn = make_caption_collate(collate_region_batch, caption_embeddings)
+    else:
+        collate_fn = collate_region_batch
+
     # The faithful-v2 batch is the cross-patch collate; train with it.
     from torch.utils.data import DataLoader
 
@@ -698,7 +710,7 @@ def run_faithful_v2(
         shuffle=True,
         num_workers=cfg.num_workers,
         pin_memory=trainer.device.type == "cuda",
-        collate_fn=collate_region_batch,
+        collate_fn=collate_fn,
     )
     start = time.monotonic()
     train_metrics = trainer.train(loader)
