@@ -445,6 +445,62 @@ def test_generate_captions_parquet_resume_only_new(
     assert pl.read_parquet(out).height == 2
 
 
+def test_generate_captions_parquet_flushes_incrementally(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # With flush_every=1 the parquet exists after the FIRST caption, so a crash
+    # mid-run never loses everything (the bug that wiped the previous run).
+    _patch_pastis(monkeypatch, _two_patch_fixture())
+    out = tmp_path / "captions.parquet"
+    flushed_heights: list[int] = []
+    real_flush = cc._flush_captions
+
+    def _spy_flush(existing: object, new_rows: object, path: object) -> object:
+        merged = real_flush(existing, new_rows, path)  # type: ignore[arg-type]
+        if path.exists():  # type: ignore[attr-defined]
+            flushed_heights.append(pl.read_parquet(path).height)
+        return merged
+
+    monkeypatch.setattr(cc, "_flush_captions", _spy_flush)
+    generate_captions_parquet(
+        tmp_path / "PASTIS-R", out, (1,), _MockGemmaClient(), flush_every=1  # type: ignore[arg-type]
+    )
+    # Persisted progressively (1 then 2), not only at the very end.
+    assert flushed_heights[0] == 1
+    assert pl.read_parquet(out).height == 2
+
+
+def test_generate_captions_parquet_resumes_after_crash(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Simulate a crash after the first caption was flushed: the second client
+    # must only generate the missing patch (resume reads the partial parquet).
+    patches = _two_patch_fixture()
+    out = tmp_path / "captions.parquet"
+
+    class _CrashAfterFirst(_MockGemmaClient):
+        def caption(self, prompt: str, image_png_b64: str) -> tuple[str, float]:
+            if self.calls >= 1:
+                raise RuntimeError("simulated SSH/tunnel drop")
+            return super().caption(prompt, image_png_b64)
+
+    _patch_pastis(monkeypatch, patches)
+    with pytest.raises(RuntimeError, match="simulated"):
+        generate_captions_parquet(
+            tmp_path / "PASTIS-R", out, (1,), _CrashAfterFirst(), flush_every=1  # type: ignore[arg-type]
+        )
+    # The first caption survived the crash on disk.
+    assert pl.read_parquet(out).height == 1
+
+    # Relaunch: only the missing patch is generated.
+    resume_client = _MockGemmaClient()
+    generate_captions_parquet(
+        tmp_path / "PASTIS-R", out, (1,), resume_client, resume=True  # type: ignore[arg-type]
+    )
+    assert resume_client.calls == 1
+    assert pl.read_parquet(out).height == 2
+
+
 def test_load_captions_roundtrip(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

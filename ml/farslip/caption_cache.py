@@ -237,6 +237,34 @@ def _patch_ids_for_folds(pastis_root: Path, folds: Sequence[int]) -> list[str]:
     return sorted(selected["patch_id"].to_list(), key=lambda p: int(p))
 
 
+def _flush_captions(
+    existing: pl.DataFrame, new_rows: Sequence[dict[str, object]], out_path: Path
+) -> pl.DataFrame:
+    """Atomically writes ``existing + new_rows`` to ``out_path`` and returns it.
+
+    Writes to a sibling ``.tmp`` first and replaces, so a crash mid-write never
+    corrupts the parquet that ``resume`` reads. Returns the merged frame so the
+    caller can promote it to the new ``existing`` baseline after a flush.
+
+    Args:
+        existing: rows already persisted (the resume baseline).
+        new_rows: caption rows accumulated since the last flush.
+        out_path: destination captions parquet.
+
+    Returns:
+        The merged :class:`polars.DataFrame` now persisted at ``out_path``.
+    """
+    if new_rows:
+        new_frame = pl.DataFrame(list(new_rows), schema=CAPTIONS_SCHEMA)
+        merged = pl.concat([existing, new_frame], how="vertical")
+    else:
+        merged = existing
+    tmp_path = out_path.with_suffix(out_path.suffix + ".tmp")
+    merged.write_parquet(tmp_path)
+    tmp_path.replace(out_path)
+    return merged
+
+
 def generate_captions_parquet(
     pastis_root: Path,
     out_path: Path,
@@ -247,14 +275,18 @@ def generate_captions_parquet(
     resume: bool = True,
     active_class_ids: tuple[int, ...] = tuple(range(1, 19)),
     side: int = 896,
+    flush_every: int = 25,
 ) -> Path:
-    """Materializes the per-patch global captions parquet (idempotent).
+    """Materializes the per-patch global captions parquet (idempotent, crash-safe).
 
     For every patch in ``folds`` it builds the peak-NDVI composite, derives the
     caption inputs (present classes, spatial composition, parcel count/area,
     MGRS tile, composite date, typical phenology), calls Gemma via ``client`` and
-    appends the row. With ``resume=True`` patches already in ``out_path`` are
-    skipped and the client is NOT invoked for them.
+    appends the row. The parquet is flushed to disk every ``flush_every`` new
+    captions (atomic ``.tmp`` replace), so a crash (SSH/tunnel drop, OOM, kill)
+    loses at most ``flush_every`` captions. With ``resume=True`` patches already
+    in ``out_path`` are skipped and the client is NOT invoked for them, so a
+    re-launch continues from the last flush.
 
     Args:
         pastis_root: PASTIS-R root.
@@ -266,6 +298,7 @@ def generate_captions_parquet(
         resume: if True, do not regenerate captions already present.
         active_class_ids: active PASTIS crop classes (default 1..18).
         side: PNG side in px for the image Gemma sees (default 896).
+        flush_every: persist the parquet every N new captions (crash safety).
 
     Returns:
         ``out_path`` of the written parquet.
@@ -282,6 +315,7 @@ def generate_captions_parquet(
     patch_ids = _patch_ids_for_folds(pastis_root, folds)
 
     new_rows: list[dict[str, object]] = []
+    n_new_total = 0
     n_skipped = 0
     for pid in patch_ids:
         if pid in done:
@@ -336,18 +370,25 @@ def generate_captions_parquet(
                 "gen_seconds": gen_seconds,
             }
         )
+        if flush_every > 0 and len(new_rows) >= flush_every:
+            existing = _flush_captions(existing, new_rows, out_path)
+            n_new_total += len(new_rows)
+            done.update(str(r["patch_id"]) for r in new_rows)
+            new_rows = []
+            logger.info(
+                "captions_parquet_flush",
+                path=str(out_path),
+                n_persisted=existing.height,
+                n_new_total=n_new_total,
+            )
 
-    if new_rows:
-        new_frame = pl.DataFrame(new_rows, schema=CAPTIONS_SCHEMA)
-        merged = pl.concat([existing, new_frame], how="vertical")
-    else:
-        merged = existing
-    merged.write_parquet(out_path)
+    merged = _flush_captions(existing, new_rows, out_path)
+    n_new_total += len(new_rows)
     logger.info(
         "captions_parquet_written",
         path=str(out_path),
         n_total=merged.height,
-        n_new=len(new_rows),
+        n_new=n_new_total,
         n_skipped=n_skipped,
         prompt_version=prompt_version,
     )
