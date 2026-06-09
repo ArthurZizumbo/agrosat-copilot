@@ -28,11 +28,13 @@ Conventions captured per checkpoint (verified during recon):
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
 import structlog
+
+from ml.models.tsvit_wrapper import TSVIT_FULLM_CONFIG
 
 logger = structlog.get_logger(__name__)
 
@@ -73,6 +75,15 @@ class CheckpointSpec:
         state_key_candidates: Ordered keys to resolve the ``state_dict`` from the
             loaded object (e.g. ``("model_state", "model_state_dict")``). If none
             match, the loaded object is assumed to be a pure ``state_dict``.
+        model_kwargs: Extra keyword arguments the builder must pass to the model
+            factory so the harness REBUILDS the exact trained topology before
+            loading the ``state_dict`` (US-038 R-HARNESS). It is required when the
+            checkpoint was trained with a non-default capacity (e.g. the TSViT
+            Full-M ``dim=192, depth 6+6, heads=6, dim_head=64, n_timesteps=64``):
+            the ``best.pt`` saved by ``train_segmentation`` does NOT embed the
+            capacity, so a default-capacity rebuild would raise a shape mismatch
+            in ``load_state_dict``. Empty for the checkpoints trained with the
+            factory defaults.
     """
 
     name: str
@@ -83,6 +94,7 @@ class CheckpointSpec:
     in_channels: int = 10
     needs_resize: bool = False
     state_key_candidates: tuple[str, ...] = ("model_state", "model_state_dict")
+    model_kwargs: dict[str, int] = field(default_factory=dict)
 
 
 #: Repo root resolved from this file (``ml/eval/checkpoint_registry.py`` -> repo).
@@ -140,6 +152,23 @@ CHECKPOINT_REGISTRY: dict[str, CheckpointSpec] = {
         in_channels=10,
         needs_resize=False,
         state_key_candidates=("model_state_dict", "model_state"),
+    ),
+    "tsvit": CheckpointSpec(
+        name="tsvit",
+        model_kind="tsvit",
+        # TSViT Full-M retrain (US-038, H100): T completo (n_timesteps=64), 128px
+        # nativo, dim=192, depth 6+6, heads=6, dim_head=64. The capacity lives in
+        # `model_kwargs` (from TSVIT_FULLM_CONFIG) so build_model_for_kind rebuilds
+        # the exact trained topology before load_state_dict (R-HARNESS): the
+        # best.pt does NOT embed the capacity, and a default-L4 rebuild (dim=128,
+        # depth 4+4) would raise a shape mismatch.
+        path=_CKPT_ROOT / "alt-tsvit-fullm-v1" / "best.pt",
+        native_num_classes=18,
+        native_ignore_index=255,
+        in_channels=10,
+        needs_resize=False,
+        state_key_candidates=("model_state", "model_state_dict"),
+        model_kwargs=dict(TSVIT_FULLM_CONFIG),
     ),
     "tsvit-pheno": CheckpointSpec(
         name="tsvit-pheno",

@@ -58,7 +58,35 @@ import torch
 from einops import rearrange, repeat
 from torch import nn
 
-__all__ = ["TSViT", "build_tsvit"]
+__all__ = ["TSVIT_FULLM_CONFIG", "TSViT", "build_tsvit"]
+
+
+#: Full-M TSViT capacity (US-038, H100 96GB). Single source of truth shared by
+#: the training orchestrator (``ml.train.train_segmentation.build_and_train``),
+#: the re-score harness registry (``ml.eval.checkpoint_registry`` entry
+#: ``"tsvit"``) and the tests, so the capacity that is TRAINED, the capacity
+#: SAVED in the checkpoint and the capacity the harness REBUILDS to load the
+#: ``state_dict`` are byte-identical (US-038 R-HARNESS). ``n_timesteps=37`` equals
+#: the REAL PASTIS-R minimum series length (T_MIN=37, T_MAX=61, T_MEDIAN=46): the
+#: dataset's ``_equispaced_indices`` only subsamples when ``n_select < T``, so a
+#: value above T_MIN leaves short patches at their native T and the per-batch
+#: ``torch.stack`` fails ("stack expects each tensor to be equal size"). 37 forces
+#: a uniform 37-date equispaced subsample on every patch (stackable batch) while
+#: covering the whole phenological cycle (US-038 R-TLEN, fixed against real data).
+#: These are the keyword arguments fed to :func:`build_tsvit` besides
+#: ``num_classes`` and ``in_channels``.
+TSVIT_FULLM_CONFIG: dict[str, int] = {
+    "n_timesteps": 37,
+    "img_size": 128,
+    "patch_size": 8,
+    "dim": 192,
+    "depth_temporal": 6,
+    "depth_spatial": 6,
+    "heads": 6,
+    "dim_head": 64,
+    "mlp_ratio": 4,
+    "semantic_dim": 384,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -462,24 +490,51 @@ def build_tsvit(
     depth_temporal: int = 4,
     depth_spatial: int = 4,
     semantic_dim: int = 384,
+    *,
+    heads: int = 4,
+    dim_head: int = 32,
+    mlp_ratio: int = 4,
+    dropout: float = 0.0,
+    max_doy: int = 366,
 ) -> nn.Module:
     """Build a :class:`TSViT` with the defaults trimmed for L4.
 
-    Public factory of the TSViT wrapper (US-025 Task 3). The defaults
+    Public factory of the TSViT wrapper (US-025 Task 3). The positional defaults
     (``patch_size=8`` -> 16x16 tokens, ``dim=128``, depth 4+4) keep the model
-    trainable on an L4 24GB with ``T=10``, 128px and ``batch=4``.
+    trainable on an L4 24GB with ``T=10``, 128px and ``batch=4``. They are kept
+    intact for retro-compatibility: ``build_tsvit()`` with no extra argument and
+    the existing positional calls (notebooks ``5a``/``5b``, the re-score harness)
+    reproduce the L4 model unchanged.
+
+    Full-M (H100, US-038): the capacity is raised by passing the keyword-only
+    arguments explicitly, e.g. ``dim=192, depth_temporal=6, depth_spatial=6,
+    heads=6, dim_head=64`` with ``n_timesteps=64`` (so the ordinal temporal PE
+    ``[1, n_timesteps, dim]`` covers the full PASTIS-R series ``T <= 64`` and is
+    never indexed out of range; see US-038 R-TLEN). The :class:`TSViT` class
+    already supports ``heads``/``dim_head``/``mlp_ratio``/``dropout``/``max_doy``;
+    this factory only exposes them so the trained capacity, the saved checkpoint
+    and the harness reconstruction stay identical (US-038 R-HARNESS).
 
     Args:
         num_classes: Number ``K`` of classes / separable cls-tokens.
-        n_timesteps: Expected temporal length ``T``.
+        n_timesteps: Expected temporal length ``T`` (also sizes the fallback
+            ordinal temporal PE; for Full-M use ``64`` >= the PASTIS-R ``T_max``).
         img_size: Side of the input patch in pixels.
         in_channels: Input bands per timestep (10 for Sentinel-2).
         patch_size: Side of the spatial patch.
-        dim: Transformer token dimension.
-        depth_temporal: Blocks of the temporal encoder.
-        depth_spatial: Blocks of the spatial encoder.
+        dim: Transformer token dimension (L4 128; Full-M 192).
+        depth_temporal: Blocks of the temporal encoder (L4 4; Full-M 6).
+        depth_spatial: Blocks of the spatial encoder (L4 4; Full-M 6).
         semantic_dim: Dimension of the semantic space of the contrastive branch
             (384 for the per-class phenology prototypes).
+        heads: Attention heads in both encoders (L4 4; Full-M 6).
+        dim_head: Dimension per attention head (L4 32; Full-M 64;
+            ``inner_dim = heads * dim_head``).
+        mlp_ratio: Expansion factor of the feed-forward (``mlp_dim = dim *
+            mlp_ratio``); kept at 4 (paper standard) for both L4 and Full-M.
+        dropout: Dropout applied in the Transformers (0.0 by default; 0.1 may
+            regularize the higher-capacity Full-M if it overfits).
+        max_doy: Maximum day-of-year admitted by the DOY temporal PE table.
 
     Returns:
         :class:`TSViT` module ready to train/infer.
@@ -493,5 +548,10 @@ def build_tsvit(
         dim=dim,
         depth_temporal=depth_temporal,
         depth_spatial=depth_spatial,
+        heads=heads,
+        dim_head=dim_head,
+        mlp_ratio=mlp_ratio,
         semantic_dim=semantic_dim,
+        dropout=dropout,
+        max_doy=max_doy,
     )

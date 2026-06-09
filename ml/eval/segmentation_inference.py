@@ -117,13 +117,22 @@ def build_model_for_kind(
     if kind in ("tsvit", "tsvit-pheno"):
         from ml.models.tsvit_wrapper import build_tsvit
 
-        return build_tsvit(
-            num_classes=classes,
-            n_timesteps=n_timesteps,
-            img_size=128,
-            in_channels=spec.in_channels,
-            semantic_dim=384,
-        )
+        # Default-L4 topology; ``spec.model_kwargs`` overrides it with the trained
+        # capacity (US-038 Full-M: dim=192, depth 6+6, heads=6, dim_head=64,
+        # n_timesteps=64). Without this override the harness would rebuild an
+        # L4 TSViT (dim=128, depth 4+4) and ``load_state_dict`` would raise a
+        # shape mismatch against the Full-M ``best.pt`` (R-HARNESS). ``n_timesteps``
+        # in ``model_kwargs`` also sizes the ordinal temporal PE to the full
+        # series length (R-TLEN).
+        tsvit_kwargs: dict[str, int] = {
+            "num_classes": classes,
+            "n_timesteps": n_timesteps,
+            "img_size": 128,
+            "in_channels": spec.in_channels,
+            "semantic_dim": 384,
+        }
+        tsvit_kwargs.update(spec.model_kwargs)
+        return build_tsvit(**tsvit_kwargs)
     if kind == "utae":
         from ml.models.utae import build_utae
 
