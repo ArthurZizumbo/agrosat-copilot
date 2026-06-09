@@ -48,7 +48,10 @@ try:
     import structlog
     from google.cloud import pubsub_v1
 except ImportError as exc:  # pragma: no cover
-    sys.stderr.write(f"FATAL: dependencias missing ({exc}). Run pip install google-cloud-pubsub structlog\n")
+    sys.stderr.write(
+        f"FATAL: dependencias missing ({exc}). "
+        "Run pip install google-cloud-pubsub structlog\n"
+    )
     sys.exit(1)
 
 
@@ -85,8 +88,10 @@ def _trigger_shutdown(reason: str) -> None:
     """Run shutdown -h now with the recorded reason (idempotent)."""
     log.info("auto_shutdown_triggered", reason=reason)
     try:
-        subprocess.run(["sudo", "shutdown", "-h", "+1", reason], check=False, timeout=10)
-    except Exception as exc:  # pragma: no cover
+        # Daemon de control de VM: comando fijo de apagado (no input de usuario).
+        cmd = ["sudo", "shutdown", "-h", "+1", reason]
+        subprocess.run(cmd, check=False, timeout=10)  # noqa: S603
+    except Exception as exc:
         log.error("shutdown_failed", exc_info=str(exc))
 
 
@@ -101,7 +106,7 @@ def _run_command(payload: dict[str, Any]) -> int:
     log.info("job_start", label=label, command=command, timeout=timeout, workdir=_WORKDIR)
     start = time.monotonic()
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # noqa: S602 - daemon de jobs: shell intencional, payload de canal Pub/Sub propio
             command,
             shell=True,
             cwd=_WORKDIR,
@@ -127,10 +132,10 @@ def _run_command(payload: dict[str, Any]) -> int:
 
 
 def _make_callback(state: DaemonState):
-    def callback(message: "pubsub_v1.subscriber.message.Message") -> None:
+    def callback(message: pubsub_v1.subscriber.message.Message) -> None:
         try:
             payload = json.loads(message.data.decode("utf-8"))
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - el callback nunca debe tumbar el subscriber
             log.error("payload_decode_failed", error=str(exc), raw=message.data[:200])
             message.ack()
             return
@@ -198,7 +203,7 @@ def main() -> int:
         future.result(timeout=None)
     except KeyboardInterrupt:
         pass
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - punto de entrada del daemon: log + exit code, no propagar
         log.error("subscriber_crashed", error=str(exc))
         return 1
     finally:

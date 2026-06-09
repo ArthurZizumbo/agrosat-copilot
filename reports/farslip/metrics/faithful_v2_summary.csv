@@ -1,0 +1,4 @@
+variante,supervision,macro_f1,macro_iou,well_resolved_f1_05,con_senal_f1_025,nota
+faithful_v2 (GANADOR),region_category MPCL+L_glo,0.164,0.111,2,6,baseline fiel sin class weights; 4 clases con senal clara (Meadow/Grapevine/Corn/Orchard)
+faithful_v2_cw,region_category + class weights,0.102,0.060,0,2,class weights inverse-freq desinflo dominantes para rescatar 2 raras; balance neto PEOR
+US-036-a (pasado),1-label dominante CE,0.576,,,,SOLO 4 clases faciles (no comparable directo; 18 clases es 4.5x mas dificil)

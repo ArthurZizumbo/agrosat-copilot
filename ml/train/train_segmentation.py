@@ -1377,6 +1377,11 @@ def build_and_train(
     lr: float = 1e-3,
     lambda_contrast: float = 0.3,
     num_workers: int = 0,
+    dim: int = 128,
+    depth_temporal: int = 4,
+    depth_spatial: int = 4,
+    heads: int = 4,
+    dim_head: int = 32,
     ckpt_dir: str | Path | None = None,
     resume: bool = True,
     patience: int = 0,
@@ -1403,8 +1408,15 @@ def build_and_train(
         device: ``"auto"``, ``"cuda"`` or ``"cpu"``.
         lr: AdamW learning rate.
         lambda_contrast: Weight of the contrastive term (tsvit-pheno only).
+        dim: TSViT token dimension (L4 default 128; Full-M 192). Ignored for
+            DeepLabv3+.
+        depth_temporal: TSViT temporal-encoder depth (L4 4; Full-M 6).
+        depth_spatial: TSViT spatial-encoder depth (L4 4; Full-M 6).
+        heads: TSViT attention heads (L4 4; Full-M 6).
+        dim_head: TSViT dimension per head (L4 32; Full-M 64).
         mlflow_run_name: Override of the run name; ``None`` uses the per-model
-            default.
+            default. For the US-038 Full-M retrain pass
+            ``"alt-tsvit-fullm-v1"``.
         mlflow_uri: Override of the MLflow tracking URI.
 
     Returns:
@@ -1447,11 +1459,22 @@ def build_and_train(
             in_channels=10, classes=n_classes
         )
     else:
+        # The TSViT capacity (dim/depth/heads/dim_head) flows from the caller so
+        # the L4 defaults stay back-compatible (alt-tsvit-v1) and the US-038
+        # Full-M run (dim=192, depth 6+6, heads=6, dim_head=64, n_timesteps=64)
+        # is selected purely by argument. The SAME capacity must be mirrored in
+        # the harness registry entry `tsvit` so the re-score rebuilds an identical
+        # topology (R-HARNESS).
         model = build_tsvit(
             num_classes=n_classes,
             n_timesteps=n_timesteps,
             img_size=128,
             in_channels=10,
+            dim=dim,
+            depth_temporal=depth_temporal,
+            depth_spatial=depth_spatial,
+            heads=heads,
+            dim_head=dim_head,
             semantic_dim=384,
         )
 
@@ -1514,6 +1537,39 @@ def _build_arg_parser() -> argparse.ArgumentParser:  # pragma: no cover
     p.add_argument("--device", default="auto", choices=("auto", "cuda", "cpu"))
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--lambda-contrast", type=float, default=0.3)
+    # TSViT capacity (ignored for DeepLabv3+). Defaults = L4-trimmed (back-compat,
+    # run alt-tsvit-v1). US-038 Full-M: --dim 192 --depth-temporal 6
+    # --depth-spatial 6 --heads 6 --dim-head 64 --n-timesteps 64.
+    p.add_argument(
+        "--dim",
+        type=int,
+        default=128,
+        help="TSViT token dim (L4 128; Full-M 192). Ignorado por DeepLabv3+.",
+    )
+    p.add_argument(
+        "--depth-temporal",
+        type=int,
+        default=4,
+        help="Bloques del encoder temporal TSViT (L4 4; Full-M 6).",
+    )
+    p.add_argument(
+        "--depth-spatial",
+        type=int,
+        default=4,
+        help="Bloques del encoder espacial TSViT (L4 4; Full-M 6).",
+    )
+    p.add_argument(
+        "--heads",
+        type=int,
+        default=4,
+        help="Cabezas de atencion TSViT (L4 4; Full-M 6).",
+    )
+    p.add_argument(
+        "--dim-head",
+        type=int,
+        default=32,
+        help="Dimension por cabeza TSViT (L4 32; Full-M 64).",
+    )
     p.add_argument(
         "--ckpt-dir",
         default=None,
@@ -1575,6 +1631,11 @@ def main_legacy(argv: list[str] | None = None) -> int:  # pragma: no cover
         lr=args.lr,
         lambda_contrast=args.lambda_contrast,
         num_workers=args.num_workers,
+        dim=args.dim,
+        depth_temporal=args.depth_temporal,
+        depth_spatial=args.depth_spatial,
+        heads=args.heads,
+        dim_head=args.dim_head,
         ckpt_dir=args.ckpt_dir,
         resume=not args.no_resume,
         patience=args.patience,

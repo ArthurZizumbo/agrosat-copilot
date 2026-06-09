@@ -284,6 +284,10 @@ ignore = ["S101", "S301"]  # asserts ok en tests; pickle ok para ML
 "scripts/generate_fusion_blocks_pastis.py" = ["B008"]
 "scripts/generate_s1_pastis_batched.py" = ["B008"]
 "scripts/generate_srtm_era5_pastis_parcels.py" = ["B008"]
+# US-040 fase 4: orquestador de cierre de los 4 ensambles. CLI Typer con
+# defaults via Option (B008, patron repo-wide); accede a atributos internos de
+# los ensambles para alinear figuras/labels (SLF001).
+"scripts/run_us040_ensembles.py" = ["B008", "SLF001"]
 
 [tool.mypy]
 python_version = "3.12"

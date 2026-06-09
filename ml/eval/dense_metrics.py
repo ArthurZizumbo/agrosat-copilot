@@ -457,7 +457,13 @@ def _rescore_one(
         raise FileNotFoundError(f"checkpoint path does not exist: {spec.path}")
 
     # Temporal models consume the full series; the 2D CNNs a median composite.
-    is_temporal = spec.model_kind in ("tsvit", "tsvit-pheno", "utae", "anysat")
+    is_temporal = spec.model_kind in (
+        "tsvit",
+        "tsvit-pheno",
+        "tsvit-pheno-fullm",
+        "utae",
+        "anysat",
+    )
     collapse_time = None if is_temporal else "median"
     ds_kwargs: dict[str, object] = {
         "folds": (fold,),
@@ -465,6 +471,15 @@ def _rescore_one(
         "target": "semantic18",
         "ignore_index": HARNESS_IGNORE_INDEX,
     }
+    if is_temporal:
+        # CRITICAL (US-038/039): the temporal dataset MUST subsample the SAME number
+        # of dates the model was trained with, otherwise the model receives a series
+        # of a different length than it learned and its ordinal temporal PE desaligns,
+        # collapsing the mIoU (e.g. TSViT Full-M trained with T=37 scored 0.17 when
+        # the harness fed it T=10). The capacity lives in spec.model_kwargs
+        # (TSVIT_FULLM_CONFIG -> n_timesteps=37); models without it (L4 tsvit-pheno-v1)
+        # keep the historical default of 10, matching how they were trained.
+        ds_kwargs["n_timesteps"] = int(spec.model_kwargs.get("n_timesteps", 10))
     if data_root is not None:
         ds_kwargs["root"] = data_root
 

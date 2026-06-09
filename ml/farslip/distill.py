@@ -13,7 +13,17 @@ Implements the Li et al. 2025 procedure (arXiv:2511.14901):
   adapts ``patch_embed.proj`` from 3 to 4 channels with init = mean(RGB) for the
   NIR channel (avoids dead-neuron). Hard cap 8 h, warning at 6 h.
 
+US-036-a v2 (faithful redesign, additive): a ``supervision="region_category"``
+mode optimizes the paper-faithful ``L_total = L_glo + lambda_loc * L_loc`` with
+``L_loc`` = :class:`~ml.farslip.mpcl_loss.MultiPositiveRegionCategoryLoss`
+(eq. 3-4) over the multi-object region-category batch and ``L_glo`` =
+:class:`~ml.farslip.mpcl_loss.GlobalImageTextLoss` (eq. 1-2) between the image
+CLS and the global caption CLS. The default ``supervision="dominant"`` preserves
+the v1 single-positive path byte-for-byte (back-compat with US-036-a v1, its
+orchestrator and its tests). See ``docs/us-planning/us-036-a-v2-faithful.md``.
+
 Expected VRAM on GCP L4 24 GB: ~22 GB (ViT-B/16 bf16, batch=64, grad_accum=2).
+On the H100 the v2 student (ViT-B/16 BF16, batch=64) stays < 16 GB.
 """
 
 from __future__ import annotations
@@ -21,6 +31,7 @@ from __future__ import annotations
 import copy
 import math
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -32,6 +43,13 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from ml.farslip.bands import BandSelection
+from ml.farslip.mpcl_loss import (
+    DEFAULT_LAMBDA_LOC,
+    DEFAULT_TEMPERATURE,
+    GlobalImageTextLoss,
+    MultiPositiveRegionCategoryLoss,
+    combine_losses,
+)
 from ml.utils.git_meta import dvc_data_version, git_sha
 from ml.utils.seed import propagate_seed
 
@@ -46,6 +64,19 @@ _log = structlog.get_logger(__name__)
 
 LossType = Literal["mse", "cosine", "mse_plus_cosine"]
 SaveFormat = Literal["safetensors", "pytorch"]
+
+#: Supervision mode of :class:`FarSLIPDistillationTrainer`.
+#:
+#: - ``"dominant"`` (v1, US-036-a): one dominant ``category_id`` per patch,
+#:   single-positive :class:`RegionCategoryAlignmentLoss` (``F.cross_entropy``) +
+#:   patch-distillation + cosine aux. Untouched, default for back-compat.
+#: - ``"region_category"`` (v2, US-036-a v2): the paper-faithful path. Each batch
+#:   carries several region-category pairs (``ParcelIDs``) and a global caption;
+#:   the loss is ``L_total = L_glo + lambda_loc * L_loc`` with ``L_loc`` the
+#:   Multi-Positive Contrastive Loss (:class:`MultiPositiveRegionCategoryLoss`,
+#:   eq. 3-4) and ``L_glo`` the symmetric InfoNCE image-caption
+#:   (:class:`GlobalImageTextLoss`, eq. 1-2).
+SupervisionMode = Literal["dominant", "region_category"]
 
 #: Dimension of the MiniLM (all-MiniLM-L6-v2) phenological prototypes of US-033.
 #: ``set_text_prototypes`` reprojects this to the student CLS dim (768) via a
@@ -279,6 +310,17 @@ class FarSLIPTrainerConfig:
             the dataset ``transform`` upstream (``train.py``).
         n_regions: 3.
         n_categories: 32.
+        supervision: ``"dominant"`` (v1, default) or ``"region_category"`` (v2).
+            Selects which loss the trainer optimizes; v1 is preserved verbatim.
+        lambda_loc: weight of ``L_loc`` in the v2 combination
+            ``L_total = L_glo + lambda_loc * L_loc`` (paper Table 3, default 1.0).
+            With ``lambda_loc=0`` the v2 total equals ``L_glo`` (ablation).
+        temperature: contrastive softmax temperature ``tau`` of the v2 losses
+            (default 0.07, paper Section 3.3). Independent of the v1
+            :class:`RegionCategoryAlignmentLoss` temperature.
+        use_global_caption_loss: if ``True`` (v2 default) the trainer adds the
+            real ``L_glo`` InfoNCE between the image CLS and the caption CLS.
+            If ``False`` only ``L_loc`` is optimized in v2 (``L_glo`` ablation).
     """
 
     teacher_model_id: str = "openai/clip-vit-base-patch16"
@@ -307,6 +349,15 @@ class FarSLIPTrainerConfig:
     band_selection: BandSelection = "4band"
     n_regions: int = 3
     n_categories: int = 32
+    #: Supervision mode (US-036-a v2). ``"dominant"`` keeps the v1 path intact;
+    #: ``"region_category"`` activates the paper-faithful MPCL + L_glo route.
+    supervision: SupervisionMode = "dominant"
+    #: v2 weight of ``L_loc`` in ``L_total = L_glo + lambda_loc * L_loc``.
+    lambda_loc: float = DEFAULT_LAMBDA_LOC
+    #: v2 contrastive temperature ``tau`` of MPCL and L_glo (paper Section 3.3).
+    temperature: float = DEFAULT_TEMPERATURE
+    #: v2 toggle of the real global image-caption InfoNCE ``L_glo``.
+    use_global_caption_loss: bool = True
     #: Extra MLflow params/tags (US-034: proto_source, proto_proj, caveat,
     #: n_protos, proto_dim_in, proto_dim_out). Logged verbatim in :meth:`train`.
     extra_params: dict[str, Any] = field(default_factory=dict)
@@ -417,6 +468,21 @@ class FarSLIPDistillationTrainer:
         self._cls_loss = RegionCategoryAlignmentLoss(
             n_regions=config.n_regions, n_categories=config.n_categories
         )
+        # v2 (region_category) faithful losses. Always constructed (cheap, pure
+        # nn.Modules) so the trainer can switch modes without re-instantiation;
+        # they are only consumed when ``config.supervision == "region_category"``.
+        self._mpcl_loss = MultiPositiveRegionCategoryLoss(
+            temperature=config.temperature
+        )
+        self._global_loss = GlobalImageTextLoss(temperature=config.temperature)
+        # v2 category prototype bank ``(C, D)`` and the PASTIS-id -> [0, C) map,
+        # both injected via :meth:`set_category_prototypes`. None until set.
+        self._category_prototypes: torch.Tensor | None = None
+        self._pastis_to_category: dict[int, int] | None = None
+        # v2 optional frozen text encoder for the caption CLS of ``L_glo``. When
+        # absent, captions are encoded by the same MiniLM lift used for the
+        # category prototypes (see :meth:`_encode_captions`).
+        self._caption_encoder: Any | None = None
         config.output_dir.mkdir(parents=True, exist_ok=True)
 
     # ------------------------------------------------------------------ utils
@@ -593,6 +659,279 @@ class FarSLIPDistillationTrainer:
             "US-034 uses MiniLM-384 prototypes reprojected via _proto_to_clip_proj."
         )
 
+    # --------------------------------------------------------------- v2 (faithful)
+
+    def set_category_prototypes(
+        self,
+        prototypes: torch.Tensor,
+        pastis_class_ids: Sequence[int],
+    ) -> None:
+        """Injects the v2 category prototype bank ``(C, D)`` and its id mapping.
+
+        Faithful FarSLIP v2 (US-036-a v2) path. ``prototypes[c]`` is the text
+        prototype of the category whose RAW PASTIS class id is
+        ``pastis_class_ids[c]``; the rows define the canonical category order
+        ``[0, C)``. The bank is reprojected to the student CLS dim with the SAME
+        frozen orthogonal lift the v1 path uses (:meth:`set_text_prototypes` ->
+        :meth:`_proto_to_clip_proj`: MiniLM-384 -> 768; an already-768 bank passes
+        through), so v2 categories live in the exact space the contrastive loss
+        consumes.
+
+        The PASTIS-id -> category-index map is stored because
+        :class:`ml.farslip.region_category_dataset.RegionCategoryPairDataset`
+        emits RAW PASTIS ids (1..18), whereas
+        :class:`MultiPositiveRegionCategoryLoss` expects indices in ``[0, C)``.
+        :meth:`step_faithful_v2` translates the batch ids through this map.
+
+        Args:
+            prototypes: ``(C, D_in)`` category text prototypes; ``D_in`` is 384
+                (MiniLM, US-033) or the student CLS dim (768).
+            pastis_class_ids: the ``C`` RAW PASTIS class ids, in the SAME row
+                order as ``prototypes`` (canonical category order).
+
+        Raises:
+            ValueError: if the lengths disagree, the ids are not unique, or the
+                reprojection fails the v1 dimensional contract.
+        """
+        if prototypes.dim() != 2:
+            raise ValueError(
+                f"category prototypes must be 2-D (C, D); got {tuple(prototypes.shape)}"
+            )
+        ids = [int(c) for c in pastis_class_ids]
+        if len(ids) != prototypes.shape[0]:
+            raise ValueError(
+                f"pastis_class_ids has {len(ids)} entries but prototypes has "
+                f"{prototypes.shape[0]} rows; they must match (one id per row)."
+            )
+        if len(set(ids)) != len(ids):
+            raise ValueError(f"pastis_class_ids must be unique; got {ids}.")
+
+        hidden_size = int(self.teacher.config.hidden_size)
+        d_in = prototypes.shape[1]
+        if d_in == hidden_size:
+            bank = prototypes.detach()
+        elif d_in == MINILM_DIM:
+            bank = self._proto_to_clip_proj(prototypes)
+        else:
+            raise ValueError(
+                f"category prototypes dim={d_in} unsupported. Expected MiniLM "
+                f"{MINILM_DIM} (US-033) or {hidden_size} (student CLS dim)."
+            )
+        if bank.shape[1] != hidden_size:  # defensive
+            raise ValueError(
+                f"category prototypes final dim={bank.shape[1]} != student CLS "
+                f"dim {hidden_size}."
+            )
+        self._category_prototypes = bank.detach().to(self.device)
+        self._pastis_to_category = {cid: idx for idx, cid in enumerate(ids)}
+        _log.info(
+            "category prototypes set (v2)",
+            n_categories=bank.shape[0],
+            d=bank.shape[1],
+            pastis_ids=ids,
+        )
+
+    def set_class_weights(self, class_weights: torch.Tensor) -> None:
+        """Re-weights ``L_loc`` (MPCL) by category to fight class imbalance (v2).
+
+        Rebuilds :attr:`_mpcl_loss` with per-category weights so rare-class region
+        anchors contribute more in the ``R->C`` direction, mitigating the collapse
+        to dominant classes (e.g. Meadow) on the small, heavily imbalanced PASTIS.
+        ``class_weights[c]`` must follow the SAME canonical category order ``[0, C)``
+        as the prototype bank set in :meth:`set_category_prototypes` (typically the
+        inverse-frequency weight of category ``c``, normalized to mean 1). Calling
+        with uniform weights is numerically equivalent to no weighting.
+
+        Args:
+            class_weights: ``(C,)`` non-negative per-category weight in canonical
+                order. ``C`` must equal the prototype bank row count.
+
+        Raises:
+            ValueError: if the prototype bank is unset or the length disagrees.
+        """
+        if self._category_prototypes is None:
+            raise ValueError(
+                "set_category_prototypes() must be called before set_class_weights()."
+            )
+        n_categories = int(self._category_prototypes.shape[0])
+        if class_weights.dim() != 1 or class_weights.shape[0] != n_categories:
+            raise ValueError(
+                f"class_weights must be (C,) with C={n_categories}; "
+                f"got {tuple(class_weights.shape)}"
+            )
+        self._mpcl_loss = MultiPositiveRegionCategoryLoss(
+            temperature=self.config.temperature,
+            class_weights=class_weights.detach().float().to(self.device),
+        )
+        _log.info(
+            "mpcl class weights set (v2)",
+            n_categories=n_categories,
+            min_w=round(float(class_weights.min()), 3),
+            max_w=round(float(class_weights.max()), 3),
+        )
+
+    def set_caption_encoder(self, encoder: Any) -> None:
+        """Injects a frozen text encoder for the v2 caption CLS of ``L_glo``.
+
+        Optional. ``encoder`` must expose ``encode(list[str]) -> ndarray | Tensor``
+        of shape ``(B, D_in)`` (the sentence-transformers / MiniLM contract). When
+        not set, :meth:`_encode_captions` falls back to the same MiniLM lift used
+        for the prototypes via the externally-provided cache (the orchestrator
+        pre-encodes captions once; see ``run_us036a_v2_farslip_faithful``). Either
+        way the CLS lands in the student CLS dim (768).
+
+        Args:
+            encoder: object with ``encode(list[str])`` returning ``(B, D_in)``.
+        """
+        self._caption_encoder = encoder
+        _log.info("caption encoder set (v2)", encoder=type(encoder).__name__)
+
+    def _encode_captions(self, caption_cls: torch.Tensor) -> torch.Tensor:
+        """Maps pre-encoded caption embeddings to the student CLS dim (768).
+
+        The orchestrator encodes the batch captions ONCE with a frozen encoder
+        (MiniLM-384 or already-768) and feeds the resulting ``(B, D_in)`` tensor
+        here; this method lifts MiniLM-384 to 768 with the same frozen orthogonal
+        map as the prototypes (norm/angle preserving) or passes an already-768
+        tensor through. This keeps the text encoder out of the training loop
+        (VRAM/time, plan Section 7) while landing the caption CLS in the visual
+        CLS space ``L_glo`` contrasts against.
+
+        Args:
+            caption_cls: ``(B, D_in)`` pre-encoded caption embeddings.
+
+        Returns:
+            ``(B, 768)`` caption CLS in the student CLS space (detached).
+
+        Raises:
+            ValueError: if ``caption_cls`` is not 2-D or ``D_in`` is unsupported.
+        """
+        if caption_cls.dim() != 2:
+            raise ValueError(
+                f"caption_cls must be 2-D (B, D); got {tuple(caption_cls.shape)}"
+            )
+        hidden_size = int(self.teacher.config.hidden_size)
+        d_in = caption_cls.shape[1]
+        if d_in == hidden_size:
+            return caption_cls.detach().to(self.device)
+        if d_in == MINILM_DIM:
+            return self._proto_to_clip_proj(caption_cls).detach().to(self.device)
+        raise ValueError(
+            f"caption_cls dim={d_in} unsupported. Expected MiniLM {MINILM_DIM} "
+            f"or {hidden_size} (student CLS dim)."
+        )
+
+    def _map_region_cat_ids(self, region_cat_ids: torch.Tensor) -> torch.Tensor:
+        """Translates RAW PASTIS region ids (1..18) to category indices ``[0, C)``.
+
+        The dataset emits RAW PASTIS class ids; the MPCL bank is ordered by the
+        canonical category order set in :meth:`set_category_prototypes`. This maps
+        each region id through ``self._pastis_to_category`` and fails fast on any
+        id absent from the bank (a silent drop would corrupt ``P(i)``).
+
+        Args:
+            region_cat_ids: long tensor ``(R,)`` of RAW PASTIS class ids.
+
+        Returns:
+            long tensor ``(R,)`` of category indices in ``[0, C)``.
+
+        Raises:
+            RuntimeError: if the category bank/map is not set.
+            ValueError: if a region carries a PASTIS id absent from the bank.
+        """
+        if self._pastis_to_category is None:
+            raise RuntimeError(
+                "category prototypes not initialized. Call set_category_prototypes()."
+            )
+        raw = region_cat_ids.long().view(-1).cpu().tolist()
+        mapping = self._pastis_to_category
+        unknown = sorted({c for c in raw if c not in mapping})
+        if unknown:
+            raise ValueError(
+                f"region_cat_ids contains PASTIS ids absent from the category "
+                f"bank: {unknown}. Known ids: {sorted(mapping)}."
+            )
+        mapped = [mapping[c] for c in raw]
+        return torch.tensor(mapped, dtype=torch.long, device=self.device)
+
+    def step_faithful_v2(
+        self,
+        images: torch.Tensor,
+        region_cat_ids: torch.Tensor,
+        region_to_patch: torch.Tensor,
+        caption_cls: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
+        """Forward of ONE v2 batch: ``L_total = L_glo + lambda_loc * L_loc``.
+
+        Paper-faithful region-category step (US-036-a v2). For a batch of ``B``
+        patches with ``R`` flattened regions (collated by
+        :func:`ml.farslip.region_category_dataset.collate_region_batch`):
+
+        1. ``student_cls`` ``(B, D)`` = the student CLS over the batch images.
+        2. ``region_visual = student_cls[region_to_patch]`` ``(R, D)`` -- every
+           region of a patch shares that patch's CLS (paper Section 4.3
+           Takeaway-1: CLS, not RoI; caveat R-REGION-CROP). The multiplicity
+           enters the contrast cross-patch via the multi-positive grouping.
+        3. ``L_loc`` = MPCL(``region_visual``, ``category_prototypes``,
+           mapped ids) -- the RAW PASTIS ids are mapped to ``[0, C)`` first.
+        4. ``L_glo`` = symmetric InfoNCE(``student_cls``, ``caption_cls``) when
+           ``use_global_caption_loss`` and ``caption_cls`` is given; else 0.
+        5. ``L_total`` = :func:`combine_losses`(``L_glo``, ``L_loc``,
+           ``lambda_loc``).
+
+        Args:
+            images: ``(B, 4, H, W)`` peak-NDVI composites.
+            region_cat_ids: ``(R,)`` RAW PASTIS class ids of the flattened regions.
+            region_to_patch: ``(R,)`` index in ``[0, B)`` of each region's patch.
+            caption_cls: optional ``(B, D_in)`` pre-encoded caption embeddings for
+                ``L_glo``; ``None`` disables ``L_glo`` for this step.
+
+        Returns:
+            Dict with ``loss_total``, ``loss_glo``, ``loss_loc`` (grad active).
+
+        Raises:
+            RuntimeError: if the category prototypes were not set.
+            ValueError: on a region->patch index out of range.
+        """
+        if self._category_prototypes is None:
+            raise RuntimeError(
+                "category prototypes not initialized. Call set_category_prototypes()."
+            )
+        images = images.to(self.device)
+        region_to_patch = region_to_patch.to(self.device).long().view(-1)
+        batch_size = images.shape[0]
+        if region_to_patch.numel() > 0 and (
+            int(region_to_patch.min()) < 0 or int(region_to_patch.max()) >= batch_size
+        ):
+            raise ValueError(
+                f"region_to_patch out of range [0, {batch_size}); "
+                f"got min={int(region_to_patch.min())} max={int(region_to_patch.max())}."
+            )
+
+        student_out = self.student(pixel_values=images, output_hidden_states=False)
+        student_cls = student_out.last_hidden_state[:, 0, :]  # (B, D)
+
+        # L_loc (MPCL): regions share their patch CLS; ids mapped to [0, C).
+        region_visual = student_cls[region_to_patch]  # (R, D)
+        mapped_ids = self._map_region_cat_ids(region_cat_ids)
+        loss_loc = self._mpcl_loss(
+            region_visual, self._category_prototypes, mapped_ids
+        )
+
+        # L_glo (InfoNCE image-caption): caption CLS lifted to the visual space.
+        if self.config.use_global_caption_loss and caption_cls is not None:
+            caption_cls_d = self._encode_captions(caption_cls)
+            loss_glo = self._global_loss(student_cls, caption_cls_d)
+        else:
+            loss_glo = student_cls.sum() * 0.0  # keep grad graph, value 0.0
+
+        total = combine_losses(loss_glo, loss_loc, self.config.lambda_loc)
+        return {
+            "loss_total": total,
+            "loss_glo": loss_glo,
+            "loss_loc": loss_loc,
+        }
+
     def step(
         self,
         images: torch.Tensor,
@@ -651,6 +990,36 @@ class FarSLIPDistillationTrainer:
             "loss_cls": loss_cls,
             "loss_aux": cos_aux,
         }
+
+    def _forward_batch(self, batch: dict[str, Any]) -> dict[str, torch.Tensor]:
+        """Dispatches one collated batch to the v1 or v2 forward by supervision.
+
+        ``"dominant"`` (v1) consumes ``image``/``region_id``/``category_id`` via
+        :meth:`step`. ``"region_category"`` (v2) consumes the cross-patch batch of
+        :func:`ml.farslip.region_category_dataset.collate_region_batch`
+        (``images``/``region_cat_ids``/``region_to_patch`` + optional
+        ``caption_cls``) via :meth:`step_faithful_v2`. Both return a dict with a
+        ``loss_total`` key the loop backpropagates.
+
+        Args:
+            batch: the collated batch dict (shape depends on the supervision mode).
+
+        Returns:
+            The loss dict from the selected forward (grad active).
+
+        Raises:
+            KeyError: if the batch lacks the keys the active mode requires.
+        """
+        if self.config.supervision == "region_category":
+            return self.step_faithful_v2(
+                batch["images"],
+                batch["region_cat_ids"],
+                batch["region_to_patch"],
+                caption_cls=batch.get("caption_cls"),
+            )
+        return self.step(
+            batch["image"], batch["region_id"], batch["category_id"]
+        )
 
     def train(self, dataloader: DataLoader | None = None) -> dict[str, float]:
         """Runs ``n_epochs`` complete with MLflow autolog.
@@ -720,6 +1089,19 @@ class FarSLIPDistillationTrainer:
                         "loss_gamma": self.config.loss_weights["gamma"],
                     }
                 )
+                if self.config.supervision == "region_category":
+                    # US-036-a v2 faithful params (separate from the v1 path).
+                    _mlflow.log_params(
+                        {
+                            "supervision": self.config.supervision,
+                            "lambda_loc": self.config.lambda_loc,
+                            "temperature": self.config.temperature,
+                            "use_global_caption_loss": (
+                                self.config.use_global_caption_loss
+                            ),
+                            "n_categories": self.config.n_categories,
+                        }
+                    )
                 if self.config.extra_params:
                     # US-034: proto_source/proto_proj/caveat + prototype dims.
                     _mlflow.log_params(dict(self.config.extra_params))
@@ -740,11 +1122,7 @@ class FarSLIPDistillationTrainer:
                         _log.warning("training over warning threshold", elapsed_h=elapsed_h)
                         warned = True
 
-                    images = batch["image"]
-                    region_ids = batch["region_id"]
-                    category_ids = batch["category_id"]
-
-                    losses = self.step(images, region_ids, category_ids)
+                    losses = self._forward_batch(batch)
                     total = losses["loss_total"] / self.config.grad_accum_steps
                     total.backward()
 
@@ -848,5 +1226,6 @@ __all__ = [
     "FarSLIPTrainerConfig",
     "PatchDistillationLoss",
     "RegionCategoryAlignmentLoss",
+    "SupervisionMode",
     "build_default_trainer",
 ]

@@ -48,7 +48,7 @@ import structlog
 
 if TYPE_CHECKING:
     import torch
-    from transformers import CLIPModel, CLIPProcessor  # noqa: F401
+    from transformers import CLIPModel, CLIPProcessor
 
 _log = structlog.get_logger(__name__)
 
@@ -96,7 +96,7 @@ def _resolve_device(device: str | None) -> torch.device:
         Resolved ``torch.device``. If CUDA was requested but is not
         available, emits a structured warning and degrades to CPU.
     """
-    import torch  # noqa: PLC0415
+    import torch
 
     if device is None:
         if torch.cuda.is_available():
@@ -107,7 +107,7 @@ def _resolve_device(device: str | None) -> torch.device:
         )
         return torch.device("cpu")
     if device == "cuda":
-        import torch as _t  # noqa: PLC0415
+        import torch as _t
 
         if not _t.cuda.is_available():
             _log.warning(
@@ -133,7 +133,7 @@ def _load_model(
         id actually loaded (may match ``model_name`` or be the OpenAI CLIP
         fallback).
     """
-    from transformers import CLIPModel, CLIPProcessor  # noqa: PLC0415
+    from transformers import CLIPModel, CLIPProcessor
 
     try:
         model = CLIPModel.from_pretrained(model_name)
@@ -278,7 +278,7 @@ def _embed_batch(
     Returns:
         Tensor ``(B, 512)`` float32 on CPU, L2-normalized.
     """
-    import torch  # noqa: PLC0415
+    import torch
 
     inputs = processor(images=images_hwc_uint8, return_tensors="pt")
     pixel_values = inputs["pixel_values"].to(device)
@@ -341,7 +341,7 @@ def extract_remoteclip_embeddings(
         _log.info("remoteclip_output_exists_skip", path=str(output_path))
         return output_path.resolve()
 
-    import torch  # noqa: PLC0415
+    import torch
 
     subset = pl.read_parquet(pastis_eval_subset_path)
     imagery = _load_imagery(imagery_path)

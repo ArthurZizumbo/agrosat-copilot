@@ -1,0 +1,5 @@
+outs:
+- md5: ddb683d02aab9a811ff4c579aaef0c98
+  size: 332113
+  hash: md5
+  path: pastis_captions.parquet
