@@ -291,6 +291,69 @@ def test_aggregate_alphaearth_to_patch_averages_parcels() -> None:
     assert out.filter(pl.col("parcel_id") == "200")["dim_00"].item() == 5.0
 
 
+def test_load_alphaearth_for_eval_real_pxid_schema(tmp_path: Path) -> None:
+    """The real PASTIS-aligned parquet (px_id/tile/fold) loads keyed on px_id.
+
+    ``px_id`` IS the PASTIS ``ID_PATCH`` (one row per patch), so it becomes
+    ``parcel_id`` directly; ``tile`` (the Sentinel-2 MGRS tile, NOT the patch),
+    ``fold``, ``lon``, ``lat`` and ``year`` are dropped. This is the schema that
+    triggered the US-037 KeyError (no ``parcel_id`` column).
+    """
+    real = pl.DataFrame(
+        {
+            "px_id": ["10000", "10002", "10003"],
+            "lon": [-1.26, -1.30, -0.36],
+            "lat": [49.6, 49.6, 49.3],
+            "year": [2019, 2019, 2019],
+            "dim_00": [0.1, 0.2, 0.3],
+            "dim_01": [1.0, 2.0, 3.0],
+            "tile": ["t30uxv", "t30uxv", "t30uxv"],
+            "fold": [1, 4, 5],
+        }
+    )
+    p = tmp_path / "alphaearth_at_pastis_fr_full_2019.parquet"
+    real.write_parquet(p)
+
+    out = ev.load_alphaearth_for_eval(p)
+    assert "parcel_id" in out.columns
+    assert out.schema["parcel_id"] == pl.Utf8
+    # Keyed on px_id (= ID_PATCH), NOT collapsed to the 1 tile.
+    assert sorted(out["parcel_id"].to_list()) == ["10000", "10002", "10003"]
+    assert set(c for c in out.columns if c.startswith("dim_")) == {"dim_00", "dim_01"}
+    # tile / fold / lon / lat / year are dropped.
+    assert "tile" not in out.columns and "fold" not in out.columns
+
+
+def test_load_alphaearth_for_eval_rejects_unknown_schema(tmp_path: Path) -> None:
+    """A parquet without parcel_id nor px_id is a clear error, never a KeyError."""
+    bad = pl.DataFrame({"foo": ["a"], "dim_00": [0.0]})
+    p = tmp_path / "bad.parquet"
+    bad.write_parquet(p)
+    with pytest.raises(ValueError, match="px_id"):
+        ev.load_alphaearth_for_eval(p)
+
+
+def test_load_alphaearth_for_eval_then_aggregate_is_patch_level(
+    tmp_path: Path,
+) -> None:
+    """Real schema -> aggregate is an identity (already one row per patch)."""
+    real = pl.DataFrame(
+        {
+            "px_id": ["10000", "10002", "10003"],
+            "dim_00": [0.1, 0.2, 0.3],
+            "tile": ["t30uxv", "t30uxv", "t30uxv"],
+            "fold": [1, 4, 5],
+        }
+    )
+    p = tmp_path / "real.parquet"
+    real.write_parquet(p)
+    loaded = ev.load_alphaearth_for_eval(p)
+    patch = ev.aggregate_alphaearth_to_patch(loaded).sort("parcel_id")
+    # One row per patch survives; the single tile is NOT collapsed into one row.
+    assert patch["parcel_id"].to_list() == ["10000", "10002", "10003"]
+    assert patch["dim_00"].to_list() == pytest.approx([0.1, 0.2, 0.3])
+
+
 def test_aggregate_then_compare_aligns_on_patch() -> None:
     """Aggregated AlphaEarth (patch-level) aligns with the FarSLIP-pheno patches."""
     pheno_df = pl.DataFrame(

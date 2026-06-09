@@ -39,7 +39,11 @@ eval uses folds 4/5 held-out, disjoint from the US-036-a train folds (1/2/3).
 This module IMPORTS ``eval_space`` / ``align_spaces_on_parcels`` /
 ``build_balanced_eval_set`` / ``load_alphaearth_embeddings`` from
 :mod:`ml.eval.embedding_separability` and ``create_incremental_dataset`` from
-:mod:`ml.farslip.pastis_pair_dataset`; it never reimplements them.
+:mod:`ml.farslip.pastis_pair_dataset`; it never reimplements them. AlphaEarth
+loading goes through :func:`load_alphaearth_for_eval`, a thin schema-aware
+wrapper that handles the real PASTIS-aligned parquet (``px_id``/``tile``/
+``fold``, where ``px_id`` IS the PASTIS ``ID_PATCH``) on top of the legacy
+per-parcel one (``parcel_id``), delegating the legacy case to the shared loader.
 
 Project convention: ``polars`` (no pandas); ``structlog`` (no ``print``); type
 hints everywhere; docstrings in English, prose in Spanish; no emojis; MLflow on
@@ -52,7 +56,7 @@ US-036-a winning checkpoint exists::
         --checkpoint-path checkpoints/farslip/incremental/08cls/best.safetensors \\
         --n-classes 8 --embedding-space cls768 --eval-folds 4,5 \\
         --pastis-root data/PASTIS-R \\
-        --alphaearth-path data/cache/gee/alphaearth_parcels_pastis_parcels_2019_85951.parquet \\
+        --alphaearth-path data/cache/gee/alphaearth_at_pastis_fr_full_2019_2433.parquet \\
         --mlflow-uri http://localhost:5010
 """
 
@@ -111,7 +115,7 @@ _DEFAULT_ALPHAEARTH: Path = (
     / "data"
     / "cache"
     / "gee"
-    / "alphaearth_parcels_pastis_parcels_2019_85951.parquet"
+    / "alphaearth_at_pastis_fr_full_2019_2433.parquet"
 )
 
 #: Forbidden checkpoint / data roots (US-034/035 Italian + official + synthetic).
@@ -542,29 +546,98 @@ def extract_pheno_embeddings(
 
 
 # ---------------------------------------------------------------------------
-# AlphaEarth aggregation to patch level (AC-3): the same unit as FarSLIP-pheno.
+# AlphaEarth loading + aggregation to patch level (AC-3): same unit as FarSLIP.
 # ---------------------------------------------------------------------------
+
+#: Pixel/sample id of the real PASTIS-aligned AlphaEarth parquet. It is NOT a
+#: pixel within a tile: ``px_id`` equals the PASTIS ``ID_PATCH`` 1:1 (verified on
+#: ``alphaearth_at_pastis_fr_full_2019_2433.parquet``: 2433 rows, 2433 unique
+#: px_id, exact match against ``metadata.geojson`` ID_PATCH, zero fold
+#: mismatches). The Sentinel-2 MGRS ``tile`` column (only 4 values) is the tile,
+#: NOT the patch, so AlphaEarth must NEVER be aggregated by ``tile``.
+_AE_PXID_COL: str = "px_id"
+_AE_TILE_COL: str = "tile"
+
+
+def load_alphaearth_for_eval(path: str | Path) -> pl.DataFrame:
+    """Load an AlphaEarth parquet at PASTIS-patch level, schema-aware.
+
+    Two AlphaEarth schemas coexist in the project and this loader normalizes both
+    to ``parcel_id`` (= PASTIS ``ID_PATCH``) + the 64 ``dim_NN`` columns:
+
+    1. The real PASTIS-aligned parquet (US-037 default,
+       ``alphaearth_at_pastis_fr_full_2019_2433.parquet``) is keyed by
+       ``px_id`` -- which IS the PASTIS ``ID_PATCH`` (one row per patch, verified
+       1:1 against ``metadata.geojson``) -- plus ``lon``/``lat``/``year``/
+       ``tile``/``fold``. The patch key is ``px_id``; ``tile`` is the Sentinel-2
+       MGRS tile (only 4 values), NOT the patch, so it is dropped.
+    2. The legacy per-parcel parquet
+       (``alphaearth_parcels_pastis_parcels_2019_85951.parquet``) is keyed by
+       ``parcel_id == "{patch_id}_{instance}"`` (many rows per patch). For this
+       schema the shared :func:`load_alphaearth_embeddings` is reused.
+
+    Args:
+        path: Path to the AlphaEarth parquet (either schema).
+
+    Returns:
+        A DataFrame with ``parcel_id`` (Utf8) and the 64 ``dim_NN`` columns. For
+        schema 1 the patch key is materialized from ``px_id``; for schema 2 the
+        original ``parcel_id`` is preserved (collapse to patch level afterwards
+        with :func:`aggregate_alphaearth_to_patch`).
+
+    Raises:
+        ValueError: if the parquet carries neither ``parcel_id`` nor ``px_id``
+            (an unknown AlphaEarth schema), or if it has no ``dim_*`` columns.
+    """
+    raw = pl.read_parquet(path)
+    dim_cols = sorted(c for c in raw.columns if c.startswith(_AE_PREFIX))
+    if not dim_cols:
+        raise ValueError(
+            f"AlphaEarth parquet {path!s} has no '{_AE_PREFIX}*' embedding "
+            f"columns; available columns: {raw.columns}."
+        )
+    if "parcel_id" in raw.columns:
+        # Legacy per-parcel schema: reuse the shared, tested loader as-is.
+        return load_alphaearth_embeddings(path)
+    if _AE_PXID_COL in raw.columns:
+        # Real PASTIS-aligned schema: px_id IS the patch_id (ID_PATCH). Rename it
+        # to parcel_id and keep only the dims; tile/fold/lon/lat are dropped.
+        out = raw.select([_AE_PXID_COL, *dim_cols]).rename(
+            {_AE_PXID_COL: "parcel_id"}
+        )
+        return canonical_parcel_id(out)
+    raise ValueError(
+        f"AlphaEarth parquet {path!s} carries neither 'parcel_id' nor "
+        f"'{_AE_PXID_COL}'; cannot derive the PASTIS patch key. Available "
+        f"columns: {raw.columns}."
+    )
 
 
 def aggregate_alphaearth_to_patch(
     alphaearth_df: pl.DataFrame,
 ) -> pl.DataFrame:
-    """Aggregate per-parcel AlphaEarth embeddings to PASTIS patch level.
+    """Aggregate AlphaEarth embeddings to PASTIS patch level (idempotent).
 
-    The AlphaEarth parquet is keyed by ``parcel_id == "{patch_id}_{instance}"``
-    (one row per parcel). FarSLIP-pheno is at PATCH level (one composite per
-    patch). To compare apples-to-apples (R-GRAN) AlphaEarth is averaged over the
-    parcels of each patch, and the aggregated key is set to ``patch_id`` so the
-    inner join with FarSLIP-pheno (whose ``parcel_id`` IS the ``patch_id``) lines
-    the two spaces up on the same unit.
+    Two AlphaEarth grains reach this function and both are collapsed to one row
+    per PASTIS patch (R-GRAN), so the inner join with FarSLIP-pheno (whose
+    ``parcel_id`` IS the ``patch_id``) lines the two spaces up on the same unit:
+
+    - Legacy per-parcel grain (``parcel_id == "{patch_id}_{instance}"``): the
+      patch key is the prefix before the first ``_`` and the dims are averaged
+      over the parcels of each patch.
+    - Real PASTIS-aligned grain (``parcel_id`` already a bare ``ID_PATCH`` from
+      :func:`load_alphaearth_for_eval`, no ``_``): the prefix is the whole id, so
+      the group-by collapses each (already unique) patch to itself -- an
+      identity, never an over-aggregation to the Sentinel-2 ``tile``.
 
     Args:
-        alphaearth_df: Per-parcel AlphaEarth table with ``parcel_id`` and the 64
-            ``dim_NN`` columns (as returned by ``load_alphaearth_embeddings``).
+        alphaearth_df: AlphaEarth table with ``parcel_id`` and the 64 ``dim_NN``
+            columns (either grain, as returned by
+            :func:`load_alphaearth_for_eval`).
 
     Returns:
         A patch-level table with ``parcel_id`` (= patch_id, Utf8) and the mean
-        ``dim_NN`` columns.
+        ``dim_NN`` columns, one row per distinct patch.
     """
     df = canonical_parcel_id(alphaearth_df)
     dim_cols = sorted(c for c in df.columns if c.startswith(_AE_PREFIX))
@@ -924,8 +997,8 @@ def run_eval(
         seed=seed,
     )
     pheno_df = pl.read_parquet(extracted.output_path)
-    alphaearth_parcel = load_alphaearth_embeddings(alphaearth_path)
-    alphaearth_patch = aggregate_alphaearth_to_patch(alphaearth_parcel)
+    alphaearth_raw = load_alphaearth_for_eval(alphaearth_path)
+    alphaearth_patch = aggregate_alphaearth_to_patch(alphaearth_raw)
 
     report = compare_to_alphaearth(
         pheno_df=pheno_df,
@@ -974,6 +1047,16 @@ except ImportError as exc:  # pragma: no cover
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
 
+@app.callback()
+def _main() -> None:
+    """Eval FarSLIP-pheno vs AlphaEarth (US-037). Subcomando: ``eval``.
+
+    El callback fuerza a Typer a exponer ``eval`` como subcomando explicito (sin
+    el, un Typer de comando unico ignora el nombre e interpreta ``eval`` como
+    argumento extra).
+    """
+
+
 def _parse_folds(folds: str) -> tuple[int, ...]:
     """Parse a comma-separated fold string into a sorted unique tuple.
 
@@ -1004,7 +1087,14 @@ def eval_command(
         Path, typer.Option(help="Raiz PASTIS-R (frances real)")
     ] = _DEFAULT_PASTIS_ROOT,
     alphaearth_path: Annotated[
-        Path, typer.Option(help="Parquet AlphaEarth 2019 por parcela (64-dim)")
+        Path,
+        typer.Option(
+            help=(
+                "Parquet AlphaEarth 2019 (64-dim). Acepta el formato real "
+                "alineado a PASTIS (px_id=ID_PATCH, tile, fold) o el legado "
+                "por-parcela (parcel_id={patch}_{i})"
+            )
+        ),
     ] = _DEFAULT_ALPHAEARTH,
     eval_folds: Annotated[
         str, typer.Option(help="Folds held-out PASTIS (disjuntos de train 1/2/3)")
@@ -1100,6 +1190,7 @@ __all__ = [
     "attach_class_names",
     "compare_to_alphaearth",
     "extract_pheno_embeddings",
+    "load_alphaearth_for_eval",
     "run_eval",
     "silhouette_per_class",
 ]
