@@ -300,11 +300,13 @@ def _default_google_genai_client(
         thinking_config=thinking_config,
     )
 
-    # Retry with exponential backoff (base 2s) for 429 / 503. Three
-    # retries before propagating the error: protects long batches over
-    # 85k parcels from transient failures without saturating the API.
-    max_attempts = 3
+    # Retry with capped exponential backoff for 429 / 503 / timeout. Six
+    # attempts (~2+4+8+16+30+30s) before propagating: a single 69k-parcel batch
+    # would otherwise die on a SUSTAINED 503 spike (observed at peak hours) when
+    # only 3 short retries were allowed. The cap keeps the backoff from exploding.
+    max_attempts = 6
     base_delay = 2.0
+    max_delay = 30.0
     last_exc: Exception | None = None
     for attempt in range(max_attempts):
         try:
@@ -327,7 +329,7 @@ def _default_google_genai_client(
             last_exc = exc
             if not is_transient or attempt == max_attempts - 1:
                 raise
-            delay = base_delay * (2**attempt)
+            delay = min(base_delay * (2**attempt), max_delay)
             logger.warning(
                 "phenology_description_gemini_retry",
                 attempt=attempt + 1,
