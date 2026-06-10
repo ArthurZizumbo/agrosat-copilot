@@ -17,19 +17,31 @@ from ml.ensemble.base import (
     Space,
 )
 from ml.ensemble.blending import DEFAULT_BLENDING_MEMBERS, BlendingEnsemble
+from ml.ensemble.dual_head_fusion import (
+    DEFAULT_FARSLIP_CHECKPOINT,
+    DEFAULT_TSVIT_MEMBER,
+    DualHeadFusionHead,
+    build_class_prototypes,
+    farslip_cosine_map,
+)
 from ml.ensemble.stacking import DEFAULT_BASE_MEMBERS, StackingEnsemble
 from ml.ensemble.voting import DEFAULT_VOTING_MEMBERS, VotingEnsemble
 
 __all__ = [
     "DEFAULT_BASE_MEMBERS",
     "DEFAULT_BLENDING_MEMBERS",
+    "DEFAULT_FARSLIP_CHECKPOINT",
     "DEFAULT_OOF_DIR",
+    "DEFAULT_TSVIT_MEMBER",
     "DEFAULT_VOTING_MEMBERS",
     "ENSEMBLE_EXPERIMENT",
     "BaggingEnsemble",
     "BlendingEnsemble",
+    "DualHeadFusionHead",
     "EnsembleModel",
     "Space",
     "StackingEnsemble",
     "VotingEnsemble",
+    "build_class_prototypes",
+    "farslip_cosine_map",
 ]
