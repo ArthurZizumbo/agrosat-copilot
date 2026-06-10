@@ -188,6 +188,28 @@ def _default_litellm_client(
     return str(content).strip()
 
 
+def _model_supports_thinking_level(model: str) -> bool:
+    """Whether ``model`` accepts the ``thinking_level`` config field.
+
+    Only Gemini 3.x models support it; 2.x models (and others) return
+    ``400 Thinking level is not supported for this model``. Matches the
+    major version after the ``gemini-`` prefix (e.g. ``gemini-3.5-flash`` ->
+    True, ``gemini-2.5-flash-lite`` -> False).
+
+    Args:
+        model: Model identifier.
+
+    Returns:
+        ``True`` for ``gemini-3.x`` models, ``False`` otherwise.
+    """
+    name = model.lower().removeprefix("models/")
+    if not name.startswith("gemini-"):
+        return False
+    version = name[len("gemini-") :]
+    major = version.split(".", 1)[0].split("-", 1)[0]
+    return major.isdigit() and int(major) >= 3
+
+
 def _has_credentials() -> bool:
     """Check whether Gemini credentials are configured in the environment.
 
@@ -251,14 +273,20 @@ def _default_google_genai_client(
 
     # `Client()` auto-detects Vertex AI vs public API from env vars.
     client = genai.Client()
+    # `thinking_level` is a Gemini 3.x feature: 3.x accepts "minimal" to cut
+    # latency on short descriptions, but 2.x models (e.g. gemini-2.5-flash-lite)
+    # reject it with `400 Thinking level is not supported for this model`. Apply
+    # it only for 3.x; the numeric `thinking_budget` was deprecated per the 3.5
+    # docs, so 2.x runs with the default thinking config.
+    thinking_config = (
+        types.ThinkingConfig(thinking_level="minimal")
+        if _model_supports_thinking_level(model)
+        else None
+    )
     config = types.GenerateContentConfig(
         temperature=temperature,
         max_output_tokens=512,
-        # `thinking_level="minimal"` reduces latency for short
-        # descriptions; supported by Gemini 3.x (including 3.5-flash). The
-        # numeric `thinking_budget` parameter was deprecated per the
-        # official Gemini 3.5 docs.
-        thinking_config=types.ThinkingConfig(thinking_level="minimal"),
+        thinking_config=thinking_config,
     )
 
     # Retry with exponential backoff (base 2s) for 429 / 503. Three
@@ -430,6 +458,7 @@ def generate_phenology_description(
         "crop_type_hint": crop_type_hint,
     }
     try:
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
         cache_file.write_text(
             json.dumps(payload, ensure_ascii=False), encoding="utf-8"
         )
