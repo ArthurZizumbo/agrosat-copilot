@@ -31,6 +31,7 @@ __all__ = [
     "alphaearth_dim_columns",
     "average_alphaearth_years",
     "build_averaged_alphaearth",
+    "build_avg_features_for_xgb",
 ]
 
 #: AlphaEarth Satellite Embedding V1 Annual dimensionality.
@@ -148,5 +149,85 @@ def build_averaged_alphaearth(
         n_years=len(frames),
         years_used=used,
         n_parcels=averaged.height,
+    )
+    return out
+
+
+def build_avg_features_for_xgb(
+    year_paths: Sequence[Path | str],
+    fused_features_path: Path | str,
+    *,
+    out_path: Path | str,
+    id_col: str = "parcel_id",
+) -> Path:
+    """Build the XGBoost features parquet with the AVERAGED AlphaEarth dims.
+
+    ``materialize_xgb_parcel_oof`` (US-040) reads a features parquet that must
+    carry ``patch_id``, ``instance_id``, ``class_id``, ``fold`` (the key/label
+    pipeline) plus the AlphaEarth ``dim_*`` columns. The cache-year parquets only
+    have ``parcel_id`` + ``dim_*``, so this joins the AVERAGED dims onto the
+    metadata of ``fused_features_path`` (which already has the fold/class/key
+    columns and the canonical ``parcel_id``), REPLACING its single-year ``dim_*``
+    with the 2018+2019 mean.
+
+    Args:
+        year_paths: yearly AlphaEarth parquets to average (e.g. 2018 + 2019).
+        fused_features_path: ``data/features/features_fused_pastis.parquet``
+            (carries ``patch_id``/``instance_id``/``class_id``/``fold`` + the
+            single-year ``dim_*`` + ``parcel_id``).
+        out_path: destination features parquet for the XGBoost member.
+        id_col: parcel id column shared by both sides (``parcel_id``).
+
+    Returns:
+        The written ``out_path`` (metadata of the fused parquet + averaged dims).
+
+    Raises:
+        FileNotFoundError: if no year path exists or the fused features parquet
+            is absent.
+        ValueError: if the fused parquet lacks the required key/label columns.
+    """
+    fused_path = Path(fused_features_path)
+    if not fused_path.is_file():
+        raise FileNotFoundError(f"fused features parquet not found: {fused_path}.")
+
+    avg_frames: list[pl.DataFrame] = []
+    for p in year_paths:
+        path = Path(p)
+        if path.is_file():
+            avg_frames.append(pl.read_parquet(path))
+        else:
+            logger.warning("alphaearth_year_missing", path=str(path))
+    if not avg_frames:
+        raise FileNotFoundError(
+            f"none of the AlphaEarth year parquets exist: {list(year_paths)}."
+        )
+    dims = alphaearth_dim_columns()
+    averaged = average_alphaearth_years(avg_frames, id_col=id_col).select(
+        [id_col, *dims]
+    )
+
+    fused = pl.read_parquet(fused_path)
+    required = (id_col, "patch_id", "instance_id", "class_id", "fold")
+    missing = [c for c in required if c not in fused.columns]
+    if missing:
+        raise ValueError(
+            f"fused features parquet is missing key/label columns: {missing}."
+        )
+    # Keep ONLY the metadata columns from the fused parquet (drop its single-year
+    # dims), then inner-join the averaged dims so the XGBoost member trains on the
+    # 2018+2019 mean while keeping the leak-free fold/class/key pipeline.
+    metadata = fused.select(
+        [c for c in fused.columns if c not in set(dims)]
+    )
+    merged = metadata.join(averaged, on=id_col, how="inner")
+    out = Path(out_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    merged.write_parquet(out)
+    logger.info(
+        "alphaearth_avg_features_for_xgb_written",
+        out=str(out),
+        n_parcels=merged.height,
+        n_years=len(avg_frames),
+        n_dims=len(dims),
     )
     return out
