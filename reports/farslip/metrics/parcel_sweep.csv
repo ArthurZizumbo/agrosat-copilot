@@ -1,0 +1,6 @@
+n_classes,macro_f1,macro_iou,n_well_resolved,n_eval_parcels,best_ckpt
+4,0.7025,0.5547,4,1301,checkpoints\farslip\parcel\04cls\best.safetensors
+6,0.4579,0.312,2,1843,checkpoints\farslip\parcel\06cls\best.safetensors
+8,0.4075,0.2657,3,2301,checkpoints\farslip\parcel\08cls\best.safetensors
+10,0.3589,0.2288,3,2706,checkpoints\farslip\parcel\10cls\best.safetensors
+12,0.3328,0.2071,1,3200,checkpoints\farslip\parcel\12cls\best.safetensors
