@@ -21,9 +21,38 @@ Tu PC ──ssh──► cloudflared access (tu PC) ──► Cloudflare ──�
 ```
 
 - La VM corre un `cloudflared` que sale a Cloudflare y expone su SSH (puerto <PUERTO-SSH>).
-- En **tu** PC corres otro `cloudflared` que mapea ese túnel a tu `localhost:<PUERTO-SSH>`.
-- Luego haces `ssh ... User1@localhost -p <PUERTO-SSH>` y entras a la VM.
+- En **tu** PC corres otro `cloudflared` que mapea ese túnel a tu `127.0.0.1:<PUERTO-SSH>`.
+- Luego haces `ssh ... User1@127.0.0.1 -p <PUERTO-SSH>` y entras a la VM.
 - Autenticación por **llave SSH** (cada quien la suya), no por contraseña.
+
+> ⚠️ **Usa `127.0.0.1`, NUNCA `localhost`.** En Windows el cliente OpenSSH resuelve
+> `localhost` a `::1` (IPv6), pero `cloudflared access tcp` solo escucha en `127.0.0.1`
+> (IPv4): con `localhost` el SSH falla con `banner exchange: Connection refused` aunque
+> la VM esté sana. Con `127.0.0.1` explícito conecta. (Ver Troubleshooting.)
+
+---
+
+## 0.1 Caso del sponsor (acceso remoto vía túnel con su llave)
+
+El sponsor es **dueño y administrador** de la VM (`gjcamacho-gpuh1`), así que tiene una
+ventaja sobre el resto del equipo: para entrar por SSH desde fuera **no depende de nadie**
+—él mismo autoriza su llave en la VM. El flujo completo, de principio a fin:
+
+1. **En su PC** (el que usará para conectarse remoto): instalar `cloudflared` (sección 1.1)
+   y generar su par de llaves SSH (sección 1.2), p. ej. `-C "sponsor-h100"`.
+2. **Autorizar su propia llave pública en la VM**: como es admin, lo hace él directamente
+   en la VM (por RDP/consola) — es la sección 4, pero aplicada a su propia `.pub`. No
+   necesita enviársela a nadie.
+3. **Conectarse**: levantar el túnel local + `ssh` exactamente como el resto del equipo
+   (sección 2), usando la URL vigente del túnel (sección 5) y `User1@127.0.0.1`.
+
+> 💡 El sponsor podría entrar por **RDP/consola local** sin túnel (es su máquina). El túnel
+> SSH solo le hace falta si quiere acceso **remoto por línea de comandos** desde otro PC,
+> igual que el equipo. Esta guía cubre ese caso (SSH remoto).
+
+> 🔑 Si en lugar de **conectarse él** quiere **dar acceso a un cuarto colaborador**, no
+> hace falta tocar nada nuevo: ese colaborador sigue las secciones 1–2 y el sponsor (o
+> Arthur) agrega su `.pub` con la sección 4.
 
 ---
 
@@ -80,9 +109,9 @@ cloudflared access tcp --hostname <URL-VIGENTE>.trycloudflare.com --url localhos
 ```
 (En Windows: `& "$env:USERPROFILE\.cloudflared\cloudflared.exe" access tcp --hostname <URL>.trycloudflare.com --url localhost:<PUERTO-SSH>`)
 
-**Terminal 2 — conéctate por SSH:**
+**Terminal 2 — conéctate por SSH (usa `127.0.0.1`, no `localhost`):**
 ```bash
-ssh -p <PUERTO-SSH> -i ~/.ssh/agrosat_h100 -o IdentitiesOnly=yes User1@localhost
+ssh -p <PUERTO-SSH> -i ~/.ssh/agrosat_h100 -o IdentitiesOnly=yes User1@127.0.0.1
 ```
 
 Si entra, verás el prompt de la VM (`gjcamacho-gpuh1`).
@@ -152,7 +181,8 @@ y usar un *named tunnel* con Public Hostname SSH. Elimina el paso de re-comparti
 | Síntoma | Causa probable | Solución |
 |---------|----------------|----------|
 | `Connection reset by peer` | URL del túnel vieja (la VM reinició) | Pedir URL nueva (sección 5) |
-| `Permission denied (publickey)` | Tu llave no está autorizada | Reenviar tu `.pub` al admin |
+| `banner exchange: Connection refused` | Conectaste a `localhost` (IPv6 `::1`) en vez de `127.0.0.1` | Usar `User1@127.0.0.1` (ver §0) |
+| `Permission denied (publickey)` | Tu llave no está autorizada | Reenviar tu `.pub` al admin (sponsor: autorízala tú, §4) |
 | `cloudflared: command not found` | No instalado | Sección 1.1 |
 | SSH cuelga sin conectar | Túnel local (Terminal 1) no está abierto | Abrir el `cloudflared access tcp` primero |
 | Warning "post-quantum key exchange" | Cosmético (versión sshd) | Ignorar |
