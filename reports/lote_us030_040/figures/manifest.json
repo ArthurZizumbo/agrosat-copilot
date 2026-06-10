@@ -1,0 +1,272 @@
+{
+  "segmenters": {
+    "unet": {
+      "label": "U-Net (ResNet-50)",
+      "triptychs": [
+        "seg_unet_triptych_0.png",
+        "seg_unet_triptych_1.png",
+        "seg_unet_triptych_2.png"
+      ],
+      "confusion": "seg_unet_confusion.png",
+      "per_class_csv": "seg_unet_per_class.csv",
+      "miou": 0.0924,
+      "f1_macro": 0.1499,
+      "pixel_acc": 0.2481
+    },
+    "deeplabv3plus": {
+      "label": "DeepLabv3+",
+      "triptychs": [
+        "seg_deeplabv3plus_triptych_0.png",
+        "seg_deeplabv3plus_triptych_1.png",
+        "seg_deeplabv3plus_triptych_2.png"
+      ],
+      "confusion": "seg_deeplabv3plus_confusion.png",
+      "per_class_csv": "seg_deeplabv3plus_per_class.csv",
+      "miou": 0.2543,
+      "f1_macro": 0.362,
+      "pixel_acc": 0.6527
+    },
+    "segformer": {
+      "label": "SegFormer-B0",
+      "triptychs": [
+        "seg_segformer_triptych_0.png",
+        "seg_segformer_triptych_1.png",
+        "seg_segformer_triptych_2.png"
+      ],
+      "confusion": "seg_segformer_confusion.png",
+      "per_class_csv": "seg_segformer_per_class.csv",
+      "miou": 0.2266,
+      "f1_macro": 0.3365,
+      "pixel_acc": 0.5374
+    },
+    "utae": {
+      "label": "U-TAE (temporal)",
+      "triptychs": [
+        "seg_utae_triptych_0.png",
+        "seg_utae_triptych_1.png",
+        "seg_utae_triptych_2.png"
+      ],
+      "confusion": "seg_utae_confusion.png",
+      "per_class_csv": "seg_utae_per_class.csv",
+      "miou": 0.1319,
+      "f1_macro": 0.1965,
+      "pixel_acc": 0.4005
+    },
+    "tsvit": {
+      "label": "TSViT Full-M (US-038)",
+      "triptychs": [
+        "seg_tsvit_triptych_0.png",
+        "seg_tsvit_triptych_1.png",
+        "seg_tsvit_triptych_2.png"
+      ],
+      "confusion": "seg_tsvit_confusion.png",
+      "per_class_csv": "seg_tsvit_per_class.csv",
+      "miou": 0.6786,
+      "f1_macro": 0.7939,
+      "pixel_acc": 0.8877
+    },
+    "tsvit-pheno-fullm": {
+      "label": "TSViT-pheno Full-M (US-039)",
+      "triptychs": [
+        "seg_tsvit-pheno-fullm_triptych_0.png",
+        "seg_tsvit-pheno-fullm_triptych_1.png",
+        "seg_tsvit-pheno-fullm_triptych_2.png"
+      ],
+      "confusion": "seg_tsvit-pheno-fullm_confusion.png",
+      "per_class_csv": "seg_tsvit-pheno-fullm_per_class.csv",
+      "miou": 0.6746,
+      "f1_macro": 0.7907,
+      "pixel_acc": 0.8881
+    }
+  },
+  "farslip": [
+    {
+      "patch_id": "10008",
+      "true": "Fruits, vegetables, flowers",
+      "pred": "Corn",
+      "correct": false,
+      "caption": "La imagen muestra un paisaje agrícola altamente fragmentado, compuesto por un mosaico de aproximadamente 22 parcelas de geometría irregular y diversos tonos de verde. Se observa una textura heterogénea donde predominan áreas de vigor moderado, compatibles con el desarrollo de cultivos hortícolas, frutales o florales que mantienen una cobertura vegetal parcial hacia finales de octubre. El patrón espacial revela una alternancia entre parcelas densamente vegetadas y otras con tonalidades más claras o suelos expuestos, reflejando la senescencia avanzada de los cereales y el maíz tras haber alcanzado su pico estacional en verano. En conjunto, la escena evidencia una transición fenológica otoñal típica de la región, donde coexisten cultivos perennes o de ciclo largo con rastrojos de cultivos anuales ya cosechados.",
+      "n_regions": 22,
+      "n_categories": 4,
+      "parcels_matched": 1,
+      "category_counts": {
+        "Mixed cereal": 8,
+        "Fruits, vegetables, flowers": 12,
+        "Spring barley": 1,
+        "Corn": 1
+      },
+      "figure": "farslip_pred_0.png"
+    },
+    {
+      "patch_id": "10081",
+      "true": "Soft winter wheat",
+      "pred": "Beet",
+      "correct": false,
+      "caption": "La imagen muestra un paisaje agrícola altamente fragmentado, compuesto por un mosaico de 28 parcelas con geometrías irregulares y texturas variadas. Predominan tonalidades verdes intensas que reflejan un vigor vegetativo elevado, consistente con el pico de crecimiento de cultivos como el trigo blando de invierno hacia finales de junio. Se observan contrastes cromáticos significativos entre parcelas de verde brillante y otras más oscuras o parduscas, lo que sugiere diferentes estados fenológicos o la presencia de cultivos de verano en fases iniciales de desarrollo. La disposición espacial revela una organización compleja del terreno, donde el dosel vegetal se encuentra en su máxima expresión fotosintética antes de iniciar los procesos de senescencia estival.",
+      "n_regions": 28,
+      "n_categories": 6,
+      "parcels_matched": 1,
+      "category_counts": {
+        "Soft winter wheat": 15,
+        "Winter rapeseed": 2,
+        "Beet": 1,
+        "Meadow": 6,
+        "Potatoes": 2,
+        "Corn": 2
+      },
+      "figure": "farslip_pred_1.png"
+    },
+    {
+      "patch_id": "10175",
+      "true": "Meadow",
+      "pred": "Meadow",
+      "correct": true,
+      "caption": "La imagen muestra un paisaje agrícola altamente fragmentado, compuesto por aproximadamente 25 parcelas de formas irregulares y texturas variadas. Predominan tonalidades verdes intensas que indican un vigor vegetativo elevado, coherente con el pico de crecimiento primaveral de mayo. Se observa una coexistencia de coberturas permanentes, como praderas con desarrollo uniforme, junto a cereales de invierno y forrajeras leguminosas que se encuentran en sus fases máximas de actividad fotosintética antes de la senescencia estival. La disposición espacial revela un mosaico diverso donde el dosel vegetal denso oculta casi por completo el suelo en la mayoría de las unidades agronómicas.",
+      "n_regions": 25,
+      "n_categories": 6,
+      "parcels_matched": 17,
+      "category_counts": {
+        "Meadow": 17,
+        "Winter barley": 2,
+        "Mixed cereal": 3,
+        "Soft winter wheat": 1,
+        "Leguminous fodder": 1,
+        "Corn": 1
+      },
+      "figure": "farslip_pred_2.png"
+    },
+    {
+      "patch_id": "10290",
+      "true": "Meadow",
+      "pred": "Meadow",
+      "correct": true,
+      "caption": "La imagen muestra un paisaje agrícola altamente fragmentado, compuesto por una trama irregular de numerosas parcelas pequeñas con texturas variadas. En esta fecha de mediados de primavera, se observa un vigor vegetativo predominante en tonos verdes intensos, especialmente en las zonas centrales donde los cereales de invierno alcanzan su máximo desarrollo foliar. Hacia el norte y sur, las praderas presentan una cubierta vegetal más uniforme y persistente, mientras que algunas parcelas muestran tonalidades más claras o suelos expuestos, coherentes con cultivos de ciclo estival que aún se encuentran en fases iniciales de crecimiento.",
+      "n_regions": 41,
+      "n_categories": 5,
+      "parcels_matched": 22,
+      "category_counts": {
+        "Meadow": 22,
+        "Soft winter wheat": 9,
+        "Leguminous fodder": 4,
+        "Corn": 5,
+        "Mixed cereal": 1
+      },
+      "figure": "farslip_pred_3.png"
+    },
+    {
+      "patch_id": "10417",
+      "true": "Soft winter wheat",
+      "pred": "Meadow",
+      "correct": false,
+      "caption": "La imagen muestra un paisaje agrícola fragmentado en diversas parcelas con una disposición geométrica irregular y texturas variables. En el sector norte, se observa una vegetación densa y vigorosa compatible con la fase de floración y máximo desarrollo foliar de cultivos de invierno como la colza. La zona central presenta un tono verde intenso y uniforme, reflejando el pico de actividad fotosintética típico del trigo blando a finales de primavera. Hacia el sur, las parcelas muestran una coloración verde más clara y una textura distinta, correspondiente al desarrollo vegetativo progresivo del maíz antes de alcanzar su máximo vigor estival.",
+      "n_regions": 19,
+      "n_categories": 6,
+      "parcels_matched": 4,
+      "category_counts": {
+        "Winter barley": 2,
+        "Corn": 4,
+        "Mixed cereal": 1,
+        "Meadow": 4,
+        "Soft winter wheat": 5,
+        "Winter rapeseed": 3
+      },
+      "figure": "farslip_pred_4.png"
+    },
+    {
+      "patch_id": "10504",
+      "true": "Meadow",
+      "pred": "Meadow",
+      "correct": true,
+      "caption": "La imagen muestra un paisaje agrícola altamente fragmentado, compuesto por una trama irregular de numerosas parcelas pequeñas con diversas tonalidades de verde. Se observa un vigor vegetativo generalizado y sostenido en toda la escena, característico de una cubierta vegetal persistente durante el final del verano y principios del otoño. La textura es heterogénea, alternando zonas de verde intenso con áreas de transición cromática que sugieren diferentes estados de madurez y tipos de cobertura herbácea. Este aspecto visual es coherente con la presencia de praderas y cultivos perennes que mantienen su actividad fotosintética activa durante esta etapa del ciclo anual.",
+      "n_regions": 39,
+      "n_categories": 6,
+      "parcels_matched": 30,
+      "category_counts": {
+        "Meadow": 30,
+        "Corn": 3,
+        "Orchard": 2,
+        "Soft winter wheat": 2,
+        "Sunflower": 1,
+        "Spring barley": 1
+      },
+      "figure": "farslip_pred_5.png"
+    },
+    {
+      "patch_id": "20043",
+      "true": "Meadow",
+      "pred": "Meadow",
+      "correct": true,
+      "caption": "La imagen muestra un paisaje agrícola altamente fragmentado, compuesto por aproximadamente treinta parcelas de geometría irregular y diversas dimensiones. En las zonas norte y central predomina una vegetación con vigor moderado y textura uniforme, característica de praderas que mantienen su actividad fotosintética durante el otoño. Hacia el sur, se observa un patrón de cultivo más heterogéneo con tonalidades verdes variadas, coherente con la presencia de hortalizas, frutales o flores en fase de madurez tardía. El aspecto general de la escena refleja el estado fenológico típico de mediados de noviembre, donde algunos cultivos leñosos y anuales comienzan su transición hacia la senescencia mientras las cubiertas permanentes conservan su verdor.",
+      "n_regions": 30,
+      "n_categories": 4,
+      "parcels_matched": 9,
+      "category_counts": {
+        "Meadow": 9,
+        "Sorghum": 8,
+        "Grapevine": 6,
+        "Fruits, vegetables, flowers": 7
+      },
+      "figure": "farslip_pred_6.png"
+    },
+    {
+      "patch_id": "20144",
+      "true": "Leguminous fodder",
+      "pred": "Corn",
+      "correct": false,
+      "caption": "La imagen muestra un mosaico agrícola fragmentado en diversas parcelas con geometrías irregulares y texturas variadas. En el sector norte se observa una vegetación con vigor moderado y patrones de crecimiento dinámicos, mientras que la zona central presenta tonos verdes más intensos y densos, coherentes con el pico de biomasa estival de cultivos de ciclo corto. Hacia el sur, las parcelas exhiben un verdor más uniforme y gradual, reflejando una fase de madurez avanzada previa a la senescencia otoñal. En conjunto, la escena captura la transición fenológica típica de noviembre, donde coexisten coberturas persistentes con cultivos de verano en sus etapas finales de desarrollo.",
+      "n_regions": 15,
+      "n_categories": 7,
+      "parcels_matched": 0,
+      "category_counts": {
+        "Sunflower": 3,
+        "Leguminous fodder": 4,
+        "Soybeans": 3,
+        "Sorghum": 2,
+        "Meadow": 1,
+        "Spring barley": 1,
+        "Winter durum wheat": 1
+      },
+      "figure": "farslip_pred_7.png"
+    }
+  ],
+  "ensemble": {
+    "figure": "ensemble_comparison.png",
+    "rows": [
+      {
+        "model": "E3 Stacking (parcela)",
+        "f1_macro": 0.7470445776972854,
+        "accuracy": 0.8490384615384615,
+        "inference_time_s": 0.04241809999803081,
+        "chosen": true
+      },
+      {
+        "model": "E4 Blending (parcela)",
+        "f1_macro": 0.7413866628645874,
+        "accuracy": 0.8617788461538461,
+        "inference_time_s": 0.006437700008973479,
+        "chosen": false
+      },
+      {
+        "model": "TSViT-pheno (individual)",
+        "f1_macro": 0.6253,
+        "accuracy": NaN,
+        "inference_time_s": NaN,
+        "chosen": false
+      },
+      {
+        "model": "E1 Voting (pixel)",
+        "f1_macro": 0.6225232676247929,
+        "accuracy": 0.8089535457861412,
+        "inference_time_s": 42.48852949999855,
+        "chosen": false
+      },
+      {
+        "model": "E2 Bagging (parcela)",
+        "f1_macro": 0.5863809790280419,
+        "accuracy": 0.7815504807692307,
+        "inference_time_s": 5.496643200021936,
+        "chosen": false
+      }
+    ]
+  }
+}

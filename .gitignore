@@ -329,11 +329,21 @@ reports/baseline/**/*.onnx
 !reports/ensemble/**/*.csv
 !reports/ensemble/**/*.parquet
 
+# ── Lote US-030..040 notebooks: figuras reales (predicciones, captions, CM) ──
+# Entregable visual de las notebooks 06a/06b/06c; artefactos pequenos a git directo.
+!reports/lote_us030_040/
+!reports/lote_us030_040/**/*.png
+!reports/lote_us030_040/**/*.csv
+!reports/lote_us030_040/**/*.json
+
 # ── VM H100 provisioning (operativos locales, NO versionar) ───────────────────
 # Scripts de setup de la VM + SETUP_REPORT exponen puerto SSH, ruta de llave y
 # comandos de conexion. Se quedan locales; la guia publica saneada vive en
 # docs/infra/acceso-vm-h100-tunnel.md.
 .vm_setup/
+# Scratch de la VM: scripts ad-hoc de diagnostico/smoke (diag_*, gen_*, smoke_*,
+# test_*) que se mueven aqui antes de reset duro a origin/main. No versionar.
+_vm_scratch/
 # Docs locales con datos sensibles reales (URL tunel, puerto, comandos). El sufijo
 # .local.md marca cualquier doc que NO debe versionarse.
 *.local.md
