@@ -70,6 +70,11 @@ _CREDENTIAL_ENV_VARS: tuple[str, ...] = (
 #: Used only for informative budget tracking, not exact.
 COST_PER_DESCRIPTION_USD: float = 0.0001
 
+#: Client-side HTTP timeout (ms) for the google-genai call. Without it a stuck
+#: socket hangs a worker thread (and the completion-gated flush) forever; on
+#: timeout the SDK raises and the retry loop treats it as transient.
+_HTTP_TIMEOUT_MS: int = 60_000
+
 #: Number of dimensions of the dense vector produced by
 #: ``sentence-transformers/all-MiniLM-L6-v2`` (default model).
 #: The constant exists so that ``fusion.py`` validates the contract.
@@ -271,8 +276,14 @@ def _default_google_genai_client(
             "mock with `set_llm_client(...)`."
         ) from exc
 
-    # `Client()` auto-detects Vertex AI vs public API from env vars.
-    client = genai.Client()
+    # `Client()` auto-detects Vertex AI vs public API from env vars. A
+    # client-side HTTP timeout (60s) is MANDATORY for long batches: without it a
+    # single stuck socket hangs the worker thread indefinitely (and, with a
+    # completion-gated flush, the whole job) -- observed on the 69k run when the
+    # API got flaky. On timeout the call raises and the retry loop below kicks in.
+    client = genai.Client(
+        http_options=types.HttpOptions(timeout=_HTTP_TIMEOUT_MS)
+    )
     # `thinking_level` is a Gemini 3.x feature: 3.x accepts "minimal" to cut
     # latency on short descriptions, but 2.x models (e.g. gemini-2.5-flash-lite)
     # reject it with `400 Thinking level is not supported for this model`. Apply
@@ -310,6 +321,8 @@ def _default_google_genai_client(
                 or "503" in message
                 or "rate limit" in message.lower()
                 or "unavailable" in message.lower()
+                or "timeout" in message.lower()
+                or "timed out" in message.lower()
             )
             last_exc = exc
             if not is_transient or attempt == max_attempts - 1:
