@@ -156,6 +156,15 @@ class ParcelCropDataset(Dataset):
             of thousands of empty-caption parcels that dilute ``L_glo`` with
             empty-text embeddings, biasing the result downward. With the full
             caption set this is a no-op. Default ``False`` (backward compatible).
+        dominance_ratio: if not ``None``, apply the per-patch 3:1 Meadow
+            ``PastisFilter`` (``mode="dominance_ratio"``) BEFORE extracting
+            parcels, dropping whole patches where ``Meadow_px > ratio *
+            second_px``. This is the legacy patch-level imbalance guard; at the
+            parcel grain it is OPTIONAL because each parcel already carries its
+            own true label (a rare parcel in a Meadow patch is no longer
+            mislabelled). Exposed to A/B the filter's effect on the sweep curve.
+            Default ``None`` (keep every patch -- the parcel grain handles the
+            imbalance). ``meadow_class`` is fixed at 1 (PASTIS 20-class scheme).
     """
 
     def __init__(
@@ -169,6 +178,7 @@ class ParcelCropDataset(Dataset):
         max_patches: int | None = None,
         seed: int = 42,
         require_caption: bool = False,
+        dominance_ratio: float | None = None,
     ) -> None:
         self.captions = {str(k): str(v) for k, v in captions.items()}
         self.root = Path(root)
@@ -178,6 +188,9 @@ class ParcelCropDataset(Dataset):
         self.resize_to = int(resize_to)
         self.seed = int(seed)
         self.require_caption = bool(require_caption)
+        self.dominance_ratio = (
+            float(dominance_ratio) if dominance_ratio is not None else None
+        )
 
         for cid in self.active_class_ids:
             if not 1 <= cid <= _N_PASTIS_CROPS:
@@ -188,6 +201,9 @@ class ParcelCropDataset(Dataset):
         candidate_ids = self._fold_patch_ids()
         if max_patches is not None:
             candidate_ids = candidate_ids[: int(max_patches)]
+        n_before_dominance = len(candidate_ids)
+        if self.dominance_ratio is not None:
+            candidate_ids = self._apply_dominance_filter(candidate_ids)
 
         # One sample per valid parcel: (parcel_id, patch_id, instance_id, class_id).
         # A parcel whose peak-NDVI crop is all-zero (no observable reflectance:
@@ -228,6 +244,9 @@ class ParcelCropDataset(Dataset):
         logger.info(
             "parcel_crop_dataset_init",
             n_patches=len(candidate_ids),
+            n_patches_before_dominance=n_before_dominance,
+            n_patches_dropped_dominance=n_before_dominance - len(candidate_ids),
+            dominance_ratio=self.dominance_ratio,
             n_parcels=len(self._samples),
             n_empty_dropped=n_empty,
             n_no_caption_dropped=n_no_caption,
@@ -238,6 +257,45 @@ class ParcelCropDataset(Dataset):
                 1 for s in self._samples if s[0] in self.captions
             ),
         )
+
+    def _apply_dominance_filter(self, candidate_ids: list[str]) -> list[str]:
+        """Drop patches failing the 3:1 Meadow dominance rule (patch-level A/B).
+
+        Reuses :meth:`ml.data.pastis_filter.PastisFilter._passes_dominance` on
+        each candidate patch's semantic mask so the keep decision is byte-for-byte
+        the same as the legacy patch-level filter (no reimplementation of the
+        histogram). A patch is kept when ``Meadow_px <= dominance_ratio *
+        second_px`` over its semantic channel. ``target_classes`` is restricted to
+        the sweep's ``active_class_ids`` so the "second class" is one of the
+        classes actually under evaluation.
+
+        The filter is built with ``object.__new__`` (only the three attributes
+        ``_passes_dominance`` reads are set) so this stays decoupled from
+        ``PastisFilter.__init__``, which would require a ``metadata.geojson`` on
+        disk that the per-parcel path does not otherwise need.
+
+        Args:
+            candidate_ids: patch ids (post fold-split, post ``max_patches``).
+
+        Returns:
+            The subset of ``candidate_ids`` that pass the 3:1 filter, order kept.
+        """
+        from ml.data.pastis_filter import PastisFilter
+
+        filt = object.__new__(PastisFilter)
+        filt.target_classes = set(self.active_class_ids)
+        filt.ratio = float(self.dominance_ratio)  # type: ignore[arg-type]
+        filt.meadow_class = 1
+        kept: list[str] = []
+        for pid in candidate_ids:
+            patch = load_pastis_patch(pid, root=self.root, load_annotations=True)
+            semantic = patch.get("semantic")
+            if semantic is None:
+                continue
+            passes, _ = filt._passes_dominance(np.asarray(semantic))
+            if passes:
+                kept.append(pid)
+        return kept
 
     def _fold_patch_ids(self) -> list[str]:
         """Return sorted patch ids of the requested official folds."""

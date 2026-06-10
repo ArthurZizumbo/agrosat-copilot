@@ -28,6 +28,32 @@ from ml.farslip.parcel_crop_dataset import (
 _PASTIS_ROOT = Path("data/PASTIS-R")
 
 
+def _meadow_dominated_patch(
+    h: int = 16, w: int = 16, *, meadow_px: int, soft_wheat_px: int
+) -> dict[str, np.ndarray]:
+    """Build a synthetic PASTIS-like patch dict with controlled class areas.
+
+    Lays ``meadow_px`` Meadow pixels (class 1) and ``soft_wheat_px`` Soft winter
+    wheat pixels (class 2) into the semantic mask, the rest Background (0). The
+    instance mask gives Meadow instance id 1 and wheat instance id 2 over their
+    pixels so ``extract_regions`` sees two parcels. Used to A/B the 3:1 filter.
+    """
+    semantic = np.zeros((h, w), dtype=np.int64)
+    instance = np.zeros((h, w), dtype=np.int64)
+    flat_sem = semantic.ravel()
+    flat_inst = instance.ravel()
+    flat_sem[:meadow_px] = 1
+    flat_inst[:meadow_px] = 1
+    flat_sem[meadow_px : meadow_px + soft_wheat_px] = 2
+    flat_inst[meadow_px : meadow_px + soft_wheat_px] = 2
+    s2 = np.full((1, 10, h, w), 5000, dtype=np.int16)
+    return {
+        "s2": s2,
+        "semantic": flat_sem.reshape(h, w),
+        "instance": flat_inst.reshape(h, w),
+    }
+
+
 def _synthetic_patch(h: int = 16, w: int = 16) -> tuple[np.ndarray, np.ndarray]:
     """Build a synthetic ``(4, H, W)`` composite + instance mask with 2 parcels.
 
@@ -166,3 +192,103 @@ def test_require_caption_keeps_only_captioned_parcels() -> None:
     assert seen <= set(keep)
     for i in range(len(captioned)):
         assert captioned[i]["caption"] != ""
+
+
+def test_dominance_filter_drops_meadow_dominated_patch(monkeypatch) -> None:
+    """``dominance_ratio=3.0`` drops a patch where Meadow > 3x the 2nd class.
+
+    No disk: stubs ``_fold_patch_ids`` to two synthetic patches and
+    ``load_pastis_patch`` to return them. Patch "A" is 4:1 Meadow (dropped at
+    ratio 3.0); patch "B" is 2:1 Meadow (kept). With the filter on, only B's
+    parcels survive; without it (None), both patches' parcels are kept. This is
+    the A/B knob: the parcel grain keeps rare parcels by default, the filter
+    re-imposes the legacy patch-level imbalance guard.
+    """
+    from ml.farslip import parcel_crop_dataset as mod
+
+    patch_a = _meadow_dominated_patch(meadow_px=40, soft_wheat_px=10)  # 4:1 -> drop
+    patch_b = _meadow_dominated_patch(meadow_px=20, soft_wheat_px=10)  # 2:1 -> keep
+    patches = {"A": patch_a, "B": patch_b}
+
+    monkeypatch.setattr(
+        mod.ParcelCropDataset, "_fold_patch_ids", lambda self: ["A", "B"]
+    )
+    monkeypatch.setattr(
+        mod, "load_pastis_patch", lambda pid, **kw: patches[pid]
+    )
+
+    active = (1, 2)  # Meadow + Soft winter wheat
+    unfiltered = mod.ParcelCropDataset(
+        captions={}, folds=(1,), active_class_ids=active, min_area_px=1,
+    )
+    filtered = mod.ParcelCropDataset(
+        captions={}, folds=(1,), active_class_ids=active, min_area_px=1,
+        dominance_ratio=3.0,
+    )
+
+    patches_unfiltered = {unfiltered[i]["patch_id"] for i in range(len(unfiltered))}
+    patches_filtered = {filtered[i]["patch_id"] for i in range(len(filtered))}
+    assert patches_unfiltered == {"A", "B"}
+    assert patches_filtered == {"B"}  # A (4:1) dropped, B (2:1) kept
+    assert len(filtered) < len(unfiltered)
+
+
+def test_dominance_filter_none_is_noop(monkeypatch) -> None:
+    """``dominance_ratio=None`` keeps every patch (backward-compatible default)."""
+    from ml.farslip import parcel_crop_dataset as mod
+
+    patch_a = _meadow_dominated_patch(meadow_px=90, soft_wheat_px=10)  # 9:1
+    monkeypatch.setattr(
+        mod.ParcelCropDataset, "_fold_patch_ids", lambda self: ["A"]
+    )
+    monkeypatch.setattr(mod, "load_pastis_patch", lambda pid, **kw: patch_a)
+
+    ds = mod.ParcelCropDataset(
+        captions={}, folds=(1,), active_class_ids=(1, 2), min_area_px=1,
+        dominance_ratio=None,
+    )
+    # Even a 9:1 Meadow patch is kept when the filter is off.
+    assert {ds[i]["patch_id"] for i in range(len(ds))} == {"A"}
+    assert ds.dominance_ratio is None
+
+
+def test_dominance_filter_matches_pastis_filter(monkeypatch) -> None:
+    """The dataset's keep decision is byte-for-byte ``PastisFilter._passes_dominance``.
+
+    For each synthetic patch, the dataset must keep it iff the standalone
+    ``PastisFilter`` (same ratio, same active classes as target_classes) keeps it.
+    This proves no reimplementation drift between the patch-level filter and the
+    parcel-level A/B path.
+    """
+    from ml.data.pastis_filter import PastisFilter
+    from ml.farslip import parcel_crop_dataset as mod
+
+    cases = {
+        "p_3to1": _meadow_dominated_patch(meadow_px=30, soft_wheat_px=10),  # 3:1 keep
+        "p_4to1": _meadow_dominated_patch(meadow_px=40, soft_wheat_px=10),  # 4:1 drop
+        "p_nomeadow": _meadow_dominated_patch(meadow_px=0, soft_wheat_px=10),  # keep
+    }
+    active = (1, 2)
+    # _passes_dominance only needs these three attrs; build the filter without
+    # __init__ so the test does not require a real metadata.geojson on disk.
+    filt = object.__new__(PastisFilter)
+    filt.target_classes = set(active)
+    filt.ratio = 3.0
+    filt.meadow_class = 1
+    expected_keep = {
+        pid for pid, p in cases.items()
+        if filt._passes_dominance(p["semantic"])[0]
+    }
+
+    monkeypatch.setattr(
+        mod.ParcelCropDataset, "_fold_patch_ids", lambda self: list(cases)
+    )
+    monkeypatch.setattr(mod, "load_pastis_patch", lambda pid, **kw: cases[pid])
+
+    ds = mod.ParcelCropDataset(
+        captions={}, folds=(1,), active_class_ids=active, min_area_px=1,
+        dominance_ratio=3.0,
+    )
+    kept = {ds[i]["patch_id"] for i in range(len(ds))}
+    assert kept == expected_keep
+    assert "p_3to1" in kept and "p_nomeadow" in kept and "p_4to1" not in kept

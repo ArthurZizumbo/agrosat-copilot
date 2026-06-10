@@ -72,6 +72,7 @@ def run_one_n(
     time_cap_hours: float,
     max_patches: int | None,
     require_caption: bool,
+    dominance_ratio: float | None = None,
 ):
     """Train + eval the parcel-level model for ONE N and return its result.
 
@@ -88,6 +89,8 @@ def run_one_n(
         max_patches: cap patches scanned (smoke).
         require_caption: keep only captioned parcels (use with a balanced
             caption SAMPLE so empty-caption parcels do not dilute ``L_glo``).
+        dominance_ratio: if not ``None``, apply the per-patch 3:1 Meadow filter
+            before extracting parcels (A/B the imbalance guard). Default ``None``.
 
     Returns:
         The :class:`FaithfulRunResult` with parcel-grain metrics.
@@ -106,11 +109,13 @@ def run_one_n(
         captions, root=pastis_root, folds=train_folds,
         active_class_ids=active, min_area_px=min_area_px, max_patches=max_patches,
         seed=seed, require_caption=require_caption,
+        dominance_ratio=dominance_ratio,
     )
     val_ds = ParcelCropDataset(
         captions, root=pastis_root, folds=val_folds,
         active_class_ids=active, min_area_px=min_area_px, max_patches=max_patches,
         seed=seed, require_caption=require_caption,
+        dominance_ratio=dominance_ratio,
     )
     logger.info(
         "parcel_sweep_n_start", n_classes=n_classes, active=list(active),
@@ -135,6 +140,9 @@ def run_one_n(
             "grain": "parcel",
             "n_classes": n_classes,
             "dataset": "pastis_r_real",
+            "dominance_ratio": (
+                "off" if dominance_ratio is None else f"{dominance_ratio:g}"
+            ),
         },
     )
     trainer = FarSLIPDistillationTrainer(cfg, dataset=train_ds)
@@ -208,6 +216,7 @@ def run_parcel_sweep(
     metrics_out: Path = Path("reports/farslip/metrics/parcel_sweep.csv"),
     max_patches: int | None = None,
     require_caption: bool = False,
+    dominance_ratio: float | None = None,
 ) -> list:
     """Run the full N-class parcel-level sweep and write the N vs F1 curve.
 
@@ -224,6 +233,9 @@ def run_parcel_sweep(
         metrics_out: output CSV with the N vs macro-F1 curve.
         max_patches: cap patches (smoke).
         require_caption: keep only captioned parcels (validation with a sample).
+        dominance_ratio: if not ``None``, apply the per-patch 3:1 Meadow filter
+            before extracting parcels (A/B the imbalance guard). The metric CSV
+            records the value so the with/without curves are self-describing.
 
     Returns:
         List of :class:`FaithfulRunResult`, one per N.
@@ -253,6 +265,7 @@ def run_parcel_sweep(
             time_cap_hours=time_cap_hours,
             max_patches=max_patches,
             require_caption=require_caption,
+            dominance_ratio=dominance_ratio,
         )
         results.append(result)
         rows.append(
@@ -262,6 +275,9 @@ def run_parcel_sweep(
                 "macro_iou": round(result.macro_iou, 4),
                 "n_well_resolved": result.n_classes_well_resolved,
                 "n_eval_parcels": result.n_eval,
+                "dominance_ratio": (
+                    -1.0 if dominance_ratio is None else float(dominance_ratio)
+                ),
                 "best_ckpt": str(result.best_ckpt),
             }
         )
@@ -303,6 +319,9 @@ def run(
     ] = False,
     time_cap_hours: Annotated[float, typer.Option("--time-cap-hours")] = 8.0,
     max_patches: Annotated[int, typer.Option("--max-patches")] = 0,
+    metrics_out: Annotated[Path, typer.Option("--metrics-out")] = Path(
+        "reports/farslip/metrics/parcel_sweep.csv"
+    ),
     require_caption: Annotated[
         bool,
         typer.Option(
@@ -310,6 +329,17 @@ def run(
             help="keep only captioned parcels (use with a balanced SAMPLE)",
         ),
     ] = False,
+    dominance_ratio: Annotated[
+        float,
+        typer.Option(
+            "--dominance-ratio",
+            help=(
+                "per-patch 3:1 Meadow filter ratio (e.g. 3.0); <=0 disables it "
+                "(default, parcel grain handles imbalance). A/B against the "
+                "unfiltered sweep."
+            ),
+        ),
+    ] = 0.0,
 ) -> None:
     """Run the parcel-level N-class sweep and write the N vs macro-F1 curve."""
     results = run_parcel_sweep(
@@ -325,8 +355,10 @@ def run(
         min_area_px=min_area_px,
         use_global_caption_loss=not no_global_caption_loss,
         time_cap_hours=time_cap_hours,
+        metrics_out=metrics_out,
         max_patches=max_patches if max_patches > 0 else None,
         require_caption=require_caption,
+        dominance_ratio=dominance_ratio if dominance_ratio > 0 else None,
     )
     summary = {
         PASTIS_R_CLASSES.get(0, "summary"): "parcel-sweep",
