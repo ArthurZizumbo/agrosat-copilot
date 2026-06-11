@@ -110,6 +110,29 @@ def _unify_to_18_at_128(probs_native: np.ndarray, spec: CheckpointSpec) -> np.nd
     return probs.astype(np.float32)
 
 
+#: Model kinds whose dataset must keep the FULL Sentinel-2 time series (no
+#: temporal collapse). These forwards consume ``(T, C, H, W)``; collapsing to a
+#: single ``(C, H, W)`` frame breaks them (R-TEMPORAL). ``tsvit-pheno-fullm`` is
+#: the US-039 Full-M retrain and MUST be here -- omitting it makes the dataset
+#: deliver a 4-D tensor and the TSViT rearrange raises an EinopsError.
+_TEMPORAL_KINDS: frozenset[str] = frozenset(
+    {"tsvit", "tsvit-pheno", "tsvit-pheno-fullm", "utae", "anysat"}
+)
+
+
+def _is_temporal_kind(model_kind: str) -> bool:
+    """Return whether a model kind needs the full time series (no collapse).
+
+    Args:
+        model_kind: the checkpoint's ``model_kind``.
+
+    Returns:
+        True if the dataset must keep ``(T, C, H, W)`` (temporal model), False if
+        the time axis is collapsed to a single median frame (e.g. U-Net/DeepLab).
+    """
+    return model_kind in _TEMPORAL_KINDS
+
+
 def _softmax_for_patch(
     model: torch.nn.Module,
     *,
@@ -238,7 +261,7 @@ def _dump_one(
             )
         raise FileNotFoundError(f"checkpoint path does not exist: {spec.path}")
 
-    is_temporal = spec.model_kind in ("tsvit", "tsvit-pheno", "utae", "anysat")
+    is_temporal = _is_temporal_kind(spec.model_kind)
     collapse_time = None if is_temporal else "median"
     ds_kwargs: dict[str, object] = {
         "folds": (fold,),
