@@ -215,6 +215,49 @@ def test_farslip_cosine_map_rejects_wrong_proto_dim() -> None:
         )
 
 
+def test_farslip_cosine_map_scatters_n4_bank_into_18_space() -> None:
+    """An N=4 bank is scattered into the 18-class space (R-CLASSES-MISMATCH).
+
+    The N=4 parcel-level FarSLIP produces a 4-row bank; the map MUST come out
+    (18, H, W) -- with the 4 active classes at their PASTIS slots (class_id-1) and
+    the other 14 at zero -- so it is fusible with the TSViT (18, H, W) softmax.
+    This is the exact bug that crashed E-a:
+    ``operands could not be broadcast (18,128,128) (4,128,128)``.
+    """
+    student = _StubStudent()
+    active = [1, 3, 2, 8]  # the N=4 curriculum head (Meadow, Corn, SWWheat, Grape)
+    ds = _StubParcelDataset("10000", [(1, 3), (2, 8)])
+    bank = _proto_bank(n_classes=len(active))  # (4, 768)
+    parcel_ids_map = np.zeros((_SIDE, _SIDE), dtype=np.int64)
+    parcel_ids_map[:64, :] = 1
+    parcel_ids_map[64:, :] = 2
+    cmap = farslip_cosine_map(
+        student, bank, patch_id="10000", dataset=ds,
+        parcel_ids_map=parcel_ids_map, class_ids=active, device="cpu",
+    )
+    # Always 18-wide -> fusible with TSViT.
+    assert cmap.shape == (_N_CLASSES, _SIDE, _SIDE)
+    assert np.allclose(cmap.sum(axis=0), 1.0, atol=1e-5)
+    # A parcel pixel: probability lives ONLY on the active slots (class_id-1).
+    px = cmap[:, 10, 10]
+    active_slots = {c - 1 for c in active}
+    inactive_slots = set(range(_N_CLASSES)) - active_slots
+    assert all(px[s] == 0.0 for s in inactive_slots)
+    assert px[[c - 1 for c in active]].sum() == pytest.approx(1.0, abs=1e-6)
+
+
+def test_farslip_cosine_map_no_class_ids_needs_18_bank() -> None:
+    """Without class_ids, a non-18 bank cannot be placed in the 18-class space."""
+    student = _StubStudent()
+    ds = _StubParcelDataset("10000", [(1, 3)])
+    bank = _proto_bank(n_classes=4)  # 4 rows, no class_ids -> ambiguous
+    with pytest.raises(ValueError, match="no class_ids"):
+        farslip_cosine_map(
+            student, bank, patch_id="10000", dataset=ds,
+            parcel_ids_map=np.zeros((_SIDE, _SIDE), dtype=np.int64), device="cpu",
+        )
+
+
 # ---------------------------------------------------------------------------
 # DualHeadFusionHead contract.
 # ---------------------------------------------------------------------------

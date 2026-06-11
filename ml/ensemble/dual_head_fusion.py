@@ -217,15 +217,23 @@ def farslip_cosine_map(
     patch_id: str | int,
     dataset: ParcelCropDataset,
     parcel_ids_map: np.ndarray,
+    class_ids: Sequence[int] | None = None,
     device: str = "auto",
 ) -> np.ndarray:
     """Per-pixel cosine vs visual prototypes via spatial broadcast of parcel CLS.
 
     Embeds every parcel crop of ``patch_id`` (one CLS-768 per parcel), scores each
     against the prototype bank (dot product of L2-normalized vectors == cosine),
-    softmaxes per parcel into an 18-vector, and broadcasts it to all pixels of that
-    parcel using ``parcel_ids_map``. Background pixels (parcel id 0) and pixels of
-    parcels absent from ``dataset`` get a uniform distribution (no information).
+    softmaxes per parcel over the bank's classes, and broadcasts it to all pixels
+    of that parcel using ``parcel_ids_map``. The result is ALWAYS placed in the
+    harness 18-class space: when the bank covers fewer classes (e.g. the N=4
+    parcel-level FarSLIP), each class is scattered to its PASTIS slot
+    (``class_id - 1``) and the absent classes stay near zero. This is what makes
+    the map fusible with the TSViT ``(18, H, W)`` dense softmax (the fusion bug
+    R-CLASSES-MISMATCH: a ``(4, H, W)`` map cannot broadcast onto ``(18, H, W)``).
+
+    Background pixels (parcel id 0) and pixels of parcels absent from ``dataset``
+    get a uniform distribution over the 18 classes (no information).
 
     R-PURITY: the broadcast assumes PASTIS-R parcel purity (~98%); mixed margin
     pixels inherit the parcel-level distribution.
@@ -237,20 +245,46 @@ def farslip_cosine_map(
         dataset: :class:`ParcelCropDataset` (gives per-parcel crops + ids).
         parcel_ids_map: ``(128, 128)`` local ParcelIDs map (0 = Background), from
             :func:`ml.utils.parcel_reconcile.load_pastis_parcel_ids`.
+        class_ids: PASTIS class ids (1..18) of the bank rows, in row order. When
+            given (and the bank is not already 18-wide), the per-parcel softmax is
+            scattered into the 18-class space at ``class_id - 1``. When ``None``
+            the bank is assumed to already span the 18 classes.
         device: ``"auto"`` | ``"cuda"`` | ``"cpu"``.
 
     Returns:
         ``(18, 128, 128)`` POST-softmax map (sum-to-1 per pixel).
 
     Raises:
-        ValueError: if ``prototypes`` shape is not ``(C, 768)``.
+        ValueError: if ``prototypes`` shape is not ``(C, 768)`` or ``class_ids``
+            length mismatches the bank rows.
     """
     proto = np.asarray(prototypes, dtype=np.float32)
     if proto.ndim != 2 or proto.shape[1] != _EMBED_DIM:
         raise ValueError(
             f"prototypes must be (C, {_EMBED_DIM}); got {proto.shape}."
         )
-    n_classes = proto.shape[0]
+    n_bank = proto.shape[0]
+    if class_ids is not None and len(class_ids) != n_bank:
+        raise ValueError(
+            f"class_ids length ({len(class_ids)}) must match prototype rows "
+            f"({n_bank})."
+        )
+    # Row index in the bank -> 18-class slot. Identity when the bank is already
+    # 18-wide and no class_ids given; otherwise scatter by PASTIS id (class-1).
+    if class_ids is None:
+        if n_bank != _NUM_CLASSES:
+            raise ValueError(
+                f"prototypes have {n_bank} rows but no class_ids given; cannot "
+                f"place them in the {_NUM_CLASSES}-class space."
+            )
+        slots = list(range(_NUM_CLASSES))
+    else:
+        slots = [int(c) - 1 for c in class_ids]
+        if any(not 0 <= s < _NUM_CLASSES for s in slots):
+            raise ValueError(
+                f"class_ids must be in [1, {_NUM_CLASSES}]; got {list(class_ids)}."
+            )
+
     dev = _resolve_device(device)
     proto_t = torch.from_numpy(proto).to(dev)
 
@@ -258,14 +292,24 @@ def farslip_cosine_map(
     parcel_to_probs = _embed_patch_parcels(student, proto_t, dataset, pid, dev)
 
     side = parcel_ids_map.shape[0]
-    uniform = np.full(n_classes, 1.0 / n_classes, dtype=np.float64)
-    out = np.empty((n_classes, side, side), dtype=np.float64)
+    uniform = np.full(_NUM_CLASSES, 1.0 / _NUM_CLASSES, dtype=np.float64)
+    out = np.empty((_NUM_CLASSES, side, side), dtype=np.float64)
     out[:] = uniform[:, None, None]
     for local_id, probs in parcel_to_probs.items():
         mask = parcel_ids_map == local_id
         if not mask.any():
             continue
-        out[:, mask] = probs[:, None]
+        # Scatter the bank softmax into the 18-class vector, then renormalize so
+        # the pixel still sums to 1 (absent classes get 0).
+        full = np.zeros(_NUM_CLASSES, dtype=np.float64)
+        for row, slot in enumerate(slots):
+            full[slot] = probs[row]
+        total = full.sum()
+        if total > 0:
+            full /= total
+        else:
+            full = uniform
+        out[:, mask] = full[:, None]
     return EnsembleModel.validate_probs(
         out, class_axis=_CLASS_AXIS, name=f"farslip_cosine:{pid}"
     )
@@ -468,15 +512,21 @@ class DualHeadFusionHead(EnsembleModel):
                 "prototypes are not set; call build_class_prototypes + "
                 "set_prototypes, or fit(...) which builds them."
             )
+        from ml.farslip.pastis_pair_dataset import active_classes
+
         student = self._ensure_student()
         dataset = self._fold5_crop_dataset()
         parcel_ids_map = load_pastis_parcel_ids(patch_id, self._resolved_root())
+        # The bank covers active_classes(n_classes) in row order (e.g. N=4 -> 4
+        # rows). Pass those ids so the map is scattered into the 18-class space
+        # and stays fusible with the TSViT (18, H, W) softmax.
         return farslip_cosine_map(
             student,
             self._prototypes,
             patch_id=patch_id,
             dataset=dataset,
             parcel_ids_map=parcel_ids_map,
+            class_ids=active_classes(self.n_classes),
             device=self.device,
         )
 
