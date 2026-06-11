@@ -227,3 +227,55 @@ def pixel_to_parcel_probs(
         n_valid_pixels=int(flat_pids.size),
     )
     return frame
+
+
+def instance_to_parcel_id_map(
+    patch_id: str | int,
+    data_root: Path | str,
+) -> dict[int, int]:
+    """Map a patch's instance ids (``TARGET[1]``) to its ParcelIDs raster ids.
+
+    PASTIS-R ships two per-pixel id rasters for the same parcels: the instance
+    channel ``TARGET[1]`` (sequential ``1..N``, used by the tabular features and
+    by :class:`ml.farslip.parcel_crop_dataset.ParcelCropDataset`) and the
+    ``ParcelIDs_<patch>.npy`` raster (the canonical ids used by the dense OOF and
+    the ground truth). They are spatially co-registered, so each instance id maps
+    to the ParcelIDs value that dominates its pixels (a 1:1 correspondence in
+    PASTIS-R). This bridges the instance key space to the canonical one so the
+    FarSLIP members (keyed ``"{patch}_{instance}"``) align with the stacking and
+    the ground truth (keyed ``"{patch}_{ParcelIDs}"``); without it the inner-join
+    silently drops parcels.
+
+    Args:
+        patch_id: PASTIS-R patch identifier.
+        data_root: Root of the PASTIS-R dataset (contains ``ANNOTATIONS/``).
+
+    Returns:
+        A dict ``{instance_id: parcel_raster_id}`` for every parcel of the patch.
+
+    Raises:
+        FileNotFoundError: if the patch's TARGET or ParcelIDs raster is missing.
+    """
+    pid = str(patch_id)
+    root = Path(data_root)
+    target_path = root / "ANNOTATIONS" / f"TARGET_{pid}.npy"
+    if not target_path.exists():
+        raise FileNotFoundError(f"PASTIS-R semantic TARGET not found: {target_path}.")
+    target = np.load(target_path)
+    if target.ndim != 3 or target.shape[0] < 2:
+        raise FileNotFoundError(
+            f"PASTIS-R TARGET_{pid}.npy lacks the instance channel "
+            f"(shape {target.shape})."
+        )
+    instance = target[1]
+    parcel_raster = load_pastis_parcel_ids(pid, root)
+
+    mapping: dict[int, int] = {}
+    for inst_id in np.unique(instance):
+        inst_int = int(inst_id)
+        if inst_int == 0:
+            continue
+        mask = instance == inst_int
+        values, counts = np.unique(parcel_raster[mask], return_counts=True)
+        mapping[inst_int] = int(values[counts.argmax()])
+    return mapping
