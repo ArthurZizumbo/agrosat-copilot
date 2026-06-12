@@ -43,6 +43,10 @@ _BACKGROUND, _VOID = 0, 19
 _MIN_AREA_PX = 32
 #: Sentinel-2 NDVI band indices in the PASTIS (T, 10, H, W) layout.
 _B04_IDX, _B08_IDX = 2, 6
+#: Minimum NIR reflectance (PASTIS int16 scale, ~0.05) for a step to count as a
+#: real observation. Below it the step is cloud/shadow/no-data: B08 near zero with
+#: B04 clipped to 0 yields a spurious NDVI of 1.0 that would dominate the peak.
+_MIN_NIR = 500.0
 
 
 class InferenceCard:
@@ -93,9 +97,14 @@ def _describe_phenology(ndvi: np.ndarray, doy: np.ndarray | None = None) -> str:
     """
     if ndvi.size == 0:
         return "sin observaciones NDVI utiles"
-    peak_i = int(np.argmax(ndvi))
-    peak = float(ndvi[peak_i])
-    amp = float(ndvi.max() - ndvi.min())
+    # Robust peak/amplitude: the p90/p10 ignore 1-2 residual cloud/shadow spikes
+    # that the band-level filter cannot catch (e.g. thin haze), so the summary
+    # reflects the real growth envelope, not a single noisy step.
+    peak = float(np.percentile(ndvi, 90))
+    low = float(np.percentile(ndvi, 10))
+    amp = peak - low
+    # Position the peak at the step closest to the robust peak value.
+    peak_i = int(np.argmin(np.abs(ndvi - peak)))
     frac = peak_i / max(ndvi.size - 1, 1)
     when = "temprano" if frac < 0.35 else ("tardio" if frac > 0.65 else "a media temporada")
     vigor = "alto" if peak > 0.6 else ("moderado" if peak > 0.4 else "bajo")
@@ -107,10 +116,56 @@ def _describe_phenology(ndvi: np.ndarray, doy: np.ndarray | None = None) -> str:
 
 
 def _parcel_ndvi(s2: np.ndarray, mask: np.ndarray) -> np.ndarray:
-    """Mean NDVI curve ``(T,)`` of the parcel pixels from the S2 time series."""
-    b04 = s2[:, _B04_IDX, :, :][:, mask].mean(axis=1).astype(float)
-    b08 = s2[:, _B08_IDX, :, :][:, mask].mean(axis=1).astype(float)
-    return (b08 - b04) / (b08 + b04 + 1e-6)
+    """Mean NDVI curve ``(T,)`` of the parcel pixels from the S2 time series.
+
+    PASTIS-R surface reflectances are raw int16 that include atmospheric-correction
+    artifacts (small or negative B04/B08), which make the naive ratio overflow past
+    the physical NDVI range. We clip reflectances to be non-negative, guard the
+    denominator, drop steps with no usable signal and clip the result to [-1, 1] so
+    the phenology summary reflects real vigor, not numerical noise.
+    """
+    b04 = np.clip(s2[:, _B04_IDX, :, :][:, mask].mean(axis=1).astype(float), 0.0, None)
+    b08 = np.clip(s2[:, _B08_IDX, :, :][:, mask].mean(axis=1).astype(float), 0.0, None)
+    # Keep only steps with real NIR signal: cloud/shadow/no-data steps (B08 ~ 0,
+    # B04 clipped to 0) would otherwise yield a spurious NDVI of 1.0 that dominates
+    # the peak and breaks the phenology summary.
+    valid = b08 >= _MIN_NIR
+    if not valid.any():
+        return np.array([])
+    b04, b08 = b04[valid], b08[valid]
+    ndvi = np.clip((b08 - b04) / (b08 + b04 + 1e-6), -1.0, 1.0)
+    return np.asarray(ndvi, dtype=float)
+
+
+def _natural_rgb(s2: np.ndarray, gamma: float = 0.7) -> np.ndarray:
+    """Bright, natural true-color RGB ``(H, W, 3)`` from the S2 time series.
+
+    The peak-NDVI composite picks a SINGLE timestep optimized for vegetation
+    contrast (great as a model input, but it renders dark forest/water/shadow
+    areas almost black and may carry clouds). For a readable visual reference we
+    instead take the TEMPORAL MEDIAN of the true-color bands (B04/B03/B02) over
+    all steps -- robust to clouds and shadows -- then stretch each channel on its
+    own 2-98 percentile and lift midtones with a mild gamma.
+
+    Args:
+        s2: int16 tensor ``(T, 10, H, W)`` (PASTIS 10-band layout).
+        gamma: <1 brightens midtones.
+
+    Returns:
+        ``(H, W, 3)`` RGB in [0, 1], bands [B04, B03, B02].
+    """
+    s2f = np.clip(s2.astype(np.float32), 0.0, None)
+    # True-color band order R=B04(idx2), G=B03(idx1), B=B02(idx0).
+    bands = s2f[:, [2, 1, 0], :, :]  # (T, 3, H, W)
+    rgb = np.median(bands, axis=0).transpose(1, 2, 0)  # (H, W, 3)
+    out = np.zeros_like(rgb)
+    for c in range(3):
+        ch = rgb[..., c]
+        lo, hi = np.nanpercentile(ch, 2), np.nanpercentile(ch, 98)
+        if hi <= lo:
+            hi = lo + 1e-3
+        out[..., c] = np.clip((ch - lo) / (hi - lo), 0.0, 1.0)
+    return np.asarray(np.power(out, gamma), dtype=np.float32)
 
 
 def _slot_map(class_map: np.ndarray, id_to_slot: dict[int, int]) -> np.ndarray:
@@ -227,9 +282,7 @@ def build_stacking_inference_cards(
     from matplotlib.colors import BoundaryNorm, ListedColormap
     from matplotlib.patches import Patch
 
-    from ml.farslip.pastis_pair_dataset import peak_ndvi_composite
     from ml.ingest.pastis_loader import PASTIS_R_CLASSES, load_pastis_patch
-    from ml.report.lote_figures import _rgb_from_peak_ndvi
     from ml.utils.parcel_reconcile import load_pastis_parcel_ids
 
     names = dict(PASTIS_R_CLASSES)
@@ -285,7 +338,9 @@ def build_stacking_inference_cards(
                 "clase_predicha": names.get(pred_cls, str(pred_cls)),
                 "acierto": bool(pred_cls == true_cls),
                 "area_px": area,
-                "ndvi_pico": round(float(ndvi.max()), 3),
+                "ndvi_pico": (
+                    round(float(np.percentile(ndvi, 90)), 3) if ndvi.size else 0.0
+                ),
                 "fenologia": _describe_phenology(ndvi),
             })
 
@@ -295,7 +350,7 @@ def build_stacking_inference_cards(
         n_correct = int(table["acierto"].sum())
 
         # --- 3-panel figure: RGB / truth / prediction ---
-        rgb = _rgb_from_peak_ndvi(peak_ndvi_composite(s2))
+        rgb = _natural_rgb(s2)
         present = sorted(set(table["clase_real"].to_list()) |
                          set(table["clase_predicha"].to_list()))
         present_ids = sorted({k for k, v in names.items() if v in present})
@@ -304,32 +359,35 @@ def build_stacking_inference_cards(
         bounds = list(range(len(present_ids) + 1))
         norm = BoundaryNorm(bounds, cmap.N) if present_ids else None
 
-        fig, axes = plt.subplots(1, 3, figsize=(15, 5.2))
+        # Larger panels + reserved bottom strip for the legend so titles never
+        # overlap the images. constrained_layout keeps the three axes balanced.
+        fig, axes = plt.subplots(
+            1, 3, figsize=(21, 7.6), layout="constrained")
         axes[0].imshow(np.clip(rgb, 0, 1))
-        axes[0].set_title(f"Fuente de la verdad: RGB real - Patch {pid}", fontsize=10)
+        axes[0].set_title(f"RGB real (Patch {pid})", fontsize=13, pad=10)
         axes[0].axis("off")
         axes[1].imshow(_slot_map(truth_map, id_to_slot), cmap=cmap, norm=norm,
                        interpolation="nearest")
-        axes[1].set_title("Verdad de campo (por parcela)", fontsize=10)
+        axes[1].set_title("Verdad de campo (por parcela)", fontsize=13, pad=10)
         axes[1].axis("off")
         axes[2].imshow(_slot_map(pred_map, id_to_slot), cmap=cmap, norm=norm,
                        interpolation="nearest")
         axes[2].set_title(
-            f"Prediccion {ensemble_label} "
-            f"({n_correct}/{len(rows)} parcelas correctas)",
-            fontsize=10,
+            f"Prediccion {ensemble_label}: {n_correct}/{len(rows)} correctas",
+            fontsize=13, pad=10,
         )
         axes[2].axis("off")
         handles = [Patch(color=cmap(id_to_slot[c]), label=names.get(c, str(c)))
                    for c in present_ids]
-        fig.legend(handles=handles, loc="lower center", ncol=min(6, len(handles)),
-                   fontsize=8, frameon=False, bbox_to_anchor=(0.5, -0.02))
-        fig.tight_layout()
+        fig.legend(
+            handles=handles, loc="outside lower center",
+            ncol=min(6, len(handles)), fontsize=11, frameon=False,
+        )
         slug = "".join(
             ch if ch.isalnum() else "-" for ch in ensemble_label.lower()
         ).strip("-")
         fig_path = out_dir / f"inference_{slug}_{pid}.png"
-        fig.savefig(fig_path, dpi=120, bbox_inches="tight")
+        fig.savefig(fig_path, dpi=130, bbox_inches="tight")
         plt.close(fig)
 
         cards.append(InferenceCard(
