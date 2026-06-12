@@ -13,6 +13,7 @@ import pytest
 
 from ml.eval.per_class_analysis import (
     cardinality_cutoff_curve,
+    honest_class_dropout_curve,
     per_class_report,
     recommend_classes_to_drop,
 )
@@ -305,3 +306,78 @@ def test_recommend_drop_dropped_first() -> None:
     rec = recommend_classes_to_drop(report, dist, f1_threshold=0.30)
     # La primera fila debe ser la descartada (drop=True).
     assert rec.row(0, named=True)["drop"] is True
+
+
+# ---------------------------------------------------------------------------
+# honest_class_dropout_curve: rankea en OOF, mide en fold-5 (anti-fuga R-LEAK).
+# ---------------------------------------------------------------------------
+
+
+def test_honest_dropout_keeps_best_oof_classes() -> None:
+    """El descarte sigue el ranking OOF: las peores-F1 OOF se quitan primero."""
+    # OOF: clase 0 perfecta, 1 buena, 2 mala -> orden de retener: [0, 1, 2].
+    y_oof = np.array([0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2], dtype=np.int64)
+    p_oof = np.array([0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 2], dtype=np.int64)
+    # fold-5 cualquiera (mismo espacio de 3 clases).
+    y_f5 = np.array([0, 0, 1, 1, 2, 2], dtype=np.int64)
+    p_f5 = np.array([0, 0, 1, 1, 2, 0], dtype=np.int64)
+    curve = honest_class_dropout_curve(
+        y_oof, p_oof, y_f5, p_f5, k_values=(3, 2, 1), num_classes=3
+    )
+    assert curve["k"].to_list() == [3, 2, 1]
+    # K=2 retiene las 2 mejores OOF (0 y 1); la peor OOF (2) se descarta primero.
+    k2 = curve.filter(pl.col("k") == 2).row(0, named=True)
+    assert sorted(k2["retained_class_ids"]) == [0, 1]
+    # La clase 2 (peor OOF) aparece en dropped_names (raw id 3 = Corn).
+    assert any("Corn" in n for n in k2["dropped_names"])
+
+
+def test_honest_dropout_excludes_dropped_parcels() -> None:
+    """Las parcelas cuya GT es una clase descartada salen de la medicion."""
+    # OOF marca la clase 2 como la peor -> a K=2 se descarta.
+    y_oof = np.array([0, 0, 1, 1, 2, 2], dtype=np.int64)
+    p_oof = np.array([0, 0, 1, 1, 0, 1], dtype=np.int64)  # clase 2 siempre mal
+    # fold-5: 2 parcelas por clase. La clase 2 (descartada a K=2) no debe contar.
+    y_f5 = np.array([0, 0, 1, 1, 2, 2], dtype=np.int64)
+    p_f5 = np.array([0, 0, 1, 1, 2, 2], dtype=np.int64)
+    curve = honest_class_dropout_curve(
+        y_oof, p_oof, y_f5, p_f5, k_values=(3, 2), num_classes=3
+    )
+    k3 = curve.filter(pl.col("k") == 3).row(0, named=True)
+    k2 = curve.filter(pl.col("k") == 2).row(0, named=True)
+    assert k3["n_parcels_fold5"] == 6  # todas
+    assert k2["n_parcels_fold5"] == 4  # se quitan las 2 de la clase descartada
+
+
+def test_honest_dropout_ranking_uses_oof_not_fold5() -> None:
+    """El ranking lo decide OOF, NO fold-5 (la prueba anti-cherry-picking)."""
+    # OOF dice que la clase 0 es la PEOR (siempre mal) y la 1 la mejor.
+    y_oof = np.array([0, 0, 0, 1, 1, 1], dtype=np.int64)
+    p_oof = np.array([1, 1, 1, 1, 1, 1], dtype=np.int64)  # 0 F1=0, 1 perfecta
+    # En fold-5, en cambio, la clase 0 se predice PERFECTA. Si el ranking mirara
+    # fold-5 retendria la 0; como mira OOF, a K=1 debe retener la 1, no la 0.
+    y_f5 = np.array([0, 0, 1, 1], dtype=np.int64)
+    p_f5 = np.array([0, 0, 1, 1], dtype=np.int64)
+    curve = honest_class_dropout_curve(
+        y_oof, p_oof, y_f5, p_f5, k_values=(2, 1), num_classes=2
+    )
+    k1 = curve.filter(pl.col("k") == 1).row(0, named=True)
+    # Retiene la clase 1 (mejor OOF), aunque la 0 fuese perfecta en fold-5.
+    assert k1["retained_class_ids"] == [1]
+
+
+def test_honest_dropout_k_clamped_to_available() -> None:
+    """Un K mayor que las clases presentes se recorta sin romper."""
+    y_oof = np.array([0, 0, 1, 1], dtype=np.int64)
+    p_oof = np.array([0, 0, 1, 1], dtype=np.int64)
+    y_f5 = np.array([0, 1], dtype=np.int64)
+    p_f5 = np.array([0, 1], dtype=np.int64)
+    # Pedimos K=18 sobre un espacio donde solo 2 clases tienen soporte.
+    curve = honest_class_dropout_curve(
+        y_oof, p_oof, y_f5, p_f5, k_values=(18,), num_classes=18
+    )
+    row = curve.row(0, named=True)
+    # K se recorta a las 18 del ranking (incluye ausentes); las 2 presentes
+    # cuentan y el F1 es 1.0 (prediccion perfecta en fold-5).
+    assert abs(row["macro_f1_fold5"] - 1.0) < 1e-9
+    assert row["n_parcels_fold5"] == 2

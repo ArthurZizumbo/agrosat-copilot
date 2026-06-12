@@ -56,6 +56,7 @@ logger = structlog.get_logger(__name__)
 
 __all__ = [
     "cardinality_cutoff_curve",
+    "honest_class_dropout_curve",
     "per_class_report",
     "recommend_classes_to_drop",
 ]
@@ -457,3 +458,144 @@ def recommend_classes_to_drop(
     return crossed.sort(
         ["drop", "f1"], descending=[True, False], nulls_last=True
     )
+
+
+def _macro_f1_on_retained(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    retained: list[int],
+    *,
+    num_classes: int,
+    ignore_index: int,
+) -> tuple[float, float, int]:
+    """Macro-F1 / accuracy over the parcels whose GROUND TRUTH is a retained class.
+
+    Semantics of an honest class drop: if the model only had to classify the
+    ``retained`` classes, the parcels whose true label is a DROPPED class are not
+    part of the task and are excluded from the evaluation (their rows are removed,
+    not relabelled). Among the kept parcels, the macro-F1 is averaged over the
+    retained classes only, and a prediction landing on a dropped class simply
+    counts as a miss for its true (retained) class.
+
+    Args:
+        y_true: Flat ground-truth labels in the contiguous space.
+        y_pred: Flat hard predictions aligned with ``y_true``.
+        retained: Contiguous ids of the classes kept at this cut.
+        num_classes: Size of the contiguous class space.
+        ignore_index: Label to ignore (Background/Void).
+
+    Returns:
+        Tuple ``(macro_f1, accuracy, n_parcels)`` over the kept parcels. The
+        macro-F1 averages the per-class F1 of the retained classes (a retained
+        class absent from the kept rows contributes ``nan`` and is skipped).
+    """
+    retained_set = set(int(c) for c in retained)
+    true = np.asarray(y_true).reshape(-1).astype(np.int64)
+    pred = np.asarray(y_pred).reshape(-1).astype(np.int64)
+    keep = np.array(
+        [t in retained_set and t != ignore_index for t in true], dtype=bool
+    )
+    true_k = true[keep]
+    pred_k = pred[keep]
+    if true_k.size == 0:
+        return float("nan"), float("nan"), 0
+
+    accumulator = DenseConfusionAccumulator(num_classes, ignore_index=ignore_index)
+    accumulator.update(pred_k, true_k)
+    per_class = _per_class_from_cm(accumulator.confusion_matrix())
+    f1 = per_class["f1"]
+    retained_f1 = [f1[c] for c in sorted(retained_set) if not np.isnan(f1[c])]
+    macro_f1 = float(np.mean(retained_f1)) if retained_f1 else float("nan")
+    accuracy = float((pred_k == true_k).mean())
+    return macro_f1, accuracy, int(true_k.size)
+
+
+def honest_class_dropout_curve(
+    y_true_oof: np.ndarray,
+    y_pred_oof: np.ndarray,
+    y_true_fold5: np.ndarray,
+    y_pred_fold5: np.ndarray,
+    *,
+    k_values: tuple[int, ...] = (18, 16, 14, 12, 10, 8),
+    num_classes: int = _NUM_CLASSES,
+    ignore_index: int = _IGNORE_INDEX,
+    class_names: dict[int, str] = PASTIS_R_CLASSES,
+) -> pl.DataFrame:
+    """Honest class-dropout curve: rank to DROP on OOF, MEASURE on fold-5.
+
+    Answers "how many classes can the ensemble predict well if we drop the worst
+    ones two at a time" WITHOUT cherry-picking (R-LEAK, rule #1). The two splits
+    play strictly separate roles:
+
+    * **Decide** (``*_oof``): the per-class F1 measured on the spatial OOF
+      sub-folds (folds 1-4 in role; here the stacking's own out-of-fold
+      predictions of fold-5) ranks the classes. The WORST-F1 classes are dropped
+      first. fold-5 NEVER decides which classes leave.
+    * **Measure** (``*_fold5``): for each ``K`` in ``k_values`` the retained set
+      is the ``K`` best-OOF-F1 classes; the macro-F1 / accuracy are recomputed on
+      the held-out fold-5 over the parcels whose ground truth is a retained class
+      (:func:`_macro_f1_on_retained`). fold-5 is touched once, with the drop
+      order frozen by the OOF ranking.
+
+    This is NOT the descriptive :func:`cardinality_cutoff_curve` (which averages
+    the top-K per-class F1 on a single split). Here each ``K`` is a genuine
+    re-evaluation of the model restricted to a smaller label space, with the cut
+    decided out-of-sample.
+
+    Args:
+        y_true_oof: OOF ground-truth labels (contiguous space) for ranking.
+        y_pred_oof: OOF hard predictions aligned with ``y_true_oof``.
+        y_true_fold5: Held-out fold-5 ground-truth labels.
+        y_pred_fold5: Held-out fold-5 hard predictions aligned with it.
+        k_values: Cardinalities to evaluate, descending (default 18..8 by 2).
+        num_classes: Size of the contiguous class space.
+        ignore_index: Label to ignore (Background/Void).
+        class_names: Map ``{raw_class_id: name}`` for the readable drop list.
+
+    Returns:
+        Polars DataFrame, one row per ``K`` (descending), columns: ``k``,
+        ``retained_class_ids`` (contiguous, best-OOF-F1 first), ``dropped_names``
+        (the classes NOT retained at this K, readable), ``macro_f1_fold5``,
+        ``accuracy_fold5`` and ``n_parcels_fold5`` (kept parcels at this K).
+    """
+    # Rank classes by their OOF F1 (the decision split). Absent classes (nan F1)
+    # are treated as worst and dropped first.
+    oof_report = per_class_report(
+        y_true_oof, y_pred_oof, num_classes=num_classes, ignore_index=ignore_index
+    )
+    ranked = oof_report.sort("f1", descending=True, nulls_last=True)
+    ranked_ids = [int(c) for c in ranked["class_id"].to_list()]
+
+    rows: list[dict[str, object]] = []
+    for k in k_values:
+        k_eff = min(int(k), len(ranked_ids))
+        retained = ranked_ids[:k_eff]
+        dropped = ranked_ids[k_eff:]
+        macro_f1, accuracy, n_kept = _macro_f1_on_retained(
+            y_true_fold5,
+            y_pred_fold5,
+            retained,
+            num_classes=num_classes,
+            ignore_index=ignore_index,
+        )
+        rows.append(
+            {
+                "k": k_eff,
+                "retained_class_ids": retained,
+                "dropped_names": [
+                    class_names.get(c + 1, f"class_{c}") for c in dropped
+                ],
+                "macro_f1_fold5": macro_f1,
+                "accuracy_fold5": accuracy,
+                "n_parcels_fold5": n_kept,
+            }
+        )
+
+    logger.info(
+        "honest_class_dropout_curve",
+        k_values=list(k_values),
+        full_macro_f1=round(rows[0]["macro_f1_fold5"], 4) if rows else None,
+        best_k=rows[-1]["k"] if rows else None,
+        best_macro_f1=round(rows[-1]["macro_f1_fold5"], 4) if rows else None,
+    )
+    return pl.DataFrame(rows)
