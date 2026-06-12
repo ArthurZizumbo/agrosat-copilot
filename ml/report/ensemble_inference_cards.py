@@ -130,17 +130,25 @@ def _slot_map(class_map: np.ndarray, id_to_slot: dict[int, int]) -> np.ndarray:
 
 
 def _stacking_pred_by_parcel(
-    canonical_ids: list[str], oof_dir: Path
+    canonical_ids: list[str],
+    oof_dir: Path,
+    members: tuple[str, ...] = _STACKING_MEMBERS,
 ) -> dict[str, int]:
-    """Reconstruct the Stacking argmax per parcel from the 3 base-learner OOF.
+    """Reconstruct an ensemble's consensus argmax per parcel from member OOF.
 
-    Averages the three members' post-softmax ``(18,)`` rows per
+    Averages the ``members``' post-softmax ``(18,)`` rows per
     ``canonical_parcel_id`` and returns the argmax mapped to the PASTIS class id
-    (``prob_000 -> class 1``). Only parcels present in all three OOF are returned.
+    (``prob_000 -> class 1``). Only parcels present in ALL members are returned.
+
+    This uniform-average consensus matches the Stacking meta-model argmax in the
+    vast majority of parcels and is the cheap fallback when no real per-parcel
+    prediction is injected. For a non-uniform ensemble (e.g. Blending's Optuna
+    weights) pass the real prediction via ``pred_by_parcel`` instead.
 
     Args:
         canonical_ids: parcels of interest (``{patch}_{ParcelIDs_local}``).
         oof_dir: directory holding ``oof_parcel_{member}_fold5.parquet``.
+        members: the base learners whose parcel OOF are averaged.
 
     Returns:
         Mapping ``canonical_parcel_id -> predicted PASTIS class id (1..18)``.
@@ -148,7 +156,7 @@ def _stacking_pred_by_parcel(
     prob_cols = [f"prob_{i:03d}" for i in range(18)]
     acc: dict[str, np.ndarray] = {}
     count: dict[str, int] = {}
-    for member in _STACKING_MEMBERS:
+    for member in members:
         path = oof_dir / f"oof_parcel_{member}_fold5.parquet"
         d = pl.read_parquet(path).filter(
             pl.col("canonical_parcel_id").is_in(canonical_ids)
@@ -160,7 +168,7 @@ def _stacking_pred_by_parcel(
             count[cid] = count.get(cid, 0) + 1
     preds: dict[str, int] = {}
     for cid, vec in acc.items():
-        if count[cid] == len(_STACKING_MEMBERS):  # present in all 3 members
+        if count[cid] == len(members):  # present in every member
             preds[cid] = int(np.argmax(vec)) + 1
     return preds
 
@@ -173,13 +181,26 @@ def build_stacking_inference_cards(
     features_path: Path,
     out_dir: Path,
     class_names: dict[int, str] | None = None,
+    members: tuple[str, ...] = _STACKING_MEMBERS,
+    ensemble_label: str = "Stacking",
+    pred_by_parcel: dict[str, int] | None = None,
 ) -> list[InferenceCard]:
-    """Build the per-patch 'Stacking in action' cards over fold-5 patches.
+    """Build the per-patch 'ensemble in action' cards over fold-5 patches.
 
     For each patch: render the 3-panel figure (real RGB / per-parcel truth /
-    per-parcel Stacking prediction) and a per-parcel table joining the true
+    per-parcel ensemble prediction) and a per-parcel table joining the true
     class, the predicted class, the hit flag, the area, the live NDVI phenology
     description and a summary of the AlphaEarth embedding the tabular member uses.
+    The phenology description lives ONLY in the returned table (column
+    ``fenologia``) and is NEVER drawn on the figure, so the notebook can surface
+    it with its own ``display`` separate from the image.
+
+    Works for ANY ensemble, not just the winner: pass its ``members`` (for the
+    embedding/legend and the consensus fallback) and its ``ensemble_label`` (for
+    the panel title). When ``pred_by_parcel`` is given (the REAL per-parcel
+    argmax of the fitted ensemble, e.g. ``Blending``/``Stacking.predict_proba``),
+    it is used verbatim; otherwise the uniform-average consensus over ``members``
+    is reconstructed (honest for a uniform stacking, an approximation otherwise).
 
     Args:
         patch_ids: fold-5 patch ids to render.
@@ -190,6 +211,11 @@ def build_stacking_inference_cards(
             for the embedding summary, matched by patch + area rank).
         out_dir: where the card PNGs are written.
         class_names: optional ``{id: name}`` override; defaults to PASTIS names.
+        members: the ensemble's base learners (default = the E3 Stacking trio).
+        ensemble_label: readable ensemble name for the prediction panel title.
+        pred_by_parcel: optional REAL ``{canonical_parcel_id: PASTIS class id}``
+            of the fitted ensemble; when ``None`` the consensus over ``members``
+            is used.
 
     Returns:
         One :class:`InferenceCard` per patch that had agronomic parcels.
@@ -235,7 +261,10 @@ def build_stacking_inference_cards(
         truth_map = np.zeros_like(sem)
         pred_map = np.zeros_like(sem)
         canon_ids = [f"{pid}_{lid}" for lid in local_ids]
-        preds = _stacking_pred_by_parcel(canon_ids, Path(oof_dir))
+        if pred_by_parcel is not None:
+            preds = {c: pred_by_parcel[c] for c in canon_ids if c in pred_by_parcel}
+        else:
+            preds = _stacking_pred_by_parcel(canon_ids, Path(oof_dir), members)
 
         for lid in local_ids:
             mask = parcels == lid
@@ -286,7 +315,8 @@ def build_stacking_inference_cards(
         axes[2].imshow(_slot_map(pred_map, id_to_slot), cmap=cmap, norm=norm,
                        interpolation="nearest")
         axes[2].set_title(
-            f"Prediccion Stacking ({n_correct}/{len(rows)} parcelas correctas)",
+            f"Prediccion {ensemble_label} "
+            f"({n_correct}/{len(rows)} parcelas correctas)",
             fontsize=10,
         )
         axes[2].axis("off")
@@ -295,7 +325,10 @@ def build_stacking_inference_cards(
         fig.legend(handles=handles, loc="lower center", ncol=min(6, len(handles)),
                    fontsize=8, frameon=False, bbox_to_anchor=(0.5, -0.02))
         fig.tight_layout()
-        fig_path = out_dir / f"stacking_inference_{pid}.png"
+        slug = "".join(
+            ch if ch.isalnum() else "-" for ch in ensemble_label.lower()
+        ).strip("-")
+        fig_path = out_dir / f"inference_{slug}_{pid}.png"
         fig.savefig(fig_path, dpi=120, bbox_inches="tight")
         plt.close(fig)
 
@@ -303,9 +336,9 @@ def build_stacking_inference_cards(
             pid, fig_path, table, len(rows), n_correct, n_alphaearth_dims
         ))
         logger.info(
-            "stacking_inference_card",
-            patch_id=pid, n_parcels=len(rows), n_correct=n_correct,
-            figure=str(fig_path),
+            "ensemble_inference_card",
+            ensemble=ensemble_label, patch_id=pid, n_parcels=len(rows),
+            n_correct=n_correct, figure=str(fig_path),
         )
 
     return cards

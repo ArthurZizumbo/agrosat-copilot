@@ -77,6 +77,28 @@ def test_stacking_pred_argmax_from_three_oof(tmp_path) -> None:
     assert preds == {"10_1": 5}  # prob_004 -> class 5; p2 dropped (not in all 3)
 
 
+def test_consensus_respects_custom_members(tmp_path) -> None:
+    """A custom ``members`` tuple only requires presence in THOSE members."""
+    prob_cols = [f"prob_{i:03d}" for i in range(18)]
+
+    def _frame(ids: list[str], peak_class: int) -> pl.DataFrame:
+        data = {"canonical_parcel_id": ids}
+        for i, c in enumerate(prob_cols):
+            data[c] = [0.9 if i == peak_class else 0.1 / 17 for _ in ids]
+        return pl.DataFrame(data)
+
+    # Only two members exist; p1 in both -> kept when members=(a, b).
+    _frame(["10_1"], peak_class=6).write_parquet(
+        tmp_path / "oof_parcel_farslip-ft18_fold5.parquet")
+    _frame(["10_1"], peak_class=6).write_parquet(
+        tmp_path / "oof_parcel_farslip-zeroshot_fold5.parquet")
+
+    preds = _stacking_pred_by_parcel(
+        ["10_1"], tmp_path, members=("farslip-ft18", "farslip-zeroshot")
+    )
+    assert preds == {"10_1": 7}  # prob_006 -> class 7
+
+
 @pytest.mark.skipif(
     not (_PASTIS_ROOT / "DATA_S2").exists(),
     reason="PASTIS-R not present on disk",
