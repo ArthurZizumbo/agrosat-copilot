@@ -79,6 +79,10 @@ _EMBED_DIM: int = 512
 #: fold (that would be a leak).
 DEFAULT_LOGIT_SCALE: float = 1.0 / 0.07
 
+#: Emit a progress log roughly every this many parcels during the zero-shot pass
+#: (per-parcel forward has no built-in progress; avoids running blind).
+_PROGRESS_EVERY: int = 2048
+
 #: Default FarSLIP checkpoint (vision tower). The text tower stays CLIP-base
 #: inside :class:`FarSLIPExtractor`, which IS the requested zero-shot variant.
 DEFAULT_FARSLIP_CHECKPOINT: str = "checkpoints/farslip/faithful_v2/best.safetensors"
@@ -276,6 +280,8 @@ def zeroshot_parcel_proba(
     class_ids: list[int] = []
     n = len(dataset)
     for idx in range(n):
+        if idx and idx % _PROGRESS_EVERY == 0:
+            logger.info("zeroshot_progress", done=idx, total=n)
         item = dataset[idx]
         image = item["image"]
         if not isinstance(image, torch.Tensor):

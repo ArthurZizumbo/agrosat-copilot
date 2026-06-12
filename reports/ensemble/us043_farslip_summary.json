@@ -1,0 +1,36 @@
+{
+  "members_5": [
+    "tsvit-pheno-fullm",
+    "utae",
+    "xgb-alphaearth",
+    "farslip-ft18",
+    "farslip-zeroshot"
+  ],
+  "members_3": [
+    "tsvit-pheno-fullm",
+    "utae",
+    "xgb-alphaearth"
+  ],
+  "meta": "logreg",
+  "n_universe": 16640,
+  "stacking_5_oof_cv": {
+    "f1_macro": 0.6477072259176935,
+    "accuracy": 0.7935096153846154
+  },
+  "stacking_3_oof_cv": {
+    "f1_macro": 0.6358762094415268,
+    "accuracy": 0.7876802884615385
+  },
+  "blending_5_fold5": {
+    "f1_macro": 0.5866313117045048,
+    "accuracy": 0.7863581730769231
+  },
+  "blending_3_fold5": {
+    "f1_macro": 0.5650850680536327,
+    "accuracy": 0.7697115384615385
+  },
+  "stacking_f1_delta_5_vs_3": 0.01183101647616669,
+  "blending_f1_delta_5_vs_3": 0.0215462436508721,
+  "label_space": "semantic18 (18 clases); HCAT-6 0.6535 es otro eje, no comparable",
+  "zeroshot_logit_scale": 100.0
+}

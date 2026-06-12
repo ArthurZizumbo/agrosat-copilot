@@ -90,6 +90,14 @@ DEFAULT_FARSLIP_CHECKPOINT: str = "checkpoints/farslip/parcel/04cls/best.safeten
 #: Inference batch size for the embedding extraction.
 _DEFAULT_BATCH_SIZE: int = 64
 
+#: DataLoader workers for the per-parcel crop preparation (CPU-bound: disk read +
+#: peak-NDVI + crop + resize). 0 starves the GPU; a high value on the H100 keeps
+#: the forward fed. Auto-resolved from CPU count when not overridden.
+_DEFAULT_NUM_WORKERS: int = 8
+
+#: Emit an embedding-extraction progress log roughly every this many parcels.
+_EMBED_LOG_EVERY: int = 4096
+
 
 class EmbeddingExtractor(Protocol):
     """Structural type of the FarSLIP embedding extractor used by this member.
@@ -110,6 +118,8 @@ def _embed_dataset(
     extractor: EmbeddingExtractor,
     *,
     batch_size: int,
+    num_workers: int = 0,
+    pin_memory: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, list[str]]:
     """Run the extractor over a parcel dataset, returning embeddings + labels + ids.
 
@@ -140,13 +150,21 @@ def _embed_dataset(
     if len(dataset) == 0:
         raise ValueError("parcel dataset is empty; cannot extract embeddings.")
 
+    # The bottleneck is the per-parcel crop preparation (disk read + peak-NDVI +
+    # crop + resize), all on CPU. With num_workers=0 the GPU starves (it idles
+    # waiting for each batch). Parallel workers prefetch crops so the GPU forward
+    # is the actual rate, turning hours into minutes (R-DATALOADER).
     loader = DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=False,
-        num_workers=0,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        persistent_workers=num_workers > 0,
         collate_fn=collate_parcel_batch,
     )
+    n_total = len(dataset)
+    n_done = 0
     feats: list[np.ndarray] = []
     labels: list[int] = []
     ids: list[str] = []
@@ -159,6 +177,9 @@ def _embed_dataset(
             )
         feats.append(emb_np)
         labels.extend(int(c) for c in batch["class_ids"].tolist())
+        n_done += emb_np.shape[0]
+        if n_done % _EMBED_LOG_EVERY < batch_size:
+            logger.info("ft18_embed_progress", done=n_done, total=n_total)
         ids.extend(str(p) for p in batch["parcel_ids"])
 
     x = np.concatenate(feats, axis=0) if feats else np.empty((0, _EMBED_DIM))
@@ -223,6 +244,7 @@ def materialize_ft18_oof(
     train_dataset: Any | None = None,
     test_dataset: Any | None = None,
     batch_size: int = _DEFAULT_BATCH_SIZE,
+    num_workers: int = _DEFAULT_NUM_WORKERS,
     max_iter: int = 2000,
     random_state: int = 42,
 ) -> Path:
@@ -281,8 +303,15 @@ def materialize_ft18_oof(
     train_ds = train_dataset
     test_ds = test_dataset
 
-    x_train, y_raw_pastis, _ = _embed_dataset(train_ds, extractor, batch_size=batch_size)
-    x_test, _, test_keys = _embed_dataset(test_ds, extractor, batch_size=batch_size)
+    pin = num_workers > 0
+    x_train, y_raw_pastis, _ = _embed_dataset(
+        train_ds, extractor, batch_size=batch_size,
+        num_workers=num_workers, pin_memory=pin,
+    )
+    x_test, _, test_keys = _embed_dataset(
+        test_ds, extractor, batch_size=batch_size,
+        num_workers=num_workers, pin_memory=pin,
+    )
     if x_test.shape[0] == 0:
         raise ValueError("fold-5 has no parcels in the parcel dataset.")
 

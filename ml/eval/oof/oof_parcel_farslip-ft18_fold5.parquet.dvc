@@ -1,0 +1,5 @@
+outs:
+- md5: 433325d8ad2cb7c65a26c19065f25295
+  size: 1150480
+  hash: md5
+  path: oof_parcel_farslip-ft18_fold5.parquet

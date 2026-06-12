@@ -77,9 +77,13 @@ _KEY: str = "canonical_parcel_id"
 #: Number of agronomic classes in the harness 18-class space.
 _NUM_CLASSES: int = len(PROB_COLUMNS)
 
-#: The two new FarSLIP parcel members and the three legacy heterogeneous ones.
+#: The two new FarSLIP parcel members and the three heterogeneous base ones.
+#: The base TSViT is ``tsvit-pheno-fullm`` (0.6764 macro-F1, the BEST TSViT the
+#: sponsor selected for this layer), NOT the older ``tsvit-pheno`` (0.6253) that
+#: backed the US-040 champion. So Stacking-3 here is a NEW fullm-based reference,
+#: and the 5-vs-3 delta is measured on the SAME fullm base (apples to apples).
 _FARSLIP_MEMBERS: tuple[str, ...] = ("farslip-ft18", "farslip-zeroshot")
-_BASE_MEMBERS_3: tuple[str, ...] = ("tsvit-pheno", "utae", "xgb-alphaearth")
+_BASE_MEMBERS_3: tuple[str, ...] = ("tsvit-pheno-fullm", "utae", "xgb-alphaearth")
 _BASE_MEMBERS_5: tuple[str, ...] = (*_BASE_MEMBERS_3, *_FARSLIP_MEMBERS)
 
 #: MLflow run names.
@@ -533,21 +537,28 @@ def _stacking_metrics(
     random_state: int,
     meta: str,
 ) -> dict[str, float]:
-    """Fit a stacking ensemble over ``members`` and return its OOF-CV metrics.
+    """Fit a stacking ensemble over ``members`` and score it HELD-OUT on fold-5.
+
+    Mirrors the US-040 champion path (``predict_proba`` + ``evaluate(fold=5)``)
+    EXACTLY so the number is comparable to the 0.747 champion and to the
+    BlendingEnsemble (also fold-5 held-out). Returning ``oof_cv_metrics_`` instead
+    would report the pessimistic spatial sub-fold CV (a DIFFERENT, lower metric, not
+    comparable to 0.747), so it is NOT used here.
 
     Args:
         members: Ordered base-member names.
         parcel_geoms: fold-5 parcel geometry frame.
         parcel_gt: fold-5 parcel ground-truth labels.
         oof_dir: OOF directory.
-        n_spatial_folds: geographic sub-folds.
+        n_spatial_folds: geographic sub-folds for the meta-learner OOF features.
         random_state: seed.
         meta: meta-learner family (``logreg`` | ``xgb``).
 
     Returns:
-        ``oof_cv_metrics_`` of the fitted stacking ensemble.
+        ``{"f1_macro": ..., "accuracy": ...}`` of the fold-5 held-out prediction.
     """
     from ml.ensemble.stacking import StackingEnsemble
+    from scripts.run_us040_ensembles import _aligned_labels
 
     stack = StackingEnsemble(
         base_members=tuple(members),
@@ -557,7 +568,10 @@ def _stacking_metrics(
         random_state=random_state,
     )
     stack.fit(parcel_geoms, gt_labels=parcel_gt)
-    return dict(stack.oof_cv_metrics_)
+    proba = stack.predict_proba()
+    keys, _, _ = stack.build_meta_features(gt_labels=None)
+    labels = _aligned_labels(keys[_KEY].to_list(), parcel_gt)
+    return stack.evaluate(y_true=labels, proba=proba, fold=_HELD_OUT_FOLD)
 
 
 def _blending_metrics(

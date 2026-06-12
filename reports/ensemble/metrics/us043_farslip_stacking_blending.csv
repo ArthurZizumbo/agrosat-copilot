@@ -1,0 +1,5 @@
+modelo,f1_macro,accuracy,delta_f1_vs_3,nota
+Stacking-3 (US-040 universe),0.6358762094415268,0.7876802884615385,0.0,"referencia 3 miembros (espacio semantic18, fold-5)"
+"Stacking-5 (+farslip-ft18,+farslip-zeroshot)",0.6477072259176935,0.7935096153846154,0.01183101647616669,5 miembros; delta +0.0118 vs Stacking-3
+Blending-3 (US-040 universe),0.5650850680536327,0.7697115384615385,0.0,"referencia 3 miembros (espacio semantic18, fold-5)"
+"Blending-5 (+farslip-ft18,+farslip-zeroshot)",0.5866313117045048,0.7863581730769231,0.0215462436508721,5 miembros; delta +0.0215 vs Blending-3
