@@ -1,0 +1,6 @@
+modelo,f1_macro,accuracy,nota
+TSViT-pheno-fullm (individual),0.6764,,mejor segmentador individual (baseline E-a)
+"Stacking US-040 (E3)",0.747,0.849,mejor ensamble de US-040 (3 miembros densos+tabular sin FarSLIP)
+E-a fusion dual-head (alpha=0.05),0.2694,0.5873,gain -0.407 vs TSViT: fusion ingenua 4-vs-18 clases DANA
+E-b stacking E-a + AlphaEarth,0.3395,0.6937,gain +0.156 vs E-a sola pero lejos del Stacking US-040
+"Stacking-5 +FarSLIP (US-043, campeon)",0.7486,0.8495,nuevo campeon: FarSLIP via stacking (ft-18 + zero-shot) +0.0016 vs US-040
