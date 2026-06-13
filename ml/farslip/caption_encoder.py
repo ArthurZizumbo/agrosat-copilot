@@ -89,30 +89,35 @@ class CaptionCollate:
     Can't get local object`` there).
 
     Args:
-        base_collate: the underlying collate producing ``patch_ids``.
-        caption_embeddings: ``{patch_id: tensor(384,)}`` from
+        base_collate: the underlying collate producing the id list.
+        caption_embeddings: ``{id: tensor(384,)}`` from
             :func:`encode_captions_minilm`.
+        id_key: batch key holding the ids that index ``caption_embeddings``.
+            Default ``"patch_ids"`` (patch-level v2). Use ``"parcel_ids"`` for the
+            parcel-level model (US-036-b), whose captions are keyed per parcel.
     """
 
     def __init__(
         self,
         base_collate: Callable[[list[dict[str, Any]]], dict[str, Any]],
         caption_embeddings: Mapping[str, torch.Tensor],
+        id_key: str = "patch_ids",
     ) -> None:
         self.base_collate = base_collate
         self.caption_embeddings = dict(caption_embeddings)
+        self.id_key = id_key
 
     def __call__(self, items: list[dict[str, Any]]) -> dict[str, Any]:
         batch = self.base_collate(items)
-        patch_ids: Sequence[str] = batch["patch_ids"]
-        missing = [pid for pid in patch_ids if pid not in self.caption_embeddings]
+        ids: Sequence[str] = batch[self.id_key]
+        missing = [i for i in ids if i not in self.caption_embeddings]
         if missing:
             raise KeyError(
-                f"{len(missing)} batch patch_ids have no pre-encoded caption "
+                f"{len(missing)} batch {self.id_key} have no pre-encoded caption "
                 f"(e.g. {missing[:5]}); pre-encode every caption before training."
             )
         batch["caption_cls"] = torch.stack(
-            [self.caption_embeddings[pid] for pid in patch_ids], dim=0
+            [self.caption_embeddings[i] for i in ids], dim=0
         )
         return batch
 
@@ -120,18 +125,21 @@ class CaptionCollate:
 def make_caption_collate(
     base_collate: Callable[[list[dict[str, Any]]], dict[str, Any]],
     caption_embeddings: Mapping[str, torch.Tensor],
+    id_key: str = "patch_ids",
 ) -> CaptionCollate:
     """Builds a picklable :class:`CaptionCollate` (see its docstring).
 
     Args:
-        base_collate: the underlying collate producing ``patch_ids``.
-        caption_embeddings: ``{patch_id: tensor(384,)}`` from
+        base_collate: the underlying collate producing the id list.
+        caption_embeddings: ``{id: tensor(384,)}`` from
             :func:`encode_captions_minilm`.
+        id_key: batch key with the ids (``"patch_ids"`` default, ``"parcel_ids"``
+            for the parcel-level model).
 
     Returns:
         A picklable callable returning the base batch plus ``caption_cls``.
     """
-    return CaptionCollate(base_collate, caption_embeddings)
+    return CaptionCollate(base_collate, caption_embeddings, id_key=id_key)
 
 
 __all__ = [

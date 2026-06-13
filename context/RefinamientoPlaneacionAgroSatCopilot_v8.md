@@ -1370,7 +1370,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 
 **Objetivo.** Construir el modelo final de máximo rendimiento mediante **ensambles** que combinan los mejores segmentadores del EPIC 5 (TSViT-pheno mIoU 0.6253 / F1 0.7500, TSViT base, U-TAE), el baseline tabular AlphaEarth+XGB del EPIC 4 y la rama contrastiva-fenológica FarSLIP (directiva del sponsor). El v8 **descarta el fine-tuning de Gemma 4 26B-MoE como modelo final** (diferido a ADR-009 future por bloqueo técnico de QLoRA sobre experts MoE 3D fused + leakage de AgroMind eval-only — ver EPIC 10 / §8 del plan v8) y lo reemplaza por **siete ensambles**: los 4 de rúbrica (Voting/Bagging/Stacking/Blending) más 3 incrementales **E-a** (TSViT-pheno + FarSLIP), **E-b** (+AlphaEarth) y **E-c** (geo-context, diseño-only). El reasoner LLM del producto pasa a ser Gemini 2.5-pro frozen (patrón "Be My Eyes": perceiver = nuestros modelos, reasoner = LLM frozen), no un VLM fine-tuned.
 
-**Alineado con.** Avance 5 (mié 10-jun-2026) — notebook secuencial en GitHub. Rúbrica: Ensambles 60 pts + Selección 20 pts + Gráficos 20 pts. E-b + reconciliación píxel↔parcela hacia Avance 6 (14-jun); E-c documentado como trabajo futuro (ADR-009).
+**Alineado con.** Avance 5 (mié 10-jun-2026) — notebook secuencial en GitHub. Rúbrica: Ensambles 60 pts + Selección 20 pts + Gráficos 20 pts. E-b + reconciliación píxel↔parcela hacia Avance 6 (14-jun); E-c documentado como trabajo futuro (ADR-010).
 
 **Deuda crítica prerequisito (EPIC 5).** Ningún ensamble es defendible sin **US-026** (harness único de métrica, re-score apples-to-apples en fold-5) y **US-027** (regenerar softmax/OOF desde cada `best.pt`). La tabla A4 actual mezcla 3 pipelines, 18 vs 20 clases, resolución 64/128/256 — el orden TSViT≫U-TAE≫SegFormer es en parte artefacto de definición. `ml/ensemble/` está **vacío** (solo `__init__.py`) y no existe `ml/eval/oof/` a 7-jun.
 
@@ -1471,7 +1471,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 
 ---
 
-### US-043 — Ensamble E-c: geo-context + tools (DISEÑO ONLY, ADR-009)
+### US-043 — Ensamble E-c: geo-context + tools (DISEÑO ONLY, ADR-010)
 
 **Como** equipo de ML,
 - **quiero** un sketch arquitectónico del ensamble geo-contextual que añada clima (ERA5), elevación (SRTM), vecindad espacial y un refinamiento estructurado (CRF/GNN),
@@ -1483,12 +1483,12 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 - **DISEÑO ONLY:** sin entrenamiento, sin runs H100, sin código de producción. Entregable = documento de arquitectura.
 - Sketch describe: features ERA5 (clima) + SRTM (elevación) + vecindad de parcela + capa de refinamiento CRF o GNN sobre la salida de E-b.
 - Estimación de esfuerzo realista para el futuro (4-6 semanas) y dependencias (jobs GEE zonal).
-- Documentado en **ADR-009** como FUTURE; enmarcado honesto (no se promete mejora cuantitativa).
+- Documentado en **ADR-010** como FUTURE; enmarcado honesto (no se promete mejora cuantitativa). (Nota: el texto original decía "ADR-009", pero ADR-009 ya estaba ocupado por la reactivación H100 / alcance v8; el sketch E-c vive en [ADR-010](../docs/decisions/ADR-010-ensamble-ec-geocontext-future.md).)
 
 **Tareas técnicas:**
 
-- [ ] Documento `docs/decisions/ADR-009-*.md` con el sketch E-c (diagrama + features + flujo CRF/GNN)
-- [ ] Enlazar desde la sección "FUTURE" del plan v8 y desde la skill `agrosat-ml-ensemble`
+- [x] Documento `docs/decisions/ADR-010-ensamble-ec-geocontext-future.md` con el sketch E-c (diagrama + features + flujo CRF/GNN)
+- [x] Enlazar desde la sección "FUTURE" del plan v8 (este bloque). Nota: el enlace pedido "desde la skill `agrosat-ml-ensemble`" se descarta deliberadamente — las skills son instrucciones operativas reutilizables, no registro de decisiones de una US; el sketch E-c vive en ADR-010 y en `docs/us-planning/us-043.md`.
 
 **Licencia / legal:** ERA5 (Copernicus CDS), SRTM (USGS/NASA) — a documentar cuando se ingiera (futuro).
 

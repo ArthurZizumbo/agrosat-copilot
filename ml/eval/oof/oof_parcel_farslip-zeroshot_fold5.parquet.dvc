@@ -1,0 +1,5 @@
+outs:
+- md5: 28c2b44de3fd13e4cadb3937c5bcbea0
+  size: 1075770
+  hash: md5
+  path: oof_parcel_farslip-zeroshot_fold5.parquet

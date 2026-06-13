@@ -107,7 +107,7 @@ def test_generate_description_temperature_nonzero_raises(
 
 def test_generate_description_empty_curve_raises(tmp_path: Path) -> None:
     set_llm_client(lambda p, **_: "")
-    with pytest.raises(ValueError, match="vacio"):
+    with pytest.raises(ValueError, match="cannot be empty"):
         generate_phenology_description(np.array([], dtype=np.float64), cache_dir=tmp_path)
 
 
@@ -195,7 +195,7 @@ def test_build_phenology_text_block_raises_without_credentials(
             "NDVI_t_01": [0.5, 0.6],
         }
     )
-    with pytest.raises(RuntimeError, match="Gemini no esta configurado"):
+    with pytest.raises(RuntimeError, match="Gemini is not configured"):
         build_phenology_text_block(df, skip_llm=False, cache_dir=tmp_path)
 
 

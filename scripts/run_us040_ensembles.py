@@ -312,31 +312,12 @@ def _instance_to_parcel_id_map(
     Raises:
         FileNotFoundError: if the patch's TARGET or ParcelIDs raster is missing.
     """
-    from ml.utils.parcel_reconcile import load_pastis_parcel_ids
+    # Promoted to the library module so the FarSLIP members (ml/ensemble/*) can
+    # reuse the SAME bridge without importing this script. Kept as a thin wrapper
+    # for backward compatibility with this script's existing callers.
+    from ml.utils.parcel_reconcile import instance_to_parcel_id_map
 
-    pid = str(patch_id)
-    root = Path(pastis_root)
-    target_path = root / "ANNOTATIONS" / f"TARGET_{pid}.npy"
-    if not target_path.exists():
-        raise FileNotFoundError(f"PASTIS-R semantic TARGET not found: {target_path}.")
-    target = np.load(target_path)
-    if target.ndim != 3 or target.shape[0] < 2:
-        raise FileNotFoundError(
-            f"PASTIS-R TARGET_{pid}.npy lacks the instance channel (shape {target.shape})."
-        )
-    instance = target[1]
-    parcel_raster = load_pastis_parcel_ids(pid, root)
-
-    mapping: dict[int, int] = {}
-    for inst_id in np.unique(instance):
-        inst_int = int(inst_id)
-        if inst_int == 0:
-            continue
-        mask = instance == inst_int
-        values, counts = np.unique(parcel_raster[mask], return_counts=True)
-        # The ParcelIDs value covering most of the instance pixels (1:1 in PASTIS).
-        mapping[inst_int] = int(values[counts.argmax()])
-    return mapping
+    return instance_to_parcel_id_map(patch_id, pastis_root)
 
 
 def tabular_parcel_keys(

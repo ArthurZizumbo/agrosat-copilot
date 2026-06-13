@@ -70,6 +70,11 @@ _CREDENTIAL_ENV_VARS: tuple[str, ...] = (
 #: Used only for informative budget tracking, not exact.
 COST_PER_DESCRIPTION_USD: float = 0.0001
 
+#: Client-side HTTP timeout (ms) for the google-genai call. Without it a stuck
+#: socket hangs a worker thread (and the completion-gated flush) forever; on
+#: timeout the SDK raises and the retry loop treats it as transient.
+_HTTP_TIMEOUT_MS: int = 60_000
+
 #: Number of dimensions of the dense vector produced by
 #: ``sentence-transformers/all-MiniLM-L6-v2`` (default model).
 #: The constant exists so that ``fusion.py`` validates the contract.
@@ -188,6 +193,28 @@ def _default_litellm_client(
     return str(content).strip()
 
 
+def _model_supports_thinking_level(model: str) -> bool:
+    """Whether ``model`` accepts the ``thinking_level`` config field.
+
+    Only Gemini 3.x models support it; 2.x models (and others) return
+    ``400 Thinking level is not supported for this model``. Matches the
+    major version after the ``gemini-`` prefix (e.g. ``gemini-3.5-flash`` ->
+    True, ``gemini-2.5-flash-lite`` -> False).
+
+    Args:
+        model: Model identifier.
+
+    Returns:
+        ``True`` for ``gemini-3.x`` models, ``False`` otherwise.
+    """
+    name = model.lower().removeprefix("models/")
+    if not name.startswith("gemini-"):
+        return False
+    version = name[len("gemini-") :]
+    major = version.split(".", 1)[0].split("-", 1)[0]
+    return major.isdigit() and int(major) >= 3
+
+
 def _has_credentials() -> bool:
     """Check whether Gemini credentials are configured in the environment.
 
@@ -249,23 +276,37 @@ def _default_google_genai_client(
             "mock with `set_llm_client(...)`."
         ) from exc
 
-    # `Client()` auto-detects Vertex AI vs public API from env vars.
-    client = genai.Client()
+    # `Client()` auto-detects Vertex AI vs public API from env vars. A
+    # client-side HTTP timeout (60s) is MANDATORY for long batches: without it a
+    # single stuck socket hangs the worker thread indefinitely (and, with a
+    # completion-gated flush, the whole job) -- observed on the 69k run when the
+    # API got flaky. On timeout the call raises and the retry loop below kicks in.
+    client = genai.Client(
+        http_options=types.HttpOptions(timeout=_HTTP_TIMEOUT_MS)
+    )
+    # `thinking_level` is a Gemini 3.x feature: 3.x accepts "minimal" to cut
+    # latency on short descriptions, but 2.x models (e.g. gemini-2.5-flash-lite)
+    # reject it with `400 Thinking level is not supported for this model`. Apply
+    # it only for 3.x; the numeric `thinking_budget` was deprecated per the 3.5
+    # docs, so 2.x runs with the default thinking config.
+    thinking_config = (
+        types.ThinkingConfig(thinking_level="minimal")
+        if _model_supports_thinking_level(model)
+        else None
+    )
     config = types.GenerateContentConfig(
         temperature=temperature,
         max_output_tokens=512,
-        # `thinking_level="minimal"` reduces latency for short
-        # descriptions; supported by Gemini 3.x (including 3.5-flash). The
-        # numeric `thinking_budget` parameter was deprecated per the
-        # official Gemini 3.5 docs.
-        thinking_config=types.ThinkingConfig(thinking_level="minimal"),
+        thinking_config=thinking_config,
     )
 
-    # Retry with exponential backoff (base 2s) for 429 / 503. Three
-    # retries before propagating the error: protects long batches over
-    # 85k parcels from transient failures without saturating the API.
-    max_attempts = 3
+    # Retry with capped exponential backoff for 429 / 503 / timeout. Six
+    # attempts (~2+4+8+16+30+30s) before propagating: a single 69k-parcel batch
+    # would otherwise die on a SUSTAINED 503 spike (observed at peak hours) when
+    # only 3 short retries were allowed. The cap keeps the backoff from exploding.
+    max_attempts = 6
     base_delay = 2.0
+    max_delay = 30.0
     last_exc: Exception | None = None
     for attempt in range(max_attempts):
         try:
@@ -282,11 +323,13 @@ def _default_google_genai_client(
                 or "503" in message
                 or "rate limit" in message.lower()
                 or "unavailable" in message.lower()
+                or "timeout" in message.lower()
+                or "timed out" in message.lower()
             )
             last_exc = exc
             if not is_transient or attempt == max_attempts - 1:
                 raise
-            delay = base_delay * (2**attempt)
+            delay = min(base_delay * (2**attempt), max_delay)
             logger.warning(
                 "phenology_description_gemini_retry",
                 attempt=attempt + 1,
@@ -430,6 +473,7 @@ def generate_phenology_description(
         "crop_type_hint": crop_type_hint,
     }
     try:
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
         cache_file.write_text(
             json.dumps(payload, ensure_ascii=False), encoding="utf-8"
         )

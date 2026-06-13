@@ -185,3 +185,56 @@ A4_CONCLUSIONS: tuple[MemberConclusion, ...] = (
         "U-TAE pasan a la siguiente etapa, la de los ensambles.",
     ),
 )
+
+
+A5_CONCLUSIONS: tuple[MemberConclusion, ...] = (
+    MemberConclusion(
+        _ISAAC,
+        _ROLE_ISAAC,
+        "La conclusión del modelo final confirma lo que esperábamos del ensamble y "
+        "deja una lección que no era obvia. El Stacking heterogéneo alcanza F1-macro "
+        "0,749 sobre datos no vistos, doce puntos por encima del mejor modelo "
+        "individual (0,625): combinar la forma temporal del cultivo con un resumen "
+        "espectral aprendido supera a cualquier modelo por sí solo. Lo que más me "
+        "sorprendió fue medir que la complementariedad pesa más que la fuerza "
+        "individual: usar como base el segmentador individualmente más fuerte produjo "
+        "un stacking peor que usar uno más débil pero menos correlacionado con los "
+        "demás. Para un ensamble importa que los miembros se equivoquen distinto, no "
+        "que cada uno sea el mejor. El techo restante está en seis cultivos raros y de "
+        "fenología ambigua, no en sumar más modelos del mismo tipo.",
+    ),
+    MemberConclusion(
+        _AARON,
+        _ROLE_AARON,
+        "Mi lectura es de producto. De los siete ensambles, los dos heterogéneos "
+        "(Stacking y Blending) son los únicos que valen la pena: las estrategias "
+        "homogéneas (Voting, Bagging) no solo rinden menos, el Voting además opera por "
+        "píxel y tarda más de cuarenta segundos por inferencia, inviable para una "
+        "experiencia interactiva. El Stacking elegido cuesta cuatro centésimas de "
+        "segundo una vez calculadas las probabilidades base, y el Blending es todavía "
+        "más rápido con una accuracy ligeramente mejor: es la alternativa si el "
+        "negocio prioriza latencia. La decisión de optimizar el F1-macro y no la "
+        "accuracy es la correcta para el producto: el valor agronómico está en acertar "
+        "también los cultivos minoritarios, no solo el prado dominante, y ahí es donde "
+        "el frontend deberá comunicar la confianza del modelo por clase.",
+    ),
+    MemberConclusion(
+        _ARTHUR,
+        _ROLE_ARTHUR,
+        "Desde MLOps, lo que más cuido en esta fase es que la mejora del ensamble sea "
+        "creíble, no un artefacto de evaluación. Toda métrica se reporta sobre un fold "
+        "espacial reservado que ningún modelo ni meta-modelo vio; las probabilidades "
+        "que alimentan el stacking son out-of-fold (generadas sin ver esas parcelas) y "
+        "post-softmax, nunca puntajes crudos; y el meta-modelo se entrena solo sobre "
+        "esas salidas con validación cruzada espacial, con una guarda que aborta si "
+        "detecta solapamiento entre entrenamiento y evaluación. Sin esas garantías un "
+        "salto de doce puntos no significaría nada. También me tocó medir, sin "
+        "sobre-afirmar, qué señales adicionales aportan: la rama contrastiva por "
+        "parcela mejora levemente al campeón cuando entra vía stacking pero lo "
+        "perjudica vía promedio global, y el contexto geográfico tabular ya estaba "
+        "codificado en el embedding satelital, así que se documentó como trabajo "
+        "futuro en lugar de prometer una ganancia que la evidencia no respalda. El "
+        "modelo final queda trazado de punta a punta y listo para ser la herramienta "
+        "de clasificación del agente conversacional.",
+    ),
+)

@@ -157,12 +157,13 @@ CHECKPOINT_REGISTRY: dict[str, CheckpointSpec] = {
     "tsvit": CheckpointSpec(
         name="tsvit",
         model_kind="tsvit",
-        # TSViT Full-M retrain (US-038, H100): T completo (n_timesteps=64), 128px
-        # nativo, dim=192, depth 6+6, heads=6, dim_head=64. The capacity lives in
-        # `model_kwargs` (from TSVIT_FULLM_CONFIG) so build_model_for_kind rebuilds
-        # the exact trained topology before load_state_dict (R-HARNESS): the
-        # best.pt does NOT embed the capacity, and a default-L4 rebuild (dim=128,
-        # depth 4+4) would raise a shape mismatch.
+        # TSViT Full-M retrain (US-038, H100): n_timesteps=37 (PASTIS T_MIN, the
+        # ordinal positional encoding shape (1, 37, dim)), 128px nativo, dim=192,
+        # depth 6+6, heads=6, dim_head=64. The capacity lives in `model_kwargs`
+        # (from TSVIT_FULLM_CONFIG) so build_model_for_kind rebuilds the exact
+        # trained topology before load_state_dict (R-HARNESS): the best.pt does
+        # NOT embed the capacity, and a default-L4 rebuild (dim=128, depth 4+4)
+        # would raise a shape mismatch.
         path=_CKPT_ROOT / "alt-tsvit-fullm-v1" / "best.pt",
         native_num_classes=18,
         native_ignore_index=255,
@@ -185,7 +186,7 @@ CHECKPOINT_REGISTRY: dict[str, CheckpointSpec] = {
         name="tsvit-pheno-fullm",
         model_kind="tsvit-pheno-fullm",
         # TSViT-pheno Full-M retrain (US-039, H100): the SAME Full-M capacity as
-        # the base US-038 ``tsvit`` (n_timesteps=64, dim=192, depth 6+6, heads=6,
+        # the base US-038 ``tsvit`` (n_timesteps=37, dim=192, depth 6+6, heads=6,
         # dim_head=64) PLUS the phenology contrastive branch (lambda_contrast=0.3,
         # Wen et al. 2025). It COEXISTS with the historical L4 ``tsvit-pheno-v1``
         # (US-030/US-025) instead of overwriting it, so the published fold-5 table

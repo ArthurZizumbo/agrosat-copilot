@@ -1,0 +1,5 @@
+outs:
+- md5: 8f1238cf2f11e22a20adc1ac26065024
+  size: 3486783
+  hash: md5
+  path: parcel_phenology_captions_69k.parquet

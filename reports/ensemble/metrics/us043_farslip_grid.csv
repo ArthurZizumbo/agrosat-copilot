@@ -1,0 +1,9 @@
+modelo,f1_macro,accuracy,delta_farslip
+Stacking-3 | tsvit-pheno (campeon US-040),0.7470445776972854,0.8490384615384615,0.0
+Stacking-5 (+FarSLIP) | tsvit-pheno (campeon US-040),0.7486144982078716,0.8494591346153846,0.0015699205105862424
+Blending-3 | tsvit-pheno (campeon US-040),0.7435767657371601,0.8629206730769231,0.0
+Blending-5 (+FarSLIP) | tsvit-pheno (campeon US-040),0.7318866666748006,0.859375,-0.011690099062359516
+Stacking-3 | tsvit-pheno-fullm (mejor individual),0.6358762094415268,0.7876802884615385,0.0
+Stacking-5 (+FarSLIP) | tsvit-pheno-fullm (mejor individual),0.6477072259176935,0.7935096153846154,0.01183101647616669
+Blending-3 | tsvit-pheno-fullm (mejor individual),0.5650850680536327,0.7697115384615385,0.0
+Blending-5 (+FarSLIP) | tsvit-pheno-fullm (mejor individual),0.5866313117045048,0.7863581730769231,0.0215462436508721

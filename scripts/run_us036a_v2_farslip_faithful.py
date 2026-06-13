@@ -421,6 +421,134 @@ def eval_per_class_v2(
     )
 
 
+@torch.no_grad()
+def eval_per_parcel(
+    student: torch.nn.Module,
+    val_dataset: object,
+    category_prototypes: torch.Tensor,
+    class_ids: list[int],
+    *,
+    device: torch.device | None = None,
+    batch_size: int = 256,
+    f1_well_resolved: float = _F1_WELL_RESOLVED,
+) -> FaithfulRunResult:
+    """Evaluate the student PER PARCEL (polygon-to-polygon), not per patch.
+
+    Twin of :func:`eval_per_class_v2` but at the parcel grain (US-036-b): each
+    item of ``val_dataset`` (a :class:`ml.farslip.parcel_crop_dataset.ParcelCropDataset`)
+    is a SINGLE parcel crop with its OWN true ``class_id``. The student CLS of the
+    crop is matched by cosine argmax against the 768-dim category prototype bank,
+    and compared to the parcel's real class (NOT the patch majority). This makes
+    rare parcels recoverable: a Soybean parcel sharing a patch with Meadow is no
+    longer forced to the patch label.
+
+    Args:
+        student: the trained CLIP vision student.
+        val_dataset: held-out ``ParcelCropDataset`` (one item per parcel).
+        category_prototypes: ``(C, 768)`` reprojected category bank.
+        class_ids: PASTIS class ids in the SAME row order as the bank.
+        device: torch device (defaults to the student's device).
+        batch_size: evaluation batch size in parcels.
+        f1_well_resolved: F1 threshold for "well-resolved".
+
+    Returns:
+        A :class:`FaithfulRunResult` with per-class and macro metrics at the
+        parcel grain.
+    """
+    n_categories = len(class_ids)
+    if category_prototypes.shape[0] != n_categories:
+        raise ValueError(
+            f"category_prototypes rows ({category_prototypes.shape[0]}) must equal "
+            f"len(class_ids) ({n_categories})."
+        )
+    if device is None:
+        device = next(student.parameters()).device
+    student_was_training = student.training
+    student.eval()
+
+    protos_n = torch.nn.functional.normalize(
+        category_prototypes.to(device=device, dtype=torch.float32), p=2, dim=-1
+    )
+    pastis_to_idx = {cid: idx for idx, cid in enumerate(class_ids)}
+
+    tp = np.zeros(n_categories, dtype=np.int64)
+    fp = np.zeros(n_categories, dtype=np.int64)
+    fn = np.zeros(n_categories, dtype=np.int64)
+    n_eval = 0
+
+    images_buf: list[torch.Tensor] = []
+    targets_buf: list[int] = []
+
+    def _flush() -> None:
+        nonlocal n_eval
+        if not images_buf:
+            return
+        batch = torch.stack(images_buf, dim=0).to(device=device, dtype=torch.float32)
+        out = student(pixel_values=batch, output_hidden_states=False)
+        cls = out.last_hidden_state[:, 0, :]
+        cls_n = torch.nn.functional.normalize(cls.float(), p=2, dim=-1)
+        preds = (cls_n @ protos_n.t()).argmax(dim=-1).cpu().numpy()
+        for pred, true in zip(preds, targets_buf, strict=True):
+            n_eval += 1
+            if pred == true:
+                tp[true] += 1
+            else:
+                fp[pred] += 1
+                fn[true] += 1
+        images_buf.clear()
+        targets_buf.clear()
+
+    for idx in range(len(val_dataset)):  # type: ignore[arg-type]
+        item = val_dataset[idx]  # type: ignore[index]
+        true_cat = int(item["class_id"])
+        if true_cat not in pastis_to_idx:
+            continue
+        images_buf.append(item["image"])
+        targets_buf.append(pastis_to_idx[true_cat])
+        if len(images_buf) >= batch_size:
+            _flush()
+    _flush()
+
+    if student_was_training:
+        student.train()
+
+    per_class_f1: dict[int, float] = {}
+    per_class_iou: dict[int, float] = {}
+    for idx, cid in enumerate(class_ids):
+        denom_f1 = 2 * tp[idx] + fp[idx] + fn[idx]
+        denom_iou = tp[idx] + fp[idx] + fn[idx]
+        per_class_f1[cid] = float(2 * tp[idx] / denom_f1) if denom_f1 > 0 else 0.0
+        per_class_iou[cid] = float(tp[idx] / denom_iou) if denom_iou > 0 else 0.0
+
+    macro_f1 = float(np.mean([per_class_f1[c] for c in class_ids])) if class_ids else 0.0
+    macro_iou = (
+        float(np.mean([per_class_iou[c] for c in class_ids])) if class_ids else 0.0
+    )
+    n_well = sum(1 for c in class_ids if per_class_f1[c] >= f1_well_resolved)
+
+    _log.info(
+        "eval_per_parcel_done",
+        n_categories=n_categories,
+        n_eval=n_eval,
+        macro_f1=round(macro_f1, 4),
+        macro_iou=round(macro_iou, 4),
+        n_classes_well_resolved=n_well,
+    )
+    return FaithfulRunResult(
+        supervision="region_category",
+        n_categories=n_categories,
+        class_ids=list(class_ids),
+        per_class_f1=per_class_f1,
+        per_class_iou=per_class_iou,
+        macro_f1=macro_f1,
+        macro_iou=macro_iou,
+        n_eval=n_eval,
+        n_classes_well_resolved=n_well,
+        best_ckpt=Path(),
+        mean_regions_per_patch=0.0,
+    )
+
+
 def _v1_vs_v2_table_rows(
     result: FaithfulRunResult,
     v1_per_class_f1: dict[int, float] | None,

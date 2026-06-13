@@ -1,0 +1,5 @@
+outs:
+- md5: 16758cb30ec2fc818bf0bed56e4f3a1a
+  size: 2060956
+  hash: md5
+  path: oof_parcel_tsvit-pheno-fullm_fold5.parquet
