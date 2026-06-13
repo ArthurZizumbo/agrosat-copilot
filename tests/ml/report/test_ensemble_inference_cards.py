@@ -28,7 +28,7 @@ def test_describe_phenology_high_late_vs_low_flat() -> None:
     t = np.linspace(0, 1, 20)
     high_late = 0.1 + 0.8 * t  # rises to a high late peak, big amplitude
     txt = _describe_phenology(high_late)
-    assert "alto" in txt and "tardio" in txt and "marcada" in txt
+    assert "alto" in txt and "tardío" in txt and "marcada" in txt
 
     flat_low = np.full(20, 0.15)  # no dynamics, low vigor
     txt2 = _describe_phenology(flat_low)

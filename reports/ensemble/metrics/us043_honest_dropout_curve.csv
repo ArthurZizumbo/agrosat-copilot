@@ -1,7 +1,8 @@
 k,retained_class_ids,dropped_names,macro_f1_fold5,accuracy_fold5,n_parcels_fold5
-18,"2,4,7,8,1,0,3,14,6,11,15,9,13,5,17,12,10,16","",0.7486144982078715,0.8494591346153846,16640
-16,"2,4,7,8,1,0,3,14,6,11,15,9,13,5,17,12",Winter durum wheat; Mixed cereal,0.7710092837566789,0.852411135968183,16092
-14,"2,4,7,8,1,0,3,14,6,11,15,9,13,5",Sorghum; Potatoes; Winter durum wheat; Mixed cereal,0.8194455624133158,0.8571247544826712,15783
-12,"2,4,7,8,1,0,3,14,6,11,15,9",Leguminous fodder; Spring barley; Sorghum; Potatoes; Winter durum wheat; Mixed cereal,0.8573402777004585,0.8676716917922948,14925
-10,"2,4,7,8,1,0,3,14,6,11",Orchard; Winter triticale; Leguminous fodder; Spring barley; Sorghum; Potatoes; Winter durum wheat; Mixed cereal,0.8904944796996057,0.8728169014084507,14200
-8,"2,4,7,8,1,0,3,14","Sunflower; Fruits, vegetables, flowers; Orchard; Winter triticale; Leguminous fodder; Spring barley; Sorghum; Potatoes; Winter durum wheat; Mixed cereal",0.9200946395128784,0.8810758019682969,13311
+18,"2,4,7,8,1,0,3,14,6,11,15,9,13,5,17,12,10,16","",0.7486,0.8495,16640
+16,"2,4,7,8,1,0,3,14,6,11,15,9,13,5,17,12",Winter durum wheat; Mixed cereal,0.771,0.8524,16092
+14,"2,4,7,8,1,0,3,14,6,11,15,9,13,5",Sorghum; Potatoes; Winter durum wheat; Mixed cereal,0.8194,0.8571,15783
+12,"2,4,7,8,1,0,3,14,6,11,15,9",Leguminous fodder; Spring barley; Sorghum; Potatoes; Winter durum wheat; Mixed cereal,0.8573,0.8677,14925
+10,"2,4,7,8,1,0,3,14,6,11",Orchard; Winter triticale; Leguminous fodder; Spring barley; Sorghum; Potatoes; Winter durum wheat; Mixed cereal,0.8905,0.8728,14200
+9,"2,4,7,8,1,0,3,14,6","Fruits, vegetables, flowers; Orchard; Winter triticale; Leguminous fodder; Spring barley; Sorghum; Potatoes; Winter durum wheat; Mixed cereal",0.9121,0.8796,13624
+8,"2,4,7,8,1,0,3,14","Sunflower; Fruits, vegetables, flowers; Orchard; Winter triticale; Leguminous fodder; Spring barley; Sorghum; Potatoes; Winter durum wheat; Mixed cereal",0.9201,0.8811,13311

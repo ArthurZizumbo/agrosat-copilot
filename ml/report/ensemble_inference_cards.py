@@ -96,7 +96,7 @@ def _describe_phenology(ndvi: np.ndarray, doy: np.ndarray | None = None) -> str:
         A one-line Spanish description of the phenological pattern.
     """
     if ndvi.size == 0:
-        return "sin observaciones NDVI utiles"
+        return "sin observaciones NDVI útiles"
     # Robust peak/amplitude: the p90/p10 ignore 1-2 residual cloud/shadow spikes
     # that the band-level filter cannot catch (e.g. thin haze), so the summary
     # reflects the real growth envelope, not a single noisy step.
@@ -106,12 +106,12 @@ def _describe_phenology(ndvi: np.ndarray, doy: np.ndarray | None = None) -> str:
     # Position the peak at the step closest to the robust peak value.
     peak_i = int(np.argmin(np.abs(ndvi - peak)))
     frac = peak_i / max(ndvi.size - 1, 1)
-    when = "temprano" if frac < 0.35 else ("tardio" if frac > 0.65 else "a media temporada")
+    when = "temprano" if frac < 0.35 else ("tardío" if frac > 0.65 else "a media temporada")
     vigor = "alto" if peak > 0.6 else ("moderado" if peak > 0.4 else "bajo")
     dyn = "marcada" if amp > 0.4 else ("moderada" if amp > 0.2 else "plana")
     return (
         f"pico de vigor {vigor} (NDVI {peak:.2f}) {when}; "
-        f"dinamica estacional {dyn} (amplitud {amp:.2f})"
+        f"dinámica estacional {dyn} (amplitud {amp:.2f})"
     )
 
 

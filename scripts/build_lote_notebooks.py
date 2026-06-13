@@ -4,14 +4,14 @@ Generates, from the real figure manifest produced by
 ``scripts/build_lote_figures.py``, three ordered notebooks under
 ``notebooks/final_model/``:
 
-- ``06a_segmentadores_us030_038_039.ipynb`` -- the 6 dense segmenters: real
+- ``06a_segmentadores.ipynb`` -- the 6 dense segmenters: real
   ``input | ground truth | prediction`` triptychs, confusion matrices and
   per-class IoU on the fold-5 held-out split (US-030/031/038/039).
-- ``06b_farslip_us032_037.ipynb`` -- the faithful FarSLIP: the Gemma captions
+- ``06b_farslip_parcela.ipynb`` -- the faithful FarSLIP: the Gemma captions
   that fed it, the real patch predictions vs ground truth, and the visual
   root-cause of the ~4-class ceiling (1-CLS-per-patch), plus FarSLIP vs
   AlphaEarth (US-032..037).
-- ``06c_ensambles_us040.ipynb`` -- the four base ensembles and the chosen one
+- ``06c_ensambles.ipynb`` -- the four base ensembles and the chosen one
   (US-040).
 
 The first notebook (06a) carries the full glossary and acronym table; 06b/06c
@@ -104,7 +104,7 @@ def _short_acronym_reminder() -> nbf.NotebookNode:
     return md(
         "## Recordatorio de siglas\n\n"
         "El glosario completo (todas las siglas + conceptos) esta en "
-        "[`06a_segmentadores_us030_038_039.ipynb`](06a_segmentadores_us030_038_039.ipynb). "
+        "[`06a_segmentadores.ipynb`](06a_segmentadores.ipynb). "
         "Aqui un recordatorio de las mas usadas:\n\n"
         "| Sigla | Que significa |\n|---|---|\n" + rows
     )
@@ -644,9 +644,9 @@ def main() -> None:
     """Write the three notebooks under ``notebooks/final_model/``."""
     NB_DIR.mkdir(parents=True, exist_ok=True)
     targets = {
-        "06a_segmentadores_us030_038_039.ipynb": build_06a(),
-        "06b_farslip_us032_037.ipynb": build_06b(),
-        "06c_ensambles_us040.ipynb": build_06c(),
+        "06a_segmentadores.ipynb": build_06a(),
+        "06b_farslip_parcela.ipynb": build_06b(),
+        "06c_ensambles.ipynb": build_06c(),
     }
     for name, nb in targets.items():
         path = NB_DIR / name

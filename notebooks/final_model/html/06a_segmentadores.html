@@ -7802,8 +7802,8 @@ a.anchor-link {
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h1 id="Lote-US-030-a-US-040-(1/3)-%E2%80%94-Segmentadores-densos">Lote US-030 a US-040 (1/3) — Segmentadores densos<a class="anchor-link" href="#Lote-US-030-a-US-040-(1/3)-%E2%80%94-Segmentadores-densos">¶</a></h1><p><strong>Que veras aqui (con datos REALES de PASTIS-R frances):</strong> para cada uno de los 6 segmentadores que el lote re-evaluo en el fold-5 reservado, el triplete <strong>entrada (RGB) | verdad de campo | prediccion</strong>, su matriz de confusion y su IoU por clase. Todo es inferencia real sobre PASTIS-R; no hay imagenes sinteticas ni mascaras de relleno.</p>
-<p>Cubre <strong>US-030</strong> (el harness que hace la comparacion justa), <strong>US-031</strong> (las probabilidades OOF que alimentan los ensambles), <strong>US-038</strong> (el TSViT Full-M, el mejor segmentador individual) y <strong>US-039</strong> (la ablacion fenologica honesta).</p>
+<h1 id="Segmentadores-densos-(1/3)">Segmentadores densos (1/3)<a class="anchor-link" href="#Segmentadores-densos-(1/3)">¶</a></h1><p><strong>Qué verás aquí (con datos REALES de PASTIS-R francés):</strong> para cada uno de los 6 segmentadores que esta fase reevaluó en el fold-5 reservado, el triplete <strong>entrada (RGB) | verdad de campo | predicción</strong>, su matriz de confusión y su IoU por clase. Todo es inferencia real sobre PASTIS-R; no hay imágenes sintéticas ni máscaras de relleno.</p>
+<p>Cubre el banco que hace la comparación justa, las probabilidades OOF que alimentan los ensambles, el TSViT Full-M (el mejor segmentador individual) y la ablación fenológica honesta.</p>
 </div>
 </div>
 </div>
@@ -7868,34 +7868,26 @@ figuras: C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\reports\lote_us030_040\fi
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="Glosario-y-siglas">Glosario y siglas<a class="anchor-link" href="#Glosario-y-siglas">¶</a></h2><p>Este lote usa terminologia tecnica de teledeteccion y aprendizaje profundo. Antes de las figuras, aqui se explican <strong>todas las siglas</strong> y los <strong>terminos dificiles</strong> que apareceran. Las notebooks 06b y 06c repiten un recordatorio breve y enlazan aqui para el detalle.</p>
+<h2 id="Glosario-y-siglas">Glosario y siglas<a class="anchor-link" href="#Glosario-y-siglas">¶</a></h2><p>Esta fase usa terminología técnica de teledetección y aprendizaje profundo. Antes de las figuras, aquí se explican <strong>todas las siglas</strong> y los <strong>términos difíciles</strong> que aparecerán. Las libretas 06b y 06c repiten un recordatorio breve y enlazan aquí para el detalle.</p>
 <h3 id="Siglas-y-abreviaturas">Siglas y abreviaturas<a class="anchor-link" href="#Siglas-y-abreviaturas">¶</a></h3><table>
 <thead>
 <tr>
 <th>Sigla</th>
-<th>Que significa</th>
+<th>Qué significa</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>US</code></td>
-<td>User Story (historia de usuario): una unidad de trabajo del plan SCRUM.</td>
-</tr>
-<tr>
-<td><code>EPIC</code></td>
-<td>Conjunto de User Stories relacionadas (aqui E5 modelos / E6 ensambles).</td>
-</tr>
-<tr>
 <td><code>PASTIS-R</code></td>
-<td>Panoptic Agricultural Satellite TIme Series (version Radar). Dataset publico frances de series Sentinel-1/2 con etiquetas de cultivo por pixel.</td>
+<td>Panoptic Agricultural Satellite TIme Series (versión Radar). Dataset público francés de series Sentinel-1/2 con etiquetas de cultivo por píxel.</td>
 </tr>
 <tr>
 <td><code>S2</code></td>
-<td>Sentinel-2: satelite optico de la ESA (10 bandas usadas aqui).</td>
+<td>Sentinel-2: satélite óptico de la ESA (10 bandas usadas aquí).</td>
 </tr>
 <tr>
 <td><code>S1</code></td>
-<td>Sentinel-1: satelite radar (SAR) de la ESA.</td>
+<td>Sentinel-1: satélite radar (SAR) de la ESA.</td>
 </tr>
 <tr>
 <td><code>RGB</code></td>
@@ -7903,11 +7895,11 @@ figuras: C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\reports\lote_us030_040\fi
 </tr>
 <tr>
 <td><code>NDVI</code></td>
-<td>Normalized Difference Vegetation Index: indice de vigor de la vegetacion calculado con la banda roja y la infrarroja cercana.</td>
+<td>Normalized Difference Vegetation Index: índice de vigor de la vegetación calculado con la banda roja y la infrarroja cercana.</td>
 </tr>
 <tr>
 <td><code>NIR</code></td>
-<td>Near-InfraRed (infrarrojo cercano): banda muy sensible a la vegetacion.</td>
+<td>Near-InfraRed (infrarrojo cercano): banda muy sensible a la vegetación.</td>
 </tr>
 <tr>
 <td><code>GT</code></td>
@@ -7915,39 +7907,39 @@ figuras: C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\reports\lote_us030_040\fi
 </tr>
 <tr>
 <td><code>CLS</code></td>
-<td>Token de Clasificacion (Class token): el vector resumen de toda la imagen que produce un Vision Transformer.</td>
+<td>Token de Clasificación (Class token): el vector resumen de toda la imagen que produce un Vision Transformer.</td>
 </tr>
 <tr>
 <td><code>mIoU</code></td>
-<td>mean Intersection over Union: promedio del solapamiento entre prediccion y verdad por clase (0 = nada, 1 = perfecto). Metrica estandar de segmentacion.</td>
+<td>mean Intersection over Union: promedio del solapamiento entre predicción y verdad por clase (0 = nada, 1 = perfecto). Métrica estándar de segmentación.</td>
 </tr>
 <tr>
 <td><code>IoU</code></td>
-<td>Intersection over Union: solapamiento prediccion/verdad de una sola clase.</td>
+<td>Intersection over Union: solapamiento predicción/verdad de una sola clase.</td>
 </tr>
 <tr>
 <td><code>F1-macro</code></td>
-<td>Promedio simple del F1 (media armonica de precision y exhaustividad) sobre todas las clases; trata igual a clases raras y comunes.</td>
+<td>Promedio simple del F1 (media armónica de precisión y exhaustividad) sobre todas las clases; trata igual a clases raras y comunes.</td>
 </tr>
 <tr>
 <td><code>OOF</code></td>
-<td>Out-Of-Fold: predicciones hechas sobre datos que el modelo NO vio al entrenar (evita el auto-engano / fuga de informacion).</td>
+<td>Out-Of-Fold: predicciones hechas sobre datos que el modelo NO vio al entrenar (evita el autoengaño / fuga de información).</td>
 </tr>
 <tr>
 <td><code>CV</code></td>
-<td>Cross-Validation (validacion cruzada): partir el dato en folds para evaluar.</td>
+<td>Cross-Validation (validación cruzada): partir el dato en folds para evaluar.</td>
 </tr>
 <tr>
 <td><code>fold</code></td>
-<td>Particion del dataset. PASTIS trae 5 folds espacialmente separados.</td>
+<td>Partición del dataset. PASTIS trae 5 folds espacialmente separados.</td>
 </tr>
 <tr>
 <td><code>held-out</code></td>
-<td>Fold reservado, nunca usado en entrenamiento, para la evaluacion final.</td>
+<td>Fold reservado, nunca usado en entrenamiento, para la evaluación final.</td>
 </tr>
 <tr>
 <td><code>FM</code></td>
-<td>Foundation Model (modelo fundacional): modelo grande pre-entrenado y reusable.</td>
+<td>Foundation Model (modelo fundacional): modelo grande preentrenado y reusable.</td>
 </tr>
 <tr>
 <td><code>VLM</code></td>
@@ -7959,19 +7951,19 @@ figuras: C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\reports\lote_us030_040\fi
 </tr>
 <tr>
 <td><code>MPCL</code></td>
-<td>Multi-Positive Contrastive Loss: perdida contrastiva que agrupa varios ejemplos positivos de la misma categoria (nucleo del FarSLIP fiel).</td>
+<td>Multi-Positive Contrastive Loss: pérdida contrastiva que agrupa varios ejemplos positivos de la misma categoría (núcleo del FarSLIP fiel).</td>
 </tr>
 <tr>
 <td><code>L_glo / L_loc</code></td>
-<td>Perdidas global (imagen&lt;-&gt;caption) y local (region&lt;-&gt;categoria) del paper FarSLIP.</td>
+<td>Pérdidas global (imagen&lt;-&gt;caption) y local (región&lt;-&gt;categoría) del paper FarSLIP.</td>
 </tr>
 <tr>
 <td><code>LoRA</code></td>
-<td>Low-Rank Adaptation: tecnica para afinar modelos grandes con pocos pesos.</td>
+<td>Low-Rank Adaptation: técnica para afinar modelos grandes con pocos pesos.</td>
 </tr>
 <tr>
 <td><code>H100</code></td>
-<td>GPU NVIDIA H100 (96 GB) usada para el entrenamiento real del lote.</td>
+<td>GPU NVIDIA H100 (96 GB) usada para el entrenamiento real.</td>
 </tr>
 <tr>
 <td><code>DVC</code></td>
@@ -7983,49 +7975,49 @@ figuras: C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\reports\lote_us030_040\fi
 </tr>
 <tr>
 <td><code>MLflow</code></td>
-<td>Herramienta de tracking de experimentos (metricas, parametros, lineage).</td>
+<td>Herramienta de tracking de experimentos (métricas, parámetros, lineage).</td>
 </tr>
 <tr>
 <td><code>CM</code></td>
-<td>Confusion Matrix (matriz de confusion): tabla verdad vs prediccion por clase.</td>
+<td>Confusion Matrix (matriz de confusión): tabla verdad vs predicción por clase.</td>
 </tr>
 <tr>
 <td><code>T_MIN</code></td>
-<td>Numero minimo de fechas de una serie temporal en PASTIS (= 37).</td>
+<td>Número mínimo de fechas de una serie temporal en PASTIS (= 37).</td>
 </tr>
 <tr>
 <td><code>Full-M</code></td>
-<td>Configuracion 'Medium' completa del TSViT (dim 192, 6+6 capas), la del paper Tarasiou 2023, habilitada por la H100.</td>
+<td>Configuración 'Medium' completa del TSViT (dim 192, 6+6 capas), la del paper Tarasiou 2023, habilitada por la H100.</td>
 </tr>
 </tbody>
 </table>
 <h3 id="Glosario-de-conceptos">Glosario de conceptos<a class="anchor-link" href="#Glosario-de-conceptos">¶</a></h3><table>
 <thead>
 <tr>
-<th>Termino</th>
-<th>Explicacion</th>
+<th>Término</th>
+<th>Explicación</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>Segmentacion semantica</strong></td>
-<td>Asignar una clase de cultivo a CADA pixel de la imagen (no una etiqueta por imagen). El resultado es un mapa coloreado del mismo tamano que la entrada.</td>
+<td><strong>Segmentación semántica</strong></td>
+<td>Asignar una clase de cultivo a CADA píxel de la imagen (no una etiqueta por imagen). El resultado es un mapa coloreado del mismo tamaño que la entrada.</td>
 </tr>
 <tr>
-<td><strong>Clasificacion por patch</strong></td>
-<td>Asignar UNA sola etiqueta a todo el recorte (patch). Es lo que hace FarSLIP: mas debil que la segmentacion porque no distingue parcelas dentro del patch.</td>
+<td><strong>Clasificación por patch</strong></td>
+<td>Asignar UNA sola etiqueta a todo el recorte (patch). Es lo que hace FarSLIP: más débil que la segmentación porque no distingue parcelas dentro del patch.</td>
 </tr>
 <tr>
-<td><strong>Parcela / region</strong></td>
-<td>Una porcion contigua de terreno con un solo cultivo (monocultivo). Un patch de PASTIS contiene muchas parcelas de distintos cultivos.</td>
+<td><strong>Parcela / región</strong></td>
+<td>Una porción contigua de terreno con un solo cultivo (monocultivo). Un patch de PASTIS contiene muchas parcelas de distintos cultivos.</td>
 </tr>
 <tr>
 <td><strong>Patch</strong></td>
-<td>Recorte cuadrado de 128x128 pixeles del satelite. La unidad basica del dataset.</td>
+<td>Recorte cuadrado de 128x128 píxeles del satélite. La unidad básica del dataset.</td>
 </tr>
 <tr>
 <td><strong>Embedding</strong></td>
-<td>Vector numerico que resume el contenido de una imagen o una parcela; modelos parecidos quedan cerca en ese espacio.</td>
+<td>Vector numérico que resume el contenido de una imagen o una parcela; modelos parecidos quedan cerca en ese espacio.</td>
 </tr>
 <tr>
 <td><strong>AlphaEarth</strong></td>
@@ -8033,31 +8025,31 @@ figuras: C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\reports\lote_us030_040\fi
 </tr>
 <tr>
 <td><strong>FarSLIP fiel</strong></td>
-<td>Reimplementacion fiel al paper (Li et al. 2025) del afinado de un modelo CLIP usando pares region-categoria y captions; busca alinear imagen y texto agricola.</td>
+<td>Reimplementación fiel al paper (Li et al. 2025) del afinado de un modelo CLIP usando pares región-categoría y captions; busca alinear imagen y texto agrícola.</td>
 </tr>
 <tr>
 <td><strong>Caption</strong></td>
-<td>Descripcion en lenguaje natural de la imagen, generada aqui por Gemma 4 multimodal, que alimenta la perdida global L_glo del FarSLIP.</td>
+<td>Descripción en lenguaje natural de la imagen, generada aquí por Gemma 4 multimodal, que alimenta la pérdida global L_glo del FarSLIP.</td>
 </tr>
 <tr>
 <td><strong>Ensamble</strong></td>
-<td>Combinacion de varios modelos para superar al mejor individual (votacion, bagging, stacking, blending).</td>
+<td>Combinación de varios modelos para superar al mejor individual (voting, bagging, stacking, blending).</td>
 </tr>
 <tr>
-<td><strong>Fuga de informacion (leakage)</strong></td>
-<td>Cuando el modelo ve, directa o indirectamente, datos de evaluacion al entrenar; infla las metricas y las vuelve mentirosas. Todo el lote la evita por diseno.</td>
+<td><strong>Fuga de información (leakage)</strong></td>
+<td>Cuando el modelo ve, directa o indirectamente, datos de evaluación al entrenar; infla las métricas y las vuelve mentirosas. Todo el trabajo la evita por diseño.</td>
 </tr>
 <tr>
 <td><strong>Tabla apples-to-apples</strong></td>
-<td>Comparacion en condiciones identicas (mismo fold, misma metrica, mismo esquema de clases) para que los numeros sean realmente comparables.</td>
+<td>Comparación en condiciones idénticas (mismo fold, misma métrica, mismo esquema de clases) para que los números sean realmente comparables.</td>
 </tr>
 <tr>
 <td><strong>Techo del dataset</strong></td>
-<td>El maximo que cualquier modelo puede alcanzar dado el dato disponible; en PASTIS con FarSLIP resultan ~4 clases bien resueltas, no por fallo del metodo sino por el limite del dato.</td>
+<td>El máximo que cualquier modelo puede alcanzar dado el dato disponible; en PASTIS con FarSLIP resultan ~4 clases bien resueltas, no por fallo del método sino por el límite del dato.</td>
 </tr>
 <tr>
 <td><strong>1-CLS-por-patch</strong></td>
-<td>Limitacion clave del FarSLIP: como cada patch produce UN solo vector resumen, todas las parcelas del patch reciben la misma prediccion; una parcela rara dentro de un patch de pradera es irrecuperable.</td>
+<td>Limitación clave del FarSLIP: como cada patch produce UN solo vector resumen, todas las parcelas del patch reciben la misma predicción; una parcela rara dentro de un patch de pradera es irrecuperable.</td>
 </tr>
 </tbody>
 </table>
@@ -8071,11 +8063,11 @@ figuras: C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\reports\lote_us030_040\fi
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="User-Stories-cubiertas-en-esta-notebook">User Stories cubiertas en esta notebook<a class="anchor-link" href="#User-Stories-cubiertas-en-esta-notebook">¶</a></h2><ul>
-<li><strong>US-030</strong> — Harness unico de re-score de los 6 segmentadores en fold-5 held-out (condiciones apples-to-apples, 18 clases).</li>
-<li><strong>US-031</strong> — Volcado de probabilidades OOF (softmax por pixel) de los 6 segmentadores en fold-5, insumo de los ensambles.</li>
-<li><strong>US-038</strong> — Re-entreno TSViT con la config Full-M completa en H100 (val_miou fold-4 0.699; mejor segmentador individual).</li>
-<li><strong>US-039</strong> — Re-entreno TSViT-pheno Full-M (ablacion honesta): la rama fenologica no aporta margen en supervisado full-label (saturacion).</li>
+<h2 id="Qu%C3%A9-cubre-esta-libreta">Qué cubre esta libreta<a class="anchor-link" href="#Qu%C3%A9-cubre-esta-libreta">¶</a></h2><ul>
+<li><strong>Banco de comparación</strong> — banco único de re-score de los 6 segmentadores en fold-5 held-out (condiciones apples-to-apples, 18 clases).</li>
+<li><strong>Probabilidades OOF</strong> — volcado de probabilidades OOF (softmax por píxel) de los 6 segmentadores en fold-5, insumo de los ensambles.</li>
+<li><strong>El mejor segmentador temporal base</strong> — reentreno TSViT con la configuración Full-M completa en H100 (val_miou fold-4 0.699; mejor segmentador individual).</li>
+<li><strong>La variante con rama fenológica</strong> — reentreno TSViT-pheno Full-M (ablación honesta): la rama fenológica no aporta margen en supervisado full-label (saturación).</li>
 </ul>
 </div>
 </div>
@@ -8087,13 +8079,13 @@ figuras: C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\reports\lote_us030_040\fi
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="Como-leer-los-tripletes">Como leer los tripletes<a class="anchor-link" href="#Como-leer-los-tripletes">¶</a></h2><p>Cada figura tiene tres paneles del MISMO patch del fold-5 reservado:</p>
+<h2 id="C%C3%B3mo-leer-los-tripletes">Cómo leer los tripletes<a class="anchor-link" href="#C%C3%B3mo-leer-los-tripletes">¶</a></h2><p>Cada figura tiene tres paneles del MISMO patch del fold-5 reservado:</p>
 <ol>
-<li><strong>Entrada (RGB)</strong>: la imagen Sentinel-2 a color real (composicion de la serie temporal).</li>
-<li><strong>Verdad de campo (GT)</strong>: el mapa de cultivos correcto, pixel a pixel.</li>
-<li><strong>Prediccion</strong>: lo que el modelo predijo. Comparar panel 2 vs 3 muestra donde acierta y donde confunde.</li>
+<li><strong>Entrada (RGB)</strong>: la imagen Sentinel-2 a color real (composición de la serie temporal).</li>
+<li><strong>Verdad de campo (GT)</strong>: el mapa de cultivos correcto, píxel a píxel.</li>
+<li><strong>Predicción</strong>: lo que el modelo predijo. Comparar panel 2 vs 3 muestra dónde acierta y dónde confunde.</li>
 </ol>
-<p>Los colores son las 18 clases de cultivo de PASTIS (misma paleta en GT y prediccion). El gris/neutro es fondo/void (se ignora en la metrica).</p>
+<p>Los colores son las 18 clases de cultivo de PASTIS (misma paleta en GT y predicción). El gris/neutro es fondo/void (se ignora en la métrica).</p>
 </div>
 </div>
 </div>
@@ -8104,7 +8096,7 @@ figuras: C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\reports\lote_us030_040\fi
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="Tabla-comparativa-real-(fold-5-held-out,-18-clases)">Tabla comparativa real (fold-5 held-out, 18 clases)<a class="anchor-link" href="#Tabla-comparativa-real-(fold-5-held-out,-18-clases)">¶</a></h2><p>Esta es la tabla que produce el harness US-030: la metrica honesta de cada segmentador sobre el fold que NINGUNO vio al entrenar.</p>
+<h2 id="Tabla-comparativa-real-(fold-5-held-out,-18-clases)">Tabla comparativa real (fold-5 held-out, 18 clases)<a class="anchor-link" href="#Tabla-comparativa-real-(fold-5-held-out,-18-clases)">¶</a></h2><p>Esta es la tabla que produce el banco de comparación: la métrica honesta de cada segmentador sobre el fold que NINGUNO vio al entrenar.</p>
 </div>
 </div>
 </div>
@@ -8167,7 +8159,7 @@ figuras: C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\reports\lote_us030_040\fi
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="Predicciones-reales-por-modelo">Predicciones reales por modelo<a class="anchor-link" href="#Predicciones-reales-por-modelo">¶</a></h2><p>Para cada segmentador: primero sus tripletes (entrada/verdad/prediccion) sobre patches reales del fold-5, luego su matriz de confusion (que clases confunde con cuales) y su IoU por clase.</p>
+<h2 id="Predicciones-reales-por-modelo">Predicciones reales por modelo<a class="anchor-link" href="#Predicciones-reales-por-modelo">¶</a></h2><p>Para cada segmentador: primero sus tripletes (entrada/verdad/predicción) sobre patches reales del fold-5, luego su matriz de confusión (qué clases confunde con cuáles) y su IoU por clase.</p>
 </div>
 </div>
 </div>
@@ -8652,7 +8644,7 @@ figuras: C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\reports\lote_us030_040\fi
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="US-031-%E2%80%94-Volcado-de-probabilidades-OOF-(insumo-de-los-ensambles)">US-031 — Volcado de probabilidades OOF (insumo de los ensambles)<a class="anchor-link" href="#US-031-%E2%80%94-Volcado-de-probabilidades-OOF-(insumo-de-los-ensambles)">¶</a></h2><p>Antes de los ensambles, US-031 guardo para cada uno de los 6 modelos la <strong>probabilidad por pixel</strong> (post-softmax) sobre el fold-5 reservado. Son predicciones OOF (sobre datos que el modelo no vio al entrenar), la materia prima honesta que la notebook 06c combina. La figura muestra cuantos patches del fold-5 quedaron con probabilidades validas por modelo.</p>
+<h2 id="Volcado-de-probabilidades-OOF-(insumo-de-los-ensambles)">Volcado de probabilidades OOF (insumo de los ensambles)<a class="anchor-link" href="#Volcado-de-probabilidades-OOF-(insumo-de-los-ensambles)">¶</a></h2><p>Antes de los ensambles, la fase de probabilidades por parcela guardó para cada uno de los 6 modelos la <strong>probabilidad por píxel</strong> (post-softmax) sobre el fold-5 reservado. Son predicciones OOF (sobre datos que el modelo no vio al entrenar), la materia prima honesta que la libreta 06c combina. La figura muestra cuántos patches del fold-5 quedaron con probabilidades válidas por modelo.</p>
 </div>
 </div>
 </div>
@@ -8708,11 +8700,11 @@ figuras: C:\Users\arthu\Proyectos\MNA\agro_sat_copilot\reports\lote_us030_040\fi
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
 <h2 id="Lectura-de-los-resultados">Lectura de los resultados<a class="anchor-link" href="#Lectura-de-los-resultados">¶</a></h2><ul>
-<li>Los <strong>modelos temporales</strong> (TSViT Full-M, U-TAE) ganan a los 2D porque leen la evolucion del cultivo a lo largo del ano (la fenologia), no una sola foto.</li>
-<li>En la matriz de confusion se ve que las <strong>clases comunes</strong> (pradera, trigo, maiz, vid) se resuelven bien y las <strong>raras</strong> se confunden con la clase dominante de su zona: es el efecto del fuerte desbalance de PASTIS.</li>
-<li><strong>US-039</strong> (TSViT-pheno) NO mejora a US-038: en aprendizaje supervisado con etiqueta densa la rama fenologica contrastiva ya no aporta margen (el modelo ya satura ~70% de mIoU, el techo conocido de PASTIS). Es una ablacion honesta: el valor es la conclusion, no ganar un decimal.</li>
+<li>Los <strong>modelos temporales</strong> (TSViT Full-M, U-TAE) ganan a los 2D porque leen la evolución del cultivo a lo largo del año (la fenología), no una sola foto.</li>
+<li>En la matriz de confusión se ve que las <strong>clases comunes</strong> (pradera, trigo, maíz, vid) se resuelven bien y las <strong>raras</strong> se confunden con la clase dominante de su zona: es el efecto del fuerte desbalance de PASTIS.</li>
+<li>La <strong>variante con rama fenológica</strong> NO mejora al mejor segmentador temporal base: en aprendizaje supervisado con etiqueta densa la rama fenológica contrastiva ya no aporta margen (el modelo ya satura ~70% de mIoU, el techo conocido de PASTIS). Es una ablación honesta: el valor es la conclusión, no ganar un decimal.</li>
 </ul>
-<h3 id="Lo-que-sigue">Lo que sigue<a class="anchor-link" href="#Lo-que-sigue">¶</a></h3><p>Estas probabilidades por pixel (US-031) son la materia prima de los ensambles de la notebook 06c.</p>
+<h3 id="Lo-que-sigue">Lo que sigue<a class="anchor-link" href="#Lo-que-sigue">¶</a></h3><p>Estas probabilidades por píxel son la materia prima de los ensambles de la libreta 06c.</p>
 </div>
 </div>
 </div>
