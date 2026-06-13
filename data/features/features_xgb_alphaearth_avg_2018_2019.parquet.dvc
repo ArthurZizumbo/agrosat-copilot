@@ -1,0 +1,5 @@
+outs:
+- md5: 643c1daaa52144435b50cc7294a61755
+  size: 123928994
+  hash: md5
+  path: features_xgb_alphaearth_avg_2018_2019.parquet

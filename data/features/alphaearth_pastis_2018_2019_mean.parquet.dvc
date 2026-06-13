@@ -1,0 +1,5 @@
+outs:
+- md5: 57fa1eac75fc2b901a7f0fb69498f8ce
+  size: 41726170
+  hash: md5
+  path: alphaearth_pastis_2018_2019_mean.parquet
