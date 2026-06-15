@@ -18,8 +18,9 @@ import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.app.api import health
+from backend.app.api import aois, chat, health, llm, sessions
 from backend.app.core.config import get_settings
+from backend.app.core.db import dispose_engine
 from backend.app.core.logging import configure_logging
 
 
@@ -31,6 +32,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger = structlog.get_logger()
     logger.info("startup", env=settings.env, region=settings.gcp_region)
     yield
+    await dispose_engine()
     logger.info("shutdown")
 
 
@@ -61,6 +63,10 @@ def create_app() -> FastAPI:
         expose_headers=["X-Request-ID", "X-RateLimit-Remaining", "X-RateLimit-Reset"],
     )
     app.include_router(health.router)
+    app.include_router(sessions.router)
+    app.include_router(chat.router)
+    app.include_router(aois.router)
+    app.include_router(llm.router)
     return app
 
 

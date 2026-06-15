@@ -1,12 +1,164 @@
+/* Google Fonts @import must precede all other rules (CSS spec). */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
 @import "tailwindcss";
+@import "@nuxt/ui-pro";
+
+/* ---------------------------------------------------------------------------
+ * AgroSatCopilot design system — "Data-Dense Dashboard"
+ * Tailwind v4 @theme tokens (light) + .dark overrides. WCAG AA.
+ *
+ * Type: Inter (UI) + JetBrains Mono (numbers/IDs). Numbers must carry the
+ * `tabular-nums` utility wherever they appear (NDVI, hectares, coords, ids).
+ * Elevation is deliberately subtle: thin borders, minimal shadows.
+ * ------------------------------------------------------------------------- */
 
 @theme {
+  /* --- Brand: agro green scale (50..900) ------------------------------- */
+  --color-agro-50: #f0fdf4;
+  --color-agro-100: #dcfce7;
+  --color-agro-200: #bbf7d0;
+  --color-agro-300: #86efac;
+  --color-agro-400: #4ade80;
+  --color-agro-500: #22c55e;
+  --color-agro-600: #16a34a;
+  --color-agro-700: #15803d;
+  --color-agro-800: #166534;
+  --color-agro-900: #14532d;
+
+  /* Primary alias (kept for back-compat with `agrosat-primary`). */
   --color-agrosat-primary: #15803d;
   --color-agrosat-secondary: #0891b2;
-  --color-agrosat-accent: #f59e0b;
+  --color-agrosat-accent: #d97706;
+  --color-agrosat-on-primary: #ffffff;
+
+  /* --- Amber accent / CTA scale --------------------------------------- */
+  --color-amber-cta-50: #fffbeb;
+  --color-amber-cta-100: #fef3c7;
+  --color-amber-cta-300: #fcd34d;
+  --color-amber-cta-500: #f59e0b;
+  --color-amber-cta-600: #d97706;
+  --color-amber-cta-700: #b45309;
+
+  /* --- Semantic state -------------------------------------------------- */
+  --color-state-success: #16a34a;
+  --color-state-warning: #d97706;
+  --color-state-danger: #dc2626;
+  --color-state-info: #0891b2;
+
+  /* --- Neutral surfaces (LIGHT). Dark overrides live in .dark below. --- */
+  --color-bg: #f8faf8;
+  --color-surface: #ffffff;
+  --color-surface-2: #f1f5f2;
+  --color-elevated: #ffffff;
+  --color-border: #e2e8e3;
+  --color-border-strong: #cbd5cd;
+  --color-fg: #0f1c14;
+  --color-muted-fg: #5b6b60;
+
+  /* --- Typography ------------------------------------------------------ */
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+
+  /* --- Radius scale ---------------------------------------------------- */
+  --radius-xs: 0.25rem;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+
+  /* --- Subtle elevation ------------------------------------------------ */
+  --shadow-panel: 0 1px 2px 0 rgb(15 28 20 / 0.04);
+  --shadow-pop: 0 4px 16px -4px rgb(15 28 20 / 0.12);
+
+  /* Nuxt UI primary maps to agro green. */
+  --ui-primary: var(--color-agro-700);
+}
+
+/* Dark surfaces: desaturated tones, NOT a pure inversion. */
+.dark {
+  --color-bg: #0d1310;
+  --color-surface: #141b16;
+  --color-surface-2: #1b231d;
+  --color-elevated: #1f2922;
+  --color-border: #283128;
+  --color-border-strong: #38453a;
+  --color-fg: #e7efe9;
+  --color-muted-fg: #93a398;
+
+  --color-agrosat-primary: #22c55e;
+  --ui-primary: var(--color-agro-500);
+
+  --shadow-panel: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+  --shadow-pop: 0 8px 24px -6px rgb(0 0 0 / 0.55);
 }
 
 :root {
   color-scheme: light dark;
+}
+
+html,
+body,
+#__nuxt {
+  height: 100%;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Numeric cells stay aligned. */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* Visible keyboard focus on every interactive surface. */
+:where(button, a, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-agrosat-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+/* Honour reduced-motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* MapLibre controls restyled to the design system. */
+.maplibregl-ctrl-group {
+  background: var(--color-surface) !important;
+  border: 1px solid var(--color-border) !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--shadow-panel) !important;
+}
+.maplibregl-ctrl-group button {
+  width: 30px !important;
+  height: 30px !important;
+}
+.maplibregl-ctrl-group button + button {
+  border-top: 1px solid var(--color-border) !important;
+}
+.dark .maplibregl-ctrl button .maplibregl-ctrl-icon {
+  filter: invert(0.92) hue-rotate(180deg) brightness(1.1);
+}
+.maplibregl-popup-content {
+  background: var(--color-elevated) !important;
+  color: var(--color-fg) !important;
+  border: 1px solid var(--color-border) !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--shadow-pop) !important;
+  font-family: var(--font-sans) !important;
+}
+.dark .maplibregl-popup-tip {
+  border-top-color: var(--color-elevated) !important;
+  border-bottom-color: var(--color-elevated) !important;
 }

@@ -88,6 +88,10 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:3000"
     nuxt_public_api_url: str = "http://localhost:8000"
 
+    # Demo identity (Be My Eyes MVP): until Clerk auth lands (US-051) sessions are
+    # owned by a single configurable demo user. Ownership checks still run.
+    demo_user_id: str = "demo@agrosat.dev"
+
     # Observability
     prometheus_pushgateway: str = ""
     sentry_dsn: str = ""

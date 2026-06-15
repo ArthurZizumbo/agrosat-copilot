@@ -1,12 +1,14 @@
 <script setup lang="ts">
+// Main screen. The map fills the content slot of the dashboard shell. The map's
+// imperative API (flyToDemoAoi / locateParcel) is registered by MapCanvas into
+// the "mapCanvas" ref PROVIDED BY THE LAYOUT, so the sidebar and FindingCards
+// can drive the map. The page itself only renders the map.
+
 const { t } = useI18n();
+
+useHead({ title: t("app.name") });
 </script>
 
 <template>
-  <main class="min-h-screen flex items-center justify-center p-8">
-    <section class="max-w-2xl text-center space-y-4">
-      <h1 class="text-4xl font-bold">{{ t("app.name") }}</h1>
-      <p class="text-lg text-gray-600 dark:text-gray-400">{{ t("app.tagline") }}</p>
-    </section>
-  </main>
+  <MapCanvas />
 </template>

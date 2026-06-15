@@ -7,16 +7,97 @@
     "home": "Inicio",
     "chat": "Chat",
     "map": "Mapa",
-    "settings": "Ajustes"
+    "settings": "Ajustes",
+    "tools": "Herramientas",
+    "language": "Idioma",
+    "toggle_tools": "Abrir o cerrar las herramientas",
+    "toggle_theme": "Cambiar tema claro/oscuro",
+    "collapse": "Contraer la barra lateral"
+  },
+  "basemap": {
+    "label": "Mapa base",
+    "satellite": "Satélite",
+    "streets": "Mapa",
+    "topo": "Topográfico"
+  },
+  "tools": {
+    "title": "Herramientas",
+    "draw": "Seleccionar área",
+    "demo": "Área demo (Toscana)",
+    "clear": "Limpiar selección",
+    "draw_hint": "Arrastra sobre el mapa para dibujar un área",
+    "cancel": "Cancelar"
+  },
+  "layers": {
+    "title": "Capas",
+    "parcels": "Parcelas"
+  },
+  "aoi": {
+    "title": "Áreas de interés",
+    "empty": "Aún no hay áreas. Dibuja una en el mapa.",
+    "refresh": "Actualizar áreas",
+    "drawn_label": "Área dibujada"
+  },
+  "area": {
+    "active": "Área: {area}",
+    "none": "Sin área seleccionada"
+  },
+  "ws": {
+    "live": "En vivo",
+    "idle": "Inactivo",
+    "connecting": "Conectando...",
+    "error": "Error de conexión"
+  },
+  "status": {
+    "label": "Barra de estado",
+    "parcels": "parcelas"
   },
   "chat": {
     "placeholder": "Pregunta algo sobre tus cultivos...",
     "send": "Enviar",
     "thinking": "Razonando...",
-    "switch_llm": "Cambiar LLM"
+    "switch_llm": "Cambiar LLM",
+    "panel_label": "Panel de conversación",
+    "assistant_title": "Asistente",
+    "empty": "Inicia la conversación preguntando algo sobre tus cultivos.",
+    "empty_title": "¿En qué puedo ayudarte?",
+    "you": "Tú",
+    "assistant": "Asistente",
+    "plan": "Plan",
+    "tools": "Herramientas",
+    "tool_running": "en curso",
+    "tool_ok": "completado",
+    "tool_failed": "fallido",
+    "citations": "Citas",
+    "parcel": "Parcela",
+    "input_label": "Mensaje para el copiloto",
+    "findings": "Resultados",
+    "view_on_map": "Ver en el mapa",
+    "suggestions": "Sugerencias",
+    "suggest_1": "¿Qué cultivos hay en esta área?",
+    "suggest_2": "Muéstrame el NDVI de las parcelas",
+    "suggest_3": "Resume el estado de los cultivos",
+    "see_example": "Ver ejemplo",
+    "preview_badge": "Vista previa de ejemplo (datos demostrativos)",
+    "preview_answer": "Ejemplo: en esta área se detectaron 3 parcelas. Predominan viñedo y olivar, con muy buen vigor vegetativo (NDVI medio 0,59).",
+    "close": "Cerrar chat",
+    "toggle": "Abrir o cerrar el chat",
+    "expand": "Expandir o reducir el chat"
+  },
+  "map": {
+    "label": "Mapa de parcelas",
+    "empty": "Aún no hay parcelas. Selecciona un área o haz una pregunta.",
+    "crop": "Cultivo",
+    "crop_unknown": "Cultivo desconocido",
+    "confidence": "Confianza",
+    "ndvi": "NDVI",
+    "area": "Área",
+    "source": "Fuente",
+    "legend": "Leyenda de cultivos",
+    "coords": "Coordenadas"
   },
   "llm": {
-    "gemini": "Gemini 3.1 Pro (nube)",
+    "gemini": "Gemini 2.5 Pro (nube)",
     "qwen": "Qwen3.5-35B-A3B (on-premise)"
   },
   "errors": {
