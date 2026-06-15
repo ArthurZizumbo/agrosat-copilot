@@ -17,7 +17,7 @@ Design notes:
 
 from __future__ import annotations
 
-from typing import Annotated, Literal, Union
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -148,13 +148,11 @@ class ErrorEvent(BaseModel):
 # tag, so ``AgentEvent`` parsers (e.g. ``TypeAdapter(AgentEvent)``) reconstruct
 # the right subclass from a serialised SSE payload.
 AgentEvent = Annotated[
-    Union[
-        ToolCallEvent,
-        ToolResultEvent,
-        TextDeltaEvent,
-        PerceiverObservationEvent,
-        DoneEvent,
-        ErrorEvent,
-    ],
+    ToolCallEvent
+    | ToolResultEvent
+    | TextDeltaEvent
+    | PerceiverObservationEvent
+    | DoneEvent
+    | ErrorEvent,
     Field(discriminator="type"),
 ]
