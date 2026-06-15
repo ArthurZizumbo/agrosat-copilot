@@ -140,28 +140,53 @@ class GeminiBackend(LLMBackend):
         self,
         model: str = _DEFAULT_GEMINI_MODEL,
         *,
+        api_key: str = "",
+        use_vertexai: bool = False,
+        project: str = "",
+        location: str = "",
         client: genai.Client | None = None,
     ) -> None:
         """Initialise the Gemini backend.
 
         Args:
             model: Gemini model id (e.g. ``gemini-2.5-pro``/``gemini-2.5-flash``).
+            api_key: Public GenAI API key. Passed explicitly because the project
+                stores it in ``.env.local`` (read by ``Settings``), which is NOT
+                exported to ``os.environ`` for the SDK to pick up automatically.
+            use_vertexai: Use Vertex AI instead of the public API.
+            project: GCP project id (Vertex AI mode).
+            location: Vertex AI location.
             client: Optional pre-built ``genai.Client`` (injected in tests). When
-                ``None`` a client is created lazily on first use from the ambient
-                credentials.
+                ``None`` a client is created lazily on first use.
         """
         self.model = model
+        self._api_key = api_key
+        self._use_vertexai = use_vertexai
+        self._project = project
+        self._location = location
         self._client = client
 
     def _get_client(self) -> genai.Client:
-        """Return the ``genai.Client``, building it lazily from the environment.
+        """Return the ``genai.Client``, building it lazily from the configuration.
+
+        Uses Vertex AI when ``use_vertexai`` is set (with project/location), or
+        the public GenAI API with the explicit ``api_key``. Falls back to the
+        ambient credentials only when neither was provided.
 
         Returns:
-            The cached or newly created client (Vertex AI or public GenAI API,
-            selected by the ambient ``GOOGLE_GENAI_USE_VERTEXAI`` / API key).
+            The cached or newly created client.
         """
         if self._client is None:
-            self._client = genai.Client()
+            if self._use_vertexai:
+                self._client = genai.Client(
+                    vertexai=True,
+                    project=self._project or None,
+                    location=self._location or None,
+                )
+            elif self._api_key:
+                self._client = genai.Client(api_key=self._api_key)
+            else:
+                self._client = genai.Client()
         return self._client
 
     async def generate_stream(
@@ -590,5 +615,32 @@ def make_backend(model: str, settings: Settings | None = None) -> LLMBackend:
     gemini_model = model if name.startswith("gemini") else _DEFAULT_GEMINI_MODEL
     if settings is not None and not name.startswith("gemini"):
         gemini_model = getattr(settings, "gemini_model", "") or gemini_model
-    logger.info("backend_selected", kind="gemini", model=gemini_model)
-    return GeminiBackend(model=gemini_model)
+    # Credentials come from Settings (read from .env.local), not the ambient
+    # environment: pass them explicitly so the SDK does not raise "No API key".
+    api_key = ""
+    use_vertexai = False
+    project = ""
+    location = ""
+    if settings is not None:
+        api_key = getattr(settings, "gemini_api_key", "") or getattr(
+            settings, "google_api_key", ""
+        )
+        use_vertexai = str(getattr(settings, "google_genai_use_vertexai", "")).lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        project = getattr(settings, "google_cloud_project", "") or getattr(
+            settings, "gcp_project_id", ""
+        )
+        location = getattr(settings, "google_cloud_location", "") or getattr(
+            settings, "vertex_ai_location", ""
+        )
+    logger.info("backend_selected", kind="gemini", model=gemini_model, vertexai=use_vertexai)
+    return GeminiBackend(
+        model=gemini_model,
+        api_key=api_key,
+        use_vertexai=use_vertexai,
+        project=project,
+        location=location,
+    )

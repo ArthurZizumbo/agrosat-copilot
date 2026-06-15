@@ -70,6 +70,23 @@ def _vigor_from_peak(peak_value: float | None) -> str:
     return "low"
 
 
+def _clamp_ndvi(value: float) -> float:
+    """Clamp an NDVI-like value to the physical [-1, 1] range.
+
+    The aggregated ``peak_value`` from the feature pipeline can carry saturated
+    Sentinel-2 pixels (values >1), which are not physically meaningful NDVI. For a
+    user-facing description we clamp to the valid range so the text never reports
+    an impossible "NDVI 2.3"; the raw feature still feeds the model unchanged.
+
+    Args:
+        value: The raw aggregated NDVI-like value.
+
+    Returns:
+        The value clamped to ``[-1.0, 1.0]``.
+    """
+    return max(-1.0, min(1.0, float(value)))
+
+
 def _build_phenology_text(record: dict[str, Any]) -> str:
     """Build the structured phenology text block from the real scalar columns.
 
@@ -91,15 +108,15 @@ def _build_phenology_text(record: dict[str, Any]) -> str:
     if sog is not None:
         parts.append(f"inicio de crecimiento (SOG) en el dia {int(sog)}")
     if peak_doy is not None and peak_value is not None:
-        parts.append(f"pico NDVI {float(peak_value):.3f} en el dia {int(peak_doy)}")
+        parts.append(f"pico NDVI {_clamp_ndvi(peak_value):.2f} en el dia {int(peak_doy)}")
     elif peak_value is not None:
-        parts.append(f"pico NDVI {float(peak_value):.3f}")
+        parts.append(f"pico NDVI {_clamp_ndvi(peak_value):.2f}")
     if senescence is not None:
         parts.append(f"senescencia hacia el dia {int(senescence)}")
     if maturity is not None:
         parts.append(f"madurez estimada de {int(maturity)} dias")
     if ndvi_auc is not None:
-        parts.append(f"area bajo la curva NDVI de {float(ndvi_auc):.3f}")
+        parts.append(f"area bajo la curva NDVI de {float(ndvi_auc):.1f}")
 
     if not parts:
         return "Sin metricas fenologicas registradas para esta parcela."

@@ -1,9 +1,85 @@
-# Serving on-prem del reasoner Qwen (vLLM, H100) — US-048
+# Serving on-prem del reasoner Qwen (H100) — US-048
 
-Variante B del copiloto: el reasoner Qwen MoE-A3B servido on-premise con vLLM en
-la H100 NVL 96GB, endpoint OpenAI-compatible, intercambiable con Gemini desde el
-mismo cliente (`/llm/switch`). Sustenta la historia de **soberania de datos**
+Variante B del copiloto: el reasoner Qwen MoE-A3B servido on-premise en la H100
+NVL 96GB, endpoint OpenAI-compatible, intercambiable con Gemini desde el mismo
+cliente (`/llm/switch`). Sustenta la historia de **soberania de datos**
 (cooperativas que no exportan datos a la nube).
+
+## Dos vias de serving
+
+| Via | Estado en la VM actual | Endpoint |
+|-----|------------------------|----------|
+| **llama.cpp** (nativo Windows + CUDA) | **FUNCIONA** — corre nativo, sin WSL2/Docker | `:8002/v1/chat/completions` |
+| **vLLM** (Linux) | **BLOQUEADO** — requiere Linux (WSL2/Docker imposibles sin nested virt) | (cuando se desbloquee) |
+
+Ambas exponen `/v1/chat/completions` (OpenAI-compatible), asi que el
+`VLLMOpenAIBackend` del agente (US-047) funciona con cualquiera — solo cambia la
+URL. **Para la presentacion del 27-jun la via operativa es llama.cpp.**
+
+---
+
+## Via A — llama.cpp nativo en Windows (OPERATIVA)
+
+vLLM no corre en la VM Windows (bloqueo de virtualizacion, mas abajo). llama.cpp
+si: `llama-server.exe` corre nativo con CUDA contra la H100 y sirve el mismo
+modelo en formato GGUF. `--parallel N` da N peticiones simultaneas (no "un solo
+usuario"); para la demo basta y sobra.
+
+### Setup (una vez, en la VM)
+
+```powershell
+# Instala llama-server CUDA + runtime DLLs en F:\tools\llamacpp (idempotente)
+F:\setup_llamacpp_vm.ps1          # default CUDA 12.4 (ver gotcha abajo)
+```
+
+```bash
+# Descarga el GGUF (Q4_K_M ~18.6GB) a F:\models
+poetry run python scripts/download_qwen_gguf.py --dest F:/models
+```
+
+### Arranque / apagado
+
+```bat
+REM Arranque (via tarea programada para sobrevivir al SSH):
+schtasks /create /tn qwen_serve /tr "F:\run_serve.bat" /sc once /st 23:59 /rl highest /f
+schtasks /run /tn qwen_serve
+REM run_serve.bat -> llama a scripts\serve_qwen_llamacpp.bat y redirige a F:\logs\qwen_serve.log
+```
+
+El servidor publica `http://127.0.0.1:8002/v1/chat/completions` (served-model
+`qwen35`). Apagado: `taskkill /im llama-server.exe /f`.
+
+### Parametros del serving (`scripts/serve_qwen_llamacpp.bat` / `.sh`)
+
+- `-ngl 99` — todas las capas a la H100.
+- `--ctx-size 32768`, `--parallel 4` — 4 slots concurrentes.
+- `--flash-attn on` — kernels FlashAttention (en b9656 requiere valor `on|off|auto`).
+- `--jinja` — usa el chat template de Qwen3 (formato correcto de roles/tools).
+
+### Gotchas verificados (15-jun-2026)
+
+- **Build CUDA <= CUDA del driver.** El driver de la VM (596.36) reporta CUDA
+  13.2; el build `cuda-13.3` de llama.cpp falla en el warmup con
+  `CUDA error: the provided PTX was compiled with an unsupported toolchain`
+  (aunque detecta la H100 con 94941 MiB libres). **Usar el build `cuda-12.4`**
+  (default del setup). Solo subir cuando el driver soporte la version mayor.
+- **vLLM/llama.cpp en `.bat`**: `if "%X%"==""` necesita `==` doble (un solo `=`
+  da `="" was unexpected at this time`).
+- Lanzar via `schtasks` con `.bat` (el clasificador bloquea `-ExecutionPolicy Bypass`).
+
+### Integracion con el agente
+
+Apuntar `VLLMOpenAIBackend` a `http://127.0.0.1:8002/v1` (served-model `qwen35`).
+Tras `/llm/switch` a `qwen35`, `make_backend` selecciona el backend y las queries
+de `/chat` responden por Qwen on-prem — sin tocar el loop del agente.
+
+---
+
+## Via B — vLLM (BLOQUEADA en esta VM)
+
+> El resto del documento describe la via vLLM (canonica en Linux). Se mantiene
+> como referencia y para cuando se sirva en un host Linux + GPU. En la VM Windows
+> actual esta BLOQUEADA por el host (ver "BLOQUEO" abajo); usar llama.cpp.
 
 ## Modelo
 

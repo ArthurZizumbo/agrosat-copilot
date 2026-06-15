@@ -147,12 +147,12 @@ class ErrorEvent(BaseModel):
 # Discriminated union of every event the agent loop may yield. ``type`` is the
 # tag, so ``AgentEvent`` parsers (e.g. ``TypeAdapter(AgentEvent)``) reconstruct
 # the right subclass from a serialised SSE payload.
-AgentEvent = Annotated[
+_AgentEventUnion = (
     ToolCallEvent
     | ToolResultEvent
     | TextDeltaEvent
     | PerceiverObservationEvent
     | DoneEvent
-    | ErrorEvent,
-    Field(discriminator="type"),
-]
+    | ErrorEvent
+)
+AgentEvent = Annotated[_AgentEventUnion, Field(discriminator="type")]
