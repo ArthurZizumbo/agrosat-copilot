@@ -353,3 +353,7 @@ _vm_scratch/
 *.tmp
 *.orig
 .env.bak
+
+# US-049 eval datasets (AgroMind images/QA, GeoAnalystBench) — no al Git, via DVC/descarga
+data/agromind/
+data/geoanalystbench/

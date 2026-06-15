@@ -52,6 +52,11 @@ from ml.agent.schemas import (
     TimeSeries,
 )
 
+# US-046: the deferred Spatial-RAG tool defines its own input/output contracts in
+# its tool module (``ml/agent/schemas.py`` belongs to US-045 and is off-limits to
+# this work-stream). Importing them here is safe: the module imports cleanly.
+from ml.agent.tools.retrieve_context import RetrieveContextInput, RetrievedContext
+
 __all__ = [
     "TOOL_REGISTRY",
     "TOOL_SPECS",
@@ -156,6 +161,14 @@ TOOL_SPECS: dict[str, _ToolDescriptor] = {
         Explanation,
         False,
         "Explain a parcel prediction with phenology, vigor and a natural-language description.",
+    ),
+    "retrieve_context": (
+        "ml.agent.tools.retrieve_context",
+        RetrieveContextInput,
+        RetrievedContext,
+        True,
+        "Retrieve real neighbouring-parcel grounding (Spatial-RAG lite) for an AOI; "
+        "gated by the rag_enabled flag (no-op when off).",
     ),
 }
 

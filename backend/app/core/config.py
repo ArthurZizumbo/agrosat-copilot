@@ -75,6 +75,12 @@ class Settings(BaseSettings):
     vllm_qwen35_url: str = ""
     vllm_api_key: str = ""
 
+    # Spatial-RAG lite (US-046). Feature flag gating the deferred
+    # ``retrieve_context`` tool. Default off: with it disabled the reasoner runs
+    # ungrounded and the agent loop never touches the ``rag_documents`` corpus
+    # (AC-5, AC-10). Set ``RAG_ENABLED=true`` in ``.env.local`` to opt in.
+    rag_enabled: bool = False
+
     # MLflow / Dagster
     mlflow_tracking_uri: str = "http://localhost:5000"
     mlflow_artifact_store: str = ""
