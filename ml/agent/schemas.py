@@ -1,0 +1,552 @@
+"""Pydantic v2 contracts for the nine geospatial agent tools.
+
+This module is the single source of truth for tool input/output schemas. Each
+tool exposes one ``*Input`` model (validated arguments coming from the LLM) and
+one ``*Output`` model (typed result returned to the agent loop). Shared
+value-object types (geometry, bounding box, parcel/AOI references) live here too
+so that every tool speaks the same vocabulary.
+
+All models use ``strict`` typing so that the LLM-provided JSON is validated
+exactly (no silent ``"3"`` -> ``3`` coercions on critical numeric fields) before
+any tool runs. The JSON schema of every ``*Input`` model is later derived by
+``ml.agent.tools.build_function_declarations`` to register the tools with the
+``google-genai`` SDK.
+"""
+
+from __future__ import annotations
+
+from datetime import date
+from typing import ClassVar, Literal
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, field_validator
+
+__all__ = [
+    "AddAoiInput",
+    "AoiRef",
+    "AoiStats",
+    "AoiStatsInput",
+    "BBox",
+    "ClassificationResult",
+    "ClassifyParcelInput",
+    "CompareModelsInput",
+    "ExplainPredictionInput",
+    "Explanation",
+    "GeoJSONGeometry",
+    "GetTilesInput",
+    "ListParcelsInput",
+    "ModelComparison",
+    "ParcelList",
+    "ParcelRef",
+    "ParcelTimeseriesInput",
+    "SceneList",
+    "SearchStacInput",
+    "TileUrl",
+    "TimeSeries",
+]
+
+# ``strict`` rejects implicit type coercion (e.g. str -> int); ``extra="forbid"``
+# rejects unknown keys hallucinated by the LLM. Shared by every contract below.
+_STRICT_CONFIG = ConfigDict(strict=True, extra="forbid")
+
+
+# ---------------------------------------------------------------------------
+# Shared value objects
+# ---------------------------------------------------------------------------
+class GeoJSONGeometry(BaseModel):
+    """A GeoJSON geometry as produced by the frontend draw tools.
+
+    Only the geometry object is modelled (not a full ``Feature``). ``type`` is
+    constrained to the OGC geometry primitives the agent accepts; ``coordinates``
+    keeps the raw nested list because its depth depends on ``type``.
+
+    Attributes:
+        type: GeoJSON geometry type (e.g. ``"Polygon"``, ``"MultiPolygon"``).
+        coordinates: Raw GeoJSON coordinate array (nesting depends on ``type``).
+    """
+
+    model_config = _STRICT_CONFIG
+
+    type: str
+    coordinates: list
+
+    # ``ClassVar`` so Pydantic v2 treats this as a plain class constant rather
+    # than a ``ModelPrivateAttr`` (a bare leading-underscore attribute would be a
+    # private attr, which is not iterable inside the validator).
+    _ALLOWED_TYPES: ClassVar[frozenset[str]] = frozenset(
+        {
+            "Point",
+            "MultiPoint",
+            "LineString",
+            "MultiLineString",
+            "Polygon",
+            "MultiPolygon",
+        }
+    )
+
+    @field_validator("type")
+    @classmethod
+    def _validate_type(cls, value: str) -> str:
+        """Reject geometry types outside the supported OGC primitives."""
+        if value not in cls._ALLOWED_TYPES:
+            allowed = ", ".join(sorted(cls._ALLOWED_TYPES))
+            raise ValueError(f"unsupported GeoJSON geometry type {value!r}; allowed: {allowed}")
+        return value
+
+    @field_validator("coordinates")
+    @classmethod
+    def _validate_coordinates(cls, value: list) -> list:
+        """Reject an empty coordinate array (a geometry must have vertices)."""
+        if not value:
+            raise ValueError("coordinates must not be empty")
+        return value
+
+
+class BBox(BaseModel):
+    """Axis-aligned bounding box in EPSG:4326 (lon/lat degrees).
+
+    Attributes:
+        minx: Minimum longitude (west edge).
+        miny: Minimum latitude (south edge).
+        maxx: Maximum longitude (east edge).
+        maxy: Maximum latitude (north edge).
+    """
+
+    model_config = _STRICT_CONFIG
+
+    minx: float
+    miny: float
+    maxx: float
+    maxy: float
+
+    @field_validator("minx", "maxx")
+    @classmethod
+    def _validate_lon(cls, value: float) -> float:
+        """Constrain longitude to the valid [-180, 180] range."""
+        if not -180.0 <= value <= 180.0:
+            raise ValueError(f"longitude {value} out of range [-180, 180]")
+        return value
+
+    @field_validator("miny", "maxy")
+    @classmethod
+    def _validate_lat(cls, value: float) -> float:
+        """Constrain latitude to the valid [-90, 90] range."""
+        if not -90.0 <= value <= 90.0:
+            raise ValueError(f"latitude {value} out of range [-90, 90]")
+        return value
+
+
+class ParcelRef(BaseModel):
+    """Lightweight reference to a parcel returned by listing/search tools.
+
+    Attributes:
+        parcel_id: Primary key of the parcel in the ``parcels`` table.
+        crop_class: Predicted crop class label, if known.
+        confidence: Classifier confidence in ``[0, 1]``, if known.
+    """
+
+    model_config = _STRICT_CONFIG
+
+    parcel_id: int
+    crop_class: str | None = None
+    confidence: float | None = None
+
+
+class AoiRef(BaseModel):
+    """Reference to a persisted Area Of Interest.
+
+    Doubles as the output of ``add_aoi`` (the created AOI).
+
+    Attributes:
+        aoi_id: Primary key of the AOI in the ``aois`` table.
+        label: Human-readable AOI label, if any.
+        area_ha: AOI area in hectares, if computed.
+    """
+
+    model_config = _STRICT_CONFIG
+
+    aoi_id: int
+    label: str | None = None
+    area_ha: float | None = None
+
+
+# ---------------------------------------------------------------------------
+# list_parcels
+# ---------------------------------------------------------------------------
+class ListParcelsInput(BaseModel):
+    """Arguments for ``list_parcels``.
+
+    Attributes:
+        session_id: Tenant session; every DB query filters by it.
+        aoi: Optional polygon to spatially restrict the listing.
+    """
+
+    model_config = _STRICT_CONFIG
+
+    session_id: UUID
+    aoi: GeoJSONGeometry | None = None
+
+
+class ParcelList(BaseModel):
+    """Result of ``list_parcels``.
+
+    Attributes:
+        parcels: Parcels visible to the session (optionally within the AOI).
+        count: Number of parcels returned.
+    """
+
+    model_config = _STRICT_CONFIG
+
+    parcels: list[ParcelRef]
+    count: int
+
+
+# ---------------------------------------------------------------------------
+# get_parcel_timeseries
+# ---------------------------------------------------------------------------
+class ParcelTimeseriesInput(BaseModel):
+    """Arguments for ``get_parcel_timeseries``.
+
+    Attributes:
+        session_id: Tenant session.
+        parcel_id: Parcel whose temporal index is requested.
+        start: Inclusive start date of the window.
+        end: Inclusive end date of the window.
+        index: Spectral index to extract.
+    """
+
+    model_config = _STRICT_CONFIG
+
+    session_id: UUID
+    parcel_id: int
+    start: date
+    end: date
+    index: Literal["ndvi", "ndwi", "evi"]
+
+    @field_validator("end")
+    @classmethod
+    def _validate_window(cls, value: date, info) -> date:
+        """Ensure the end date is not before the start date."""
+        start = info.data.get("start")
+        if start is not None and value < start:
+            raise ValueError(f"end {value} must not be before start {start}")
+        return value
+
+
+class TimeSeries(BaseModel):
+    """Result of ``get_parcel_timeseries``.
+
+    Attributes:
+        parcel_id: Parcel the series belongs to.
+        index: Spectral index name echoed back.
+        dates: Observation dates (ascending), aligned with ``values``.
+        values: Index values aligned one-to-one with ``dates``.
+    """
+
+    model_config = _STRICT_CONFIG
+
+    parcel_id: int
+    index: str
+    dates: list[date]
+    values: list[float]
+
+    @field_validator("values")
+    @classmethod
+    def _validate_aligned(cls, value: list[float], info) -> list[float]:
+        """Ensure ``values`` and ``dates`` have matching length."""
+        dates = info.data.get("dates")
+        if dates is not None and len(value) != len(dates):
+            raise ValueError(f"values length {len(value)} != dates length {len(dates)}")
+        return value
+
+
+# ---------------------------------------------------------------------------
+# get_aoi_stats
+# ---------------------------------------------------------------------------
+class AoiStatsInput(BaseModel):
+    """Arguments for ``get_aoi_stats``.
+
+    Attributes:
+        session_id: Tenant session.
+        aoi: Polygon over which crop statistics are aggregated.
+        year: Campaign year of the AlphaEarth annual embedding.
+    """
+
+    model_config = _STRICT_CONFIG
+
+    session_id: UUID
+    aoi: GeoJSONGeometry
+    year: int
+
+    @field_validator("year")
+    @classmethod
+    def _validate_year(cls, value: int) -> int:
+        """Constrain the year to the AlphaEarth annual coverage range."""
+        if not 2017 <= value <= 2100:
+            raise ValueError(f"year {value} out of supported range [2017, 2100]")
+        return value
+
+
+class AoiStats(BaseModel):
+    """Result of ``get_aoi_stats``.
+
+    Attributes:
+        area_ha: Total AOI area in hectares.
+        dominant_crop: Most frequent crop class inside the AOI.
+        crop_fractions: Per-class area fraction in ``[0, 1]`` summing to ~1.
+        n_parcels: Number of parcels intersecting the AOI.
+    """
+
+    model_config = _STRICT_CONFIG
+
+    area_ha: float
+    dominant_crop: str
+    crop_fractions: dict[str, float]
+    n_parcels: int
+
+
+# ---------------------------------------------------------------------------
+# search_stac (deferred)
+# ---------------------------------------------------------------------------
+class SearchStacInput(BaseModel):
+    """Arguments for ``search_stac`` (pgstac scene search).
+
+    Attributes:
+        bbox: Bounding box to search within.
+        datetime_range: RFC 3339 interval string (e.g. ``"2019-01-01/2019-12-31"``).
+        cloud_cover_max: Maximum acceptable cloud cover percentage.
+    """
+
+    model_config = _STRICT_CONFIG
+
+    bbox: BBox
+    datetime_range: str
+    cloud_cover_max: float = 20.0
+
+    @field_validator("datetime_range")
+    @classmethod
+    def _validate_datetime_range(cls, value: str) -> str:
+        """Require a non-empty STAC datetime interval string."""
+        if not value.strip():
+            raise ValueError("datetime_range must not be empty")
+        return value
+
+    @field_validator("cloud_cover_max")
+    @classmethod
+    def _validate_cloud_cover(cls, value: float) -> float:
+        """Constrain cloud cover to a valid percentage."""
+        if not 0.0 <= value <= 100.0:
+            raise ValueError(f"cloud_cover_max {value} out of range [0, 100]")
+        return value
+
+
+class SceneList(BaseModel):
+    """Result of ``search_stac``.
+
+    Attributes:
+        scenes: STAC item dictionaries matching the query.
+        count: Number of scenes returned.
+    """
+
+    model_config = _STRICT_CONFIG
+
+    scenes: list[dict]
+    count: int
+
+
+# ---------------------------------------------------------------------------
+# get_tiles (deferred)
+# ---------------------------------------------------------------------------
+class GetTilesInput(BaseModel):
+    """Arguments for ``get_tiles`` (TiTiler tile-template URL).
+
+    Attributes:
+        scene_id: STAC scene identifier to render.
+        index: Visual product to render (spectral index or natural color).
+    """
+
+    model_config = _STRICT_CONFIG
+
+    scene_id: str
+    index: Literal["ndvi", "ndwi", "evi", "rgb"]
+
+    @field_validator("scene_id")
+    @classmethod
+    def _validate_scene_id(cls, value: str) -> str:
+        """Require a non-empty scene identifier."""
+        if not value.strip():
+            raise ValueError("scene_id must not be empty")
+        return value
+
+
+class TileUrl(BaseModel):
+    """Result of ``get_tiles``.
+
+    Attributes:
+        scene_id: Scene identifier echoed back.
+        index: Rendered product echoed back.
+        tile_url: XYZ tile template URL (contains ``{z}/{x}/{y}`` placeholders).
+    """
+
+    model_config = _STRICT_CONFIG
+
+    scene_id: str
+    index: str
+    tile_url: str
+
+
+# ---------------------------------------------------------------------------
+# classify_new_parcel
+# ---------------------------------------------------------------------------
+class ClassifyParcelInput(BaseModel):
+    """Arguments for ``classify_new_parcel`` (StackingEnsemble inference).
+
+    Attributes:
+        session_id: Tenant session.
+        aoi: Polygon of the new parcel to classify.
+        year: Campaign year of the AlphaEarth annual embedding (default 2019).
+    """
+
+    model_config = _STRICT_CONFIG
+
+    session_id: UUID
+    aoi: GeoJSONGeometry
+    year: int = 2019
+
+    @field_validator("year")
+    @classmethod
+    def _validate_year(cls, value: int) -> int:
+        """Constrain the year to the AlphaEarth annual coverage range."""
+        if not 2017 <= value <= 2100:
+            raise ValueError(f"year {value} out of supported range [2017, 2100]")
+        return value
+
+
+class ClassificationResult(BaseModel):
+    """Result of ``classify_new_parcel``.
+
+    Attributes:
+        crop_class: Argmax crop class predicted by the ensemble.
+        confidence: Probability of ``crop_class`` in ``[0, 1]``.
+        class_probabilities: Full posterior over crop classes.
+    """
+
+    model_config = _STRICT_CONFIG
+
+    crop_class: str
+    confidence: float
+    class_probabilities: dict[str, float]
+
+
+# ---------------------------------------------------------------------------
+# add_aoi (deferred)
+# ---------------------------------------------------------------------------
+class AddAoiInput(BaseModel):
+    """Arguments for ``add_aoi`` (persist an AOI for the session).
+
+    Attributes:
+        session_id: Tenant session that owns the AOI.
+        aoi: Polygon geometry to persist.
+        name: Human-readable label for the AOI.
+    """
+
+    model_config = _STRICT_CONFIG
+
+    session_id: UUID
+    aoi: GeoJSONGeometry
+    name: str
+
+    @field_validator("name")
+    @classmethod
+    def _validate_name(cls, value: str) -> str:
+        """Require a non-empty AOI name."""
+        if not value.strip():
+            raise ValueError("name must not be empty")
+        return value
+
+
+# ``add_aoi`` returns an ``AoiRef`` (the created AOI); no dedicated output model.
+
+
+# ---------------------------------------------------------------------------
+# compare_models (deferred)
+# ---------------------------------------------------------------------------
+class CompareModelsInput(BaseModel):
+    """Arguments for ``compare_models``.
+
+    Attributes:
+        session_id: Tenant session.
+        parcel_id: Parcel whose predictions are compared across models.
+        models: Model member names to compare (e.g. ``["tsvit-pheno", "utae"]``).
+    """
+
+    model_config = _STRICT_CONFIG
+
+    session_id: UUID
+    parcel_id: int
+    models: list[str]
+
+    @field_validator("models")
+    @classmethod
+    def _validate_models(cls, value: list[str]) -> list[str]:
+        """Require at least two distinct models to compare."""
+        if len(value) < 2:
+            raise ValueError("compare_models requires at least two models")
+        if len(set(value)) != len(value):
+            raise ValueError("models must be unique")
+        return value
+
+
+class ModelComparison(BaseModel):
+    """Result of ``compare_models``.
+
+    Attributes:
+        parcel_id: Parcel the comparison refers to.
+        predictions: Mapping of model name -> predicted crop class.
+        agreement: Fraction of models agreeing with the majority in ``[0, 1]``.
+    """
+
+    model_config = _STRICT_CONFIG
+
+    parcel_id: int
+    predictions: dict[str, str]
+    agreement: float
+
+
+# ---------------------------------------------------------------------------
+# explain_prediction
+# ---------------------------------------------------------------------------
+class ExplainPredictionInput(BaseModel):
+    """Arguments for ``explain_prediction``.
+
+    Attributes:
+        session_id: Tenant session.
+        parcel_id: Parcel whose prediction is explained.
+    """
+
+    model_config = _STRICT_CONFIG
+
+    session_id: UUID
+    parcel_id: int
+
+
+class Explanation(BaseModel):
+    """Result of ``explain_prediction`` (entry point of the Be My Eyes pattern).
+
+    Attributes:
+        parcel_id: Parcel the explanation refers to.
+        crop_class: Predicted crop class being explained.
+        confidence: Confidence of the prediction in ``[0, 1]``.
+        phenology_text: Structured phenology text block (SOG/peak/senescence).
+        vigor: Qualitative vigor assessment (e.g. ``"high"``, ``"moderate"``).
+        description: Natural-language explanation suitable for the final answer.
+    """
+
+    model_config = _STRICT_CONFIG
+
+    parcel_id: int
+    crop_class: str
+    confidence: float
+    phenology_text: str
+    vigor: str
+    description: str
