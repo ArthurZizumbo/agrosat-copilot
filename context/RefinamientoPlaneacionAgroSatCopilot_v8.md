@@ -30,7 +30,7 @@ Este v8 **quita** lo descartado y lo **reemplaza** con lo vigente. No es v6 + ap
 
 | Área | v6 (descartado) | v8 (vigente) | Razón |
 |------|-----------------|--------------|-------|
-| Modelo final (EPIC 6) | Gemma 4 26B-MoE LoRA como modelo final | **Ensambles** (4 base + E-a/E-b/E-c). Gemma 4 LoRA → **diferido** (US-058) | Experts MoE 3D fused rompen QLoRA; AgroMind es eval-only (fine-tune = leakage). Sin tiempo para 3-5 días de debug |
+| Modelo final (EPIC 6) | Gemma 4 26B-MoE LoRA como modelo final | **Ensambles** (4 base + E-a/E-b/E-c). Gemma 4 LoRA → **diferido** (US-050) | Experts MoE 3D fused rompen QLoRA; AgroMind es eval-only (fine-tune = leakage). Sin tiempo para 3-5 días de debug |
 | Modelo 6 (EPIC 5) | Swin-UNETR | **AnySat** (sustitución formalizada) | Swin-UNETR nunca se entrenó; AnySat ya ocupa la 6.ª silla (mIoU 0.4459) |
 | SegFormer (EPIC 5) | SegFormer-B2 + cabezal open-vocabulary FarSLIP | **SegFormer-B0, 3 bandas RGB** (realidad de lo corrido) | El cabezal open-vocab no se implementó así; FarSLIP se reorienta a contrastivo-fenológico |
 | FarSLIP | Ablación negativa (perdía 0.163 vs 0.233) | **Camino principal** (directiva sponsor): contrastivo con descripciones fenológicas Gemini Flash, incremental 4→18, filtro 3:1 | El gap era `train.py:184` (prototipos `torch.randn`), no el método |
@@ -99,7 +99,7 @@ A4 ✓31-may · **A5 7-jun → mié 10-jun** (extendido por el profesor) · A6 1
 |------|-----------|---------|
 | Backend | FastAPI 3.12 + Polars 1.x, SQLModel + GeoAlchemy2, asyncpg | router→service→model |
 | Frontend | Nuxt 4 SSR, MapLibre + deck.gl, @nuxtjs/i18n (it/es/en), Tailwind v4, Pinia | |
-| DB | PostgreSQL 15 + PostGIS + pgvector, dbmate | RLS pendiente (US-048) |
+| DB | PostgreSQL 15 + PostGIS + pgvector, dbmate | RLS pendiente (US-051) |
 | FM EO | AlphaEarth `SATELLITE_EMBEDDING/V1/ANNUAL` v1.1 (GEE, CC-BY-4.0) | global incl. México |
 | Segmentación | smp (U-Net, DeepLabv3+), U-TAE, TSViT, AnySat | Swin-UNETR → AnySat |
 | Contrastivo | FarSLIP (CLIP ViT-B/16) + descripciones fenológicas Gemini Flash | directiva sponsor |
@@ -144,7 +144,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 
 **Estrategia.** Maximizar la reutilización del stack MLOps del proyecto previo del equipo (DVC, MLflow, GitHub Actions, Terraform) e incorporar Dagster asset-oriented y dbmate para reducir la curva de aprendizaje y el presupuesto de story points.
 
-**Estado v8 (corte 7-jun-2026).** Esta épica está **mayoritariamente CERRADA**: monorepo, Docker Compose, CI/CD, quality gates, Terraform GCP + Azure H100, DVC, MLflow y Dagster en operación nivel maestría (ver [`docs/STATUS.md`](../docs/STATUS.md)). Dos correcciones de realidad se incorporan a las US existentes: (1) la **H100 NVL 96GB ya está disponible** (VM `gjcamacho-gpuh1`, entorno micromamba `agrosat`, repo en `F:\projects\agrosat-copilot`), por lo que el módulo Azure pasa de "parked" a operativo; (2) el **MLflow lineage real vive en el server Docker `:5010`**, no en `./mlruns`. Se añaden dos US nuevas v8 de capa plataforma — observabilidad de chat (US-059) y doc operativa de FinOps (US-061) — para completar la base antes de la presentación.
+**Estado v8 (corte 7-jun-2026).** Esta épica está **mayoritariamente CERRADA**: monorepo, Docker Compose, CI/CD, quality gates, Terraform GCP + Azure H100, DVC, MLflow y Dagster en operación nivel maestría (ver [`docs/STATUS.md`](../docs/STATUS.md)). Dos correcciones de realidad se incorporan a las US existentes: (1) la **H100 NVL 96GB ya está disponible** (VM `gjcamacho-gpuh1`, entorno micromamba `agrosat`, repo en `F:\projects\agrosat-copilot`), por lo que el módulo Azure pasa de "parked" a operativo; (2) el **MLflow lineage real vive en el server Docker `:5010`**, no en `./mlruns`. Se añaden dos US nuevas v8 de capa plataforma — observabilidad de chat (US-065) y doc operativa de FinOps (US-067) — para completar la base antes de la presentación.
 
 **Puntos totales de la épica: 14** (10 base v6 ya entregados + 4 nuevos v8).
 
@@ -291,7 +291,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 
 ---
 
-**Subtotal EPIC 0: 14 story points** (10 base v6 entregados + 4 nuevos v8: US-059 observabilidad 3 SP + US-061 FinOps doc 1 SP).
+**Subtotal EPIC 0: 14 story points** (10 base v6 entregados + 4 nuevos v8: US-065 observabilidad de chat 3 SP + US-067 FinOps doc 1 SP).
 
 ---
 
@@ -413,7 +413,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 
 - Extensión PostGIS `pgstac` instalada en la base de datos.
 - Ingest automático desde Dagster al finalizar cada asset de descarga.
-- Endpoint FastAPI `GET /stac/search` con filtros `bbox`, `datetime`, `collection`, `query` siguiendo la especificación STAC API (cruza con US-051 de E7, `/stac/search` del producto).
+- Endpoint FastAPI `GET /stac/search` con filtros `bbox`, `datetime`, `collection`, `query` siguiendo la especificación STAC API (cruza con US-053 de E8, `/stac/search` del producto).
 - Índice GIST sobre `geometry` y BTREE sobre `datetime` para latencia <100 ms en queries típicas.
 - Documentación OpenAPI 3.1 auto-generada.
 
@@ -504,7 +504,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 
 ### US-012 — Análisis bivariado, multivariado y temporal
 
-> **Estado: RESUELTA** (docs/us-resolved/us-012.md). `notebooks/eda/02c_eda_bivariado_temporal.ipynb` + `02c_eda_pastis.ipynb` ejecutados: correlaciones Pearson/Spearman, VIF, fenología y clusterización temporal DTW. **Ampliación de realidad v8:** se sumaron `02d_eda_breizhcrops.ipynb` (EDA cross-dataset BreizhCrops, precursor del crosswalk US-043) y `02e_eda_metodos_paper.ipynb`, que el v6 no contemplaba.
+> **Estado: RESUELTA** (docs/us-resolved/us-012.md). `notebooks/eda/02c_eda_bivariado_temporal.ipynb` + `02c_eda_pastis.ipynb` ejecutados: correlaciones Pearson/Spearman, VIF, fenología y clusterización temporal DTW. **Ampliación de realidad v8:** se sumaron `02d_eda_breizhcrops.ipynb` (EDA cross-dataset BreizhCrops, precursor del crosswalk US-074) y `02e_eda_metodos_paper.ipynb`, que el v6 no contemplaba.
 
 **Como** Data Scientist,
 - **quiero** cuantificar las correlaciones entre bandas, índices espectrales y labels, más un análisis de fenología,
@@ -672,7 +672,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 - Dataset interno `data/farslip_pairs/` con al menos 30,000 pares imagen-texto cubriendo Pianura Padana, Toscana y Puglia. **[v8: el etiquetado de texto evoluciona de clases CAP genéricas a descripciones fenológicas reales por clase/parcela vía Gemini Flash — `ml/features/phenology_description.py` + `ml/features/phenology_class_prototypes.py` — para corregir el `torch.randn`. Ver US-029.]**
 - Entrenamiento sobre GPU con MLflow run `farslip-clip-italy-v1`. **[v8: la H100 NVL 96GB del sponsor está disponible (VM `gjcamacho-gpuh1`, env micromamba `agrosat`, `F:\projects\agrosat-copilot`); la ablación de bandas y el incremental 4→18 corren ahí (US-031/032), con L4 spot como fallback.]**
 - Outputs: pesos student en `gs://agrosat-models/farslip/`, módulo `ml/extractors/farslip_extractor.py` (o equivalente `ml/farslip/extract_embeddings.py`) con extractor de embeddings.
-- Métrica de calidad de la adaptación: cerrar el gap previo (0.163 vs AlphaEarth 0.233) con embeddings FarSLIP-pheno; silhouette/cluster por clase reportado honesto. **[v8: claim ajustado — objetivo es superar el 0.163 propio y acercarse a 0.233 en su espacio, NO prometer mejora open-vocabulary de +5 pp sin medición apples-to-apples. Validación en US-037 con el harness único de métrica US-026.]**
+- Métrica de calidad de la adaptación: cerrar el gap previo (0.163 vs AlphaEarth 0.233) con embeddings FarSLIP-pheno; silhouette/cluster por clase reportado honesto. **[v8: claim ajustado — objetivo es superar el 0.163 propio y acercarse a 0.233 en su espacio, NO prometer mejora open-vocabulary de +5 pp sin medición apples-to-apples. Validación en US-037 con el harness único de métrica US-030.]**
 
 **Tareas técnicas:**
 
@@ -720,7 +720,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 
 ## EPIC 4: Baseline — AlphaEarth + XGBoost/RF {#epic-4}
 
-> **Estado: ÉPICA RESUELTA Y REENCUADRADA** (Avance 3, 20-may-2026). Todas las US (US-019, US-020, US-021, US-022, US-022-b, US-022-c, US-023-preview) están cerradas en `docs/us-resolved/`. El baseline tabular cumplió la rúbrica del A3 y, en el corte v8 (6-jun), se reencuadró con el **hallazgo de producto 6 familias HCAT**: XGBoost salta de **0.4365 (18 clases) a 0.6535 (6 familias HCAT)**, cruzando la meta F1-macro ≥ 0.60. El baseline tabular XGBoost-AlphaEarth es ahora el **base learner tabular del ensamble E-b** (US-038, EPIC 6) y la **semilla del transfer few-shot multi-región** (US-045 EuroCropsML, EPIC 2). No se reabre cómputo en esta épica.
+> **Estado: ÉPICA RESUELTA Y REENCUADRADA** (Avance 3, 20-may-2026). Todas las US (US-019, US-020, US-021, US-022, US-022-b, US-022-c, US-023-preview) están cerradas en `docs/us-resolved/`. El baseline tabular cumplió la rúbrica del A3 y, en el corte v8 (6-jun), se reencuadró con el **hallazgo de producto 6 familias HCAT**: XGBoost salta de **0.4365 (18 clases) a 0.6535 (6 familias HCAT)**, cruzando la meta F1-macro ≥ 0.60. El baseline tabular XGBoost-AlphaEarth es ahora el **base learner tabular del ensamble E-b** (US-042, EPIC 6) y la **semilla del transfer few-shot multi-región** (US-076 EuroCropsML, EPIC 12). No se reabre cómputo en esta épica.
 
 **Objetivo.** Construir un baseline sólido sobre features tabulares AlphaEarth + índices espectrales con Random Forest y XGBoost, cubriendo los cinco criterios de la rúbrica del Avance 3 (Algoritmo 40 pts, Características 20 pts, Sub/sobreajuste 10 pts, Métrica 20 pts, Desempeño 10 pts).
 
@@ -914,7 +914,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 
 **ADR de referencia:** [ADR-006 Aceptada](../docs/decisions/ADR-006-reencuadre-baseline-fenologico.md).
 
-**Hallazgo de producto v8 (6 familias HCAT).** El reencuadre del espacio de etiquetas a **6 familias HCAT** (colapso del long-tail de 18 clases PASTIS, ~45 % Meadow) eleva el XGBoost-AlphaEarth de **0.4365 → 0.6535 F1-macro**, cruzando la meta ≥ 0.60 (ver [`docs/STATUS.md`](../docs/STATUS.md) §"Hallazgo de producto 6 familias HCAT"). Este es el insumo del **crosswalk taxonómico PASTIS-18 → HCAT v3 (US-043, EPIC 2)** y del **ensamble E-b (US-042, EPIC 6)**, donde el baseline tabular XGBoost-AlphaEarth entra al stacking a nivel parcela.
+**Hallazgo de producto v8 (6 familias HCAT).** El reencuadre del espacio de etiquetas a **6 familias HCAT** (colapso del long-tail de 18 clases PASTIS, ~45 % Meadow) eleva el XGBoost-AlphaEarth de **0.4365 → 0.6535 F1-macro**, cruzando la meta ≥ 0.60 (ver [`docs/STATUS.md`](../docs/STATUS.md) §"Hallazgo de producto 6 familias HCAT"). Este es el insumo del **crosswalk taxonómico PASTIS-18 → HCAT v3 (US-074, EPIC 12)** y del **ensamble E-b (US-042, EPIC 6)**, donde el baseline tabular XGBoost-AlphaEarth entra al stacking a nivel parcela.
 
 **Cómputo:** 0 h H100, 0 h Vertex AI, 0 h L4. Trabajo local (CPU + RTX 4070) + 1 llamada cloud (Gemini Flash 3.5, ≤ $5 USD). Wall clock P8 baseline v2 (3 modelos): ≤ 90 min en RTX 4070 batch=128.
 
@@ -949,7 +949,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 
 ### US-023 — Modelo 1: U-Net con ResNet-50
 
-> **Estado: RESUELTA** (implementada en `ml/models/segmentation.py`; entregada en Avance 4). U-Net ResNet-50 entrenada sobre patches Sentinel-2 spatial-only; mIoU fold-4 = 0.2423 (baseline CNN spatial-only confirmado). Pendiente: re-score bajo el harness único de US-026.
+> **Estado: RESUELTA** (implementada en `ml/models/segmentation.py`; entregada en Avance 4). U-Net ResNet-50 entrenada sobre patches Sentinel-2 spatial-only; mIoU fold-4 = 0.2423 (baseline CNN spatial-only confirmado). Pendiente: re-score bajo el harness único de US-030.
 
 **Como** ML Engineer,
 - **quiero** entrenar U-Net sobre patches 256×256 de una imagen Sentinel-2 sin dimensión temporal,
@@ -975,7 +975,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 
 ### US-024 — Modelo 2: DeepLabv3+ con MobileNetV3
 
-> **Estado: RESUELTA** (implementada en `ml/models/deeplabv3plus.py`; entregada en Avance 4). DeepLabv3+ entrenada; mIoU fold-4 = 0.2709. Pendiente: re-score bajo el harness único de US-026.
+> **Estado: RESUELTA** (implementada en `ml/models/deeplabv3plus.py`; entregada en Avance 4). DeepLabv3+ entrenada; mIoU fold-4 = 0.2709. Pendiente: re-score bajo el harness único de US-030.
 
 **Como** ML Engineer,
 - **quiero** entrenar DeepLabv3+ como alternativa eficiente,
@@ -1023,7 +1023,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 
 ### US-026 — Modelo 4: U-TAE
 
-> **Estado: RESUELTA** (entregada en Avance 4; portada a `ml/models/utae.py`, warm-start Optuna documentado en memoria del proyecto). U-TAE entrenado sobre series temporales PASTIS; mIoU fold-4 = 0.4742 (20 clases). Pendiente: re-score 18-clase contiguo bajo el harness de US-026.
+> **Estado: RESUELTA** (entregada en Avance 4; portada a `ml/models/utae.py`, warm-start Optuna documentado en memoria del proyecto). U-TAE entrenado sobre series temporales PASTIS; mIoU fold-4 = 0.4742 (20 clases). Pendiente: re-score 18-clase contiguo bajo el harness de US-030.
 
 **Como** ML Engineer,
 - **quiero** entrenar U-TAE sobre las series temporales Sentinel-2,
@@ -1362,7 +1362,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 
 ---
 
-**Subtotal EPIC 5: 64 story points** (21 baseline v6 — US-023..US-025 + alias v6 US-023v6-c..f — ya entregados; + 43 nuevos v8: US-026 harness 5, US-027 OOF 3, US-028 filtro 3:1 5, US-029 prototipos 3, US-030 fix torch.randn 5, US-031 ablación bandas 5, US-032 incremental 4→18 5, US-033 eval FarSLIP-pheno 3, US-034 TSViT full 8, US-035 TSViT-pheno full 5).
+**Subtotal EPIC 5: 68 story points** (21 baseline v6 — US-023..US-025 + alias v6 US-023v6-c..f — ya entregados; + 47 nuevos v8: US-030 harness 5, US-031 OOF 3, US-032 filtro 3:1 5, US-033 prototipos 3, US-034 fix torch.randn 5, US-035 ablación bandas 5, US-036 incremental 4→18 5, US-037 eval FarSLIP-pheno 3, US-038 TSViT full 8, US-039 TSViT-pheno full 5).
 
 ---
 
@@ -1372,9 +1372,9 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 
 **Alineado con.** Avance 5 (mié 10-jun-2026) — notebook secuencial en GitHub. Rúbrica: Ensambles 60 pts + Selección 20 pts + Gráficos 20 pts. E-b + reconciliación píxel↔parcela hacia Avance 6 (14-jun); E-c documentado como trabajo futuro (ADR-010).
 
-**Deuda crítica prerequisito (EPIC 5).** Ningún ensamble es defendible sin **US-026** (harness único de métrica, re-score apples-to-apples en fold-5) y **US-027** (regenerar softmax/OOF desde cada `best.pt`). La tabla A4 actual mezcla 3 pipelines, 18 vs 20 clases, resolución 64/128/256 — el orden TSViT≫U-TAE≫SegFormer es en parte artefacto de definición. `ml/ensemble/` está **vacío** (solo `__init__.py`) y no existe `ml/eval/oof/` a 7-jun.
+**Deuda crítica prerequisito (EPIC 5).** Ningún ensamble es defendible sin **US-030** (harness único de métrica, re-score apples-to-apples en fold-5) y **US-031** (regenerar softmax/OOF desde cada `best.pt`). La tabla A4 actual mezcla 3 pipelines, 18 vs 20 clases, resolución 64/128/256 — el orden TSViT≫U-TAE≫SegFormer es en parte artefacto de definición. `ml/ensemble/` está **vacío** (solo `__init__.py`) y no existe `ml/eval/oof/` a 7-jun.
 
-**Puntos totales de la épica: 22.**
+**Puntos totales de la épica: 20.**
 
 ---
 
@@ -1496,7 +1496,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 
 ---
 
-**Subtotal EPIC 6: 22 story points.**
+**Subtotal EPIC 6: 20 story points** (US-040 8 + US-041 5 + US-042 5 + US-043 2).
 
 ---
 
@@ -1510,9 +1510,9 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 
 1. **`ml/agent/` esta vacio** (0 de 9 tools; solo `__init__.py` en `ml/agent/` y `ml/agent/tools/`). Todas las US de este EPIC son **construccion desde cero**, ninguna esta resuelta.
 2. **`google-adk` salio del lock** — no es dependencia directa en `poetry.lock` (solo aparece como extra opcional de otro paquete) porque colisiona con `google-genai 2.x` ya instalado (`google-genai >=1.66,<3.0`). Se difiere Vertex AI Agent Engine; el agente se construye con el **SDK local `google-genai`** y su capa nativa de function calling, manteniendo la abstraccion ADK-like (factory + tool registry + stream) en codigo propio para no perder la opcion de portar a ADK mas adelante.
-3. **Reasoner = Gemini 2.5-pro GA** (no "Gemini 3.1 Pro"; contexto **1M**, no 2M). **Gemma 4 26B LoRA se difiere** (experts MoE 3D fused bloquean QLoRA; AgroMind es eval-only → fine-tune = leakage; ver US-058 / ADR-009). La variante on-prem es **Qwen3.5-35B-A3B vLLM** (GPTQ-Int4, single-GPU, sin `--tensor-parallel-size`).
+3. **Reasoner = Gemini 2.5-pro GA** (no "Gemini 3.1 Pro"; contexto **1M**, no 2M). **Gemma 4 26B LoRA se difiere** (experts MoE 3D fused bloquean QLoRA; AgroMind es eval-only → fine-tune = leakage; ver ADR-009). La variante on-prem es **Qwen3.5-35B-A3B vLLM** (GPTQ-Int4, single-GPU, sin `--tensor-parallel-size`).
 
-**Puntos totales de la epica: 36** (US-049 8 + US-050 8 + US-055 5 + US-056 5 + US-057 5 + US-058 2 + US-035 3 perceiver). El tracing se reduce a `structlog` + tags MLflow (US-059, EPIC 11) y latencia chat p95; no hay observabilidad custom del agente. Estimaciones realistas para el horizonte de ~3 semanas a la presentacion (27-jun).
+**Puntos totales de la epica: 31** (US-045 8 + US-046 6 + US-047 5 + US-048 5 + US-049 5 + US-050 2). El tracing se reduce a `structlog` + tags MLflow (EPIC 11) y latencia chat p95; no hay observabilidad custom del agente. Estimaciones realistas para el horizonte de ~3 semanas a la presentacion (27-jun).
 
 ---
 
@@ -1535,7 +1535,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
   - `compare_models(parcel_id: str, models: list[str]) -> ModelComparison` — compara predicciones de modelos del EPIC 5/6 sobre una parcela.
   - `explain_prediction(parcel_id: str) -> Explanation` — emite descripcion estructurada (perceiver → texto) que el reasoner consume estilo Be My Eyes; incluye descripcion fenologica (`phenology_descriptor` Wen et al. 2025).
 - Cada tool registrable como `FunctionDeclaration` para el loop de function calling de `google-genai`.
-- RLS verificado: las tools que tocan DB ejecutan `SET LOCAL` con el subject del JWT (depende de US-051 EPIC 11).
+- RLS verificado: las tools que tocan DB ejecutan `SET LOCAL` con el subject del JWT (depende del RLS multi-tenant del EPIC 11).
 
 **Tareas tecnicas:**
 
@@ -1551,28 +1551,42 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 
 ### US-046 — Capa perceiver-reasoner: descripcion estructurada de los modelos (patron Be My Eyes)
 
-> **Nota de evolucion v8.** El v6 fundia esta logica en un agente ADK monolitico con Spatial-RAG pgvector. El v8 la reduce a su esencia demoable: el **perceiver** son los modelos del equipo (TSViT-pheno, FarSLIP-pheno, AlphaEarth+XGBoost) que emiten **descripciones estructuradas textuales** (no clasifican el LLM); el **reasoner** Gemini frozen razona sobre ese texto. El Spatial-RAG pgvector queda **OUT** (FUTURE), porque el paper Be My Eyes (Huang et al. 2025, Tabla 4) confirma que el valor del perceiver esta en *comunicar bien*, no en recuperar — lo cual valida el resultado negativo propio del equipo (`pheno_text` no ayudo como clasificador) y le da marco academico.
+> **Nota de evolucion v8.** El v6 fundia esta logica en un agente ADK monolitico con Spatial-RAG pgvector. El v8 la reduce a su esencia demoable: el **perceiver** son los modelos del equipo (TSViT-pheno, FarSLIP-pheno, AlphaEarth+XGBoost) que emiten **descripciones estructuradas textuales** (no clasifican el LLM); el **reasoner** Gemini frozen razona sobre ese texto. El marco Be My Eyes (Huang et al. 2025, Tabla 4) sigue vigente: el valor del perceiver esta en *comunicar bien*, no en recuperar para clasificar — lo cual valida el resultado negativo propio del equipo (`pheno_text` aporto solo +0.0016 como miembro del ensamble, Avance5).
+>
+> **Revision 14-jun-2026: el Spatial-RAG vuelve en variante _lite_ (IN), reposicionado.** No sirve al perceiver-como-clasificador (ese eje quedo cerrado en negativo en el Avance5), sino al **reasoner como grounding conversacional** para reducir alucinaciones — un eje ortogonal que el delta=0.0 de clasificacion NO toca, asi que no contradice a Be My Eyes. Se construye en su version barata (corpus fenologico ya generado por `ml/features/phenology_description.py`; vector AlphaEarth 64-dim ya persistido en `features_parcels`; sin `e5-mistral-7b` ni GPU), **detras de un flag `rag_enabled`** (default off) y como **tool diferida**. El A/B (hallucination rate ±RAG) se **mide en la evaluacion del copiloto** (AgroMind/GeoAnalystBench), no aqui. El Spatial-RAG _completo_ (e5-mistral 4096-dim + HNSW + cross-encoder reranking) sigue **FUTURE**.
 
 **Como** equipo,
-- **quiero** una capa perceiver que envuelva los modelos del EPIC 5/6 y emita descripciones estructuradas (cultivo, fenologia, vigor, confianza) que el reasoner Gemini consume,
-- **para que** el razonamiento sea trazable y auditable, se pueda intercambiar la variante de reasoner (Gemini ↔ Qwen) sin tocar el perceiver, y la arquitectura tenga respaldo academico (Be My Eyes).
+- **quiero** una capa perceiver que envuelva los modelos del EPIC 5/6 y emita descripciones estructuradas (cultivo, fenologia, vigor, confianza) que el reasoner Gemini consume, mas un Spatial-RAG _lite_ opcional que aterrice el razonamiento en parcelas vecinas reales,
+- **para que** el razonamiento sea trazable y auditable, se pueda intercambiar la variante de reasoner (Gemini ↔ Qwen) sin tocar el perceiver, la arquitectura tenga respaldo academico (Be My Eyes), y el grounding local refuerce la historia de soberania de datos (Qwen on-prem).
 
 **Criterios de Aceptacion:**
 
 - `ml/agent/perceiver.py` que envuelve los modelos perceiver (TSViT-pheno / FarSLIP-pheno / AlphaEarth+XGBoost) y emite descripciones estructuradas textuales por parcela/AOI (incluye descripcion fenologica Wen et al. 2025).
-- El reasoner (US-055) consume **el texto** del perceiver, no la imagen — el LLM no es clasificador de pixeles.
-- Evento SSE `perceiver_observation` adicional en `/chat` (US-052) para mostrar la observacion del perceiver antes de la respuesta final.
-- La tool `explain_prediction` (US-045) es el punto de entrada del perceiver al loop del agente.
-- **Spatial-RAG pgvector: OUT (stub/FUTURE)** — documentado como trabajo futuro, no bloquea la demo.
+- El reasoner consume **el texto** del perceiver, no la imagen — el LLM no es clasificador de pixeles.
+- Evento SSE `perceiver_observation` adicional en `/chat` para mostrar la observacion del perceiver antes de la respuesta final.
+- La tool `explain_prediction` es el punto de entrada del perceiver al loop del agente.
+- **Spatial-RAG _lite_ detras de flag `rag_enabled` (default off)** — sirve al reasoner (grounding), no al clasificador:
+  - Corpus = descripciones fenologicas a escala (reutiliza `ml/features/phenology_description.py`) + metadatos de escena, ingeridos en tabla `rag_documents` (geom + embedding).
+  - Vector = embedding AlphaEarth 64-dim ya persistido en `features_parcels` (sin `e5-mistral-7b`, sin GPU); `e5-small` en CPU como fallback texto-nativo.
+  - Pipeline hibrido en serie: `ST_DWithin` (PostGIS) -> pgvector cosine -> fusion ponderada (codigo de referencia en skill `agrosat-spatial-rag`).
+  - Expuesto como **tool diferida** `retrieve_context` (NO entre las 5 tools sincronas de la demo del agente).
+  - Con `rag_enabled=false` el reasoner opera sin grounding (degradacion elegante); el flag habilita el A/B medido en la evaluacion del copiloto.
+- **Spatial-RAG _completo_ (e5-mistral 4096-dim + HNSW + cross-encoder reranking): sigue OUT (FUTURE)** — el _lite_ no lo sustituye ni lo bloquea.
 
 **Tareas tecnicas:**
 
 - [ ] `ml/agent/perceiver.py` que envuelve los modelos y emite descripciones estructuradas
 - [ ] Evento SSE `perceiver_observation` en `/chat`
-- [ ] Conectar `explain_prediction` (US-045) como entrada del perceiver
+- [ ] Conectar `explain_prediction` como entrada del perceiver
 - [ ] Test que verifica que el reasoner razona sobre el texto del perceiver (no sobre logits)
+- [ ] (RAG lite) Generar el corpus fenologico a escala de las parcelas del fold-5 con `ml/features/phenology_description.py`
+- [ ] (RAG lite) Migracion `dbmate` de la tabla `rag_documents` (indice GIST sobre geom + columna embedding pgvector; vector = AlphaEarth 64-dim)
+- [ ] (RAG lite) `ml/agent/rag.py`: pipeline hibrido `ST_DWithin` + pgvector cosine + fusion ponderada (adaptar skill `agrosat-spatial-rag` a 64-dim sin GPU)
+- [ ] (RAG lite) Tool diferida `retrieve_context` detras de flag `rag_enabled`; hook opcional en el reasoner
+- [ ] (RAG lite) Exponer la variante ±RAG al harness de evaluacion (`agent_bench.py`) para el A/B de hallucination
+- [ ] (RAG lite) Test de aislamiento: `rag_enabled=false` no toca el loop; `=true` inyecta el contexto recuperado
 
-**Estimacion:** 3 puntos (~1.5 dias; reducido de los 5 SP v6 al quitar Spatial-RAG y el fine-tune del perceiver, ambos FUTURE).
+**Estimacion:** 6 puntos (~3 dias): 3 SP del perceiver base + 3 SP del Spatial-RAG _lite_ (corpus a escala + migracion `rag_documents` + pipeline hibrido + tool diferida con flag). El fine-tune del perceiver y el Spatial-RAG _completo_ (e5-mistral + HNSW + reranking) siguen FUTURE.
 
 ---
 
@@ -1584,17 +1598,17 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 
 **Criterios de Aceptacion:**
 
-- `ml/agent/agent.py` con `create_agent(model: str, tools: list, instruction: str)` que devuelve un agente con las nueve FunctionTools de US-045 registradas.
+- `ml/agent/agent.py` con `create_agent(model: str, tools: list, instruction: str)` que devuelve un agente con las nueve FunctionTools geoespaciales registradas.
 - `instruction` = system prompt de analista (rol: interpreta firmas fenologicas, explica predicciones del ensamble, nunca clasifica pixeles el mismo — Be My Eyes).
 - `stream_response(messages, session_id)` emite los eventos del loop (`tool_call`, `tool_result`, `text_delta`, `done`) que `ChatService` reenvia por SSE.
 - SDK local `google-genai` (sin Agent Engine, sin `google-adk` por conflicto de version); diseno modular para portar a ADK post-presentacion.
-- La variante de modelo se inyecta (Gemini 2.5-pro por defecto; `gemini-2.5-flash` o Qwen via `/llm/switch`, US-052/US-056) sin tocar el factory.
+- La variante de modelo se inyecta (Gemini 2.5-pro por defecto; `gemini-2.5-flash` o Qwen via `/llm/switch`) sin tocar el factory.
 
 **Tareas tecnicas:**
 
 - [ ] `ml/agent/agent.py` con `create_agent()` + `stream_response()`
 - [ ] System prompt de analista agronomico (estilo Be My Eyes: reasoner razona sobre texto del perceiver)
-- [ ] Registro de las nueve tools de US-045
+- [ ] Registro de las nueve tools geoespaciales
 - [ ] Tests de integracion con queries canonicas del guion de demo
 
 **Estimacion:** 5 puntos (~2.5 dias).
@@ -1612,8 +1626,8 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 **Criterios de Aceptacion:**
 
 - Modelo Qwen3.5-35B-A3B en variante **GPTQ-Int4** servido con `vllm serve` en single-GPU (sin `--tensor-parallel-size`), `--enable-prefix-caching` para tool calls repetidos, continuous batching.
-- Endpoint `/v1/chat/completions` compatible con la API OpenAI, intercambiable con Gemini desde el mismo cliente (el factory de US-055 acepta backend OpenAI-compatible).
-- Tras `POST /llm/switch` a Qwen (US-052), las queries subsecuentes de `/chat` responden por Qwen.
+- Endpoint `/v1/chat/completions` compatible con la API OpenAI, intercambiable con Gemini desde el mismo cliente (el factory del agente acepta backend OpenAI-compatible).
+- Tras `POST /llm/switch` a Qwen, las queries subsecuentes de `/chat` responden por Qwen.
 - Latencia objetivo: p50 < 2 s / p95 < 5 s en query simple de un turno; p95 < 15 s en multi-turno con 3-5 tool calls.
 - Script `scripts/serve_qwen35.sh` que inicia vLLM, verifica health y publica el endpoint.
 - Despliegue durante ventana H100 con orden estricto de prioridad (FarSLIP → TSViT → ensambles → este serving); **sin** LoRA fine-tune (diferido).
@@ -1643,7 +1657,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 
 - AgroMind (subset de 500 pares) evaluado con cada variante; metricas: exact match, F1-SQuAD, BERTScore, tool-call accuracy, hallucination rate (LLM-as-judge con DeepEval / Gemini como juez).
 - GeoAnalystBench evaluado en modo plan-and-react.
-- **Tres modelos como benchmark, NUNCA fine-tune** (AgroMind es eval-only → fine-tune = leakage; ver US-058).
+- **Tres modelos como benchmark, NUNCA fine-tune** (AgroMind es eval-only → fine-tune = leakage; ver ADR-009).
 - Tabla comparativa con error bars sobre 3 corridas; analisis de latencia y costo por query.
 - Targets de rubrica: AgroMind >= 0.75 (Gemini 2.5-pro), >= 0.70 (Qwen3.5-35B); GeoAnalystBench pass rate >= 0.65.
 - MLflow con tags `data_version` + `code_version`; lineage en el server Docker :5010.
@@ -1651,7 +1665,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 **Tareas tecnicas:**
 
 - [ ] Harness `ml/eval/agent_bench.py` (AgroMind + GeoAnalystBench, LLM-as-judge DeepEval)
-- [ ] Ejecucion en ventana H100 compartida con el serving de Qwen3.5 (US-056)
+- [ ] Ejecucion en ventana H100 compartida con el serving de Qwen3.5
 - [ ] Reporte HTML con comparativa A/B/base + error bars
 - [ ] Registro MLflow con `data_version` + `code_version`
 
@@ -1684,7 +1698,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 
 ---
 
-**Subtotal EPIC 7: 36 story points** (US-049 8 + US-050 8 + US-055 5 + US-056 5 + US-057 5 + US-058 2 + US-035 perceiver 3; US-034/036/037/038 v6 absorbidas o renumeradas, 0 SP netos). Ninguna US del EPIC esta RESUELTA: `ml/agent/` esta vacio (0 de 9 tools), backend solo expone `/healthz`+`/readyz`. Spatial-RAG pgvector, Gemma 4 LoRA, Agent Engine y el fine-tune del perceiver/Qwen quedan FUTURE.
+**Subtotal EPIC 7: 31 story points** (US-045 8 + US-046 6 + US-047 5 + US-048 5 + US-049 5 + US-050 2). Ninguna US del EPIC esta RESUELTA: `ml/agent/` esta vacio (0 de 9 tools), backend solo expone `/healthz`+`/readyz`. Spatial-RAG _completo_ (e5-mistral + HNSW + reranking), Gemma 4 LoRA, Agent Engine y el fine-tune del perceiver/Qwen quedan FUTURE; el Spatial-RAG _lite_ entra en el alcance de la capa perceiver-reasoner.
 
 ---
 
@@ -1692,9 +1706,9 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 
 **Objetivo.** Exponer la plataforma como API REST FastAPI documentada (OpenAPI 3.1), servir tiles dinámicos COG para el frontend, aplicar aislamiento multi-tenant con RLS PostgreSQL y procesar inferencias pesadas de forma asíncrona. En el v8 el backend es el **camino crítico del producto MVP** (track paralelo de Aaron): el estado real al 7-jun es esqueleto con solo `/healthz`+`/readyz` (0 de 7 endpoints de negocio) y RLS sin aplicar. El alcance comprometido para la demo (27-jun) son los endpoints síncronos session-scoped (`/chat` SSE, `/aois`, `/timeseries`, `/tiles`, `/stac/search`, `/llm/switch`) sobre RLS aplicado; la cola async Pub/Sub `/jobs` real y Clerk OAuth2 productivo quedan diferidos (OUT — el MVP usa `user_id` demo).
 
-**Alineado con.** Avance 6 — despliegue + app MVP. Camino crítico §2 (C9: US-048..055). Realidad del producto §9.1.
+**Alineado con.** Avance 6 — despliegue + app MVP. Camino crítico §2 (C9: backend US-051..056 + agente US-045..050). Realidad del producto §9.1.
 
-**Puntos totales de la épica: 33.**
+**Puntos totales de la épica: 24.**
 
 ---
 
@@ -1720,7 +1734,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 - [ ] Test `pytest` de aislamiento cross-session (docker-compose local) antes de cualquier deploy; rollback (`down`) probado
 - [ ] Verificar en docker-compose local que la migración aplica limpia y revierte
 
-**Estimación:** 3 puntos (~1.5 días). Bloqueante de US-052/051/052.
+**Estimación:** 3 puntos (~1.5 días). Bloqueante de todos los endpoints de negocio session-scoped (US-052/US-053/US-054).
 
 ---
 
@@ -1762,7 +1776,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 
 - `POST/GET/DELETE /aois` — CRUD de AOIs desde GeoJSON, **session-scoped** verificado contra RLS (US-051); cada query filtra por owner.
 - `GET /aois/{id}/timeseries?index={NDVI|NDWI|NDMI}` — serie temporal desde la DB (parcelas/features), validada por propiedad.
-- `GET /tiles/{z}/{x}/{y}.png` — delega a TiTiler montado en la imagen backend (US-040); sin servicio separado.
+- `GET /tiles/{z}/{x}/{y}.png` — delega a TiTiler montado en la imagen backend (US-055); sin servicio separado.
 - `GET /stac/search` — consulta el catálogo STAC (pgstac, EPIC 1) con filtros bbox/datetime/collection.
 - Los 4 endpoints validan autorización por sesión; RLS por owner verificado con test cross-session.
 - Validación Pydantic de entrada/salida; tipos de respuesta GeoJSON-compatibles.
@@ -1771,7 +1785,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 
 - [ ] Routers `aois.py`, `timeseries.py`, `tiles.py`, `stac.py` → delegan a services (`AoiService`, `TimeseriesService`, `StacService`)
 - [ ] Modelos SQLModel + GeoAlchemy2 para AOIs (geometry GIST); query `/timeseries` sobre features
-- [ ] `/tiles` reusa el `TilerFactory` montado (US-040); `/stac/search` sobre pgstac
+- [ ] `/tiles` reusa el `TilerFactory` montado (US-055); `/stac/search` sobre pgstac
 - [ ] `SET LOCAL app.current_session` por request en cada endpoint; tests de aislamiento por owner
 - [ ] Tests de integración `httpx.AsyncClient` (CRUD + 403 cross-session)
 
@@ -1788,7 +1802,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 **Criterios de Aceptación:**
 
 - `POST /llm/switch` setea `chat_sessions.llm_model` (persistido) y los `/chat` subsecuentes de esa sesión usan el nuevo modelo.
-- Valores válidos: `gemini-2.5-pro`, `gemini-flash`, `qwen3.5-35b-a3b` (variante-B on-prem servida por vLLM, US-056).
+- Valores válidos: `gemini-2.5-pro`, `gemini-flash`, `qwen3.5-35b-a3b` (variante-B on-prem servida por vLLM, US-048).
 - Latencia y tokens loggeados por switch (insumo FinOps / observabilidad US-059).
 - Guard de autorización por sesión + rate limit (regla anti-patrón: `/llm/switch` nunca sin auth).
 - Demo verificable: misma query Pro→Flash responde ~3.5 s vs ~1.2 s (trade-off visible, §9.3).
@@ -1806,7 +1820,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 
 ### US-055 — TiTiler para tiling COG dinámico
 
-> **Estado: RESUELTA parcialmente (montada en la imagen backend, sin Dockerfile dedicado).** En el v8 NO se crea `titiler.Dockerfile` ni servicio Cloud Run separado: TiTiler se monta como sub-app/router dentro de la **misma imagen backend** (FastAPI), reduciendo superficie de deploy y costo (un solo Cloud Run). El endpoint público al frontend es `/tiles/...` (US-051) que delega internamente a los factories de `titiler.core`.
+> **Estado: RESUELTA parcialmente (montada en la imagen backend, sin Dockerfile dedicado).** En el v8 NO se crea `titiler.Dockerfile` ni servicio Cloud Run separado: TiTiler se monta como sub-app/router dentro de la **misma imagen backend** (FastAPI), reduciendo superficie de deploy y costo (un solo Cloud Run). El endpoint público al frontend es `/tiles/...` (US-053) que delega internamente a los factories de `titiler.core`.
 
 **Como** frontend,
 - **quiero** tiles PNG/WebP generados on-the-fly desde COGs en GCS,
@@ -1857,17 +1871,17 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 
 ---
 
-**Subtotal EPIC 8: 33 story points** (US-039 4 + US-040 3 + US-041 2 difer. + US-048 3 + US-050 8 + US-051 5 + US-052 3 + US-059 3 + US-049/055 contabilizadas en E9 agente; los 2 SP de US-041 quedan diferidos del comprometido de A6).
+**Subtotal EPIC 8: 24 story points** (US-051 RLS 3 + US-052 /chat SSE 8 + US-053 /aois+/timeseries+/tiles+/stac 5 + US-054 /llm/switch 3 + US-055 TiTiler 3 + US-056 worker Pub/Sub 2 difer.; 22 comprometidos + 2 SP de US-056 diferidos del comprometido de A6).
 
 ---
 
 ## EPIC 9: Frontend Web + Mapa + Chat Bilingüe {#epic-9}
 
-**Objetivo.** Construir la interfaz web impactante para la presentación final (27-jun), con i18n italiano/español/inglés nativo, mapa MapLibre con AOIs y panel de chat conversacional sobre SSE. El v8 reduce el alcance de la épica al **MVP demoable en 3 semanas** (ChatPanel + MapView sobre `index.vue`), difiere overlays/timeline interactivos y el switch A/B a su forma mínima, y reconcilia la numeración v6 (US-042..046) con las US v8 de producto-frontend (US-053, US-054) que son la fuente de verdad para la implementación.
+**Objetivo.** Construir la interfaz web impactante para la presentación final (27-jun), con i18n italiano/español/inglés nativo, mapa MapLibre con AOIs y panel de chat conversacional sobre SSE. El v8 reduce el alcance de la épica al **MVP demoable en 3 semanas** (ChatPanel + MapView sobre `index.vue`, US-057 y US-058), y difiere overlays/timeline interactivos y el switch A/B a su forma mínima.
 
 **Alineado con.** Avance 6 (14-jun) + Avance 7 (21-jun) + Presentación Final (27-jun).
 
-**Estado de partida real (verificado 7-jun-2026).** El frontend solo tiene el esqueleto: `frontend/app.vue`, `frontend/pages/index.vue` (portada con `useI18n()` + `t('app.name')`/`t('app.tagline')`), `nuxt.config.ts` (Nuxt 4 SSR, `@nuxt/ui-pro` + `@nuxtjs/i18n` + `@pinia/nuxt`, locales it/es/en con `strategy: prefix_except_default`, `defaultLocale: it`), `tailwind.config.ts` (Tailwind v4) y los tres `i18n/locales/{it,es,en}.json`. **No existen aún** `components/`, `composables/`, `stores/`, `layouts/` ni `middleware/`. La validación de paridad i18n se ejecuta vía `scripts/i18n_check.mjs` (`make i18n-check`). El backend solo expone `/healthz`+`/readyz`, por lo que el MVP de chat depende del track de Aaron (US-050 `/chat` SSE) y del agente ADK (US-055).
+**Estado de partida real (verificado 7-jun-2026).** El frontend solo tiene el esqueleto: `frontend/app.vue`, `frontend/pages/index.vue` (portada con `useI18n()` + `t('app.name')`/`t('app.tagline')`), `nuxt.config.ts` (Nuxt 4 SSR, `@nuxt/ui-pro` + `@nuxtjs/i18n` + `@pinia/nuxt`, locales it/es/en con `strategy: prefix_except_default`, `defaultLocale: it`), `tailwind.config.ts` (Tailwind v4) y los tres `i18n/locales/{it,es,en}.json`. **No existen aún** `components/`, `composables/`, `stores/`, `layouts/` ni `middleware/`. La validación de paridad i18n se ejecuta vía `scripts/i18n_check.mjs` (`make i18n-check`). El backend solo expone `/healthz`+`/readyz`, por lo que el MVP de chat depende del track de Aaron (US-052 `/chat` SSE) y del agente ADK (US-047).
 
 **Puntos totales de la épica: 10.**
 
@@ -1887,7 +1901,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 - SSR-safe: el cliente SSE solo se inicializa con `import.meta.client`; el composable nunca toca `window` en server.
 - i18n: todo texto visible (placeholders, botones, errores, etiquetas de tool) en `i18n/locales/{it,es,en}.json` en sync (`make i18n-check` verde); el `locale` activo se envía en el payload para condicionar el idioma del reasoner.
 - Dark mode soportado vía `@nuxtjs/color-mode` (ya presente); foco visible y `aria-label` en input/botón (WCAG AA básico).
-- Se integra en `pages/index.vue` como panel derecho del layout 2-panel (junto a `MapView.vue` de US-054).
+- Se integra en `pages/index.vue` como panel derecho del layout 2-panel (junto a `MapView.vue` de US-058).
 - Tests Vitest del parser SSE (mensajes parciales, evento `done`, error de red) con cobertura frontend ≥50 %.
 
 **Tareas técnicas:**
@@ -1916,7 +1930,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 - AOIs GeoJSON renderizados como capa seleccionable (outline + highlight); al hacer click en una parcela se publica su `parcel_id`/contexto al `stores/chat.ts` para enlazar mapa↔chat (guion de demo §9.3).
 - `composables/useMap.ts` encapsula creación/destrucción del mapa, `addSource`/`addLayer` de AOIs y los handlers de selección; `stores/map.ts` (Pinia) mantiene la AOI activa y el bbox visible.
 - MVP = base layer + AOI outline seleccionable. **Draw-polygon (`maplibre-gl-draw`), parcel boundaries densos y overlay de segmentación son Full/FUTURE** (no comprometidos para el 27-jun).
-- Layout 2-panel: `MapView.vue` ocupa el panel izquierdo de `pages/index.vue`, `ChatPanel.vue` (US-053) el derecho; responsive básico (apila en viewport estrecho).
+- Layout 2-panel: `MapView.vue` ocupa el panel izquierdo de `pages/index.vue`, `ChatPanel.vue` (US-057) el derecho; responsive básico (apila en viewport estrecho).
 - i18n: etiquetas/leyendas/tooltips visibles en `i18n/locales/{it,es,en}.json` en sync (`make i18n-check` verde).
 - Tests Vitest del store de mapa y del wiring de selección (mock de MapLibre); cobertura frontend ≥50 %.
 
@@ -1935,7 +1949,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 
 ---
 
-**Subtotal EPIC 9: 10 story points** (US-043 i18n 2 + US-046 switch A/B MVP 1 + US-053 ChatPanel 5 + US-054 MapView 5 = 13 SP de trabajo IN; los 10 SP de la épica v6 se conservan como cota nominal, con US-042/044/045 superseded/diferidas y su trabajo MVP re-imputado a US-053/054).
+**Subtotal EPIC 9: 10 story points** (US-057 ChatPanel 5 + US-058 MapView 5). La i18n it/es/en y el switch A/B en su forma mínima se absorben en los componentes de US-057/US-058 (el endpoint `/llm/switch` es US-054, EPIC 8).
 
 ## EPIC 10: Observabilidad, Drift, FinOps, Seguridad y Documentación {#epic-10}
 
@@ -1943,9 +1957,9 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 
 **Alineado con.** Avance 6 (14-jun-2026) y Avance 7 (21-jun-2026); presentación final 27-jun-2026 ([ADR-008](../docs/decisions/ADR-008-rediseno-calendario-presentacion-27jun.md)).
 
-**Puntos totales de la épica: 24.** El tracing built-in de Google ADK absorbe la observabilidad del agente, por lo que la observabilidad se concentra en métricas técnicas del sistema (latencia chat, lineage), drift de datos, FinOps y seguridad. El v8 añade el bloque LLM serving/eval (US-056, US-057, US-058) y formaliza observabilidad y licencias (US-059, US-060) sobre los datasets multi-región.
+**Puntos totales de la épica: 13.** El tracing built-in de Google ADK absorbe la observabilidad del agente, por lo que la observabilidad se concentra en métricas técnicas del sistema (latencia chat, lineage), drift de datos, FinOps y seguridad. El v8 añade el bloque de serving/evaluación LLM y la observabilidad de chat, y formaliza la observabilidad técnica, el drift de datos y las licencias multi-región.
 
-> **Nota de realidad (corte 7-jun-2026).** La H100 NVL 96GB del sponsor (`gjcamacho-gpuh1`, env micromamba `agrosat`, `F:\projects\agrosat-copilot`) está disponible, por lo que el serving de Qwen3.5 vLLM (US-056) es viable; el cuello de botella es el tiempo (~3 semanas a presentación), no el cómputo. El fine-tune de **Gemma 4 26B LoRA queda OUT** y se documenta como ADR-009 future (US-058): los experts MoE son tensores 3D fused que bloquean QLoRA, y AgroMind es eval-only (fine-tunear sobre él = leakage). El reasoner del agente es **Gemini 2.5-pro GA (1M ctx, no 2M)**; la variante on-prem es **Qwen3.5-35B-A3B vLLM (GPTQ-Int4, single-GPU)**.
+> **Nota de realidad (corte 7-jun-2026).** La H100 NVL 96GB del sponsor (`gjcamacho-gpuh1`, env micromamba `agrosat`, `F:\projects\agrosat-copilot`) está disponible, por lo que el serving de Qwen3.5 vLLM (US-048) es viable; el cuello de botella es el tiempo (~3 semanas a presentación), no el cómputo. El fine-tune de **Gemma 4 26B LoRA queda OUT** y se documenta como ADR-009 future (US-050): los experts MoE son tensores 3D fused que bloquean QLoRA, y AgroMind es eval-only (fine-tunear sobre él = leakage). El reasoner del agente es **Gemini 2.5-pro GA (1M ctx, no 2M)**; la variante on-prem es **Qwen3.5-35B-A3B vLLM (GPTQ-Int4, single-GPU)**.
 
 ---
 
@@ -1960,7 +1974,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 - Métricas exportadas por FastAPI con `prometheus-client`: latencia p50/p95/p99, RPS, error rate por endpoint, GPU utilization del worker (L4 spot o H100 cuando sirve Qwen), tool-call success rate del agente (integrado con **ADK / google-genai tracing**), hallucination rate estimada (LLM-as-judge muestra ~5% de queries).
 - Dashboards Grafana con tres paneles: API, worker ML, data pipeline.
 - Alertas configuradas (vía email o Cloud Monitoring): p99 latencia > 3 s, GPU OOM, error rate > 5%.
-- **Realidad v8:** dado que en el MVP el backend solo expone `/healthz`+`/readyz` hasta que aterricen US-052/051, esta US se reduce al *scaffolding* de instrumentación (decorador de métricas + dashboards plantilla) y la versión completa (paneles poblados con tráfico real) se reporta junto con la observabilidad de chat de US-059. El subconjunto crítico para A7 (latencia chat p95) vive en US-059.
+- **Realidad v8:** dado que en el MVP el backend solo expone `/healthz`+`/readyz` hasta que aterricen US-052/051, esta US se reduce al *scaffolding* de instrumentación (decorador de métricas + dashboards plantilla) y la versión completa (paneles poblados con tráfico real) se reporta junto con la observabilidad de chat de US-065. El subconjunto crítico para A7 (latencia chat p95) vive en US-065.
 
 **Tareas técnicas:**
 
@@ -1981,7 +1995,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 **Criterios de Aceptación:**
 
 - Drift de distribución de bandas Sentinel-2 (KS test) y AlphaEarth embeddings (MMD). **Nota v8:** AlphaEarth = asset GEE `SATELLITE_EMBEDDING/V1/ANNUAL` (data v1.1, 64-dim, global incl. México, CC-BY-4.0) — corregir cualquier referencia muerta a "v2.1".
-- Drift de distribución de clases predichas (Chi-cuadrado), usando el espacio de clases normalizado de US-030 (18-clase contiguo) y, cuando aplique, las macro-clases HCAT (US-043) del pipeline multi-región.
+- Drift de distribución de clases predichas (Chi-cuadrado), usando el espacio de clases normalizado de US-030 (18-clase contiguo) y, cuando aplique, las macro-clases HCAT (US-074) del pipeline multi-región.
 - Reporte HTML semanal automático publicado en `gs://agrosat-reports/drift/`.
 - Alerta si drift score > 0.3.
 - **Integrado como asset Dagster `drift_check`** que corre semanalmente con dependencia de los assets de ingesta.
@@ -2007,7 +2021,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 - Tabla de costos por fase CRISP-ML(Q) reales del proyecto + proyección 12 meses, con cifras v8 verificadas: adquisición de datos ($0, fuentes públicas), training (**H100 prestada por el sponsor 24/7, no se cobra**; L4 spot con auto-shutdown para jobs ligeros), serving (~$115/mes con scale-to-zero), Gemini API (centavos — descripciones fenológicas FarSLIP + razonador chat, dentro de ~$115/mes), Qwen3.5 vLLM self-hosted en H100 (incremental ≈$0 sobre la VM prestada en ventanas), GCP acumulado a la fecha ~$0.30-0.49.
 - Aclarar que el "Trial credit for GenAI App Builder" ($17,178) es de Vertex AI Search/Agent Builder y **NO** cubre la Gemini API de generación de texto (SKU distinta) — no se necesita.
 - Tabla de beneficios cuantificables para cliente tipo 500 ha: horas ahorradas de agrónomo/mes, % ahorro de agua con detección de estrés hídrico, ahorro de insumos por fertilización focalizada, reducción de tiempo de detección de plagas.
-- Beneficios intangibles: trazabilidad para cumplimiento CAP europeo, reducción de riesgo regulatorio, imagen sostenibilidad, **soberanía de datos** (variante on-prem Qwen3.5 vía US-056).
+- Beneficios intangibles: trazabilidad para cumplimiento CAP europeo, reducción de riesgo regulatorio, imagen sostenibilidad, **soberanía de datos** (variante on-prem Qwen3.5 vía US-048).
 - ROI break-even estimado en mes 3 para cliente tipo.
 
 **Tareas técnicas:**
@@ -2068,11 +2082,11 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 
 - HTTPS obligatorio con Cloud Load Balancer y certificados managed.
 - JWT con rotación y refresh tokens; en el MVP demo (27-jun) se usa `user_id` demo hardcoded y Clerk OAuth2 queda como Full/post-presentación.
-- **RLS PostgreSQL por tenant aplicado** vía migración dbmate — ver US-058 (bloqueante; hoy `aois`/`parcels`/`features_parcels`/`chat_sessions` están **sin RLS** según `docs/STATUS.md`).
+- **RLS PostgreSQL por tenant aplicado** vía migración dbmate — ver US-051 (bloqueante; hoy `aois`/`parcels`/`features_parcels`/`chat_sessions` están **sin RLS** según `docs/STATUS.md`).
 - Secretos nunca en git. **Realidad v8:** el proyecto **NO usa `.pre-commit-config.yaml`** (regla irrevocable) — el secrets-scan vive en `make secrets-scan` (gitleaks) y en CI, **no** en un hook `detect-secrets`. Corregir esta referencia muerta del v6.
 - Revisión OWASP Top 10 documentada en `docs/security.md` (el archivo no existe aún — crearlo).
 - Penetration test manual básico (nikto, nmap) antes de presentación.
-- Model Cards publicadas en `docs/model_cards/` para el **modelo final ensemble (E6)**, **TSViT-pheno** y **FarSLIP-pheno**. **Realidad v8:** la Model Card de **Gemma 4 fine-tuned se elimina** (Gemma LoRA es OUT → ADR-009 future, US-058); en su lugar se documenta Qwen3.5-35B-A3B vLLM serving (variante-B).
+- Model Cards publicadas en `docs/model_cards/` para el **modelo final ensemble (E6)**, **TSViT-pheno** y **FarSLIP-pheno**. **Realidad v8:** la Model Card de **Gemma 4 fine-tuned se elimina** (Gemma LoRA es OUT → ADR-009 future, US-050); en su lugar se documenta Qwen3.5-35B-A3B vLLM serving (variante-B).
 - Data Sheets por dataset en `docs/data_sheets/` (incluye PASTIS-R, AlphaEarth V1, y los multi-región Sen4AgriNet/EuroCropsML).
 - ADRs en `docs/decisions/`, incluido **ADR-009** (reactivación H100 + pivote FarSLIP del sponsor + alcance v8 + Gemma LoRA diferido).
 - **Glosario técnico** en `docs/glosario.md` con estandarización de términos IT/ES/EN.
@@ -2100,14 +2114,14 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 - Métricas de chat en logs estructurados (`structlog.get_logger()`, nunca `print()`): latencia por turno con objetivos **p95 < 3 s simple** y **< 15 s multi-step**, conteo de tool-calls por mensaje, tokens y modelo activo (Gemini Pro/Flash/Qwen) para FinOps.
 - Lineage de experimentos en MLflow (server **Docker :5010**, no `./mlruns`) con tags `data_version` + `code_version`; documentar el gotcha de los dos almacenes (runs por subprocess quedan RUNNING contra el server equivocado).
 - Dependencia funcional de US-052 (`/chat` SSE) para tener tráfico real que medir; mientras tanto, instrumentación lista y validada con un flujo sintético.
-- Integración con el scaffolding de Prometheus/Grafana de US-047 (el panel "latencia chat p95" se puebla aquí).
+- Integración con el scaffolding de Prometheus/Grafana de US-059 (el panel "latencia chat p95" se puebla aquí).
 
 **Tareas técnicas:**
 
 - [ ] Middleware/instrumentación structlog de latencia y tokens por turno de chat
 - [ ] Helper de logging de tool-calls y modelo activo (FinOps)
 - [ ] Verificar tags MLflow `data_version`+`code_version` contra el server Docker :5010
-- [ ] Panel Grafana "latencia chat p95" alimentado por las métricas de US-047
+- [ ] Panel Grafana "latencia chat p95" alimentado por las métricas de US-059
 
 **Estimación:** 3 puntos (~1.5 días).
 
@@ -2146,7 +2160,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 - Existe `docs/operations/finops.md` con: presupuesto objetivo (~$115/mes operativo + entrenamiento puntual), estado de gasto a la fecha (GCP ~$0.30–0.49 acumulado) y la nota de que la **H100 es prestada por el sponsor (24/7, no apagar)**.
 - Documenta las palancas ya aplicadas: Cloud SQL dev con `activation_policy=NEVER` (var `db_activation_policy` en Terraform evita drift), shrink de disco `farslip-data` 250→125 GB vía snapshot→disco→rsync→import TF, daemon de auto-shutdown de la VM L4 por idle (Pub/Sub, no GPU), y `scale-to-zero` en Cloud Run.
 - Aclara el caveat de créditos: el "Trial credit for GenAI App Builder" ($17,178) es de Vertex AI Search/Agent Builder y **NO** cubre la SKU de generación de texto de la Gemini API.
-- Enlaza los scripts operativos permanentes (`scripts/azure_h100_*.sh`, `scripts/cost_audit.sh`) y la skill `agrosat-finops`; consume las métricas de latencia/tokens de US-059 para estimar costo por modelo en el switch A/B (US-052).
+- Enlaza los scripts operativos permanentes (`scripts/azure_h100_*.sh`, `scripts/cost_audit.sh`) y la skill `agrosat-finops`; consume las métricas de latencia/tokens de US-059 para estimar costo por modelo en el switch A/B (US-054).
 
 **Tareas técnicas:**
 
@@ -2160,7 +2174,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 
 ---
 
-**Subtotal EPIC 10: 24 story points.**
+**Subtotal EPIC 10: 13 story points** (US-059 2 + US-060 2 + US-061 1 + US-062 1 + US-063 1 + US-064 1 + US-065 3 + US-066 1 + US-067 1).
 
 ## EPIC 11: Paper Track — Semanas post-Presentación (Opcional) {#epic-11}
 
@@ -2170,7 +2184,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 
 **Reality check (7-jun-2026).** La H100 NVL 96GB del sponsor (VM `gjcamacho-gpuh1`, env micromamba `agrosat`, `F:\projects\agrosat-copilot`) está disponible 24/7, lo que reabre la evaluación LLM de variante on-prem (Qwen3.5-35B-A3B vLLM) y el re-entrenamiento full de TSViT como insumos del paper. El cuello de botella es **tiempo** (~3 semanas hasta la presentación), no cómputo: por eso el Paper Track sigue siendo **opcional y post-presentación**. Correcciones factuales que el paper debe reflejar: AlphaEarth es **GEE asset `SATELLITE_EMBEDDING/V1/ANNUAL` data v1.1, CC-BY-4.0** (NO "v2.1"); Gemini 2.5-pro (GA, 1M ctx, NO 2M); **AgroMind es eval-only** (~28,482 QA sin train split) → cualquier fine-tune sobre AgroMind sería leakage; Swin-UNETR nunca se entrenó y **AnySat lo sustituye** (mIoU fold-4 0.4459); SegFormer corrió en variante **B0 con 3 bandas RGB** (no B2 10-banda); Gemma 4 26B LoRA queda como **future (ADR-009)**, no se entrena.
 
-**Capacidad estimada:** 3 devs × 8 h/semana (dedicación reducida post-curso) × 2 semanas = 48 horas ≈ 20 SP realistas; con dedicación extra de miembros individuales part-time la capacidad sube a ~28 SP. El bloque multi-región (US-058) es el más ambicioso y se difiere a continuación asincrónica si no entra.
+**Capacidad estimada:** 3 devs × 8 h/semana (dedicación reducida post-curso) × 2 semanas = 48 horas ≈ 20 SP realistas; con dedicación extra de miembros individuales part-time la capacidad sube a ~28 SP. El bloque multi-región (EPIC 12) es el más ambicioso y se difiere a continuación asincrónica si no entra.
 
 **Puntos totales de la épica: 35.**
 
@@ -2212,7 +2226,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 
 - GEO-Bench-2 sobre las tasks agrícolas relevantes (≥3 de las 19 disponibles).
 - AgroMind subset 1000 pares (eval-only; sin re-entrenamiento sobre él).
-- AgroMind-IT/ES 500 pares (US-053).
+- AgroMind-IT/ES 500 pares (US-068).
 - Variantes evaluadas: **Gemini 2.5-pro** (reasoner cloud, GA, 1M ctx) y **Qwen3.5-35B-A3B vLLM** (variante on-prem, GPTQ-Int4 single-GPU en H100, sin `--tensor-parallel-size`). **Gemma 4 26B se evalúa solo como base sin fine-tune** si entra (su LoRA está OUT — experts MoE 3D fused bloquean QLoRA; ver §8 del plan v8 / ADR-009).
 - Métricas por variante: accuracy, F1, BERTScore, tool-call accuracy, hallucination rate, latencia p50/p95, costo por query.
 - Tres corridas independientes con error bars y test Wilcoxon signed-rank para comparación pareada.
@@ -2382,7 +2396,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 
 - Subset Sen4AgriNet versionado vía DVC/GCS: tiles Catalonia 31TCG (2019/2020) + 1-2 tiles FR — **NO** bajar los ~10 TB completos (subset ~objetivo manejable, referencia 281 GB del split completo).
 - Adapter `netCDF → tensor (T,C,H,W)` compatible con el dataloader denso existente, replicando el binning mensual + `linear_encoder` del `patches_dataset.py` oficial; mismo paradigma denso LPIS→máscaras que PASTIS.
-- Etiquetas remapeadas al label space HCAT unificado de US-043 (añade olivo, sorgo, trigo duro, arroz, algodón sobre PASTIS-FR).
+- Etiquetas remapeadas al label space HCAT unificado de US-074 (añade olivo, sorgo, trigo duro, arroz, algodón sobre PASTIS-FR).
 - Escenario de transfer reportado: finetune denso FR→Catalonia (1 escenario), con Δ mIoU zero-shot vs few-shot como medida del domain gap (alineado con §7.3 del v8).
 - Caveat honesto documentado: AlphaEarth tiene transferibilidad espacial limitada (arXiv:2601.00857) → presupuestar few-shot finetune, NO prometer zero-shot.
 
@@ -2408,7 +2422,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 
 - `pip install eurocropsml` (dependencia vía `poetry add`); splits y protocolo k=1/5/10/20/100/200/500-shot listos.
 - Curva few-shot del baseline AlphaEarth 64-dim + XGBoost sobre EuroCropsML (Francia→Estonia y/o Latvia+Portugal→Estonia), reportando F1 por valor de k (referencia del paper: 0.66 vs 0.57 a 500-shot).
-- Espacio de etiquetas alineado a HCAT v3 (176 clases hoja) vía el crosswalk de US-043; subset ~4.8 GB versionado.
+- Espacio de etiquetas alineado a HCAT v3 (176 clases hoja) vía el crosswalk de US-074; subset ~4.8 GB versionado.
 - Resultado enmarcado como evidencia del domain gap medido, no como claim de exactitud zero-shot.
 
 **Tareas técnicas:**
@@ -2432,7 +2446,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 
 - 1-2 ejemplos cualitativos: centroide de una zona aguacatera (Michoacán) + alineación fenología-texto sobre la curva NDVI real, usando AlphaEarth V1/ANNUAL (global, incluye México, CC-BY-4.0).
 - Enmarcado explícito como *metodología zero-shot cualitativa*, **sin claim de F1** (no hay ground-truth curado para México — ver §11.2 del v8).
-- Reutiliza el pipeline de descripciones fenológicas (`ml/features/phenology_description.py`, Gemini Flash) y el espacio HCAT de US-043.
+- Reutiliza el pipeline de descripciones fenológicas (`ml/features/phenology_description.py`, Gemini Flash) y el espacio HCAT de US-074.
 - Caveat documentado: F1≥0.80 mexicano validado queda FUTURE (requiere muestras curadas, fuera de scope de la presentación).
 
 **Tareas técnicas:**
@@ -2454,7 +2468,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 **Criterios de Aceptación:**
 
 - Ingestión vía WorldCereal RDM API (GeoParquet, sin login, CC-BY por-colección) + Harmonized Global Crops (HF `torchgeo/harmonized_global_crops`, TorchGeo-ready, splits cross-region, CC-BY-SA-4.0).
-- Clases tropicales nuevas mapeadas a HCAT v3 (US-043): arroz, soya, caña, sorgo, algodón, mijo, café, cacao, palma.
+- Clases tropicales nuevas mapeadas a HCAT v3 (US-074): arroz, soya, caña, sorgo, algodón, mijo, café, cacao, palma.
 - Cruce de etiquetas vector con AlphaEarth zonal; protocolo train-Francia→finetune-elsewhere con Δ F1 reportado.
 - Enmarcado como FUTURE/Paper Track: requiere jobs GEE zonales de días + curación taxonómica; no bloquea ningún Avance del curso.
 
@@ -2487,7 +2501,7 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 - [ ] Añadir DOIs y URLs verificadas de cada dataset
 - [ ] Cross-check con el checklist de cierre de US (atribución licencia obligatoria)
 
-**Estimación:** 1 punto (~0.5 días). **IN — depende de US-044, Avance 6/W3.**
+**Estimación:** 1 punto (~0.5 días). **IN — depende de los datasets multi-región (US-074..078), Avance 6/W3.**
 
 ---
 
@@ -2518,11 +2532,11 @@ S11 (28-jun-3-jul): Buffer + Paper Track opcional
 | Riesgo | Prob | Mitigación |
 |--------|------|------------|
 | H100 una sola GPU, cola consume días | Alta | Orden estricto; fallback L4 para ablación de bandas |
-| `ml/ensemble/` vacío a días de A5 | Alta | US-026/027 (harness + OOF) primero; 4 ensambles base = MVP |
-| Tabla 6-modelos no apples-to-apples | Alta | US-026: re-score con un solo harness, reportar fold-5 |
+| `ml/ensemble/` vacío a días de A5 | Alta | US-030/031 (harness + OOF) primero; 4 ensambles base = MVP |
+| Tabla 6-modelos no apples-to-apples | Alta | US-030: re-score con un solo harness, reportar fold-5 |
 | RLS migración falla → data leak | Media | Test en docker-compose local antes de exponer endpoints |
 | Incremental FarSLIP 4→18 no converge | Media | POC 2-epoch antes de full; fallback 18-desde-cero |
-| Gemma 4 LoRA (experts 3D) | — | Diferido (US-058); usar Gemini + Qwen vLLM |
+| Gemma 4 LoRA (experts 3D) | — | Diferido (US-050); usar Gemini + Qwen vLLM |
 | Transfer México sin ground-truth | — | Demo metodológico cualitativo, no F1 validado |
 
 ---
