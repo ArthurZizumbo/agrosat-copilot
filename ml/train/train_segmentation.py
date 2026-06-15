@@ -84,7 +84,6 @@ _DEFAULT_ROOT = Path("data/PASTIS-R")
 _PASTIS_DVC_PATH = "data/PASTIS-R"
 
 
-
 def _parse_folds(spec: str) -> tuple[int, ...]:
     """Parses ``"1,2,3"`` into ``(1, 2, 3)``."""
     return tuple(int(x) for x in spec.split(",") if x.strip())
@@ -161,6 +160,13 @@ def _make_loader(
         temporal_reduction=reduction,  # type: ignore[arg-type]
         norm=norm,
     )
+    # ``prefetch_factor`` only applies with worker processes; passing it with
+    # ``num_workers=0`` raises. With workers it overlaps the per-item temporal
+    # median (the U-Net loading cost) with the GPU step so the H100 stays fed.
+    extra: dict[str, Any] = {}
+    if num_workers > 0:
+        extra["prefetch_factor"] = 4
+        extra["persistent_workers"] = True
     return DataLoader(
         dataset,
         batch_size=batch_size,
@@ -168,7 +174,7 @@ def _make_loader(
         num_workers=num_workers,
         drop_last=False,
         pin_memory=pin_memory,
-        persistent_workers=num_workers > 0,
+        **extra,
     )
 
 
@@ -351,12 +357,26 @@ def run_training(
 
     pin = dev.type == "cuda"
     train_loader = _make_loader(
-        train_ids, root=root, reduction=reduction, target_size=target_size, norm=norm,
-        batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=pin,
+        train_ids,
+        root=root,
+        reduction=reduction,
+        target_size=target_size,
+        norm=norm,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=pin,
     )
     val_loader = _make_loader(
-        val_ids, root=root, reduction=reduction, target_size=target_size, norm=norm,
-        batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin,
+        val_ids,
+        root=root,
+        reduction=reduction,
+        target_size=target_size,
+        norm=norm,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=pin,
     )
 
     # Materialize Lazy parameters (the AnySat Conv1x1 head uses nn.LazyConv2d,
@@ -476,7 +496,12 @@ def run_training(
                     bar.set_postfix(loss=f"{epoch_loss / step:.3f}")
 
             metrics = _evaluate(
-                seg_model, model, val_loader, dev, PASTIS_NUM_CLASSES, PASTIS_IGNORE_INDEX,
+                seg_model,
+                model,
+                val_loader,
+                dev,
+                PASTIS_NUM_CLASSES,
+                PASTIS_IGNORE_INDEX,
                 group_lut=group_lut,
             )
             train_loss = epoch_loss / max(1, len(train_loader))
@@ -497,8 +522,13 @@ def run_training(
             # Resumable checkpoint every `checkpoint_every` epochs (and on the last one).
             if (epoch + 1) % checkpoint_every == 0 or epoch == epochs - 1:
                 _save_checkpoint(
-                    resume_ckpt_path, epoch=epoch, model=seg_model, optimizer=optimizer,
-                    scaler=scaler, best=best, config=ckpt_config,
+                    resume_ckpt_path,
+                    epoch=epoch,
+                    model=seg_model,
+                    optimizer=optimizer,
+                    scaler=scaler,
+                    best=best,
+                    config=ckpt_config,
                 )
 
         train_time_s = time.perf_counter() - start
@@ -506,7 +536,18 @@ def run_training(
 
         output_dir.mkdir(parents=True, exist_ok=True)
         torch.save(seg_model.state_dict(), final_model_path)
-        mlflow.log_artifact(str(final_model_path))
+        # The checkpoint is already on disk (output_dir). Logging it as an MLflow
+        # artifact is best-effort: an HTTP tracking server without an artifact
+        # proxy (--serve-artifacts) rejects the upload, and that must not abort a
+        # finished 30-epoch run. Params/metrics/tags are already registered.
+        try:
+            mlflow.log_artifact(str(final_model_path))
+        except Exception as exc:  # noqa: BLE001 - artifact store optional
+            logger.warning(
+                "mlflow_log_artifact_skipped",
+                path=str(final_model_path),
+                error=str(exc),
+            )
 
         comparison_row = {
             "model": model,
@@ -540,12 +581,12 @@ def run_training(
     }
 
 
-
 # ===========================================================================
 # US-025 trainers: DeepLabv3+ (2D) and TSViT (temporal, + phenology branch).
 # Own APIs (train_segmentation / build_and_train) that the 5a/5b notebooks
 # invoke by subprocess with --model deeplabv3plus|tsvit|tsvit-pheno.
 # ===========================================================================
+
 
 def phenology_contrastive_loss(
     visual_proj: torch.Tensor,
@@ -750,9 +791,7 @@ def _run_epoch(
                 optimizer.zero_grad(set_to_none=True)
 
             with torch.autocast(device_type=device.type, enabled=amp_enabled):
-                logits, visual_proj = _forward_model(
-                    model, x, return_visual_proj=use_phenology
-                )
+                logits, visual_proj = _forward_model(model, x, return_visual_proj=use_phenology)
                 loss = criterion(logits, y)
                 if (
                     use_phenology
@@ -824,9 +863,7 @@ def _evaluate_dense(
             x = x.to(device, non_blocking=True).float()
             logits, _ = _forward_model(model, x, return_visual_proj=use_phenology)
             preds = logits.argmax(dim=1)
-            cm += dense_confusion_matrix(
-                preds, y, n_classes=num_classes, ignore_index=ignore_index
-            )
+            cm += dense_confusion_matrix(preds, y, n_classes=num_classes, ignore_index=ignore_index)
 
     return dense_metrics_from_cm(cm), cm
 
@@ -1071,15 +1108,11 @@ def train_segmentation(
     if epochs <= 0:
         raise ValueError(f"epochs must be positive, received {epochs}.")
     if use_phenology and prototypes is None:
-        raise ValueError(
-            "use_phenology=True requires `prototypes` (per-class (K, S) matrix)."
-        )
+        raise ValueError("use_phenology=True requires `prototypes` (per-class (K, S) matrix).")
 
     resolved_device = _resolve_device(device)
     resolved_classes = int(
-        num_classes
-        if num_classes is not None
-        else getattr(train_ds, "num_classes", 18)
+        num_classes if num_classes is not None else getattr(train_ds, "num_classes", 18)
     )
 
     model = model.to(resolved_device)
@@ -1432,8 +1465,7 @@ def build_and_train(
 
     if model_kind not in _DEFAULT_RUN_NAMES:
         raise ValueError(
-            f"model_kind not recognized: {model_kind!r}. "
-            f"Options: {sorted(_DEFAULT_RUN_NAMES)}."
+            f"model_kind not recognized: {model_kind!r}. Options: {sorted(_DEFAULT_RUN_NAMES)}."
         )
 
     n_classes = 6 if target == "hcat6" else 18
@@ -1455,9 +1487,7 @@ def build_and_train(
     )
 
     if model_kind == "deeplabv3plus":
-        model: nn.Module = build_deeplabv3plus_mobilenet(
-            in_channels=10, classes=n_classes
-        )
+        model: nn.Module = build_deeplabv3plus_mobilenet(in_channels=10, classes=n_classes)
     else:
         # The TSViT capacity (dim/depth/heads/dim_head) flows from the caller so
         # the L4 defaults stay back-compatible (alt-tsvit-v1) and the US-038
@@ -1531,9 +1561,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:  # pragma: no cover
     p.add_argument("--epochs", type=int, default=30)
     p.add_argument("--batch-size", type=int, default=4)
     p.add_argument("--n-timesteps", type=int, default=10)
-    p.add_argument(
-        "--target", choices=("semantic18", "hcat6"), default="semantic18"
-    )
+    p.add_argument("--target", choices=("semantic18", "hcat6"), default="semantic18")
     p.add_argument("--device", default="auto", choices=("auto", "cuda", "cpu"))
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--lambda-contrast", type=float, default=0.3)
@@ -1609,10 +1637,9 @@ def _build_arg_parser() -> argparse.ArgumentParser:  # pragma: no cover
         default="1,2,3",
         help="Folds de entrenamiento separados por coma.",
     )
-    p.add_argument(
-        "--val-folds", default="4", help="Folds de validacion separados por coma."
-    )
+    p.add_argument("--val-folds", default="4", help="Folds de validacion separados por coma.")
     return p
+
 
 def main_legacy(argv: list[str] | None = None) -> int:  # pragma: no cover
     """CLI entry point. Invoked by the ``5_*`` notebook via subprocess."""
@@ -1644,6 +1671,8 @@ def main_legacy(argv: list[str] | None = None) -> int:  # pragma: no cover
     )
     logger.info("cli_done", **{k: round(v, 4) for k, v in metrics.items()})
     return 0
+
+
 @app.command()
 def main(
     model: Annotated[str, typer.Option(help="Modelo: 'unet' (#1) o 'anysat' (#6).")] = "unet",
@@ -1666,9 +1695,7 @@ def main(
     resume: Annotated[
         bool, typer.Option("--resume/--no-resume", help="Reanudar desde checkpoint si existe.")
     ] = True,
-    checkpoint_every: Annotated[
-        int, typer.Option(help="Guardar checkpoint cada N epocas.")
-    ] = 1,
+    checkpoint_every: Annotated[int, typer.Option(help="Guardar checkpoint cada N epocas.")] = 1,
 ) -> None:
     """CLI wrapper of :func:`run_training` (see its docstring for the arguments)."""
     try:
