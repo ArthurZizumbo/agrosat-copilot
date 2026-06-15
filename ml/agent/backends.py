@@ -1,0 +1,594 @@
+"""LLM backend abstraction for the conversational agent (US-047).
+
+The agent loop in :mod:`ml.agent.agent` is backend-agnostic: it drives the
+function-calling turns through a single coroutine,
+:meth:`LLMBackend.generate_stream`, that yields duck-typed
+:class:`BackendChunk` objects (a text delta and/or a requested function call).
+Two concrete backends implement it:
+
+- :class:`GeminiBackend` -- the default reasoner, Gemini 2.5 Pro on Vertex AI or
+  the public GenAI API, via the ``google-genai`` SDK with automatic function
+  calling DISABLED (the agent runs the tool loop itself so tools stay async and
+  receive the tenant :class:`~ml.agent.context.ToolContext`).
+- :class:`VLLMOpenAIBackend` -- the on-prem variant, Qwen3.5-35B-A3B served by
+  vLLM behind an OpenAI-compatible ``/v1/chat/completions`` endpoint (US-048).
+
+:func:`make_backend` selects the backend from the model name so ``/llm/switch``
+swaps the reasoner without touching the agent loop (AC-5).
+
+The OpenAI-compatible path uses the ``openai`` SDK (async client); both clients
+are injectable so tests mock them with zero network calls.
+"""
+
+from __future__ import annotations
+
+import json
+from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
+
+import structlog
+from google import genai
+from google.genai import types
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from backend.app.core.config import Settings
+
+logger = structlog.get_logger(__name__)
+
+__all__ = [
+    "BackendChunk",
+    "BackendFunctionCall",
+    "GeminiBackend",
+    "LLMBackend",
+    "VLLMOpenAIBackend",
+    "make_backend",
+]
+
+#: Default Gemini reasoner model when the caller does not pin one.
+_DEFAULT_GEMINI_MODEL: str = "gemini-2.5-pro"
+
+#: Default Qwen model id served by vLLM (OpenAI-compatible). The on-prem serving
+#: of US-048 publishes the model under this name; overridable via settings.
+_DEFAULT_QWEN_MODEL: str = "qwen35"
+
+#: Fallback vLLM endpoint when ``settings.vllm_qwen35_url`` is empty. Matches the
+#: serving script default port of US-048.
+_DEFAULT_VLLM_BASE_URL: str = "http://127.0.0.1:8002/v1"
+
+
+@dataclass(frozen=True)
+class BackendFunctionCall:
+    """A function call requested by the model, normalised across backends.
+
+    Attributes:
+        name: Tool name the model wants to invoke.
+        args: Argument mapping decoded from the model output (pre-validation).
+        id: Provider-supplied call identifier when available (Gemini omits it;
+            the OpenAI-compatible path carries it).
+    """
+
+    name: str
+    args: dict[str, Any] = field(default_factory=dict)
+    id: str | None = None
+
+
+@dataclass(frozen=True)
+class BackendChunk:
+    """One streamed unit from a backend: a text delta and/or a function call.
+
+    The agent's ``_read_chunk`` reads ``text`` and ``function_call`` off this
+    object (duck-typed), so any backend that yields chunks with these two
+    attributes is compatible. Either attribute may be ``None`` on a given chunk.
+
+    Attributes:
+        text: Incremental text delta, or ``None`` when this chunk carries none.
+        function_call: A requested call, or ``None`` when this chunk carries none.
+    """
+
+    text: str | None = None
+    function_call: BackendFunctionCall | None = None
+
+
+class LLMBackend(ABC):
+    """Backend abstraction the agent loop drives.
+
+    Concrete backends translate the provider-specific streaming/tool protocol
+    into the common :class:`BackendChunk` stream. The agent never sees provider
+    types beyond the ``google.genai.types`` it builds for ``contents`` (Gemini's
+    content schema is reused as the neutral wire format; the vLLM backend maps it
+    to OpenAI messages).
+    """
+
+    #: Model identifier, surfaced for logging (``agent_turn_started``).
+    model: str
+
+    @abstractmethod
+    def generate_stream(
+        self,
+        *,
+        contents: list[types.Content],
+        tools: list[types.FunctionDeclaration],
+        system_instruction: str,
+    ) -> AsyncIterator[BackendChunk]:
+        """Stream the model response for one turn.
+
+        Args:
+            contents: Conversation so far as ``google.genai.types.Content``.
+            tools: Function declarations advertised to the model this turn.
+            system_instruction: The system prompt (analyst "Be My Eyes").
+
+        Yields:
+            :class:`BackendChunk` values carrying text deltas and/or the
+            function calls the model requests this turn.
+        """
+        raise NotImplementedError
+
+
+class GeminiBackend(LLMBackend):
+    """Gemini backend via ``google-genai`` with manual function calling.
+
+    Automatic function calling is disabled so the agent owns the tool loop: the
+    backend just advertises the declarations and surfaces the model's requested
+    calls. The client is injectable for tests; in production it is built from the
+    ambient credentials (Vertex AI or ``GEMINI_API_KEY``), mirroring
+    :mod:`ml.features.phenology_description`.
+    """
+
+    def __init__(
+        self,
+        model: str = _DEFAULT_GEMINI_MODEL,
+        *,
+        client: genai.Client | None = None,
+    ) -> None:
+        """Initialise the Gemini backend.
+
+        Args:
+            model: Gemini model id (e.g. ``gemini-2.5-pro``/``gemini-2.5-flash``).
+            client: Optional pre-built ``genai.Client`` (injected in tests). When
+                ``None`` a client is created lazily on first use from the ambient
+                credentials.
+        """
+        self.model = model
+        self._client = client
+
+    def _get_client(self) -> genai.Client:
+        """Return the ``genai.Client``, building it lazily from the environment.
+
+        Returns:
+            The cached or newly created client (Vertex AI or public GenAI API,
+            selected by the ambient ``GOOGLE_GENAI_USE_VERTEXAI`` / API key).
+        """
+        if self._client is None:
+            self._client = genai.Client()
+        return self._client
+
+    async def generate_stream(
+        self,
+        *,
+        contents: list[types.Content],
+        tools: list[types.FunctionDeclaration],
+        system_instruction: str,
+    ) -> AsyncIterator[BackendChunk]:
+        """Stream Gemini output for one turn, surfacing text and function calls.
+
+        Args:
+            contents: Conversation contents accumulated so far.
+            tools: Function declarations to advertise this turn.
+            system_instruction: The analyst system prompt.
+
+        Yields:
+            :class:`BackendChunk` per streamed response chunk.
+        """
+        config = types.GenerateContentConfig(
+            system_instruction=system_instruction,
+            tools=[types.Tool(function_declarations=tools)] if tools else None,
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+        )
+        client = self._get_client()
+        # Function calling uses the NON-streaming call: it is the canonical
+        # surface for resolving ``function_calls`` (and is what a turn that
+        # requests tools needs). When the turn yields no calls, the buffered text
+        # is streamed back to the caller in deltas.
+        response = await self._generate(client, contents, config)
+        calls = list(getattr(response, "function_calls", None) or [])
+        if calls:
+            for call in calls:
+                if getattr(call, "name", None):
+                    yield BackendChunk(
+                        function_call=BackendFunctionCall(
+                            name=call.name,
+                            args=dict(getattr(call, "args", None) or {}),
+                            id=getattr(call, "id", None),
+                        )
+                    )
+            return
+        # No tool calls: surface the answer text. Prefer streaming deltas when the
+        # client offers a stream; otherwise fall back to the response text.
+        streamed = False
+        async for delta in self._stream_text(client, contents, config):
+            streamed = True
+            yield BackendChunk(text=delta)
+        if not streamed:
+            for chunk in self._chunks_from_response(response):
+                yield chunk
+
+    async def _generate(
+        self,
+        client: Any,
+        contents: list[types.Content],
+        config: types.GenerateContentConfig,
+    ) -> Any:
+        """Run a non-streaming generation, preferring the async client surface.
+
+        Production clients expose ``client.aio.models`` (no event-loop blocking);
+        test doubles often expose only the synchronous ``client.models``. This
+        adapter uses whichever is available.
+
+        Args:
+            client: The ``genai.Client`` (or a test double).
+            contents: Conversation contents for this turn.
+            config: The generation config (tools, system instruction).
+
+        Returns:
+            The provider response object (exposes ``function_calls`` / ``text``).
+        """
+        aio = getattr(client, "aio", None)
+        if aio is not None:
+            return await aio.models.generate_content(
+                model=self.model, contents=contents, config=config
+            )
+        return client.models.generate_content(
+            model=self.model, contents=contents, config=config
+        )
+
+    async def _stream_text(
+        self,
+        client: Any,
+        contents: list[types.Content],
+        config: types.GenerateContentConfig,
+    ) -> AsyncIterator[str]:
+        """Yield incremental text deltas from a streaming generation.
+
+        Best-effort: if the client offers no usable stream surface, yields
+        nothing (the caller then falls back to the non-streaming response text).
+
+        Args:
+            client: The ``genai.Client`` (or a test double).
+            contents: Conversation contents for this turn.
+            config: The generation config.
+
+        Yields:
+            Text deltas from each streamed chunk.
+        """
+        aio = getattr(client, "aio", None)
+        try:
+            if aio is not None:
+                stream = await aio.models.generate_content_stream(
+                    model=self.model, contents=contents, config=config
+                )
+                async for response in stream:
+                    for chunk in self._chunks_from_response(response):
+                        if chunk.text:
+                            yield chunk.text
+                return
+            sync_models = getattr(client, "models", None)
+            if sync_models is None or not hasattr(sync_models, "generate_content_stream"):
+                return
+            for response in sync_models.generate_content_stream(
+                model=self.model, contents=contents, config=config
+            ):
+                for chunk in self._chunks_from_response(response):
+                    if chunk.text:
+                        yield chunk.text
+        except (AttributeError, TypeError):
+            # The client double does not implement a usable stream; the caller
+            # falls back to the non-streaming response text.
+            return
+
+    @staticmethod
+    def _chunks_from_response(response: Any) -> list[BackendChunk]:
+        """Split one Gemini stream response into neutral :class:`BackendChunk`.
+
+        A response chunk may carry text parts and/or function-call parts. Each is
+        emitted as its own :class:`BackendChunk` so the agent buffers text and
+        collects calls independently.
+
+        Args:
+            response: One item yielded by ``generate_content_stream``.
+
+        Returns:
+            The chunks extracted from the response (possibly empty).
+        """
+        out: list[BackendChunk] = []
+        candidates = getattr(response, "candidates", None) or []
+        for candidate in candidates:
+            content = getattr(candidate, "content", None)
+            for part in getattr(content, "parts", None) or []:
+                text = getattr(part, "text", None)
+                if text:
+                    out.append(BackendChunk(text=text))
+                fc = getattr(part, "function_call", None)
+                if fc is not None and getattr(fc, "name", None):
+                    out.append(
+                        BackendChunk(
+                            function_call=BackendFunctionCall(
+                                name=fc.name,
+                                args=dict(getattr(fc, "args", None) or {}),
+                                id=getattr(fc, "id", None),
+                            )
+                        )
+                    )
+        # Flat surfaces: the SDK and the test doubles also expose
+        # ``response.function_calls`` and ``response.text`` directly. Fold these
+        # in when the candidate parts did not already yield them.
+        if not any(c.function_call for c in out):
+            for fc in getattr(response, "function_calls", None) or []:
+                if getattr(fc, "name", None):
+                    out.append(
+                        BackendChunk(
+                            function_call=BackendFunctionCall(
+                                name=fc.name,
+                                args=dict(getattr(fc, "args", None) or {}),
+                                id=getattr(fc, "id", None),
+                            )
+                        )
+                    )
+        if not out:
+            text = getattr(response, "text", None)
+            if text:
+                out.append(BackendChunk(text=text))
+        return out
+
+
+class VLLMOpenAIBackend(LLMBackend):
+    """On-prem Qwen backend via an OpenAI-compatible vLLM endpoint (US-048).
+
+    Maps the neutral ``google.genai.types.Content`` history to OpenAI chat
+    messages and the function declarations to OpenAI ``tools``, then streams the
+    completion and surfaces text deltas and tool calls as :class:`BackendChunk`.
+    The async OpenAI client is injectable for tests (no network).
+    """
+
+    def __init__(
+        self,
+        base_url: str = _DEFAULT_VLLM_BASE_URL,
+        model: str = _DEFAULT_QWEN_MODEL,
+        *,
+        api_key: str = "EMPTY",
+        client: Any | None = None,
+    ) -> None:
+        """Initialise the vLLM OpenAI-compatible backend.
+
+        Args:
+            base_url: Base URL of the vLLM server (``.../v1``).
+            model: Model id served by vLLM.
+            api_key: API key (vLLM ignores it but the client requires a value).
+            client: Optional pre-built async OpenAI client (injected in tests).
+        """
+        self.model = model
+        self._base_url = base_url
+        self._api_key = api_key or "EMPTY"
+        self._client = client
+
+    def _get_client(self) -> Any:
+        """Return the async OpenAI client, building it lazily.
+
+        Returns:
+            The cached or newly created ``openai.AsyncOpenAI`` pointed at the
+            vLLM endpoint.
+        """
+        if self._client is None:
+            from openai import AsyncOpenAI
+
+            self._client = AsyncOpenAI(base_url=self._base_url, api_key=self._api_key)
+        return self._client
+
+    async def generate_stream(
+        self,
+        *,
+        contents: list[types.Content],
+        tools: list[types.FunctionDeclaration],
+        system_instruction: str,
+    ) -> AsyncIterator[BackendChunk]:
+        """Stream Qwen output for one turn via the OpenAI-compatible API.
+
+        Args:
+            contents: Conversation contents accumulated so far.
+            tools: Function declarations to advertise this turn.
+            system_instruction: The analyst system prompt.
+
+        Yields:
+            :class:`BackendChunk` per streamed delta / tool call.
+        """
+        messages = self._messages_from_contents(contents, system_instruction)
+        openai_tools = self._tools_from_declarations(tools)
+        client = self._get_client()
+        stream = await client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            tools=openai_tools or None,
+            stream=True,
+        )
+        # vLLM streams tool-call arguments incrementally; accumulate per index and
+        # emit the call once the stream completes.
+        pending: dict[int, dict[str, Any]] = {}
+        async for event in stream:
+            choices = getattr(event, "choices", None) or []
+            for choice in choices:
+                delta = getattr(choice, "delta", None)
+                if delta is None:
+                    continue
+                text = getattr(delta, "content", None)
+                if text:
+                    yield BackendChunk(text=text)
+                for tc in getattr(delta, "tool_calls", None) or []:
+                    self._accumulate_tool_call(pending, tc)
+        for call in self._finalise_tool_calls(pending):
+            yield BackendChunk(function_call=call)
+
+    @staticmethod
+    def _messages_from_contents(
+        contents: list[types.Content],
+        system_instruction: str,
+    ) -> list[dict[str, Any]]:
+        """Map ``genai`` contents to OpenAI chat messages.
+
+        ``user`` -> user, ``model`` -> assistant, ``tool`` parts (function
+        responses) -> tool messages. Function-call parts on a model turn become
+        ``tool_calls`` on the assistant message.
+
+        Args:
+            contents: The neutral conversation history.
+            system_instruction: The system prompt prepended as a system message.
+
+        Returns:
+            OpenAI-format messages.
+        """
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": system_instruction}
+        ]
+        for content in contents:
+            role = getattr(content, "role", "user")
+            parts = getattr(content, "parts", None) or []
+            if role == "tool":
+                for part in parts:
+                    fr = getattr(part, "function_response", None)
+                    if fr is not None:
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "name": getattr(fr, "name", ""),
+                                "content": json.dumps(getattr(fr, "response", {})),
+                            }
+                        )
+                continue
+            mapped_role = "assistant" if role == "model" else "user"
+            text_bits: list[str] = []
+            tool_calls: list[dict[str, Any]] = []
+            for part in parts:
+                text = getattr(part, "text", None)
+                if text:
+                    text_bits.append(text)
+                fc = getattr(part, "function_call", None)
+                if fc is not None and getattr(fc, "name", None):
+                    tool_calls.append(
+                        {
+                            "id": getattr(fc, "id", None) or fc.name,
+                            "type": "function",
+                            "function": {
+                                "name": fc.name,
+                                "arguments": json.dumps(dict(getattr(fc, "args", None) or {})),
+                            },
+                        }
+                    )
+            message: dict[str, Any] = {"role": mapped_role, "content": "".join(text_bits)}
+            if tool_calls:
+                message["tool_calls"] = tool_calls
+            messages.append(message)
+        return messages
+
+    @staticmethod
+    def _tools_from_declarations(
+        tools: list[types.FunctionDeclaration],
+    ) -> list[dict[str, Any]]:
+        """Map ``genai`` function declarations to OpenAI ``tools`` schema.
+
+        Args:
+            tools: The function declarations advertised this turn.
+
+        Returns:
+            OpenAI-format tool definitions.
+        """
+        out: list[dict[str, Any]] = []
+        for decl in tools:
+            parameters = decl.parameters
+            schema = parameters.model_dump(exclude_none=True) if parameters is not None else {}
+            out.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": decl.name,
+                        "description": decl.description or "",
+                        "parameters": schema,
+                    },
+                }
+            )
+        return out
+
+    @staticmethod
+    def _accumulate_tool_call(pending: dict[int, dict[str, Any]], tc: Any) -> None:
+        """Accumulate a streamed OpenAI tool-call delta into ``pending``.
+
+        Args:
+            pending: Per-index accumulator of ``{id, name, arguments}``.
+            tc: One ``tool_calls`` delta item from the stream.
+        """
+        index = getattr(tc, "index", 0) or 0
+        slot = pending.setdefault(index, {"id": None, "name": None, "arguments": ""})
+        if getattr(tc, "id", None):
+            slot["id"] = tc.id
+        fn = getattr(tc, "function", None)
+        if fn is not None:
+            if getattr(fn, "name", None):
+                slot["name"] = fn.name
+            if getattr(fn, "arguments", None):
+                slot["arguments"] += fn.arguments
+
+    @staticmethod
+    def _finalise_tool_calls(
+        pending: dict[int, dict[str, Any]],
+    ) -> list[BackendFunctionCall]:
+        """Turn accumulated tool-call slots into :class:`BackendFunctionCall`.
+
+        Args:
+            pending: The per-index accumulator built during streaming.
+
+        Returns:
+            The decoded function calls (slots with no name are dropped).
+        """
+        calls: list[BackendFunctionCall] = []
+        for slot in pending.values():
+            name = slot.get("name")
+            if not name:
+                continue
+            raw_args = slot.get("arguments") or "{}"
+            try:
+                args = json.loads(raw_args) if raw_args.strip() else {}
+            except json.JSONDecodeError:
+                logger.warning("vllm_tool_args_decode_failed", name=name, raw=raw_args[:200])
+                args = {}
+            calls.append(BackendFunctionCall(name=name, args=args, id=slot.get("id")))
+        return calls
+
+
+def make_backend(model: str, settings: Settings | None = None) -> LLMBackend:
+    """Select the backend from the model name (AC-5).
+
+    ``gemini*`` resolves to :class:`GeminiBackend`; ``qwen*`` (and the legacy
+    ``qwen35`` variant tag) resolves to :class:`VLLMOpenAIBackend` pointed at the
+    on-prem vLLM endpoint from ``settings``. The default is the Gemini backend.
+
+    Args:
+        model: The reasoner model name or variant tag.
+        settings: Optional typed settings carrying the vLLM URL / API key.
+
+    Returns:
+        The concrete :class:`LLMBackend`.
+    """
+    name = (model or "").lower()
+    if name.startswith("qwen"):
+        base_url = _DEFAULT_VLLM_BASE_URL
+        api_key = "EMPTY"
+        served_model = _DEFAULT_QWEN_MODEL
+        if settings is not None:
+            base_url = getattr(settings, "vllm_qwen35_url", "") or base_url
+            api_key = getattr(settings, "vllm_api_key", "") or api_key
+        logger.info("backend_selected", kind="vllm", model=served_model, base_url=base_url)
+        return VLLMOpenAIBackend(base_url=base_url, model=served_model, api_key=api_key)
+    gemini_model = model if name.startswith("gemini") else _DEFAULT_GEMINI_MODEL
+    if settings is not None and not name.startswith("gemini"):
+        gemini_model = getattr(settings, "gemini_model", "") or gemini_model
+    logger.info("backend_selected", kind="gemini", model=gemini_model)
+    return GeminiBackend(model=gemini_model)

@@ -29,6 +29,9 @@ from ml.agent.tools import (
     get_tool,
 )
 
+# US-045 registered the nine demo tools; US-046 added the deferred
+# ``retrieve_context`` (Spatial-RAG lite), so the registry now holds ten tools:
+# five synchronous demo tools and five deferred ones.
 _EXPECTED_TOOLS = {
     "list_parcels",
     "get_parcel_timeseries",
@@ -39,6 +42,7 @@ _EXPECTED_TOOLS = {
     "get_tiles",
     "add_aoi",
     "compare_models",
+    "retrieve_context",
 }
 _SYNC = {
     "list_parcels",
@@ -47,13 +51,13 @@ _SYNC = {
     "classify_new_parcel",
     "explain_prediction",
 }
-_DEFERRED = {"search_stac", "get_tiles", "add_aoi", "compare_models"}
+_DEFERRED = {"search_stac", "get_tiles", "add_aoi", "compare_models", "retrieve_context"}
 
 
-def test_registry_has_nine_known_tools() -> None:
-    """AC-1: the registry exposes exactly the nine expected tools."""
+def test_registry_has_known_tools() -> None:
+    """AC-1: the registry exposes exactly the expected tools (9 demo + RAG)."""
     assert set(TOOL_SPECS) == _EXPECTED_TOOLS
-    assert len(TOOL_REGISTRY) == 9
+    assert len(TOOL_REGISTRY) == len(_EXPECTED_TOOLS)
     assert set(TOOL_REGISTRY) == _EXPECTED_TOOLS
 
 
@@ -68,11 +72,11 @@ def test_module_importable_as_registry() -> None:
 
 
 def test_build_function_declarations_count_and_unique_names() -> None:
-    """AC-2: nine declarations with unique snake_case names."""
+    """AC-2: one declaration per tool, with unique snake_case names."""
     decls = build_function_declarations()
-    assert len(decls) == 9
+    assert len(decls) == len(_EXPECTED_TOOLS)
     names = [d.name for d in decls]
-    assert len(set(names)) == 9
+    assert len(set(names)) == len(_EXPECTED_TOOLS)
     assert set(names) == _EXPECTED_TOOLS
 
 
@@ -104,20 +108,20 @@ def test_behavior_matches_deferred_flag() -> None:
 
 
 def test_sync_and_deferred_split() -> None:
-    """AC-4/AC-5: five synchronous demo tools, four deferred ones."""
+    """AC-4/AC-5: five synchronous demo tools, five deferred ones."""
     sync_names = {t.name for t in get_sync_tools()}
     deferred_names = {t.name for t in get_deferred_tools()}
     assert sync_names == _SYNC
     assert deferred_names == _DEFERRED
     assert len(sync_names) == 5
-    assert len(deferred_names) == 4
+    assert len(deferred_names) == 5
     assert sync_names.isdisjoint(deferred_names)
 
 
 def test_deferred_flag_consistent_in_specs() -> None:
     """The ``deferred`` flag in each resolved ToolSpec matches the split."""
     registry = build_registry()
-    assert len(registry) == 9
+    assert len(registry) == len(_EXPECTED_TOOLS)
     for name, spec in registry.items():
         assert spec.deferred is (name in _DEFERRED)
 
