@@ -59,7 +59,13 @@ agrosat-code-review + agrosat-google-adk-agent -> criterios de aceptacion vs cod
 | 4 | baja | 049 | subset AgroMind 494/500 multimodal -> Qwen (text-only) evalua solo 6; ampliar `make_subset(is_multimodal=False)` | documentado (TODO) |
 | 5 | baja | 045/047 | `classify.py` 39% / `backends.py` 67% cobertura (paths LLM/GPU/DB reales) | caveat honesto, no bloqueante |
 
-Sin hallazgos criticos/altos. Ningun secreto, ninguna inyeccion SQL, ningun fallo de aislamiento.
+El gate estatico (lint/secrets/SQL/RLS de superficie) no levanto criticos/altos. Una **revision
+adversarial profunda** posterior (5 revisores + verificacion por hallazgo) SI encontro bugs reales
+de correctness/multi-tenant que el gate estatico no ve -> ver
+[`_qa-findings-adversarial-E7.md`](_qa-findings-adversarial-E7.md): **17 confirmados, 6 corregidos**
+(incl. el critico `tool_call_id` que rompia la ruta on-prem Qwen) **+ 11 documentados** para decision
+(multi-tenant `compare_models`, `classify` ignora AOI, fechas fabricadas en timeseries, doble
+generacion Gemini, prompt/parser AgroMind).
 
 ---
 
