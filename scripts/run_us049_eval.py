@@ -43,6 +43,11 @@ def main(argv: list[str] | None = None) -> int:
         default="http://127.0.0.1:11435/v1",
         help="OpenAI-compatible URL of the on-prem Gemma (Ollama) endpoint.",
     )
+    parser.add_argument(
+        "--qwen-vl-url",
+        default="http://127.0.0.1:8003/v1",
+        help="OpenAI-compatible URL del Qwen3.6-VL on-prem (llama.cpp + mmproj).",
+    )
     parser.add_argument("--no-mlflow", action="store_true")
     parser.add_argument(
         "--report",
@@ -68,6 +73,12 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Reanudar del checkpoint: salta variantes ya hechas (no re-paga Gemini).",
     )
+    parser.add_argument(
+        "--dump-jsonl",
+        type=Path,
+        default=None,
+        help="Carpeta donde volcar la traza por item (JSONL, una por variante y benchmark).",
+    )
     args = parser.parse_args(argv)
 
     # Point the vLLM-compatible backend at the live Qwen endpoint and the Ollama
@@ -75,6 +86,7 @@ def main(argv: list[str] | None = None) -> int:
     os.environ["VLLM_QWEN35_URL"] = args.qwen_url
     os.environ.setdefault("VLLM_API_KEY", "EMPTY")
     os.environ["OLLAMA_BASE_URL"] = args.ollama_url
+    os.environ["QWEN36_VL_URL"] = args.qwen_vl_url
     # Force UTF-8 so structlog never trips on cp1252 when logging accented prose,
     # and unbuffered stdout so progress logs are observable in real time (a
     # buffered run looks identical to a hung one -- US-049 hardening).
@@ -98,6 +110,8 @@ def main(argv: list[str] | None = None) -> int:
         bench_argv += ["--checkpoint", str(args.checkpoint)]
     if args.resume:
         bench_argv.append("--resume")
+    if args.dump_jsonl:
+        bench_argv += ["--dump-jsonl", str(args.dump_jsonl)]
     bench_argv += ["--report", str(args.report)]
     return bench_main(bench_argv)
 

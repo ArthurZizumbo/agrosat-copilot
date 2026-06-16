@@ -34,7 +34,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-from ml.eval import agent_bench, agent_metrics
+from ml.eval import agent_bench, agent_metrics, agent_report
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _AGROMIND_PATH = _REPO_ROOT / "data" / "agromind" / "agromind_subset_500.json"
@@ -608,3 +608,295 @@ class TestRunBenchmark:
             )
         )
         assert result["n_evaluated"] >= 1
+
+
+# --------------------------------------------------------------------------- #
+# _classify_answer_type (per-item trace bucketing, US-049)
+# --------------------------------------------------------------------------- #
+
+
+class TestClassifyAnswerType:
+    """The answer-type classifier covers all five documented buckets."""
+
+    def test_multiple_choice_when_item_has_options(self) -> None:
+        # Any item carrying options is multiple_choice, regardless of the gold.
+        item = _make_item(options={"A": "maiz", "B": "trigo"}, answer="A")
+        assert agent_bench._classify_answer_type(item) == "multiple_choice"
+
+    def test_open_numeric_bbox_when_gold_is_a_box(self) -> None:
+        # An open item whose gold is a [a, b, ...] numeric box buckets as bbox.
+        item = _make_item(options={}, answer="[0.1, 0.2, 0.3, 0.4]")
+        assert agent_bench._classify_answer_type(item) == "open_numeric_bbox"
+
+    def test_open_number_when_gold_is_a_pure_number(self) -> None:
+        # A bare int/float gold (no options, not a box) buckets as open_number.
+        item = _make_item(options={}, answer="42")
+        assert agent_bench._classify_answer_type(item) == "open_number"
+        item_float = _make_item(options={}, answer="-3.14")
+        assert agent_bench._classify_answer_type(item_float) == "open_number"
+
+    def test_yes_no_when_gold_is_a_boolean_token(self) -> None:
+        # Yes/no tokens across es/it/en bucket as yes_no (case-insensitive).
+        for gold in ("yes", "No", "si", "TRUE"):
+            item = _make_item(options={}, answer=gold)
+            assert agent_bench._classify_answer_type(item) == "yes_no"
+
+    def test_open_text_when_gold_is_free_text(self) -> None:
+        # Anything else (a phrase, no options) falls through to open_text.
+        item = _make_item(options={}, answer="trigo de invierno")
+        assert agent_bench._classify_answer_type(item) == "open_text"
+
+
+# --------------------------------------------------------------------------- #
+# trace_sink wiring (US-049 per-item trace)
+# --------------------------------------------------------------------------- #
+
+
+class TestTraceSink:
+    """The eval runners emit one trace record per scored item to the sink."""
+
+    async def test_eval_agromind_invokes_trace_sink(
+        self, fake_sentence_model: None
+    ) -> None:
+        # Two purely-textual items (no options) so a text-only variant scores both
+        # and the sink receives exactly one record each, with the documented keys.
+        items = [
+            _make_item(options={}, answer="10", question="Cuantas parcelas?"),
+            _make_item(options={}, answer="20", question="Cuantos lotes?"),
+        ]
+        variant = agent_bench.ReasonerVariant(
+            name="qwen", model="mock", multimodal=False
+        )
+        records: list[dict[str, Any]] = []
+        result = await agent_bench.eval_agromind(
+            variant,
+            items,
+            backend=_FixedBackend(answer="10"),
+            judge=None,
+            seed=0,
+            trace_sink=records.append,
+        )
+        # One record per evaluated (non-skipped) item.
+        assert result["n_evaluated"] == 2
+        assert len(records) == 2
+        for record in records:
+            # Documented fields present on every AgroMind trace record.
+            for key in ("variant", "gold", "prediction", "correct", "answer_type"):
+                assert key in record
+            assert record["variant"] == "qwen"
+            assert record["benchmark"] == "AgroMind"
+            assert record["answer_type"] == "open_number"
+            assert isinstance(record["correct"], bool)
+        # The backend always answers "10": item one is correct, item two is not.
+        assert records[0]["gold"] == "10"
+        assert records[0]["correct"] is True
+        assert records[1]["gold"] == "20"
+        assert records[1]["correct"] is False
+
+    async def test_eval_agromind_trace_sink_skips_multimodal_items(
+        self, fake_sentence_model: None
+    ) -> None:
+        # A text-only variant skips multimodal items: the sink must NOT see them
+        # (a skipped item has no prediction to score).
+        _require_data()
+        items = agent_bench.load_agromind_subset(_AGROMIND_PATH)
+        variant = agent_bench.ReasonerVariant(
+            name="qwen", model="mock", multimodal=False
+        )
+        records: list[dict[str, Any]] = []
+        result = await agent_bench.eval_agromind(
+            variant,
+            items,
+            backend=_FixedBackend(answer="A"),
+            judge=None,
+            seed=0,
+            trace_sink=records.append,
+        )
+        # Exactly the evaluated items reach the sink; the 494 skipped do not.
+        assert len(records) == result["n_evaluated"] == 6
+
+    async def test_eval_geoanalyst_invokes_trace_sink(
+        self, fake_sentence_model: None
+    ) -> None:
+        _require_data()
+        tasks = agent_bench.load_geoanalystbench(_GEO_PATH)[:3]
+        variant = agent_bench.ReasonerVariant(
+            name="gemini", model="mock", multimodal=True
+        )
+        records: list[dict[str, Any]] = []
+        result = await agent_bench.eval_geoanalyst(
+            variant,
+            tasks,
+            backend=_FixedBackend(answer="WORKFLOW:\n1. nada\nCODE:\n```python\npass\n```"),
+            seed=0,
+            trace_sink=records.append,
+        )
+        # One record per task, carrying the geo-specific documented fields.
+        assert result["n"] == 3
+        assert len(records) == 3
+        for record in records:
+            for key in ("variant", "gold", "prediction", "workflow_sim", "passed"):
+                assert key in record
+            assert record["variant"] == "gemini"
+            assert record["benchmark"] == "GeoAnalystBench"
+            assert isinstance(record["passed"], bool)
+            assert record["passed"] == record["correct"]
+
+
+# --------------------------------------------------------------------------- #
+# run_benchmark dump_jsonl (per-variant JSONL trace files)
+# --------------------------------------------------------------------------- #
+
+
+class TestRunBenchmarkDumpJsonl:
+    """``dump_jsonl`` writes one valid JSONL file per (variant, benchmark)."""
+
+    def test_run_benchmark_dump_jsonl_writes_per_variant_files(
+        self, fake_sentence_model: None, tmp_path: Path
+    ) -> None:
+        _require_data()
+        variants = [
+            agent_bench.ReasonerVariant(name="gemini", model="mock", multimodal=True),
+            agent_bench.ReasonerVariant(name="qwen", model="mock", multimodal=False),
+        ]
+        backends = {
+            "gemini": _FixedBackend(answer="A"),
+            "qwen": _FixedBackend(answer="A"),
+        }
+        dump_dir = tmp_path / "traces"
+        agent_bench.run_benchmark(
+            variants,
+            seeds=(0,),
+            agromind_path=_AGROMIND_PATH,
+            geo_path=_GEO_PATH,
+            backends=backends,
+            judge=None,
+            image_root=tmp_path / "no_images",
+            report_path=tmp_path / "agent_bench.html",
+            dump_jsonl=dump_dir,
+            log_mlflow=False,
+            probe_server=False,
+        )
+        # One JSONL per (variant, benchmark) exists.
+        expected = [
+            dump_dir / "trace_gemini_AgroMind.jsonl",
+            dump_dir / "trace_gemini_GeoAnalystBench.jsonl",
+            dump_dir / "trace_qwen_AgroMind.jsonl",
+            dump_dir / "trace_qwen_GeoAnalystBench.jsonl",
+        ]
+        for path in expected:
+            assert path.exists(), f"missing trace file: {path}"
+            lines = [
+                ln for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()
+            ]
+            assert lines, f"empty trace file: {path}"
+            # Every line is a valid JSON object carrying its variant tag.
+            for line in lines:
+                record = json.loads(line)
+                assert isinstance(record, dict)
+                assert "variant" in record
+                assert "benchmark" in record
+
+        # Gemini (multimodal) scores the full subset; Qwen only the 6 textual.
+        gemini_agro = (dump_dir / "trace_gemini_AgroMind.jsonl").read_text(
+            encoding="utf-8"
+        )
+        assert len([ln for ln in gemini_agro.splitlines() if ln.strip()]) == 500
+        qwen_agro = (dump_dir / "trace_qwen_AgroMind.jsonl").read_text(encoding="utf-8")
+        assert len([ln for ln in qwen_agro.splitlines() if ln.strip()]) == 6
+
+
+# --------------------------------------------------------------------------- #
+# build_report_html (examples / answer_type_breakdown sections, US-049)
+# --------------------------------------------------------------------------- #
+
+
+class TestBuildReportHtmlExamples:
+    """The two trace-backed sections render and are strictly opt-in (back-compat)."""
+
+    @staticmethod
+    def _results() -> dict[str, Any]:
+        """A minimal nested results mapping for the report."""
+        return {
+            "gemini": {
+                "AgroMind": {
+                    "exact_match": {"mean": 0.8, "std": 0.01},
+                    "n_skipped": {"mean": 0.0, "std": 0.0},
+                },
+                "GeoAnalystBench": {"pass_rate": {"mean": 0.7, "std": 0.0}},
+            }
+        }
+
+    def test_build_report_html_with_examples_renders_sections(
+        self, tmp_path: Path
+    ) -> None:
+        results = self._results()
+        breakdown = {
+            "gemini": {
+                "open_number": {"n": 4.0, "exact_match_mean": 0.25},
+                "multiple_choice": {"n": 10.0, "exact_match_mean": 0.9},
+            }
+        }
+        examples = {
+            "gemini": {
+                "AgroMind": [
+                    {
+                        "prompt": "Cuantas parcelas?",
+                        "gold": "10",
+                        "prediction": "10",
+                        "answer_type": "open_number",
+                        "exact_match": 1.0,
+                        "correct": True,
+                    }
+                ],
+                "GeoAnalystBench": [
+                    {
+                        "prompt": "Calcula NDVI",
+                        "gold": "1. cargar raster",
+                        "prediction": "1. cargar raster",
+                        "workflow_sim": 0.9,
+                        "codebleu": 0.5,
+                        "passed": True,
+                    }
+                ],
+            }
+        }
+        out = tmp_path / "with_sections.html"
+        agent_report.build_report_html(
+            results,
+            out,
+            examples=examples,
+            answer_type_breakdown=breakdown,
+        )
+        content = out.read_text(encoding="utf-8")
+        # The two new Spanish <h2> sections appear.
+        assert "<h2>Desglose por tipo de respuesta (AgroMind)</h2>" in content
+        assert "<h2>Ejemplos de inferencia (aciertos y fallos)</h2>" in content
+        # Section content is rendered, not just the headings.
+        assert "open_number" in content
+        assert "Calcula NDVI" in content
+
+    def test_build_report_html_without_sections_is_byte_identical(
+        self, tmp_path: Path
+    ) -> None:
+        # Back-compat: calling WITHOUT the new kwargs must produce the exact same
+        # bytes as the previous two-argument behaviour (no trace sections, not
+        # even empty placeholders).
+        results = self._results()
+        out_plain = tmp_path / "plain.html"
+        out_explicit_none = tmp_path / "explicit_none.html"
+        agent_report.build_report_html(results, out_plain)
+        agent_report.build_report_html(
+            results,
+            out_explicit_none,
+            examples=None,
+            answer_type_breakdown=None,
+        )
+        plain_bytes = out_plain.read_bytes()
+        none_bytes = out_explicit_none.read_bytes()
+        # Passing the kwargs as None is identical to omitting them.
+        assert plain_bytes == none_bytes
+        # And neither carries the trace section headings.
+        text = plain_bytes.decode("utf-8")
+        assert "Desglose por tipo de respuesta" not in text
+        assert "Ejemplos de inferencia" not in text

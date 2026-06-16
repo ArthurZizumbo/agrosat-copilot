@@ -47,6 +47,7 @@ import argparse
 import asyncio
 import json
 import math
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -59,7 +60,7 @@ from ml.eval import agent_metrics
 from ml.eval.agent_report import DEFAULT_REPORT_DIR, build_report_html
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
     from ml.agent.backends import LLMBackend
     from ml.eval.agent_metrics import HallucinationJudge
@@ -118,6 +119,149 @@ _IMAGE_SUFFIXES: tuple[str, ...] = (".jpg", ".jpeg", ".png", ".bmp", ".tif", ".t
 
 #: MLflow experiment name for this benchmark (AC-6).
 _EXPERIMENT_NAME: str = "us049_agent_bench"
+
+#: Schema version stamped on every JSONL trace record, so a future report reader
+#: can reject or migrate older dumps (e.g. if the answer-type buckets change).
+_TRACE_SCHEMA_VERSION: int = 1
+
+#: Char caps for the prompt / prediction stored in the per-item trace. Without
+#: them the geo prompts (instruction + domain + dataset) and code predictions
+#: would bloat the dump to tens of KB per record; the caps are load-bearing.
+PROMPT_TRACE_CAP: int = 2000
+PRED_TRACE_CAP: int = 2000
+
+#: A normalised numeric bounding box ``[a, b, ...]`` with >= 2 comma-separated
+#: numbers (floats or ints), used to bucket an open gold as ``open_numeric_bbox``.
+_BBOX_RE: re.Pattern[str] = re.compile(
+    r"^\s*\[\s*-?\d+(?:\.\d+)?(?:\s*,\s*-?\d+(?:\.\d+)?){1,}\s*\]\s*$"
+)
+
+#: A pure number (int or float, optional sign), bucketed as ``open_number``.
+_NUMBER_RE: re.Pattern[str] = re.compile(r"^[+-]?\d+(?:\.\d+)?$")
+
+#: Gold values (case-insensitive) treated as a yes/no answer.
+_YES_NO_VALUES: frozenset[str] = frozenset(
+    {"yes", "no", "si", "sí", "true", "false"}
+)
+
+
+def _classify_answer_type(item: AgroMindItem) -> str:
+    """Classify an item by the shape of its gold answer (seed-independent).
+
+    The classification depends only on ``item.options`` and the gold string,
+    never on the model prediction, so it is deterministic and stable across
+    seeds. It lets the report slice exact-match by answer type and explain why
+    the AgroMind headline is depressed (the numeric buckets are exact-match
+    hostile by construction).
+
+    Args:
+        item: The AgroMind item to classify.
+
+    Returns:
+        One of ``"multiple_choice"`` (the item has options),
+        ``"open_numeric_bbox"`` (gold is a ``[a, b, ...]`` numeric box),
+        ``"open_number"`` (gold is a pure int/float),
+        ``"yes_no"`` (gold is a yes/no token, any of es/it/en) or
+        ``"open_text"`` (anything else).
+    """
+    if item.options:
+        return "multiple_choice"
+    gold = item.answer.strip()
+    if _BBOX_RE.match(gold):
+        return "open_numeric_bbox"
+    if _NUMBER_RE.match(gold):
+        return "open_number"
+    if gold.lower() in _YES_NO_VALUES:
+        return "yes_no"
+    return "open_text"
+
+
+def _truncate(text: str, cap: int) -> str:
+    """Truncate ``text`` to ``cap`` chars with a Spanish elision suffix.
+
+    Args:
+        text: The full string (prompt or prediction).
+        cap: Maximum number of leading characters to keep.
+
+    Returns:
+        ``text`` unchanged when within ``cap``, otherwise the first ``cap``
+        characters followed by ``"... [truncado N chars]"`` where ``N`` is the
+        number of dropped characters.
+    """
+    if len(text) <= cap:
+        return text
+    dropped = len(text) - cap
+    return f"{text[:cap]}... [truncado {dropped} chars]"
+
+
+class _JsonlTraceWriter:
+    """File-backed per-variant JSONL sink for the per-item inference trace.
+
+    Opens one UTF-8 file in truncate mode and appends one
+    ``json.dumps(record, ensure_ascii=False)`` line per scored item, flushing
+    after each record so a crashed run (dropped H100 tunnel) still leaves a
+    readable partial dump. Used as a context manager so the file is closed even
+    when the eval raises; the ``sink`` method matches the
+    ``Callable[[dict[str, Any]], None]`` contract threaded into the eval
+    runners.
+
+    Attributes:
+        path: Destination JSONL path (parent dirs created on open).
+        variant: Variant tag (for the close log only; records carry their own).
+        benchmark: Benchmark tag (for the close log only).
+    """
+
+    def __init__(self, path: Path, *, variant: str, benchmark: str) -> None:
+        """Open the per-variant trace file in UTF-8 truncate mode.
+
+        Args:
+            path: Destination JSONL path.
+            variant: Variant tag for the open/close logs.
+            benchmark: Benchmark tag for the open/close logs.
+        """
+        self.path = path
+        self.variant = variant
+        self.benchmark = benchmark
+        self._n_records = 0
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self._fh = path.open("w", encoding="utf-8")
+        logger.info(
+            "trace_dump_opened",
+            path=str(path),
+            variant=variant,
+            benchmark=benchmark,
+        )
+
+    def sink(self, record: dict[str, Any]) -> None:
+        """Write one trace record as a UTF-8 JSONL line and flush.
+
+        Args:
+            record: The per-item trace record to serialise.
+        """
+        self._fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+        self._fh.flush()
+        self._n_records += 1
+
+    def close(self) -> None:
+        """Close the underlying file and log the record count."""
+        if self._fh.closed:
+            return
+        self._fh.close()
+        logger.info(
+            "trace_dump_closed",
+            path=str(self.path),
+            variant=self.variant,
+            benchmark=self.benchmark,
+            n_records=self._n_records,
+        )
+
+    def __enter__(self) -> _JsonlTraceWriter:
+        """Return ``self`` for use as a context manager."""
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        """Close the file on context exit (also on exception)."""
+        self.close()
 
 
 @dataclass(frozen=True)
@@ -219,6 +363,11 @@ DEFAULT_VARIANTS = (
     ReasonerVariant(name="gemini", model="gemini-3.5-flash", multimodal=True),
     ReasonerVariant(name="qwen", model="qwen35", multimodal=False),
     ReasonerVariant(name="gemma-base", model="gemma4:26b-a4b-it-q4_K_M", multimodal=True),
+    # On-prem multimodal comparative VLM (Qwen3.6-35B-A3B via llama.cpp + mmproj).
+    # multimodal=True so it sees AgroMind images like Gemini/Gemma, making the
+    # AgroMind cell comparable across all three vision reasoners (the text-only
+    # ``qwen`` above stays for the text GeoAnalystBench, its real job).
+    ReasonerVariant(name="qwen36-vl", model="qwen36-vl", multimodal=True),
 )
 
 #: Variant lookup by tag for the CLI.
@@ -590,6 +739,7 @@ async def eval_agromind(
     judge: HallucinationJudge | None = None,
     seed: int = 0,
     image_root: Path = DEFAULT_IMAGE_ROOT,
+    trace_sink: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, float | int]:
     """Evaluate one variant on AgroMind (multiple-choice QA).
 
@@ -614,6 +764,10 @@ async def eval_agromind(
             NaN (rendered ``n/a``).
         seed: Seed tag (carried for logging / reproducibility of the run id).
         image_root: Base folder for resolving the subset images.
+        trace_sink: Optional side-effect-only callback invoked once per scored
+            (non-skipped) item with a per-item trace record (see the US-049
+            JSONL dump). It MUST NOT mutate the returned metrics; skipped items
+            are never emitted (they have no prediction to score).
 
     Returns:
         A mapping ``{exact_match, f1_squad, bertscore, hallucination,
@@ -621,6 +775,7 @@ async def eval_agromind(
     """
     resolved_backend = _resolve_backend(variant, backend)
     em_scores: list[float] = []
+    f1_scores: list[float] = []
     pred_texts: list[str] = []
     gold_texts: list[str] = []
     judge_samples: list[dict[str, Any]] = []
@@ -642,6 +797,7 @@ async def eval_agromind(
                     image_parts.append(_image_part(resolved))
 
         prompt = _build_agromind_prompt(item, with_images=bool(image_parts))
+        errored = False
         try:
             answer = await asyncio.wait_for(
                 _run_backend_text(resolved_backend, prompt, image_parts),
@@ -655,6 +811,7 @@ async def eval_agromind(
                 error=str(exc),
             )
             answer = ""
+            errored = True
 
         # Constrain the letter parser to the labels that actually exist for the
         # item (B-5): open items (no options) score via the text fallback, and a
@@ -669,6 +826,10 @@ async def eval_agromind(
                 skipped=n_skipped,
             )
         gold_text = item.options.get(item.answer, item.answer)
+        # Compute f1 once per item so the trace record and the post-loop mean
+        # share a single source of truth (no double-computation drift).
+        f1_i = agent_metrics.f1_squad(answer, gold_text)
+        f1_scores.append(f1_i)
         pred_texts.append(answer)
         gold_texts.append(gold_text)
         judge_samples.append(
@@ -679,14 +840,40 @@ async def eval_agromind(
             }
         )
 
+        if trace_sink is not None:
+            trace_sink(
+                {
+                    "schema_version": _TRACE_SCHEMA_VERSION,
+                    "benchmark": "AgroMind",
+                    "variant": variant.name,
+                    "model": variant.model,
+                    "seed": seed,
+                    "item_id": item.item_id,
+                    "task_file": item.task_file,
+                    "type_id": item.type_id,
+                    "level1_id": item.level1_id,
+                    "level2_id": item.level2_id,
+                    "level3_id": item.level3_id,
+                    "is_multimodal": item.is_multimodal,
+                    "n_options": len(item.options),
+                    "answer_type": _classify_answer_type(item),
+                    "prompt": _truncate(prompt, PROMPT_TRACE_CAP),
+                    "prompt_chars": len(prompt),
+                    "n_image_parts": len(image_parts),
+                    "gold": item.answer,
+                    "gold_text": gold_text,
+                    "prediction": _truncate(answer, PRED_TRACE_CAP),
+                    "prediction_chars": len(answer),
+                    "errored": errored,
+                    "exact_match": em_scores[-1],
+                    "f1_squad": f1_i,
+                    "correct": em_scores[-1] >= 0.5,
+                }
+            )
+
     n_evaluated = len(em_scores)
     exact = sum(em_scores) / n_evaluated if n_evaluated else 0.0
-    f1 = (
-        sum(agent_metrics.f1_squad(p, g) for p, g in zip(pred_texts, gold_texts, strict=True))
-        / n_evaluated
-        if n_evaluated
-        else 0.0
-    )
+    f1 = sum(f1_scores) / n_evaluated if n_evaluated else 0.0
     bert = agent_metrics.bertscore_f1(pred_texts, gold_texts) if n_evaluated else 0.0
     halluc = agent_metrics.hallucination_rate(judge_samples, judge)
 
@@ -788,6 +975,7 @@ async def eval_geoanalyst(
     backend: LLMBackend | None = None,
     seed: int = 0,
     pass_threshold: float = GEO_PASS_THRESHOLD,
+    trace_sink: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, float | int]:
     """Evaluate one variant on GeoAnalystBench (plan-and-react).
 
@@ -806,6 +994,9 @@ async def eval_geoanalyst(
         backend: Injected backend; built lazily when ``None``.
         seed: Seed tag (logging / reproducibility).
         pass_threshold: Workflow-similarity threshold for the per-task pass.
+        trace_sink: Optional side-effect-only callback invoked once per task
+            with a per-task trace record (see the US-049 JSONL dump). It MUST
+            NOT mutate the returned metrics.
 
     Returns:
         A mapping ``{pass_rate, mean_semantic_sim, mean_codebleu, n}``.
@@ -817,6 +1008,7 @@ async def eval_geoanalyst(
 
     for task in tasks:
         prompt = _build_geo_prompt(task)
+        errored = False
         try:
             answer = await asyncio.wait_for(
                 _run_backend_text(resolved_backend, prompt, []),
@@ -830,14 +1022,39 @@ async def eval_geoanalyst(
                 error=str(exc),
             )
             answer = ""
+            errored = True
         workflow, code = _split_workflow_and_code(answer)
         sim = agent_metrics.workflow_semantic_similarity(workflow, task.human_workflow)
         bleu = agent_metrics.codebleu_score(code, task.code_string)
         sims.append(sim)
         bleus.append(bleu)
-        passes.append(1.0 if sim > pass_threshold else 0.0)
+        passed = sim > pass_threshold
+        passes.append(1.0 if passed else 0.0)
         if len(passes) % _PROGRESS_EVERY == 0:
             logger.info("geoanalyst_progress", variant=variant.name, evaluated=len(passes))
+
+        if trace_sink is not None:
+            trace_sink(
+                {
+                    "schema_version": _TRACE_SCHEMA_VERSION,
+                    "benchmark": "GeoAnalystBench",
+                    "variant": variant.name,
+                    "model": variant.model,
+                    "seed": seed,
+                    "task_id": task.id,
+                    "task": task.task,
+                    "prompt": _truncate(prompt, PROMPT_TRACE_CAP),
+                    "prompt_chars": len(prompt),
+                    "gold": _truncate(task.human_workflow, PROMPT_TRACE_CAP),
+                    "prediction": _truncate(answer, PRED_TRACE_CAP),
+                    "prediction_chars": len(answer),
+                    "workflow_sim": sim,
+                    "codebleu": bleu,
+                    "passed": passed,
+                    "errored": errored,
+                    "correct": passed,
+                }
+            )
 
     n = len(tasks)
     pass_rate = sum(passes) / n if n else 0.0
@@ -920,6 +1137,7 @@ def run_benchmark(
     resume: bool = False,
     log_mlflow: bool = True,
     probe_server: bool = True,
+    dump_jsonl: Path | None = None,
 ) -> dict[str, Any]:
     """Run both benchmarks for every variant over the seeds and report.
 
@@ -945,6 +1163,11 @@ def run_benchmark(
             ``reports/agent_bench/agent_bench.html``.
         log_mlflow: Whether to log the run to MLflow (AC-6).
         probe_server: Forwarded to ``track_experiment`` (set ``False`` in tests).
+        dump_jsonl: Optional folder where the per-item inference trace is dumped
+            as one JSONL file per (variant, benchmark). When set, the trace is
+            also read back to feed the report's answer-type breakdown and the
+            example rows; when ``None`` no trace is written and the report is
+            unchanged.
 
     Returns:
         The nested results mapping
@@ -976,22 +1199,57 @@ def run_benchmark(
         backend = backends.get(variant.name)
         agromind_seeds: list[dict[str, float]] = []
         geo_seeds: list[dict[str, float]] = []
-        for seed in seeds:
-            agromind_seeds.append(
-                asyncio.run(
-                    eval_agromind(
-                        variant,
-                        items,
-                        backend=backend,
-                        judge=judge,
-                        seed=seed,
-                        image_root=image_root,
+
+        # Open one writer per (variant, benchmark) BEFORE the seed loop (truncate
+        # mode) so all seeds append into a single file; records carry ``seed`` so
+        # they stay distinguishable. try/finally so a sink write failure never
+        # aborts the MLflow logging + report (eval-only no-crash contract).
+        agromind_writer: _JsonlTraceWriter | None = None
+        geo_writer: _JsonlTraceWriter | None = None
+        if dump_jsonl is not None:
+            agromind_writer = _JsonlTraceWriter(
+                dump_jsonl / f"trace_{variant.name}_AgroMind.jsonl",
+                variant=variant.name,
+                benchmark="AgroMind",
+            )
+            geo_writer = _JsonlTraceWriter(
+                dump_jsonl / f"trace_{variant.name}_GeoAnalystBench.jsonl",
+                variant=variant.name,
+                benchmark="GeoAnalystBench",
+            )
+        agromind_sink = agromind_writer.sink if agromind_writer is not None else None
+        geo_sink = geo_writer.sink if geo_writer is not None else None
+        try:
+            for seed in seeds:
+                agromind_seeds.append(
+                    asyncio.run(
+                        eval_agromind(
+                            variant,
+                            items,
+                            backend=backend,
+                            judge=judge,
+                            seed=seed,
+                            image_root=image_root,
+                            trace_sink=agromind_sink,
+                        )
                     )
                 )
-            )
-            geo_seeds.append(
-                asyncio.run(eval_geoanalyst(variant, tasks, backend=backend, seed=seed))
-            )
+                geo_seeds.append(
+                    asyncio.run(
+                        eval_geoanalyst(
+                            variant,
+                            tasks,
+                            backend=backend,
+                            seed=seed,
+                            trace_sink=geo_sink,
+                        )
+                    )
+                )
+        finally:
+            if agromind_writer is not None:
+                agromind_writer.close()
+            if geo_writer is not None:
+                geo_writer.close()
         results[variant.name] = {
             "AgroMind": _aggregate(agromind_seeds),
             "GeoAnalystBench": _aggregate(geo_seeds),
@@ -1008,9 +1266,112 @@ def run_benchmark(
         _log_to_mlflow(results, agromind_path, probe_server=probe_server)
 
     out_path = report_path or (DEFAULT_REPORT_DIR / "agent_bench.html")
-    build_report_html(results, out_path)
+    if dump_jsonl is not None:
+        variant_names = [v.name for v in variants]
+        breakdown = _answer_type_breakdown(dump_jsonl, variant_names)
+        examples = _example_records(dump_jsonl, variant_names)
+        build_report_html(
+            results,
+            out_path,
+            examples=examples,
+            answer_type_breakdown=breakdown,
+        )
+    else:
+        build_report_html(results, out_path)
     logger.info("agent_bench_done", variants=[v.name for v in variants], report=str(out_path))
     return results
+
+
+def _read_trace_file(path: Path) -> list[dict[str, Any]]:
+    """Read a per-variant JSONL trace file back into a list of records.
+
+    Tolerant of a missing file (returns ``[]``) and of a truncated last line
+    from a crashed run (the undecodable line is skipped). Always opened with
+    ``encoding="utf-8"`` (the dump is written the same way; a bare ``open`` would
+    raise on the accented Spanish prose under Windows cp1252).
+
+    Args:
+        path: The JSONL file path.
+
+    Returns:
+        The parsed records (order preserved), or ``[]`` when the file is absent.
+    """
+    if not path.exists():
+        return []
+    records: list[dict[str, Any]] = []
+    skipped = False
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            records.append(json.loads(line))
+        except json.JSONDecodeError:
+            skipped = True
+    if skipped:
+        logger.warning("trace_dump_line_skipped", path=str(path))
+    return records
+
+
+def _answer_type_breakdown(
+    dump_dir: Path, variants: Sequence[str]
+) -> dict[str, dict[str, dict[str, float]]]:
+    """Compute the AgroMind answer-type breakdown from the dumped traces.
+
+    Args:
+        dump_dir: Folder holding the per-variant JSONL trace files.
+        variants: Variant names to read back.
+
+    Returns:
+        ``{variant: {answer_type: {"n": float, "exact_match_mean": float}}}``
+        over the AgroMind records (empty inner dict when a variant has no dump).
+    """
+    breakdown: dict[str, dict[str, dict[str, float]]] = {}
+    for variant in variants:
+        path = dump_dir / f"trace_{variant}_AgroMind.jsonl"
+        records = _read_trace_file(path)
+        buckets: dict[str, list[float]] = {}
+        for record in records:
+            answer_type = str(record.get("answer_type", "open_text"))
+            buckets.setdefault(answer_type, []).append(float(record.get("exact_match", 0.0)))
+        breakdown[variant] = {
+            answer_type: {
+                "n": float(len(scores)),
+                "exact_match_mean": sum(scores) / len(scores) if scores else 0.0,
+            }
+            for answer_type, scores in buckets.items()
+        }
+    return breakdown
+
+
+def _example_records(
+    dump_dir: Path, variants: Sequence[str], *, per_bucket: int = 3
+) -> dict[str, dict[str, list[dict[str, Any]]]]:
+    """Pick a few correct/wrong example records per (variant, benchmark).
+
+    Selection is order-deterministic (the dump preserves the fixed-seed item
+    iteration order), so re-running with different seeds changes predictions but
+    not which records surface first.
+
+    Args:
+        dump_dir: Folder holding the per-variant JSONL trace files.
+        variants: Variant names to read back.
+        per_bucket: How many correct and how many wrong examples to keep.
+
+    Returns:
+        ``{variant: {benchmark: [record, ...]}}`` with up to ``per_bucket``
+        correct followed by up to ``per_bucket`` wrong records per benchmark.
+    """
+    examples: dict[str, dict[str, list[dict[str, Any]]]] = {}
+    for variant in variants:
+        per_benchmark: dict[str, list[dict[str, Any]]] = {}
+        for benchmark in ("AgroMind", "GeoAnalystBench"):
+            path = dump_dir / f"trace_{variant}_{benchmark}.jsonl"
+            records = _read_trace_file(path)
+            correct = [r for r in records if r.get("correct")][:per_bucket]
+            wrong = [r for r in records if not r.get("correct")][:per_bucket]
+            per_benchmark[benchmark] = correct + wrong
+        examples[variant] = per_benchmark
+    return examples
 
 
 def _save_checkpoint(results: dict[str, Any], path: Path) -> None:
@@ -1156,6 +1517,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Reanudar desde el checkpoint: salta variantes ya evaluadas.",
     )
+    parser.add_argument(
+        "--dump-jsonl",
+        type=Path,
+        default=None,
+        help="Carpeta donde volcar la traza por item (JSONL, una por variante y benchmark).",
+    )
     args = parser.parse_args(argv)
 
     variants = _resolve_variants(args.variants)
@@ -1169,6 +1536,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         checkpoint_path=args.checkpoint,
         resume=args.resume,
         log_mlflow=not args.no_mlflow,
+        dump_jsonl=args.dump_jsonl,
     )
     logger.info("agent_bench_cli_done", n_variants=len(variants), n_seeds=len(args.seeds))
     # Emit a compact JSON summary to stdout for the calling script / operator.

@@ -64,6 +64,12 @@ _DEFAULT_VLLM_BASE_URL: str = "http://127.0.0.1:8002/v1"
 #: to avoid clashing with a local Ollama on :11434).
 _DEFAULT_OLLAMA_BASE_URL: str = "http://127.0.0.1:11435/v1"
 
+#: Default endpoint for the on-prem multimodal Qwen3.6-VL served by llama.cpp
+#: with ``--mmproj`` (the vision projector), reached through a local SSH forward
+#: on :8003. Its OpenAI-compatible API takes ``image_url`` data URIs, so the
+#: multimodal :class:`OllamaBackend` path forwards AgroMind images to it.
+_DEFAULT_QWEN_VL_BASE_URL: str = "http://127.0.0.1:8003/v1"
+
 #: Per-request timeout so a stalled call RAISES instead of hanging forever (a
 #: dropped tunnel or a wedged socket otherwise blocks the eval/agent loop with no
 #: recovery -- US-049 hardening). ``genai`` takes milliseconds; the OpenAI client
@@ -737,6 +743,17 @@ def make_backend(model: str, settings: Settings | None = None) -> LLMBackend:
             base_url = getattr(settings, "ollama_base_url", "") or base_url
         logger.info("backend_selected", kind="ollama", model=model, base_url=base_url)
         return OllamaBackend(base_url=base_url, model=model)
+    if name.endswith("-vl") or "qwen36" in name or "qwen3.6" in name:
+        # On-prem multimodal Qwen3.6-VL served by llama.cpp with --mmproj. It
+        # speaks the same OpenAI image_url protocol as Gemma, so the multimodal
+        # OllamaBackend forwards AgroMind images to it (text-only Qwen would skip
+        # them). Served-model alias is "qwen36-vl"; base URL from env or default.
+        base_url = os.environ.get("QWEN36_VL_URL", _DEFAULT_QWEN_VL_BASE_URL)
+        if settings is not None:
+            base_url = getattr(settings, "qwen36_vl_url", "") or base_url
+        served_model = "qwen36-vl"
+        logger.info("backend_selected", kind="ollama", model=served_model, base_url=base_url)
+        return OllamaBackend(base_url=base_url, model=served_model)
     if name.startswith("qwen"):
         base_url = _DEFAULT_VLLM_BASE_URL
         api_key = "EMPTY"

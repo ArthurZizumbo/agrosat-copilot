@@ -54,9 +54,14 @@ DEFAULT_REPORT_DIR: Path = Path("reports/agent_bench")
 RUBRIC_TARGETS: dict[tuple[str, str, str], float] = {
     ("gemini", "AgroMind", "exact_match"): 0.75,
     ("qwen", "AgroMind", "exact_match"): 0.70,
+    # Multimodal on-prem comparative (Qwen3.6-VL): it sees AgroMind images, so it
+    # gets the same multimodal AgroMind target. The text-only ``qwen`` keeps its
+    # separate lower target because it is scored on the textual subset only.
+    ("qwen36-vl", "AgroMind", "exact_match"): 0.70,
     ("gemini", "GeoAnalystBench", "pass_rate"): 0.65,
     ("qwen", "GeoAnalystBench", "pass_rate"): 0.65,
     ("gemma-base", "GeoAnalystBench", "pass_rate"): 0.65,
+    ("qwen36-vl", "GeoAnalystBench", "pass_rate"): 0.65,
 }
 
 #: Textual markers (no emojis, per project rules).
@@ -249,7 +254,127 @@ def _render_table(
     return f"<table>{header}{''.join(rows)}</table>"
 
 
-def build_report_html(results: dict[str, Any], out_path: Path) -> Path:
+def _render_answer_type_table(
+    breakdown: Mapping[str, Mapping[str, Mapping[str, float]]],
+) -> str:
+    """Render the AgroMind answer-type exact-match breakdown table.
+
+    Shows, per variant and answer type, the item count and the mean exact-match,
+    so the report explains WHY the AgroMind headline is depressed (the
+    ``open_numeric_bbox`` / ``open_number`` buckets are exact-match hostile by
+    construction).
+
+    Args:
+        breakdown: ``{variant: {answer_type: {"n", "exact_match_mean"}}}`` from
+            the dumped trace read-back.
+
+    Returns:
+        The ``<table>`` HTML fragment as a string (empty paragraph when there is
+        nothing to show).
+    """
+    rows: list[str] = []
+    for variant in sorted(breakdown):
+        per_type = breakdown[variant]
+        for answer_type in sorted(per_type):
+            stats = per_type[answer_type]
+            n = int(stats.get("n", 0.0))
+            mean = float(stats.get("exact_match_mean", 0.0))
+            rows.append(
+                "<tr>"
+                f"<td>{html.escape(variant)}</td>"
+                f"<td>{html.escape(answer_type)}</td>"
+                f"<td>{n}</td>"
+                f"<td>{mean:.3f}</td>"
+                "</tr>"
+            )
+    if not rows:
+        return "<p>Sin traza por item para desglosar.</p>"
+    header = (
+        "<tr><th>Variante</th><th>Tipo de respuesta</th>"
+        "<th>N</th><th>Exact-match (media)</th></tr>"
+    )
+    return f"<table>{header}{''.join(rows)}</table>"
+
+
+def _render_examples(
+    examples: Mapping[str, Mapping[str, Sequence[Mapping[str, Any]]]],
+) -> str:
+    """Render the per-variant inference examples section (hits and misses).
+
+    For AgroMind shows question/gold/prediction/score; for GeoAnalystBench shows
+    the workflow similarity, CodeBLEU and pass flag. Selection is
+    order-deterministic (the dump preserves the fixed-seed iteration order).
+
+    Args:
+        examples: ``{variant: {benchmark: [record, ...]}}`` from the read-back.
+
+    Returns:
+        The HTML fragment (heading-per-variant + tables) as a string.
+    """
+    blocks: list[str] = []
+    for variant in sorted(examples):
+        per_benchmark = examples[variant]
+        for benchmark in ("AgroMind", "GeoAnalystBench"):
+            records = per_benchmark.get(benchmark, [])
+            if not records:
+                continue
+            blocks.append(
+                f"<h3>{html.escape(variant)} - {html.escape(benchmark)}</h3>"
+            )
+            if benchmark == "GeoAnalystBench":
+                header = (
+                    "<tr><th>Pregunta</th><th>Gold</th><th>Prediccion</th>"
+                    "<th>Sim. flujo</th><th>CodeBLEU</th><th>Pasa</th></tr>"
+                )
+            else:
+                header = (
+                    "<tr><th>Pregunta</th><th>Gold</th><th>Prediccion</th>"
+                    "<th>Tipo</th><th>Exact-match</th><th>Acierto</th></tr>"
+                )
+            rows: list[str] = []
+            for record in records:
+                prompt = html.escape(str(record.get("prompt", "")))
+                gold = html.escape(str(record.get("gold", "")))
+                prediction = html.escape(str(record.get("prediction", "")))
+                if benchmark == "GeoAnalystBench":
+                    sim = float(record.get("workflow_sim", 0.0))
+                    bleu = float(record.get("codebleu", 0.0))
+                    passed = "Si" if record.get("passed") else "No"
+                    rows.append(
+                        "<tr>"
+                        f"<td><pre>{prompt}</pre></td>"
+                        f"<td><pre>{gold}</pre></td>"
+                        f"<td><pre>{prediction}</pre></td>"
+                        f"<td>{sim:.3f}</td><td>{bleu:.3f}</td>"
+                        f"<td>{html.escape(passed)}</td>"
+                        "</tr>"
+                    )
+                else:
+                    answer_type = html.escape(str(record.get("answer_type", "")))
+                    em = float(record.get("exact_match", 0.0))
+                    acierto = "Si" if record.get("correct") else "No"
+                    rows.append(
+                        "<tr>"
+                        f"<td><pre>{prompt}</pre></td>"
+                        f"<td><pre>{gold}</pre></td>"
+                        f"<td><pre>{prediction}</pre></td>"
+                        f"<td>{answer_type}</td><td>{em:.3f}</td>"
+                        f"<td>{html.escape(acierto)}</td>"
+                        "</tr>"
+                    )
+            blocks.append(f"<table>{header}{''.join(rows)}</table>")
+    if not blocks:
+        return "<p>Sin ejemplos de inferencia disponibles.</p>"
+    return "".join(blocks)
+
+
+def build_report_html(
+    results: dict[str, Any],
+    out_path: Path,
+    *,
+    examples: Mapping[str, Mapping[str, Sequence[Mapping[str, Any]]]] | None = None,
+    answer_type_breakdown: Mapping[str, Mapping[str, Mapping[str, float]]] | None = None,
+) -> Path:
     """Build the agent-benchmark comparison HTML report.
 
     Writes a single self-contained HTML file with (a) a comparison table of
@@ -258,6 +383,11 @@ def build_report_html(results: dict[str, Any], out_path: Path) -> Path:
     grouped bar chart with error bars. Visible prose is in Spanish; the output
     folder is created if it does not exist.
 
+    When the optional ``examples`` and ``answer_type_breakdown`` are provided
+    (from the US-049 per-item JSONL trace read-back), two extra Spanish sections
+    are appended after the metrics table. When both are ``None`` the output is
+    byte-identical to the previous two-argument behaviour.
+
     Args:
         results: Nested results mapping
             ``{variant: {benchmark: {metric: {"mean": float, "std": float}}}}``.
@@ -265,6 +395,11 @@ def build_report_html(results: dict[str, Any], out_path: Path) -> Path:
             from the data, so the consumer (``ml/eval/agent_bench.py``) only has
             to populate this structure.
         out_path: Destination ``.html`` path. Parent directories are created.
+        examples: Optional ``{variant: {benchmark: [record, ...]}}`` example
+            records for the "Ejemplos de inferencia" section.
+        answer_type_breakdown: Optional
+            ``{variant: {answer_type: {"n", "exact_match_mean"}}}`` for the
+            AgroMind answer-type breakdown section.
 
     Returns:
         The ``out_path`` that was written (as a :class:`~pathlib.Path`).
@@ -285,6 +420,25 @@ def build_report_html(results: dict[str, Any], out_path: Path) -> Path:
         chart_html = "<p>Sin resultados para graficar.</p>"
 
     table_html = _render_table(results, variants, metric_names)
+
+    # Optional trace-backed sections. Empty string when no trace is supplied so
+    # the document is byte-identical to the previous two-argument behaviour.
+    trace_sections = ""
+    if answer_type_breakdown is not None:
+        trace_sections += (
+            "<h2>Desglose por tipo de respuesta (AgroMind)</h2>"
+            f"{_render_answer_type_table(answer_type_breakdown)}"
+        )
+        logger.info(
+            "agent_report_breakdown_rendered",
+            variants=sorted(answer_type_breakdown),
+        )
+    if examples is not None:
+        trace_sections += (
+            "<h2>Ejemplos de inferencia (aciertos y fallos)</h2>"
+            f"{_render_examples(examples)}"
+        )
+        logger.info("agent_report_examples_rendered", variants=sorted(examples))
 
     document = f"""<!DOCTYPE html>
 <html lang="es">
@@ -317,7 +471,7 @@ def build_report_html(results: dict[str, Any], out_path: Path) -> Path:
 {chart_html}
 <h2>Tabla de metricas</h2>
 {table_html}
-</body>
+{trace_sections}</body>
 </html>
 """
 
