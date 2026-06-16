@@ -99,6 +99,16 @@ DEFAULT_IMAGE_ROOT: Path = Path("data/agromind/images")
 #: is applied on top of the per-task pass decision made here.
 GEO_PASS_THRESHOLD: float = 0.5
 
+#: Per-item timeout for a single model call. A stalled call (dropped tunnel,
+#: wedged socket) raises ``asyncio.TimeoutError`` -- caught by the existing
+#: per-item ``except`` -- so the run keeps going and COMPLETES instead of hanging
+#: forever (US-049 hardening). Generous on purpose for slow on-prem multimodal.
+_ITEM_TIMEOUT_S: float = 200.0
+
+#: How often to emit a per-item progress log so a long phase is observable
+#: instead of a silent black box (US-049 hardening).
+_PROGRESS_EVERY: int = 20
+
 #: The three default reasoner variants (AC-1). ``multimodal`` gates whether a
 #: variant may consume AgroMind images; ``qwen`` is text-only on purpose.
 DEFAULT_VARIANTS: tuple[ReasonerVariant, ...]  # populated after the dataclass.
@@ -119,9 +129,12 @@ class AgroMindItem:
             ``./Rural/piece_images/x.png``); empty when the item has no base
             image. Resolved against :data:`DEFAULT_IMAGE_ROOT` at eval time.
         question: The question text.
-        options: Mapping of choice label (``A``-``D``) to its value. Values are
-            either answer text or, for multi-image items, a relative image path.
-        answer: The gold choice letter (``A``-``D``).
+        options: Mapping of choice label to its value (the real subset uses up
+            to ten labels ``A``-``J``; open numeric/text items have NO options).
+            Values are either answer text or, for multi-image items, a relative
+            image path.
+        answer: The gold answer -- a choice letter (``A``-``J``) for
+            multiple-choice items, or a free number/short text for open items.
         type_id: AgroMind question-type id.
         item_id: AgroMind item id within its task file.
         level1_id: Top-level taxonomy id (used for the stratified subset).
@@ -153,11 +166,7 @@ class AgroMindItem:
             A mapping ``{label: relative_image_path}`` for image-valued options
             (empty when the options are plain text).
         """
-        return {
-            label: value
-            for label, value in self.options.items()
-            if _is_image_path(value)
-        }
+        return {label: value for label, value in self.options.items() if _is_image_path(value)}
 
 
 @dataclass(frozen=True)
@@ -329,10 +338,7 @@ def load_agromind_subset(path: Path) -> list[AgroMindItem]:
     raw = json.loads(Path(path).read_text(encoding="utf-8"))
     items: list[AgroMindItem] = []
     for record in raw:
-        options = {
-            str(label): str(value)
-            for label, value in (record.get("options") or {}).items()
-        }
+        options = {str(label): str(value) for label, value in (record.get("options") or {}).items()}
         image_path = str(record.get("image_path") or "").strip()
         has_option_image = any(_is_image_path(v) for v in options.values())
         is_multimodal = bool(image_path) or has_option_image
@@ -400,11 +406,19 @@ def load_geoanalystbench(csv: Path) -> list[GeoTask]:
 def _build_agromind_prompt(item: AgroMindItem, *, with_images: bool) -> str:
     """Build the textual prompt for an AgroMind item.
 
-    Renders the question and the labelled options. For multi-image options the
-    value is shown as a reference path when ``with_images`` is ``False`` (the
-    text-only variant) and as a marker the multimodal path fills in otherwise.
-    The instruction pins the output to a single choice letter so the parser can
-    recover it deterministically.
+    The prompt is **adaptive** to the item shape (B-6), since the real subset
+    mixes multiple-choice items (with up to ten options ``A``-``J``) and open
+    items with no options at all (numeric or short-text golds):
+
+    - When the item has options, the instruction lists the REAL label set
+      present (derived from ``sorted(item.options)``, e.g. ``"A, B o C"``) so the
+      model is never told to pick a non-existent ``D`` nor steered away from a
+      valid ``E``-``J``. For multi-image options the value is shown as a
+      reference path when ``with_images`` is ``False`` (the text-only variant)
+      and as an image marker otherwise.
+    - When the item has no options, it asks for the direct answer (a number or a
+      short phrase), never a letter -- demanding a letter on an open item would
+      systematically depress the metric for that half of the subset.
 
     Args:
         item: The AgroMind item.
@@ -413,15 +427,32 @@ def _build_agromind_prompt(item: AgroMindItem, *, with_images: bool) -> str:
     Returns:
         The composed prompt string.
     """
+    if not item.options:
+        # Open-ended item (numeric or short-text gold): ask for the direct answer
+        # so the parser scores it via the normalised text fallback, not a letter.
+        return "\n".join(
+            [
+                "Eres un evaluador experto. Responde la siguiente pregunta de "
+                "forma directa y concisa (un numero o una frase corta), sin "
+                "explicaciones adicionales.",
+                "",
+                f"Pregunta: {item.question}",
+                "",
+                "Responde unicamente con la respuesta, sin texto adicional.",
+            ]
+        )
+
+    labels = sorted(item.options)
+    letters_clause = _format_letter_set(labels)
     lines = [
         "Eres un evaluador experto. Responde la siguiente pregunta de opcion "
-        "multiple eligiendo UNA sola letra (A, B, C o D).",
+        f"multiple eligiendo UNA sola letra ({letters_clause}).",
         "",
         f"Pregunta: {item.question}",
         "",
         "Opciones:",
     ]
-    for label in sorted(item.options):
+    for label in labels:
         value = item.options[label]
         if _is_image_path(value):
             shown = f"[imagen {Path(value).name}]" if with_images else f"[imagen: {value}]"
@@ -435,6 +466,22 @@ def _build_agromind_prompt(item: AgroMindItem, *, with_images: bool) -> str:
         ]
     )
     return "\n".join(lines)
+
+
+def _format_letter_set(labels: Sequence[str]) -> str:
+    """Render option labels as a Spanish ``"A, B o C"`` clause for the prompt.
+
+    Args:
+        labels: The sorted option labels actually present on the item.
+
+    Returns:
+        A comma-separated list with a trailing ``" o "`` before the last label
+        (e.g. ``"A, B, C o D"``); a single label is returned verbatim. The
+        caller guarantees a non-empty ``labels`` (open items take another path).
+    """
+    if len(labels) == 1:
+        return labels[0]
+    return f"{', '.join(labels[:-1])} o {labels[-1]}"
 
 
 def _resolve_image(rel_path: str, image_root: Path) -> Path | None:
@@ -470,9 +517,7 @@ def _image_part(path: Path) -> Any:
     return types.Part.from_bytes(data=path.read_bytes(), mime_type=mime)
 
 
-def _build_contents(
-    prompt: str, image_parts: Sequence[Any]
-) -> list[Any]:
+def _build_contents(prompt: str, image_parts: Sequence[Any]) -> list[Any]:
     """Build a single-user-turn ``contents`` list for the backend.
 
     Args:
@@ -488,9 +533,7 @@ def _build_contents(
     return [types.Content(role="user", parts=parts)]
 
 
-async def _run_backend_text(
-    backend: LLMBackend, prompt: str, image_parts: Sequence[Any]
-) -> str:
+async def _run_backend_text(backend: LLMBackend, prompt: str, image_parts: Sequence[Any]) -> str:
     """Drive a backend for one non-streaming text answer (no tools).
 
     Consumes the backend's chunk stream and concatenates the text deltas. Tool
@@ -507,18 +550,14 @@ async def _run_backend_text(
     """
     contents = _build_contents(prompt, image_parts)
     buffer: list[str] = []
-    async for chunk in backend.generate_stream(
-        contents=contents, tools=[], system_instruction=""
-    ):
+    async for chunk in backend.generate_stream(contents=contents, tools=[], system_instruction=""):
         text = getattr(chunk, "text", None)
         if text:
             buffer.append(text)
     return "".join(buffer).strip()
 
 
-def _resolve_backend(
-    variant: ReasonerVariant, backend: LLMBackend | None
-) -> LLMBackend:
+def _resolve_backend(variant: ReasonerVariant, backend: LLMBackend | None) -> LLMBackend:
     """Return the backend to use for a variant, building one if not injected.
 
     Args:
@@ -604,7 +643,10 @@ async def eval_agromind(
 
         prompt = _build_agromind_prompt(item, with_images=bool(image_parts))
         try:
-            answer = await _run_backend_text(resolved_backend, prompt, image_parts)
+            answer = await asyncio.wait_for(
+                _run_backend_text(resolved_backend, prompt, image_parts),
+                timeout=_ITEM_TIMEOUT_S,
+            )
         except Exception as exc:  # noqa: BLE001 - one item must not crash the run
             logger.warning(
                 "agromind_item_failed",
@@ -614,7 +656,18 @@ async def eval_agromind(
             )
             answer = ""
 
-        em_scores.append(agent_metrics.exact_match(answer, item.answer))
+        # Constrain the letter parser to the labels that actually exist for the
+        # item (B-5): open items (no options) score via the text fallback, and a
+        # choice item with options E-J scores its real letter, not a capped A-D.
+        valid_letters = frozenset(item.options) if item.options else None
+        em_scores.append(agent_metrics.exact_match(answer, item.answer, valid_letters))
+        if len(em_scores) % _PROGRESS_EVERY == 0:
+            logger.info(
+                "agromind_progress",
+                variant=variant.name,
+                evaluated=len(em_scores),
+                skipped=n_skipped,
+            )
         gold_text = item.options.get(item.answer, item.answer)
         pred_texts.append(answer)
         gold_texts.append(gold_text)
@@ -669,10 +722,8 @@ def _build_geo_prompt(task: GeoTask) -> str:
     """
     return "\n".join(
         [
-            "Eres un analista geoespacial. Resuelve la siguiente tarea en dos "
-            "secciones.",
-            "Primero, un flujo de trabajo numerado paso a paso bajo el "
-            "encabezado 'WORKFLOW:'.",
+            "Eres un analista geoespacial. Resuelve la siguiente tarea en dos secciones.",
+            "Primero, un flujo de trabajo numerado paso a paso bajo el encabezado 'WORKFLOW:'.",
             "Despues, el codigo Python completo bajo el encabezado 'CODE:' "
             "dentro de un bloque ```python```.",
             "",
@@ -691,9 +742,12 @@ def _split_workflow_and_code(answer: str) -> tuple[str, str]:
     """Split a plan-and-react answer into its workflow and code sections.
 
     Recognises a fenced ```python``` (or bare ```) code block as the code, and
-    treats the remaining text (with any ``WORKFLOW:`` / ``CODE:`` headers
-    stripped) as the workflow. Falls back gracefully when the response is not
-    perfectly formatted.
+    treats ALL the remaining text -- both before AND after the code block, with
+    any ``WORKFLOW:`` / ``CODE:`` headers stripped -- as the workflow. Earlier
+    this took only ``answer[:first_fence]``, silently dropping workflow prose
+    that the model placed after the code block, which zeroed the similarity and
+    caused a false pass-rate failure (B-10). Falls back gracefully when the
+    response is not perfectly formatted.
 
     Args:
         answer: The raw model answer.
@@ -706,13 +760,22 @@ def _split_workflow_and_code(answer: str) -> tuple[str, str]:
     fence = "```"
     if fence in answer:
         first = answer.find(fence)
-        rest = answer[first + len(fence):]
+        rest = answer[first + len(fence) :]
         end = rest.find(fence)
-        block = rest if end == -1 else rest[:end]
+        if end == -1:
+            # Unterminated fence: everything after it is the code block.
+            block = rest
+            post = ""
+        else:
+            block = rest[:end]
+            # Skip the closing fence so its delimiter is not kept as workflow.
+            post = rest[end + len(fence) :]
         if block.lower().startswith("python"):
-            block = block[len("python"):]
+            block = block[len("python") :]
         code = block.strip()
-        workflow = answer[:first]
+        # Keep both the pre-fence and post-fence prose for the workflow so any
+        # workflow text written after the code block is not discarded (B-10).
+        workflow = f"{answer[:first]}\n{post}"
     for header in ("WORKFLOW:", "CODE:", "Workflow:", "Code:"):
         workflow = workflow.replace(header, " ")
     return workflow.strip(), code.strip()
@@ -755,7 +818,10 @@ async def eval_geoanalyst(
     for task in tasks:
         prompt = _build_geo_prompt(task)
         try:
-            answer = await _run_backend_text(resolved_backend, prompt, [])
+            answer = await asyncio.wait_for(
+                _run_backend_text(resolved_backend, prompt, []),
+                timeout=_ITEM_TIMEOUT_S,
+            )
         except Exception as exc:  # noqa: BLE001 - one task must not crash the run
             logger.warning(
                 "geoanalyst_task_failed",
@@ -770,6 +836,8 @@ async def eval_geoanalyst(
         sims.append(sim)
         bleus.append(bleu)
         passes.append(1.0 if sim > pass_threshold else 0.0)
+        if len(passes) % _PROGRESS_EVERY == 0:
+            logger.info("geoanalyst_progress", variant=variant.name, evaluated=len(passes))
 
     n = len(tasks)
     pass_rate = sum(passes) / n if n else 0.0
@@ -848,6 +916,8 @@ def run_benchmark(
     judge: HallucinationJudge | None = None,
     image_root: Path = DEFAULT_IMAGE_ROOT,
     report_path: Path | None = None,
+    checkpoint_path: Path | None = None,
+    resume: bool = False,
     log_mlflow: bool = True,
     probe_server: bool = True,
 ) -> dict[str, Any]:
@@ -885,8 +955,24 @@ def run_benchmark(
     items = load_agromind_subset(agromind_path)
     tasks = load_geoanalystbench(geo_path)
 
+    # Evaluate the paid cloud variant (Gemini) FIRST so it is checkpointed
+    # earliest and never recomputed if a later on-prem variant fails -- do not
+    # re-pay the Gemini API (US-049 hardening).
+    variants = sorted(variants, key=lambda v: 0 if "gemini" in v.name.lower() else 1)
+
     results: dict[str, Any] = {}
+    if resume and checkpoint_path is not None and checkpoint_path.exists():
+        results = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+        logger.info(
+            "benchmark_checkpoint_loaded",
+            path=str(checkpoint_path),
+            done=sorted(results),
+        )
+
     for variant in variants:
+        if variant.name in results:
+            logger.info("variant_skipped_resumed", variant=variant.name)
+            continue
         backend = backends.get(variant.name)
         agromind_seeds: list[dict[str, float]] = []
         geo_seeds: list[dict[str, float]] = []
@@ -904,14 +990,19 @@ def run_benchmark(
                 )
             )
             geo_seeds.append(
-                asyncio.run(
-                    eval_geoanalyst(variant, tasks, backend=backend, seed=seed)
-                )
+                asyncio.run(eval_geoanalyst(variant, tasks, backend=backend, seed=seed))
             )
         results[variant.name] = {
             "AgroMind": _aggregate(agromind_seeds),
             "GeoAnalystBench": _aggregate(geo_seeds),
         }
+        if checkpoint_path is not None:
+            _save_checkpoint(results, checkpoint_path)
+            logger.info(
+                "variant_checkpointed",
+                variant=variant.name,
+                path=str(checkpoint_path),
+            )
 
     if log_mlflow:
         _log_to_mlflow(results, agromind_path, probe_server=probe_server)
@@ -922,9 +1013,25 @@ def run_benchmark(
     return results
 
 
-def _log_to_mlflow(
-    results: dict[str, Any], agromind_path: Path, *, probe_server: bool
-) -> None:
+def _save_checkpoint(results: dict[str, Any], path: Path) -> None:
+    """Persist the per-variant results to disk atomically (US-049 hardening).
+
+    Written after each variant completes so a later failure (dropped tunnel,
+    wedged socket) never forces recomputing the variants already done -- notably
+    the paid Gemini variant. The write goes through a temp file + atomic replace
+    so a crash mid-write cannot corrupt the checkpoint.
+
+    Args:
+        results: The accumulated ``{variant: {benchmark: ...}}`` mapping.
+        path: Destination JSON path (parent dirs created as needed).
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(path)
+
+
+def _log_to_mlflow(results: dict[str, Any], agromind_path: Path, *, probe_server: bool) -> None:
     """Log the aggregated results to MLflow with versioning tags (AC-6).
 
     Opens one run via :func:`track_experiment` (which sets ``code_version`` and
@@ -1038,6 +1145,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="No registrar la corrida en MLflow.",
     )
+    parser.add_argument(
+        "--checkpoint",
+        type=Path,
+        default=None,
+        help="Ruta del checkpoint JSON; cada variante se persiste al terminar.",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Reanudar desde el checkpoint: salta variantes ya evaluadas.",
+    )
     args = parser.parse_args(argv)
 
     variants = _resolve_variants(args.variants)
@@ -1048,6 +1166,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         geo_path=args.geo,
         image_root=args.image_root,
         report_path=args.report,
+        checkpoint_path=args.checkpoint,
+        resume=args.resume,
         log_mlflow=not args.no_mlflow,
     )
     logger.info("agent_bench_cli_done", n_variants=len(variants), n_seeds=len(args.seeds))

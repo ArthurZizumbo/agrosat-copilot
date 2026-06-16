@@ -30,12 +30,18 @@ from ml.agent.schemas import (
     CompareModelsInput,
     ExplainPredictionInput,
     Explanation,
+    GeoJSONGeometry,
     ModelComparison,
 )
 from ml.utils.parcel_id import canonical_parcel_id
 from ml.utils.parcel_reconcile import PROB_COLUMNS
 
-from .conftest import SESSION_A
+from .conftest import (
+    SESSION_A,
+    FakeConn,
+    FakeRecord,
+    fake_session_scoped_conn,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _OOF_DIR = _REPO_ROOT / "ml" / "eval" / "oof"
@@ -80,7 +86,7 @@ async def test_classify_uses_real_posterior(monkeypatch, make_ctx) -> None:
     expected_idx = int(np.argmax(proba))
     class_names = {i: f"class_{i}" for i in range(18)}
 
-    async def _fake_fetch_embedding(ctx, year):
+    async def _fake_fetch_embedding(ctx, year, aoi):
         return np.linspace(0.0, 1.0, 64, dtype=np.float64)
 
     monkeypatch.setattr(classify_mod, "_fetch_parcel_embedding", _fake_fetch_embedding)
@@ -103,7 +109,7 @@ async def test_classify_uses_real_posterior(monkeypatch, make_ctx) -> None:
 async def test_classify_needs_gee_when_no_embedding(monkeypatch, make_ctx) -> None:
     """With no persisted embedding the tool returns the controlled sentinel."""
 
-    async def _no_embedding(ctx, year):
+    async def _no_embedding(ctx, year, aoi):
         return None
 
     monkeypatch.setattr(classify_mod, "_fetch_parcel_embedding", _no_embedding)
@@ -120,6 +126,59 @@ async def test_classify_needs_gee_when_no_embedding(monkeypatch, make_ctx) -> No
 
     assert out.crop_class == "needs_gee_sampling"
     assert 0.0 < out.confidence < 1.0  # uniform prior, not a fabricated certainty
+
+
+async def test_fetch_embedding_resolves_by_aoi_intersection(monkeypatch, make_ctx) -> None:
+    """``_fetch_parcel_embedding`` resolves the parcel by AOI intersection (B-2).
+
+    Regression for US-045 B-2: the embedding must be chosen by ``ST_Intersects``
+    against the drawn AOI, not by "session's most recently updated parcel". We
+    drive the real ``_fetch_parcel_embedding`` over a :class:`FakeConn` and assert
+    the SQL contains the spatial predicate and that the AOI GeoJSON is bound as a
+    parameter (``$3``) -- proving the AOI geometry actually reaches the query.
+    """
+    import ml.agent.db as agent_db
+
+    embedding = list(np.linspace(0.0, 1.0, 64, dtype=np.float64))
+    conn = FakeConn(fetchrow_row=FakeRecord(alphaearth_embedding=embedding))
+    monkeypatch.setattr(agent_db, "session_scoped_conn", fake_session_scoped_conn(conn))
+
+    aoi = GeoJSONGeometry(**_POLYGON)
+    out = await classify_mod._fetch_parcel_embedding(make_ctx(), 2019, aoi)
+
+    assert out is not None
+    assert out.shape == (64,)
+    # The spatial query (not the RLS set_config) carries the intersection clause.
+    spatial_calls = [c for c in conn.calls if "ST_Intersects" in c[0]]
+    assert len(spatial_calls) == 1, "expected exactly one ST_Intersects query"
+    sql, args = spatial_calls[0]
+    assert "ST_SetSRID(ST_GeomFromGeoJSON($3), 4326)" in sql
+    assert "p.session_id = $1" in sql  # multi-tenant filter preserved
+    assert "fp.year = $2" in sql
+    # session_id, year and the AOI GeoJSON are bound positionally as $1, $2, $3.
+    assert args[0] == SESSION_A
+    assert args[1] == 2019
+    bound_aoi = json.loads(args[2])
+    assert bound_aoi["type"] == "Polygon"
+    assert bound_aoi["coordinates"] == _POLYGON["coordinates"]
+
+
+async def test_fetch_embedding_none_when_aoi_misses(monkeypatch, make_ctx) -> None:
+    """No persisted parcel intersects the AOI -> ``None`` (caller routes to GEE).
+
+    Regression for US-045 B-2: when ``ST_Intersects`` matches nothing the fetch
+    returns ``None`` so ``run`` emits the controlled ``needs_gee_sampling`` result
+    instead of borrowing an unrelated parcel's embedding.
+    """
+    import ml.agent.db as agent_db
+
+    conn = FakeConn(fetchrow_row=None)  # no parcel intersects the AOI
+    monkeypatch.setattr(agent_db, "session_scoped_conn", fake_session_scoped_conn(conn))
+
+    aoi = GeoJSONGeometry(**_POLYGON)
+    out = await classify_mod._fetch_parcel_embedding(make_ctx(), 2019, aoi)
+
+    assert out is None
 
 
 # ---------------------------------------------------------------------------
@@ -254,6 +313,22 @@ def test_predict_for_parcel_missing_model_returns_none() -> None:
     assert compare_mod._predict_for_parcel("does-not-exist", _REAL_PARCEL) is None
 
 
+def _owns_parcel(monkeypatch) -> None:
+    """Patch the multi-tenant gate so the parcel is treated as session-owned.
+
+    ``compare.run`` resolves the parcel against ``parcels`` (session-scoped)
+    before any OOF read. These OOF-focused tests are not about the DB gate, so we
+    stub ownership to ``True`` -- the dedicated gate behaviour is covered by
+    ``test_compare_models_rejects_foreign_parcel`` /
+    ``test_compare_models_accepts_owned_parcel`` below.
+    """
+
+    async def _belongs(ctx, parcel_id):
+        return True
+
+    monkeypatch.setattr(compare_mod, "_parcel_belongs_to_session", _belongs)
+
+
 async def test_compare_models_full_agreement(monkeypatch, make_ctx) -> None:
     """Two agreeing models over the real parcel yield ``agreement == 1.0``.
 
@@ -263,6 +338,7 @@ async def test_compare_models_full_agreement(monkeypatch, make_ctx) -> None:
     if not _oof_present("utae", "xgb-alphaearth"):
         pytest.skip("OOF parquet fixtures missing (run `dvc pull ml/eval/oof`).")
 
+    _owns_parcel(monkeypatch)
     # The DB int parcel id has no composite OOF row, so redirect the per-model
     # lookup to the real composite parcel id. ``_predict_for_parcel`` still reads
     # the genuine OOF parquet and takes the real argmax -- no faked probabilities.
@@ -287,11 +363,12 @@ async def test_compare_models_full_agreement(monkeypatch, make_ctx) -> None:
     assert out.agreement == pytest.approx(1.0)
 
 
-async def test_compare_models_empty_when_no_match(make_ctx) -> None:
+async def test_compare_models_empty_when_no_match(monkeypatch, make_ctx) -> None:
     """A plain int parcel id matches no composite OOF row -> empty, no crash."""
     if not _oof_present("utae", "tsvit-pheno"):
         pytest.skip("OOF parquet fixtures missing (run `dvc pull ml/eval/oof`).")
 
+    _owns_parcel(monkeypatch)
     out = await compare_mod.run(
         CompareModelsInput(
             session_id=SESSION_A, parcel_id=999_999, models=["utae", "tsvit-pheno"]
@@ -308,6 +385,7 @@ async def test_compare_models_enqueues_when_defer_wired(monkeypatch, make_ctx) -
     if not _oof_present("utae", "xgb-alphaearth"):
         pytest.skip("OOF parquet fixtures missing (run `dvc pull ml/eval/oof`).")
 
+    _owns_parcel(monkeypatch)
     enqueued = {}
 
     async def _defer(job_name, payload):
@@ -325,3 +403,74 @@ async def test_compare_models_enqueues_when_defer_wired(monkeypatch, make_ctx) -
     assert enqueued["job"] == "compare_models"
     assert enqueued["payload"]["parcel_id"] == 999_999
     assert isinstance(out, ModelComparison)  # inline result still returned
+
+
+# -- multi-tenant gate (B-1 regression): parcel ownership before any OOF read --
+async def test_compare_models_rejects_foreign_parcel(monkeypatch, make_ctx) -> None:
+    """A parcel not owned by the session yields the controlled empty comparison.
+
+    Regression for B-1: ``compare_models`` declared ``session_id`` but never used
+    it, reading global OOF artifacts by ``parcel_id`` alone (cross-tenant leak).
+    The gate now resolves the id against ``parcels WHERE id=$1 AND session_id=$2``
+    inside ``session_scoped_conn``; a miss returns ``predictions={}`` and never
+    touches the OOF parquets or the defer hook.
+    """
+    # ``fetchrow`` returns ``None`` -> parcel not visible to the session.
+    fake_conn = FakeConn(fetchrow_row=None)
+    monkeypatch.setattr(
+        "ml.agent.db.session_scoped_conn", fake_session_scoped_conn(fake_conn)
+    )
+    monkeypatch.setattr(
+        compare_mod,
+        "_predict_for_parcel",
+        lambda *a, **k: pytest.fail("OOF must not be read for a foreign parcel"),
+    )
+
+    async def _defer(job_name, payload):
+        pytest.fail("defer must not be called for a foreign parcel")
+
+    out = await compare_mod.run(
+        CompareModelsInput(
+            session_id=SESSION_A, parcel_id=42, models=["utae", "xgb-alphaearth"]
+        ),
+        make_ctx(defer=_defer),
+    )
+
+    assert isinstance(out, ModelComparison)
+    assert out.parcel_id == 42
+    assert out.predictions == {}
+    assert out.agreement == 0.0
+    # The ownership query ran session-scoped with the id + session bound ($1,$2).
+    ownership = [c for c in fake_conn.calls if "FROM parcels" in c[0]]
+    assert len(ownership) == 1
+    assert ownership[0][1] == (42, SESSION_A)
+
+
+async def test_compare_models_accepts_owned_parcel(monkeypatch, make_ctx) -> None:
+    """An owned parcel passes the gate and the OOF comparison runs as before."""
+    if not _oof_present("utae", "xgb-alphaearth"):
+        pytest.skip("OOF parquet fixtures missing (run `dvc pull ml/eval/oof`).")
+
+    # ``fetchrow`` returns a row -> parcel belongs to the session.
+    fake_conn = FakeConn(fetchrow_row=FakeRecord({"?column?": 1}))
+    monkeypatch.setattr(
+        "ml.agent.db.session_scoped_conn", fake_session_scoped_conn(fake_conn)
+    )
+    # Bridge the int id to the real composite OOF row (real argmax, no fakes).
+    real_predict = compare_mod._predict_for_parcel
+    monkeypatch.setattr(
+        compare_mod,
+        "_predict_for_parcel",
+        lambda model, canonical_id: real_predict(model, _REAL_PARCEL),
+    )
+
+    out = await compare_mod.run(
+        CompareModelsInput(
+            session_id=SESSION_A, parcel_id=10003, models=["utae", "xgb-alphaearth"]
+        ),
+        make_ctx(),
+    )
+
+    assert isinstance(out, ModelComparison)
+    assert set(out.predictions) == {"utae", "xgb-alphaearth"}
+    assert out.agreement == pytest.approx(1.0)

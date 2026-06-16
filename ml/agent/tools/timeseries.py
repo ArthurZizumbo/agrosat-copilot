@@ -1,4 +1,4 @@
-"""``get_parcel_timeseries`` tool: reconstruct a parcel index series from DB.
+"""``get_parcel_timeseries`` tool: surface a parcel's real phenology anchors.
 
 Honest-by-construction series reconstruction. AgroSatCopilot does **not** persist
 the raw daily Sentinel-2 reflectance series in PostgreSQL; the ``features_parcels``
@@ -11,18 +11,27 @@ table stores yearly *aggregates* per parcel (see
 - scalar NDVI phenology columns (``sog_doy``, ``peak_doy``, ``peak_value``,
   ``senescence_doy``) capturing the NDVI growth curve's key day-of-year anchors.
 
-This tool therefore returns a **distributional summary** of the requested index
-across the campaign year, not a fabricated daily curve. The summary points are
-the available percentiles (p05 -> p95) of the index, laid out on evenly spaced
-dates inside the requested ``[start, end]`` window in ascending value order. For
-NDVI specifically, where the DB also stores phenology day-of-year anchors, the
-real ``peak_value`` is additionally emitted on its true ``peak_doy`` date when it
-falls inside the window — those are measured, not interpolated.
+This tool returns the **real phenology anchors** the DB holds: points whose date
+is a genuine day-of-year stored for the parcel and whose value is the measured
+index value at that date. Concretely, the only anchor that pairs a real date with
+a real stored value is the NDVI **peak** (``peak_value`` measured on ``peak_doy``).
+SOG and senescence have a stored day-of-year but **no stored value** (they are
+threshold *crossings*, not measured observations), so they are not emitted — the
+agent must never read a fabricated value off them. NDWI and EVI carry no temporal
+anchor at all in the DB.
 
-No value is invented: every emitted value comes from a stored statistic. If the
-parcel is not visible to the session, or carries no stats for the requested year
-and index, an **empty** series is returned and a warning is logged. Every query
-filters by ``session_id`` and runs inside
+Rationale (``ml/agent/CLAUDE.md``): "Cifra (NDVI, fechas) sin origen en un tool
+call" is forbidden. Earlier this tool spread the percentile distribution (p05->p95)
+over evenly spaced dates inside ``[start, end]`` to fake an ascending curve; those
+dates corresponded to **no observation** and collapsed to duplicates on short
+windows. That fabrication is removed: every emitted date is a real day-of-year and
+every emitted value is the measured value at that date.
+
+Consequently the series is short by design (at most one point: the NDVI peak). It
+is **not** a daily curve and is **not** a distributional summary. If the parcel is
+not visible to the session, carries no feature row, or has no in-window phenology
+anchor for the requested index, an **empty** series is returned and a warning is
+logged. Every query filters by ``session_id`` and runs inside
 :func:`ml.agent.db.session_scoped_conn`.
 """
 
@@ -43,12 +52,9 @@ __all__ = ["run"]
 logger = structlog.get_logger(__name__)
 
 # Map the lower-case API index name to the upper-case JSONB key prefix used by
-# ``ml.features.temporal_features`` / ``ndvi_stats``.
+# ``ml.features.temporal_features`` / ``ndvi_stats``. Retained so the per-index
+# feature row can still be validated as present (no fabricated values otherwise).
 _INDEX_KEY: dict[str, str] = {"ndvi": "NDVI", "ndwi": "NDWI", "evi": "EVI"}
-
-# Percentile statistics used to lay out the distributional summary, in ascending
-# nominal order so the resulting series rises monotonically across the window.
-_PERCENTILE_STATS: tuple[str, ...] = ("p05", "p25", "p50", "p75", "p95")
 
 # Joins the parcel (for session ownership) with its yearly feature row. The
 # parcel filter by ``session_id`` is the multi-tenant guard; the LEFT-less INNER
@@ -113,42 +119,28 @@ def _doy_to_date(year: int, doy: int) -> date | None:
     return candidate
 
 
-def _spread_dates(start: date, end: date, n: int) -> list[date]:
-    """Return ``n`` ascending dates evenly spread across ``[start, end]``.
-
-    Args:
-        start: Inclusive window start.
-        end: Inclusive window end.
-        n: Number of dates to produce (``>= 1``).
-
-    Returns:
-        ``n`` dates from ``start`` to ``end`` inclusive. With ``n == 1`` the
-        midpoint is returned; the span is clamped so all dates stay in-window.
-    """
-    span_days = (end - start).days
-    if n == 1:
-        return [start + timedelta(days=span_days // 2)]
-    step = span_days / (n - 1)
-    return [start + timedelta(days=round(step * i)) for i in range(n)]
-
-
 def _empty_series(parcel_id: int, index: str) -> TimeSeries:
     """Build an empty (no-data) :class:`TimeSeries` for the parcel/index."""
     return TimeSeries(parcel_id=parcel_id, index=index, dates=[], values=[])
 
 
 async def run(inp: ParcelTimeseriesInput, ctx: ToolContext) -> TimeSeries:
-    """Reconstruct a distributional index summary for a parcel over a window.
+    """Surface the parcel's real in-window phenology anchors for an index.
+
+    Returns only points with a genuine stored date paired with a measured value.
+    In practice this is the NDVI peak (``peak_value`` on ``peak_doy``) when it is
+    stored and falls inside the requested window; no value is interpolated and no
+    date is fabricated (see module docstring). NDWI/EVI have no temporal anchor in
+    the DB and therefore yield an empty series.
 
     Args:
         inp: Validated arguments (session, parcel, date window, index).
         ctx: Tool execution context (session-scoped pool access).
 
     Returns:
-        A :class:`TimeSeries` whose points are stored statistics of the index
-        across the campaign year, placed inside the requested window. Empty when
-        the parcel is not visible to the session or has no stored stats for the
-        year/index.
+        A :class:`TimeSeries` with the real phenology anchors (at most the NDVI
+        peak). Empty when the parcel is not visible to the session, has no stored
+        stats for the year/index, or has no in-window anchor.
     """
     started = time.perf_counter()
     logger.info(
@@ -184,14 +176,14 @@ async def run(inp: ParcelTimeseriesInput, ctx: ToolContext) -> TimeSeries:
     ndvi_stats = _normalise_jsonb(record["ndvi_stats"])
     index_prefix = _INDEX_KEY[inp.index]
 
-    # Collect the available percentile stats for this index, in ascending order.
-    available: list[float] = []
-    for stat in _PERCENTILE_STATS:
-        raw = ndvi_stats.get(f"{index_prefix}_{stat}")
-        if raw is not None:
-            available.append(float(raw))
-
-    if not available:
+    # The index must actually be present in the stored aggregates; otherwise the
+    # parcel carries no information for it and the honest answer is empty. (We do
+    # not emit the percentile stats themselves because they have no real date.)
+    has_index_stats = any(
+        ndvi_stats.get(f"{index_prefix}_{stat}") is not None
+        for stat in ("p05", "p25", "p50", "p75", "p95", "mean", "min", "max")
+    )
+    if not has_index_stats:
         logger.warning(
             "timeseries_no_index_stats",
             tool="get_parcel_timeseries",
@@ -202,27 +194,28 @@ async def run(inp: ParcelTimeseriesInput, ctx: ToolContext) -> TimeSeries:
         )
         return _empty_series(inp.parcel_id, inp.index)
 
-    # Lay the percentile summary on evenly spaced in-window dates.
-    summary_dates = _spread_dates(inp.start, inp.end, len(available))
-    points: list[tuple[date, float]] = list(zip(summary_dates, available, strict=True))
-
-    # For NDVI, add the measured peak (real value on its real day-of-year) when
-    # it is stored and falls inside the requested window. This is the one truly
-    # temporal anchor the DB holds, so it is surfaced verbatim (not interpolated).
+    # The only anchor that pairs a real date with a real *measured* value is the
+    # NDVI peak. SOG/senescence store a day-of-year but no value (threshold
+    # crossings, not observations), so emitting them would fabricate a value --
+    # forbidden. NDWI/EVI have no phenology anchor at all in the DB.
+    dates: list[date] = []
+    values: list[float] = []
     if inp.index == "ndvi" and record["peak_doy"] is not None and record["peak_value"] is not None:
         peak_date = _doy_to_date(feature_year, int(record["peak_doy"]))
         if peak_date is not None and inp.start <= peak_date <= inp.end:
-            points.append((peak_date, float(record["peak_value"])))
+            dates.append(peak_date)
+            values.append(float(record["peak_value"]))
 
-    # Sort chronologically and de-duplicate dates (the peak may coincide with a
-    # spread date); keep the measured value when a collision occurs by appending
-    # the peak last and preferring the last occurrence per date.
-    by_date: dict[date, float] = {}
-    for point_date, value in sorted(points, key=lambda item: item[0]):
-        by_date[point_date] = value
-    ordered_dates = sorted(by_date)
-    dates = list(ordered_dates)
-    values = [by_date[d] for d in ordered_dates]
+    if not dates:
+        logger.warning(
+            "timeseries_no_in_window_anchor",
+            tool="get_parcel_timeseries",
+            session_id=str(ctx.session_id),
+            parcel_id=inp.parcel_id,
+            index=inp.index,
+            year=feature_year,
+        )
+        return _empty_series(inp.parcel_id, inp.index)
 
     duration_ms = (time.perf_counter() - started) * 1000.0
     logger.info(

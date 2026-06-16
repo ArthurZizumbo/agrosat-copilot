@@ -26,6 +26,8 @@ decorator needed for the ``async def`` tests).
 
 from __future__ import annotations
 
+import asyncio
+import json
 from pathlib import Path
 from typing import Any
 
@@ -152,6 +154,112 @@ class TestLoaders:
 
 
 # --------------------------------------------------------------------------- #
+# _build_agromind_prompt (B-6: adaptive to the item shape)
+# --------------------------------------------------------------------------- #
+
+
+def _make_item(
+    *, options: dict[str, str], answer: str, question: str = "Que cultivo es?"
+) -> agent_bench.AgroMindItem:
+    """Build a minimal :class:`AgroMindItem` for prompt/scoring unit tests."""
+    return agent_bench.AgroMindItem(
+        image_path="",
+        question=question,
+        options=options,
+        answer=answer,
+        type_id=0,
+        item_id=0,
+        level1_id=0,
+        level2_id=0,
+        level3_id=0,
+        task_file="T",
+        is_multimodal=False,
+    )
+
+
+class TestBuildAgromindPrompt:
+    """The prompt adapts to the real label set and to open (no-option) items."""
+
+    def test_open_item_asks_for_direct_answer_not_a_letter(self) -> None:
+        # B-6: an item with no options must NOT be told to pick a letter; it asks
+        # for the direct numeric/text answer instead.
+        item = _make_item(options={}, answer="10", question="Cuantas parcelas?")
+        prompt = agent_bench._build_agromind_prompt(item, with_images=False)
+        assert "letra" not in prompt.lower()
+        assert "Opciones:" not in prompt
+        assert "forma directa" in prompt
+        assert "Cuantas parcelas?" in prompt
+
+    def test_multiple_choice_lists_the_real_letter_set(self) -> None:
+        # B-6: the instruction must reflect the labels actually present, not a
+        # hardcoded "A, B, C o D".
+        item = _make_item(
+            options={"A": "maiz", "B": "trigo", "C": "arroz"}, answer="B"
+        )
+        prompt = agent_bench._build_agromind_prompt(item, with_images=False)
+        assert "A, B o C" in prompt
+        assert " o D" not in prompt
+        assert "  A. maiz" in prompt
+
+    def test_six_options_advertise_letters_up_to_f(self) -> None:
+        # B-6: items with E/F options must surface those letters in the prompt,
+        # not stop at D.
+        item = _make_item(
+            options={
+                "A": "uno",
+                "B": "dos",
+                "C": "tres",
+                "D": "cuatro",
+                "E": "cinco",
+                "F": "seis",
+            },
+            answer="F",
+        )
+        prompt = agent_bench._build_agromind_prompt(item, with_images=False)
+        assert "A, B, C, D, E o F" in prompt
+        assert "  F. seis" in prompt
+
+
+# --------------------------------------------------------------------------- #
+# _split_workflow_and_code (B-10: keep prose written after the code block)
+# --------------------------------------------------------------------------- #
+
+
+class TestSplitWorkflowAndCode:
+    """The splitter keeps workflow prose on BOTH sides of the code block."""
+
+    def test_workflow_before_and_after_code_is_kept(self) -> None:
+        # B-10: previously only the pre-fence text survived; workflow steps after
+        # the code block were dropped, zeroing the similarity. Both must remain.
+        answer = (
+            "WORKFLOW:\n1. cargar raster\n"
+            "CODE:\n```python\nx = load()\n```\n"
+            "2. recortar al AOI\n3. calcular NDVI"
+        )
+        workflow, code = agent_bench._split_workflow_and_code(answer)
+        assert code == "x = load()"
+        assert "1. cargar raster" in workflow
+        assert "2. recortar al AOI" in workflow
+        assert "3. calcular NDVI" in workflow
+        # The code body must not leak into the workflow text.
+        assert "x = load()" not in workflow
+        assert "```" not in workflow
+
+    def test_pre_fence_only_still_works(self) -> None:
+        answer = "WORKFLOW:\n1. paso uno\nCODE:\n```python\npass\n```"
+        workflow, code = agent_bench._split_workflow_and_code(answer)
+        assert code == "pass"
+        assert "1. paso uno" in workflow
+        assert "```" not in workflow
+
+    def test_no_fence_returns_full_text_as_workflow(self) -> None:
+        answer = "WORKFLOW:\n1. solo prosa, sin codigo"
+        workflow, code = agent_bench._split_workflow_and_code(answer)
+        assert code == ""
+        assert "1. solo prosa, sin codigo" in workflow
+
+
+# --------------------------------------------------------------------------- #
 # eval_agromind
 # --------------------------------------------------------------------------- #
 
@@ -205,6 +313,46 @@ class TestEvalAgromind:
         assert result["n_skipped"] == 494
         assert result["n_evaluated"] == 6
         assert backend.calls == 6
+
+    async def test_open_numeric_item_scores_via_text_fallback(
+        self, fake_sentence_model: None
+    ) -> None:
+        # B-5/B-6: an item with no options carries a numeric gold; the backend
+        # returns the number directly and it must score 1.0 through the text
+        # fallback (no spurious letter parsing).
+        item = _make_item(options={}, answer="10", question="Cuantas?")
+        variant = agent_bench.ReasonerVariant(
+            name="qwen", model="mock", multimodal=False
+        )
+        result = await agent_bench.eval_agromind(
+            variant, [item], backend=_FixedBackend(answer="10"), judge=None, seed=0
+        )
+        assert result["n_evaluated"] == 1
+        assert result["exact_match"] == pytest.approx(1.0, abs=1e-9)
+
+    async def test_high_letter_item_scores_when_answer_is_f(
+        self, fake_sentence_model: None
+    ) -> None:
+        # B-5: a six-option item whose gold is F must score 1.0 when the backend
+        # answers "F" wrapped in prose (the old [A-D] parser scored 0).
+        item = _make_item(
+            options={
+                "A": "uno", "B": "dos", "C": "tres",
+                "D": "cuatro", "E": "cinco", "F": "seis",
+            },
+            answer="F",
+        )
+        variant = agent_bench.ReasonerVariant(
+            name="qwen", model="mock", multimodal=False
+        )
+        result = await agent_bench.eval_agromind(
+            variant,
+            [item],
+            backend=_FixedBackend(answer="The answer is F"),
+            judge=None,
+            seed=0,
+        )
+        assert result["exact_match"] == pytest.approx(1.0, abs=1e-9)
 
     async def test_hallucination_is_nan_without_judge(
         self, fake_sentence_model: None
@@ -361,3 +509,102 @@ class TestRunBenchmark:
         assert "<table>" in content
         assert "gemini" in content
         assert "qwen" in content
+
+    def test_run_benchmark_checkpoints_each_variant(
+        self, fake_sentence_model: None, tmp_path: Path
+    ) -> None:
+        """Each variant's metrics are persisted to the checkpoint as it finishes."""
+        _require_data()
+        variants = [
+            agent_bench.ReasonerVariant(name="gemini", model="mock", multimodal=True),
+            agent_bench.ReasonerVariant(name="qwen", model="mock", multimodal=False),
+        ]
+        backends = {"gemini": _FixedBackend("A"), "qwen": _FixedBackend("A")}
+        ckpt = tmp_path / "ck.json"
+        agent_bench.run_benchmark(
+            variants,
+            seeds=(0,),
+            agromind_path=_AGROMIND_PATH,
+            geo_path=_GEO_PATH,
+            backends=backends,
+            image_root=tmp_path / "none",
+            report_path=tmp_path / "r.html",
+            checkpoint_path=ckpt,
+            log_mlflow=False,
+            probe_server=False,
+        )
+        assert ckpt.exists()
+        saved = json.loads(ckpt.read_text(encoding="utf-8"))
+        assert set(saved) == {"gemini", "qwen"}
+        assert "AgroMind" in saved["gemini"]
+
+    def test_run_benchmark_resume_skips_done_variants(
+        self, fake_sentence_model: None, tmp_path: Path
+    ) -> None:
+        """``resume`` loads the checkpoint and never recomputes a done variant."""
+        _require_data()
+        ckpt = tmp_path / "ck.json"
+        # Pre-seed the checkpoint as if 'gemini' had already been evaluated.
+        sentinel = {
+            "gemini": {
+                "AgroMind": {"exact_match": {"mean": 0.42, "std": 0.0}},
+                "GeoAnalystBench": {"pass_rate": {"mean": 0.5, "std": 0.0}},
+            }
+        }
+        ckpt.write_text(json.dumps(sentinel), encoding="utf-8")
+        gem = _FixedBackend("A")
+        qwen = _FixedBackend("A")
+        variants = [
+            agent_bench.ReasonerVariant(name="gemini", model="mock", multimodal=True),
+            agent_bench.ReasonerVariant(name="qwen", model="mock", multimodal=False),
+        ]
+        results = agent_bench.run_benchmark(
+            variants,
+            seeds=(0,),
+            agromind_path=_AGROMIND_PATH,
+            geo_path=_GEO_PATH,
+            backends={"gemini": gem, "qwen": qwen},
+            image_root=tmp_path / "none",
+            report_path=tmp_path / "r.html",
+            checkpoint_path=ckpt,
+            resume=True,
+            log_mlflow=False,
+            probe_server=False,
+        )
+        # Gemini came from the checkpoint -> its backend never ran and its metrics
+        # are the pre-seeded ones (not recomputed). Qwen still ran.
+        assert gem.calls == 0
+        assert results["gemini"]["AgroMind"]["exact_match"]["mean"] == pytest.approx(0.42)
+        assert qwen.calls > 0
+
+    def test_eval_agromind_item_timeout_does_not_hang(
+        self,
+        fake_sentence_model: None,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A wedged model call is bounded by the per-item timeout, not infinite."""
+        _require_data()
+        monkeypatch.setattr(agent_bench, "_ITEM_TIMEOUT_S", 0.05)
+
+        class _HangBackend:
+            """generate_stream that never yields (simulates a wedged socket)."""
+
+            model = "mock"
+
+            async def generate_stream(self, *, contents, tools, system_instruction):
+                await asyncio.Event().wait()  # never resolves
+                yield _Chunk("A")  # pragma: no cover - unreachable
+
+        items = agent_bench.load_agromind_subset(_AGROMIND_PATH)[:3]
+        variant = agent_bench.ReasonerVariant(
+            name="gemini", model="mock", multimodal=True
+        )
+        # Without the wait_for this hangs forever; the test completing at all proves
+        # the timeout fires and each item is recorded as a failure (empty answer).
+        result = asyncio.run(
+            agent_bench.eval_agromind(
+                variant, items, backend=_HangBackend(), image_root=tmp_path / "none"
+            )
+        )
+        assert result["n_evaluated"] >= 1

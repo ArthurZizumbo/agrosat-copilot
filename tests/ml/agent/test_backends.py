@@ -76,7 +76,11 @@ class FakeModels:
     ) -> None:
         self._response = response or FakeGenAIResponse()
         self._stream_chunks = stream_chunks or []
+        # ``calls`` records every model call (streaming or not); ``stream_calls``
+        # counts only the streaming surface so the B-4 single-generation contract
+        # can assert the streaming generation is never invoked for a text turn.
         self.calls: list[dict[str, Any]] = []
+        self.stream_calls: int = 0
 
     def generate_content(self, **kwargs: Any) -> FakeGenAIResponse:
         """Record the call and return the scripted non-streaming response."""
@@ -86,6 +90,7 @@ class FakeModels:
     def generate_content_stream(self, **kwargs: Any):
         """Record the call and yield the scripted stream chunks (sync iterator)."""
         self.calls.append(kwargs)
+        self.stream_calls += 1
         yield from self._stream_chunks
 
 
@@ -174,15 +179,20 @@ async def test_gemini_backend_parses_function_calls() -> None:
 
 
 async def test_gemini_backend_streams_text_chunks() -> None:
-    """A text-only response is surfaced as one or more text-delta chunks.
+    """A text-only response is surfaced from the SINGLE non-streaming call (B-4).
 
-    The mocked client streams two text chunks; the backend must yield text deltas
-    whose concatenation reproduces the answer, and request no tools.
+    Contract (B-4 fix): a turn is resolved with one ``generate_content`` call.
+    The answer text is re-emitted from that response (via ``_chunks_from_response``)
+    instead of running a second streaming generation, so cost/latency stay at one
+    model call and the text shown is exactly the one inspected for tool calls.
+
+    The stream chunks scripted here are intentionally DIFFERENT from
+    ``response.text`` to prove the output comes from the non-streaming response,
+    not from a second streaming generation.
     """
     models = FakeModels(
         stream_chunks=[
-            FakeGenAIStreamChunk(text="Hola"),
-            FakeGenAIStreamChunk(text=", mundo."),
+            FakeGenAIStreamChunk(text="STREAM-SHOULD-NOT-BE-USED"),
         ],
         response=FakeGenAIResponse(text="Hola, mundo."),
     )
@@ -195,6 +205,32 @@ async def test_gemini_backend_streams_text_chunks() -> None:
     text = "".join(c.text for c in chunks if getattr(c, "text", None))
     assert text == "Hola, mundo."
     assert not any(getattr(c, "function_call", None) for c in chunks)
+
+
+async def test_gemini_backend_single_generation_no_tool_calls() -> None:
+    """Regression for B-4: a text turn must call the model exactly ONCE.
+
+    The previous implementation ran ``_generate`` (non-stream) to detect function
+    calls and THEN ``_stream_text`` (a second full generation) to surface the
+    text, doubling cost/latency and risking an inconsistent sample. The fix
+    re-emits the text already present on the non-streaming response, so the
+    streaming surface must never be invoked.
+    """
+    models = FakeModels(
+        stream_chunks=[FakeGenAIStreamChunk(text="unused")],
+        response=FakeGenAIResponse(text="respuesta unica"),
+    )
+    backend = backends.GeminiBackend(
+        model="gemini-2.5-pro", client=FakeGenAIClient(models)
+    )
+
+    chunks = await _drain(backend)
+
+    text = "".join(c.text for c in chunks if getattr(c, "text", None))
+    assert text == "respuesta unica"
+    # Exactly one model call total, and it is the non-streaming surface.
+    assert len(models.calls) == 1, "the text turn must hit the model exactly once"
+    assert models.stream_calls == 0, "the streaming surface must not be invoked"
 
 
 async def test_gemini_backend_disables_automatic_function_calling() -> None:

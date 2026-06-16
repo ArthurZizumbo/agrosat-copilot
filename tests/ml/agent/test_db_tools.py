@@ -82,6 +82,18 @@ async def test_list_parcels_with_aoi_passes_geojson(monkeypatch, make_ctx) -> No
 
 # ---------------------------------------------------------------------------
 # get_parcel_timeseries
+#
+# Contract (honest-by-construction, see ``ml/agent/tools/timeseries.py``): the
+# series is NOT a daily curve and NOT a distributional summary spread over made-up
+# dates. It surfaces ONLY real phenology anchors -- points whose date is a genuine
+# stored day-of-year and whose value is the measured value at that date. The sole
+# such anchor the DB holds is the NDVI peak (``peak_value`` on ``peak_doy``). SOG
+# and senescence store a day-of-year but no value, so they are never emitted; NDWI
+# and EVI carry no temporal anchor and therefore yield an empty series.
+#
+# Regression guards below:
+#   B-3 (honesty): no fabricated/evenly-spaced percentile dates anymore.
+#   B-8 (short windows): no equispacing => no silent date collapse.
 # ---------------------------------------------------------------------------
 def _ndvi_stats_json() -> str:
     """Build a realistic ``ndvi_stats`` JSONB string (asyncpg surfaces str)."""
@@ -97,8 +109,14 @@ def _ndvi_stats_json() -> str:
     )
 
 
-async def test_timeseries_ndvi_summary_within_window(monkeypatch, make_ctx) -> None:
-    """NDVI series uses the stored percentiles plus the measured peak anchor."""
+async def test_timeseries_ndvi_returns_only_measured_peak_anchor(monkeypatch, make_ctx) -> None:
+    """NDVI series is exactly the measured peak anchor (real date + real value).
+
+    New honest contract (replaces the old "percentiles spread over evenly spaced
+    dates" behaviour): the only emitted point is ``peak_value`` measured on the
+    real ``peak_doy`` date. The stored percentiles are NOT laid out on fabricated
+    dates -- that was the B-3 honesty bug.
+    """
     conn = FakeConn(
         fetchrow_row=FakeRecord(
             ndvi_stats=_ndvi_stats_json(),
@@ -124,13 +142,111 @@ async def test_timeseries_ndvi_summary_within_window(monkeypatch, make_ctx) -> N
     assert isinstance(out, TimeSeries)
     assert out.parcel_id == 7
     assert out.index == "ndvi"
-    # 5 percentiles + the measured peak (distinct date) => 6 aligned points.
-    assert len(out.dates) == len(out.values) == 6
-    assert out.dates == sorted(out.dates)  # ascending
-    # Every value comes from a stored statistic; the real peak is surfaced.
-    assert 0.93 in out.values
-    # All percentile dates lie within the requested window.
-    assert all(date(2019, 1, 1) <= d <= date(2019, 12, 31) for d in out.dates)
+    # Exactly one aligned point: the measured peak on its real day-of-year.
+    assert out.dates == [date(2019, 6, 29)]  # DOY 180 of 2019
+    assert out.values == [0.93]
+    # None of the percentile values leak in on fabricated dates (B-3 regression).
+    for fabricated in (0.12, 0.31, 0.55, 0.74, 0.88):
+        assert fabricated not in out.values
+
+
+async def test_timeseries_ndvi_empty_when_peak_outside_window(monkeypatch, make_ctx) -> None:
+    """If the peak day-of-year falls outside the window, no point is emitted.
+
+    The series carries only real, in-window anchors; with the single anchor out of
+    range the honest answer is empty (no value placed on a made-up in-window date).
+    """
+    conn = FakeConn(
+        fetchrow_row=FakeRecord(
+            ndvi_stats=_ndvi_stats_json(),
+            sog_doy=90,
+            peak_doy=180,  # 2019-06-29, OUTSIDE the requested July window
+            peak_value=0.93,
+            senescence_doy=270,
+        )
+    )
+    monkeypatch.setattr(timeseries_mod, "session_scoped_conn", fake_session_scoped_conn(conn))
+
+    out = await timeseries_mod.run(
+        ParcelTimeseriesInput(
+            session_id=SESSION_A,
+            parcel_id=7,
+            start=date(2019, 7, 1),
+            end=date(2019, 7, 31),
+            index="ndvi",
+        ),
+        make_ctx(),
+    )
+
+    assert out.dates == []
+    assert out.values == []
+
+
+async def test_timeseries_short_window_does_not_collapse(monkeypatch, make_ctx) -> None:
+    """B-8 regression: a degenerate ``start == end`` window no longer collapses.
+
+    The old ``_spread_dates`` produced duplicate dates on short windows and the
+    dedup silently dropped percentiles. Now the single real anchor is emitted iff
+    it falls on that exact day; here the peak is on it, so we get exactly one point
+    with no silent data loss.
+    """
+    conn = FakeConn(
+        fetchrow_row=FakeRecord(
+            ndvi_stats=_ndvi_stats_json(),
+            sog_doy=90,
+            peak_doy=180,  # 2019-06-29
+            peak_value=0.93,
+            senescence_doy=270,
+        )
+    )
+    monkeypatch.setattr(timeseries_mod, "session_scoped_conn", fake_session_scoped_conn(conn))
+
+    out = await timeseries_mod.run(
+        ParcelTimeseriesInput(
+            session_id=SESSION_A,
+            parcel_id=7,
+            start=date(2019, 6, 29),  # single-day window exactly on the peak
+            end=date(2019, 6, 29),
+            index="ndvi",
+        ),
+        make_ctx(),
+    )
+
+    assert out.dates == [date(2019, 6, 29)]
+    assert out.values == [0.93]
+
+
+async def test_timeseries_ndwi_empty_no_temporal_anchor(monkeypatch, make_ctx) -> None:
+    """NDWI has no phenology anchor in the DB => empty series even with stats.
+
+    Only NDVI carries a measured temporal anchor (the peak). Other indices have
+    percentile stats but no real date to attach them to, so the honest answer is
+    empty rather than percentiles on fabricated dates.
+    """
+    conn = FakeConn(
+        fetchrow_row=FakeRecord(
+            ndvi_stats=json.dumps({"NDWI_p50": 0.22, "NDWI_p95": 0.41}),
+            sog_doy=90,
+            peak_doy=180,
+            peak_value=0.93,  # NDVI peak; irrelevant to NDWI
+            senescence_doy=270,
+        )
+    )
+    monkeypatch.setattr(timeseries_mod, "session_scoped_conn", fake_session_scoped_conn(conn))
+
+    out = await timeseries_mod.run(
+        ParcelTimeseriesInput(
+            session_id=SESSION_A,
+            parcel_id=7,
+            start=date(2019, 1, 1),
+            end=date(2019, 12, 31),
+            index="ndwi",
+        ),
+        make_ctx(),
+    )
+
+    assert out.dates == []
+    assert out.values == []
 
 
 async def test_timeseries_empty_when_no_feature_row(monkeypatch, make_ctx) -> None:

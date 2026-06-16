@@ -105,6 +105,78 @@ class TestExactMatch:
         assert agent_metrics.exact_match("", "A") == 0.0
         assert agent_metrics.exact_match("A", "") == 0.0
 
+    # B-5: the real subset has items with up to ten options (A-J), so letters
+    # beyond the historical A-D must score correctly, both bare and in prose.
+    def test_bare_letter_e_to_j_matches(self) -> None:
+        assert agent_metrics.exact_match("F", "F") == 1.0
+        assert agent_metrics.exact_match("J", "J") == 1.0
+
+    def test_labelled_high_letter_in_prose_matches(self) -> None:
+        # Previously the [A-D] regex could not capture an F wrapped in prose, so
+        # this scored 0; now it recovers the choice letter and scores 1.0.
+        assert agent_metrics.exact_match("The answer is F", "F") == 1.0
+
+    def test_high_letter_wrong_choice_scores_zero(self) -> None:
+        assert agent_metrics.exact_match("G", "H") == 0.0
+
+    # B-5: open items (no options) carry a numeric/text gold; passing the valid
+    # letter set keeps the letter path from firing so the normalised text
+    # fallback scores them. A correct "10" must score 1.0, a wrong one 0.0.
+    def test_open_numeric_item_scores_via_text_fallback(self) -> None:
+        assert agent_metrics.exact_match("10", "10", valid_letters=None) == 1.0
+        assert agent_metrics.exact_match("2", "10", valid_letters=None) == 0.0
+
+    def test_valid_letters_constrains_the_match(self) -> None:
+        # When the item only offers A-C, a stray capital ("D") must not be read
+        # as a choice; the bare "D" then falls through to the text comparison.
+        valid = frozenset("ABC")
+        assert agent_metrics.exact_match("C", "C", valid_letters=valid) == 1.0
+        assert agent_metrics.exact_match("D", "C", valid_letters=valid) == 0.0
+        # An in-set letter still scores even when wrapped in prose.
+        assert (
+            agent_metrics.exact_match("The answer is B", "B", valid_letters=valid)
+            == 1.0
+        )
+
+    def test_valid_letters_skips_out_of_set_capital_in_prose(self) -> None:
+        # "GIS" leads with an out-of-set capital G; with valid_letters={A,B}, the
+        # parser must not grab G and must reach the real in-set letter A.
+        valid = frozenset("AB")
+        assert (
+            agent_metrics.exact_match("GIS, option A", "A", valid_letters=valid)
+            == 1.0
+        )
+
+
+# --------------------------------------------------------------------------- #
+# _extract_choice_letter (B-5: A-Z range + valid-letters constraint)
+# --------------------------------------------------------------------------- #
+
+
+class TestExtractChoiceLetter:
+    """Letter extraction across the full A-J label range and constraints."""
+
+    def test_extracts_letter_beyond_d(self) -> None:
+        assert agent_metrics._extract_choice_letter("F") == "F"
+        assert agent_metrics._extract_choice_letter("(I)") == "I"
+        assert agent_metrics._extract_choice_letter("Answer: H") == "H"
+
+    def test_returns_none_for_open_text(self) -> None:
+        assert agent_metrics._extract_choice_letter("10") is None
+        assert agent_metrics._extract_choice_letter("rice paddy") is None
+
+    def test_valid_letters_rejects_out_of_set_letter(self) -> None:
+        valid = frozenset("ABC")
+        # A bare out-of-set letter is rejected (returns None), an in-set one is
+        # accepted.
+        assert agent_metrics._extract_choice_letter("E", valid) is None
+        assert agent_metrics._extract_choice_letter("B", valid) == "B"
+
+    def test_valid_letters_skips_to_first_in_set_standalone(self) -> None:
+        # The leading capital G is out of set; the parser advances to the in-set
+        # A rather than giving up.
+        assert agent_metrics._extract_choice_letter("GIS A", frozenset("AB")) == "A"
+
 
 # --------------------------------------------------------------------------- #
 # f1_squad

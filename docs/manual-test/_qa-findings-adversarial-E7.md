@@ -4,9 +4,12 @@
 adversarial por hallazgo; cada hallazgo se intento REFUTAR leyendo el codigo real).
 **Resultado:** 24 hallazgos -> **17 confirmados**, 7 refutados, 0 inciertos.
 
-De los 17 confirmados: **6 corregidos** en el commit `fix(E7): correctness de revision
-adversarial` (con tests de regresion, 147 verdes); **11 documentados** abajo porque cambian
-contrato publico / semantica de negocio / UX de streaming, o requieren decision de producto.
+De los 17 confirmados: **6 corregidos** en la 1a pasada (`fix(E7): correctness de revision
+adversarial`); los **11 restantes** (B-1..B-10) tambien quedaron **CORREGIDOS** en una 2a pasada
+(workflow `fix-adversarial-findings-e7` + integracion, 177 tests verdes), salvo donde se indica
+('documented'). Detalle por hallazgo abajo. La 2a pasada ademas blindo el harness de eval
+(timeouts de cliente + `asyncio.wait_for` por item + checkpoint por variante con `--resume`) tras
+dos cuelgues reales por falta de timeout (tunel/ socket).
 
 ---
 

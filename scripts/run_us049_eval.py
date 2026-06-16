@@ -49,6 +49,25 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         default=Path("reports/agent_bench/us049_report.html"),
     )
+    parser.add_argument(
+        "--agromind",
+        type=Path,
+        default=None,
+        help="Subset JSON de AgroMind (por defecto el de 500; usa uno menor para acotar).",
+    )
+    parser.add_argument("--geo", type=Path, default=None)
+    parser.add_argument("--image-root", type=Path, default=None)
+    parser.add_argument(
+        "--checkpoint",
+        type=Path,
+        default=Path("reports/agent_bench/us049_checkpoint.json"),
+        help="Checkpoint JSON: cada variante se guarda al terminar (Gemini primero).",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Reanudar del checkpoint: salta variantes ya hechas (no re-paga Gemini).",
+    )
     args = parser.parse_args(argv)
 
     # Point the vLLM-compatible backend at the live Qwen endpoint and the Ollama
@@ -56,16 +75,29 @@ def main(argv: list[str] | None = None) -> int:
     os.environ["VLLM_QWEN35_URL"] = args.qwen_url
     os.environ.setdefault("VLLM_API_KEY", "EMPTY")
     os.environ["OLLAMA_BASE_URL"] = args.ollama_url
-    # Force UTF-8 so structlog never trips on cp1252 when logging accented prose.
+    # Force UTF-8 so structlog never trips on cp1252 when logging accented prose,
+    # and unbuffered stdout so progress logs are observable in real time (a
+    # buffered run looks identical to a hung one -- US-049 hardening).
     os.environ["PYTHONIOENCODING"] = "utf-8"
+    os.environ["PYTHONUNBUFFERED"] = "1"
 
     from ml.eval.agent_bench import main as bench_main
 
     bench_argv: list[str] = ["--seeds", *[str(s) for s in args.seeds]]
     if args.variants:
         bench_argv += ["--variants", *args.variants]
+    if args.agromind:
+        bench_argv += ["--agromind", str(args.agromind)]
+    if args.geo:
+        bench_argv += ["--geo", str(args.geo)]
+    if args.image_root:
+        bench_argv += ["--image-root", str(args.image_root)]
     if args.no_mlflow:
         bench_argv.append("--no-mlflow")
+    if args.checkpoint:
+        bench_argv += ["--checkpoint", str(args.checkpoint)]
+    if args.resume:
+        bench_argv.append("--resume")
     bench_argv += ["--report", str(args.report)]
     return bench_main(bench_argv)
 

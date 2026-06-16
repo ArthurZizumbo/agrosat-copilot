@@ -64,6 +64,13 @@ _DEFAULT_VLLM_BASE_URL: str = "http://127.0.0.1:8002/v1"
 #: to avoid clashing with a local Ollama on :11434).
 _DEFAULT_OLLAMA_BASE_URL: str = "http://127.0.0.1:11435/v1"
 
+#: Per-request timeout so a stalled call RAISES instead of hanging forever (a
+#: dropped tunnel or a wedged socket otherwise blocks the eval/agent loop with no
+#: recovery -- US-049 hardening). ``genai`` takes milliseconds; the OpenAI client
+#: takes seconds. The on-prem (Gemma multimodal) value is generous on purpose.
+_GENAI_TIMEOUT_MS: int = 120_000
+_OPENAI_TIMEOUT_S: float = 180.0
+
 
 @dataclass(frozen=True)
 class BackendFunctionCall:
@@ -184,16 +191,18 @@ class GeminiBackend(LLMBackend):
             The cached or newly created client.
         """
         if self._client is None:
+            http_options = types.HttpOptions(timeout=_GENAI_TIMEOUT_MS)
             if self._use_vertexai:
                 self._client = genai.Client(
                     vertexai=True,
                     project=self._project or None,
                     location=self._location or None,
+                    http_options=http_options,
                 )
             elif self._api_key:
-                self._client = genai.Client(api_key=self._api_key)
+                self._client = genai.Client(api_key=self._api_key, http_options=http_options)
             else:
-                self._client = genai.Client()
+                self._client = genai.Client(http_options=http_options)
         return self._client
 
     async def generate_stream(
@@ -219,10 +228,11 @@ class GeminiBackend(LLMBackend):
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
         )
         client = self._get_client()
-        # Function calling uses the NON-streaming call: it is the canonical
-        # surface for resolving ``function_calls`` (and is what a turn that
-        # requests tools needs). When the turn yields no calls, the buffered text
-        # is streamed back to the caller in deltas.
+        # A turn is resolved with a SINGLE non-streaming generation: it is the
+        # canonical surface for ``function_calls`` and also carries the answer
+        # ``text``. Re-running a streaming generation to surface the text would be
+        # a second full model call (double cost/latency) and could sample a
+        # different completion than the one inspected for tool calls (B-4).
         response = await self._generate(client, contents, config)
         calls = list(getattr(response, "function_calls", None) or [])
         if calls:
@@ -236,15 +246,11 @@ class GeminiBackend(LLMBackend):
                         )
                     )
             return
-        # No tool calls: surface the answer text. Prefer streaming deltas when the
-        # client offers a stream; otherwise fall back to the response text.
-        streamed = False
-        async for delta in self._stream_text(client, contents, config):
-            streamed = True
-            yield BackendChunk(text=delta)
-        if not streamed:
-            for chunk in self._chunks_from_response(response):
-                yield chunk
+        # No tool calls: re-emit the text of the response already obtained. This
+        # trades token-by-token streaming for a single model call; the text the
+        # caller sees is exactly the one inspected for tool calls.
+        for chunk in self._chunks_from_response(response):
+            yield chunk
 
     async def _generate(
         self,
@@ -272,50 +278,6 @@ class GeminiBackend(LLMBackend):
                 model=self.model, contents=contents, config=config
             )
         return client.models.generate_content(model=self.model, contents=contents, config=config)
-
-    async def _stream_text(
-        self,
-        client: Any,
-        contents: list[types.Content],
-        config: types.GenerateContentConfig,
-    ) -> AsyncIterator[str]:
-        """Yield incremental text deltas from a streaming generation.
-
-        Best-effort: if the client offers no usable stream surface, yields
-        nothing (the caller then falls back to the non-streaming response text).
-
-        Args:
-            client: The ``genai.Client`` (or a test double).
-            contents: Conversation contents for this turn.
-            config: The generation config.
-
-        Yields:
-            Text deltas from each streamed chunk.
-        """
-        aio = getattr(client, "aio", None)
-        try:
-            if aio is not None:
-                stream = await aio.models.generate_content_stream(
-                    model=self.model, contents=contents, config=config
-                )
-                async for response in stream:
-                    for chunk in self._chunks_from_response(response):
-                        if chunk.text:
-                            yield chunk.text
-                return
-            sync_models = getattr(client, "models", None)
-            if sync_models is None or not hasattr(sync_models, "generate_content_stream"):
-                return
-            for response in sync_models.generate_content_stream(
-                model=self.model, contents=contents, config=config
-            ):
-                for chunk in self._chunks_from_response(response):
-                    if chunk.text:
-                        yield chunk.text
-        except (AttributeError, TypeError):
-            # The client double does not implement a usable stream; the caller
-            # falls back to the non-streaming response text.
-            return
 
     @staticmethod
     def _chunks_from_response(response: Any) -> list[BackendChunk]:
@@ -412,7 +374,11 @@ class VLLMOpenAIBackend(LLMBackend):
         if self._client is None:
             from openai import AsyncOpenAI
 
-            self._client = AsyncOpenAI(base_url=self._base_url, api_key=self._api_key)
+            self._client = AsyncOpenAI(
+                base_url=self._base_url,
+                api_key=self._api_key,
+                timeout=_OPENAI_TIMEOUT_S,
+            )
         return self._client
 
     async def generate_stream(

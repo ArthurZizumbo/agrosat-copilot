@@ -55,6 +55,45 @@ _KEY: str = "canonical_parcel_id"
 _DEFER_JOB: str = "compare_models"
 
 
+def _empty_comparison(parcel_id: int) -> ModelComparison:
+    """Return the controlled empty comparison for a parcel.
+
+    Args:
+        parcel_id: Parcel the (empty) comparison refers to.
+
+    Returns:
+        A :class:`ModelComparison` with no predictions and zero agreement, used
+        both when the parcel is not visible to the session and when no requested
+        model had a usable OOF row for it.
+    """
+    return ModelComparison(parcel_id=parcel_id, predictions={}, agreement=0.0)
+
+
+async def _parcel_belongs_to_session(ctx: ToolContext, parcel_id: int) -> bool:
+    """Check the parcel belongs to the current session (multi-tenant gate).
+
+    The OOF parquets are global artifacts keyed only by ``parcel_id``; reading
+    them for an arbitrary id would leak another tenant's predictions. Before any
+    OOF read this resolves the id against ``parcels`` inside a session-scoped
+    connection, mirroring ``explain._fetch_parcel`` (``WHERE id=$1 AND
+    session_id=$2``). The query is parametrised ($1/$2), never f-string built.
+
+    Args:
+        ctx: Tool execution context (pool, session id).
+        parcel_id: Parcel whose session ownership is verified.
+
+    Returns:
+        ``True`` if a ``parcels`` row with that id exists for the session,
+        ``False`` otherwise.
+    """
+    from ml.agent.db import session_scoped_conn
+
+    query = "SELECT 1 FROM parcels WHERE id = $1 AND session_id = $2 LIMIT 1"
+    async with session_scoped_conn(ctx.session_id) as conn:
+        row = await conn.fetchrow(query, parcel_id, ctx.session_id)
+    return row is not None
+
+
 def _oof_parquet_path(model: str) -> Path:
     """Return the per-parcel OOF parquet path of a model member.
 
@@ -119,9 +158,7 @@ def _compute_comparison(inp: CompareModelsInput) -> ModelComparison:
     from ml.data.pastis_filter import SEMANTIC18_CLASS_NAMES
 
     # Bridge the DB integer parcel id to the canonical Utf8 OOF key namespace.
-    canonical_id = canonical_parcel_id(
-        pl.DataFrame({_KEY: [inp.parcel_id]}), col=_KEY
-    )[_KEY][0]
+    canonical_id = canonical_parcel_id(pl.DataFrame({_KEY: [inp.parcel_id]}), col=_KEY)[_KEY][0]
 
     predictions: dict[str, str] = {}
     class_ids: list[int] = []
@@ -139,9 +176,7 @@ def _compute_comparison(inp: CompareModelsInput) -> ModelComparison:
             requested=inp.models,
             note="no requested model had a usable OOF row for the parcel.",
         )
-        return ModelComparison(
-            parcel_id=inp.parcel_id, predictions={}, agreement=0.0
-        )
+        return _empty_comparison(inp.parcel_id)
 
     majority_count = Counter(class_ids).most_common(1)[0][1]
     agreement = majority_count / len(class_ids)
@@ -177,6 +212,8 @@ async def run(inp: CompareModelsInput, ctx: ToolContext) -> ModelComparison:
         A :class:`ModelComparison` with the per-model predicted crop classes and
         the majority-agreement fraction. Models without a usable OOF row are
         omitted (logged), so ``predictions`` may have fewer keys than requested.
+        If the parcel does not belong to the current session, the controlled
+        empty comparison (``predictions={}``, ``agreement=0.0``) is returned.
     """
     logger.info(
         "compare_models_started",
@@ -184,6 +221,19 @@ async def run(inp: CompareModelsInput, ctx: ToolContext) -> ModelComparison:
         models=inp.models,
         deferred_executor=ctx.defer is not None,
     )
+
+    # Multi-tenant gate (NON-NEGOTIABLE): the OOF parquets are global and keyed
+    # only by parcel id, so a parcel must be resolved against the session before
+    # any OOF read or deferred enqueue. A parcel not visible to the session
+    # yields the controlled empty comparison (never another tenant's prediction).
+    if not await _parcel_belongs_to_session(ctx, inp.parcel_id):
+        logger.warning(
+            "compare_models_parcel_not_in_session",
+            session_id=str(ctx.session_id),
+            parcel_id=inp.parcel_id,
+            note="parcel not visible to the session; returning empty comparison.",
+        )
+        return _empty_comparison(inp.parcel_id)
 
     if ctx.defer is not None:
         handle = await ctx.defer(

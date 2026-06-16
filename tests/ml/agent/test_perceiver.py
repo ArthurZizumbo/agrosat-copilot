@@ -85,7 +85,7 @@ async def test_observe_builds_text_observation(monkeypatch, make_ctx) -> None:
     class_names = {i: f"class_{i}" for i in range(18)}
     class_names[3] = "wheat"
 
-    async def _fake_fetch_embedding(ctx, year):
+    async def _fake_fetch_embedding(ctx, year, aoi=None):
         return np.linspace(0.0, 1.0, 64, dtype=np.float64)
 
     # Patch the DB boundary inside ``explain`` and the classifier+embedding inside
@@ -127,7 +127,7 @@ async def test_to_prompt_block_is_text_without_logits(monkeypatch, make_ctx) -> 
     async def _fake_fetch_parcel(ctx, parcel_id):
         return dict(record)
 
-    async def _no_embedding(ctx, year):
+    async def _no_embedding(ctx, year, aoi=None):
         return None
 
     monkeypatch.setattr(explain_mod, "_fetch_parcel", _fake_fetch_parcel)
@@ -167,7 +167,7 @@ async def test_observe_degenerate_posterior_without_embedding(
     async def _fake_fetch_parcel(ctx, parcel_id):
         return dict(record)
 
-    async def _no_embedding(ctx, year):
+    async def _no_embedding(ctx, year, aoi=None):
         return None
 
     monkeypatch.setattr(explain_mod, "_fetch_parcel", _fake_fetch_parcel)
@@ -193,7 +193,7 @@ async def test_observe_aoi_propagates_needs_gee_sampling(monkeypatch, make_ctx) 
     fabricate a crop. The observation is AOI-level (``parcel_id == -1``).
     """
 
-    async def _no_embedding(ctx, year):
+    async def _no_embedding(ctx, year, aoi=None):
         return None
 
     monkeypatch.setattr(classify_mod, "_fetch_parcel_embedding", _no_embedding)
@@ -226,7 +226,7 @@ async def test_observe_aoi_uses_classifier_posterior(monkeypatch, make_ctx) -> N
     class_names = {i: f"class_{i}" for i in range(18)}
     class_names[7] = "maize"
 
-    async def _fake_fetch_embedding(ctx, year):
+    async def _fake_fetch_embedding(ctx, year, aoi=None):
         return np.linspace(0.0, 1.0, 64, dtype=np.float64)
 
     monkeypatch.setattr(classify_mod, "_fetch_parcel_embedding", _fake_fetch_embedding)

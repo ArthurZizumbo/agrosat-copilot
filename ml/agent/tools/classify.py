@@ -27,13 +27,14 @@ cached process-wide, so repeated calls reuse the fitted estimator (no GPU, per t
 from __future__ import annotations
 
 import functools
+import json
 from pathlib import Path
 
 import numpy as np
 import structlog
 
 from ml.agent.context import ToolContext
-from ml.agent.schemas import ClassificationResult, ClassifyParcelInput
+from ml.agent.schemas import ClassificationResult, ClassifyParcelInput, GeoJSONGeometry
 
 logger = structlog.get_logger(__name__)
 
@@ -151,14 +152,11 @@ def _load_classifier() -> _XgbAlphaEarthClassifier:
     feature_cols = [c for c in df.columns if c.startswith(_ALPHAEARTH_PREFIX)]
     if not feature_cols:
         raise ValueError(
-            f"no AlphaEarth feature column with prefix {_ALPHAEARTH_PREFIX!r} in "
-            f"{_FEATURES_PATH}."
+            f"no AlphaEarth feature column with prefix {_ALPHAEARTH_PREFIX!r} in {_FEATURES_PATH}."
         )
 
     # Train on folds 1-4 only (leak-free: the classifier never sees fold-5).
-    train = df.filter(pl.col("fold") != _HELD_OUT_FOLD).filter(
-        pl.col("class_id").is_not_null()
-    )
+    train = df.filter(pl.col("fold") != _HELD_OUT_FOLD).filter(pl.col("class_id").is_not_null())
     if train.height == 0:
         raise ValueError("no training rows on folds 1-4 in the features parquet.")
 
@@ -168,9 +166,7 @@ def _load_classifier() -> _XgbAlphaEarthClassifier:
     # Map the raw PASTIS class_id (1..18) to the contiguous semantic18 space
     # [0..17] used by every ensemble member; drop Background/Void parcels (255).
     label_lut = _build_semantic18_lut(255)
-    pastis_train = np.clip(
-        train.get_column("class_id").to_numpy().astype(np.int64), 0, 19
-    )
+    pastis_train = np.clip(train.get_column("class_id").to_numpy().astype(np.int64), 0, 19)
     y_raw = label_lut[pastis_train]
     keep = y_raw != 255
     x_train = x_train[keep]
@@ -210,38 +206,72 @@ def _load_classifier() -> _XgbAlphaEarthClassifier:
     )
 
 
-async def _fetch_parcel_embedding(ctx: ToolContext, year: int) -> np.ndarray | None:
-    """Fetch the AlphaEarth embedding of the session's most recent parcel.
+async def _fetch_parcel_embedding(
+    ctx: ToolContext, year: int, aoi: GeoJSONGeometry | None = None
+) -> np.ndarray | None:
+    """Fetch the AlphaEarth embedding of the persisted parcel covering ``aoi``.
 
     The polygon-to-parcel resolution for a brand-new AOI is owned by the GEE
     sampler (out of scope here), so this tool reads the embedding from
     ``features_parcels`` for the parcels of the current session. The query is
-    session-scoped: it joins ``features_parcels`` to ``parcels`` and filters by
-    ``parcels.session_id`` (multi-tenant defence in depth) plus the requested
-    ``year``, returning the latest non-null embedding.
+
+    1. session-scoped (``parcels.session_id`` -- multi-tenant defence in depth),
+    2. restricted to the requested ``year`` with a non-null embedding, and
+    3. spatially anchored to the drawn AOI via ``ST_Intersects`` so the embedding
+       belongs to the parcel the user actually outlined, NOT merely the session's
+       most recently updated parcel. Without this spatial join the tool would
+       classify an unrelated parcel with high confidence (US-045 / B-2).
+
+    When several persisted parcels intersect the AOI, the one updated last wins
+    (``ORDER BY fp.updated_at DESC``); when none intersect, the caller falls back
+    to the controlled ``needs_gee_sampling`` result.
 
     Args:
         ctx: Tool execution context (pool, session id).
         year: Campaign year of the annual embedding.
+        aoi: Drawn AOI polygon used to spatially resolve the parcel. Serialized
+            to GeoJSON and bound as ``$3`` (parameterized, never f-string).
 
     Returns:
-        A ``(64,)`` ``float64`` embedding, or ``None`` if the session has no
-        parcel with a persisted embedding for that year.
+        A ``(64,)`` ``float64`` embedding, or ``None`` if no persisted parcel of
+        the session intersects ``aoi`` for that year (a fresh AOI without an
+        embedding).
     """
     from ml.agent.db import session_scoped_conn
 
-    query = """
-        SELECT fp.alphaearth_embedding
-        FROM features_parcels fp
-        JOIN parcels p ON p.id = fp.parcel_id
-        WHERE p.session_id = $1
-          AND fp.year = $2
-          AND fp.alphaearth_embedding IS NOT NULL
-        ORDER BY fp.updated_at DESC
-        LIMIT 1
-    """
+    if aoi is not None:
+        # classify_new_parcel (B-2): spatially anchor the embedding to the parcel
+        # the user outlined via ``ST_Intersects`` (never the session's merely most
+        # recent parcel). The AOI is serialized and bound as ``$3``.
+        query = """
+            SELECT fp.alphaearth_embedding
+            FROM features_parcels fp
+            JOIN parcels p ON p.id = fp.parcel_id
+            WHERE p.session_id = $1
+              AND fp.year = $2
+              AND fp.alphaearth_embedding IS NOT NULL
+              AND ST_Intersects(p.geom, ST_SetSRID(ST_GeomFromGeoJSON($3), 4326))
+            ORDER BY fp.updated_at DESC
+            LIMIT 1
+        """
+        aoi_geojson = json.dumps({"type": aoi.type, "coordinates": aoi.coordinates})
+        args: tuple[object, ...] = (ctx.session_id, year, aoi_geojson)
+    else:
+        # No AOI (perceiver.observe over a known parcel of the session): the most
+        # recently updated session embedding for the year (no spatial anchor).
+        query = """
+            SELECT fp.alphaearth_embedding
+            FROM features_parcels fp
+            JOIN parcels p ON p.id = fp.parcel_id
+            WHERE p.session_id = $1
+              AND fp.year = $2
+              AND fp.alphaearth_embedding IS NOT NULL
+            ORDER BY fp.updated_at DESC
+            LIMIT 1
+        """
+        args = (ctx.session_id, year)
     async with session_scoped_conn(ctx.session_id) as conn:
-        row = await conn.fetchrow(query, ctx.session_id, year)
+        row = await conn.fetchrow(query, *args)
 
     if row is None or row["alphaearth_embedding"] is None:
         return None
@@ -303,13 +333,13 @@ async def run(inp: ClassifyParcelInput, ctx: ToolContext) -> ClassificationResul
         geometry_type=inp.aoi.type,
     )
 
-    embedding = await _fetch_parcel_embedding(ctx, inp.year)
+    embedding = await _fetch_parcel_embedding(ctx, inp.year, inp.aoi)
     if embedding is None:
         logger.info(
             "classify_new_parcel_needs_gee",
             session_id=str(inp.session_id),
             year=inp.year,
-            reason="no persisted AlphaEarth embedding for the session/year",
+            reason="no persisted parcel embedding intersects the drawn AOI",
         )
         return _needs_gee_result()
 
@@ -318,8 +348,7 @@ async def run(inp: ClassifyParcelInput, ctx: ToolContext) -> ClassificationResul
     top_idx = int(np.argmax(proba))
     crop_class = classifier.class_names.get(top_idx, str(top_idx))
     class_probabilities = {
-        classifier.class_names.get(idx, str(idx)): float(proba[idx])
-        for idx in range(_NUM_CLASSES)
+        classifier.class_names.get(idx, str(idx)): float(proba[idx]) for idx in range(_NUM_CLASSES)
     }
 
     result = ClassificationResult(

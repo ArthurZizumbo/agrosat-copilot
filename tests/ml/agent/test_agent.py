@@ -366,6 +366,73 @@ async def test_two_tool_calls_in_one_turn(
     ]
 
 
+async def test_mixed_text_and_tool_call_turn_streams_text_and_runs_tool(
+    monkeypatch: pytest.MonkeyPatch, make_ctx
+) -> None:
+    """A turn emitting reasoning text *and* a function call must do both (B-9).
+
+    Gemini and Qwen frequently interleave reasoning text with a function call in
+    the same turn. The agent must (1) stream that text as a ``TextDeltaEvent``
+    *before* it runs the tool (so the reasoning reaches the SSE stream even though
+    the turn also requested a tool) and (2) keep the text in the reconstructed
+    ``model`` content so the conversation history -- and the next backend turn --
+    retain the model's rationale. Previously the text was dropped on both counts.
+    """
+    conn = FakeConn(fetch_rows=[{"id": 3, "crop_class": "barley", "confidence": 0.8}])
+    _patch_db(monkeypatch, conn)
+
+    backend = FakeBackend(
+        turns=[
+            # Mixed turn: reasoning text first, then the function call, together.
+            [
+                FakeChunk(text="Voy a revisar tus parcelas. "),
+                FakeChunk(
+                    text="Consulto la base de datos.",
+                    function_call=FakeFunctionCall(name="list_parcels", args={}),
+                ),
+            ],
+            [FakeChunk(text="Tienes 1 parcela de cebada.")],
+        ]
+    )
+    agent = _agent_with_list_parcels(backend)
+
+    events = await _collect(agent, [{"role": "user", "content": "x"}], make_ctx())
+    kinds = [type(e) for e in events]
+
+    # The interleaved reasoning text is streamed BEFORE the tool runs; the tool
+    # still executes and the loop finishes with the final answer.
+    assert kinds == [
+        TextDeltaEvent,  # "Voy a revisar tus parcelas. "
+        TextDeltaEvent,  # "Consulto la base de datos."
+        ToolCallEvent,
+        ToolResultEvent,
+        TextDeltaEvent,  # final answer turn
+        DoneEvent,
+    ]
+    reasoning = [e.text for e in events[:2]]
+    assert reasoning == ["Voy a revisar tus parcelas. ", "Consulto la base de datos."]
+    tool_call = next(e for e in events if isinstance(e, ToolCallEvent))
+    assert tool_call.name == "list_parcels"
+
+    # The second backend turn must see the model's reasoning text preserved in the
+    # reconstructed ``model`` content (before the function-call part), so the
+    # history stays coherent across turns.
+    second_turn_contents = backend.calls[1]["contents"]
+    model_turn = next(
+        c
+        for c in second_turn_contents
+        if c.role == "model"
+        and any(getattr(p, "function_call", None) is not None for p in c.parts)
+    )
+    text_in_model_turn = [p.text for p in model_turn.parts if getattr(p, "text", None)]
+    assert text_in_model_turn == [
+        "Voy a revisar tus parcelas. ",
+        "Consulto la base de datos.",
+    ]
+    # The function call still follows the reasoning text in the same model turn.
+    assert any(getattr(p, "function_call", None) is not None for p in model_turn.parts)
+
+
 # ---------------------------------------------------------------------------
 # stream_response: error handling
 # ---------------------------------------------------------------------------

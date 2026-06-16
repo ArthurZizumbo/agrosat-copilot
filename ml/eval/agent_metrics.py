@@ -7,7 +7,9 @@ isolation against known cases without any network or LLM call.
 
 Two benchmarks are scored here:
 
-- **AgroMind** (multiple-choice QA, answer is a letter ``A``-``D``):
+- **AgroMind** (multiple-choice QA, answer is a letter ``A``-``Z`` -- the real
+  subset uses up to ten options ``A``-``J``, not just ``A``-``D``, plus open
+  numeric/text golds with no options at all):
   :func:`exact_match`, :func:`f1_squad`, :func:`bertscore_f1`,
   :func:`hallucination_rate` (LLM-as-judge) and :func:`tool_call_accuracy`
   (for the copilot tool-use queries).
@@ -97,14 +99,21 @@ _CODE_TOKEN_RE = re.compile(r"[A-Za-z_]\w*|\d+\.?\d*|[^\s\w]")
 
 # Multiple-choice option labels recognised in AgroMind answers, tried in order:
 # an isolated bare letter (``"B"``), then a labelled form (``"Answer: C"``,
-# ``"(D)"``, ``"option A"``), then any standalone A-D token. Plain prose words
+# ``"(D)"``, ``"option A"``), then any standalone letter token. Plain prose words
 # like "Answer" must not leak their leading ``A`` into the match.
-_BARE_LETTER_RE = re.compile(r"^\s*\(?([A-D])\)?\s*$")
+#
+# The real subset has items with up to ten options (``A``-``J``), so the letter
+# class spans ``A``-``Z`` rather than the historical ``A``-``D`` (B-5). Callers
+# may pass ``valid_letters`` (derived from ``item.options``) to constrain the
+# match to the labels that actually exist for the item; the standalone fallback
+# is then restricted to that set so a stray capital in prose (e.g. "GIS") is not
+# mistaken for a choice when the item only offers ``A``-``C``.
+_BARE_LETTER_RE = re.compile(r"^\s*\(?([A-Z])\)?\s*$")
 _LABELLED_LETTER_RE = re.compile(
-    r"(?:answer|option|choice|respuesta|opcion)\s*[:\-\)\.]?\s*\(?([A-D])\b",
+    r"(?:answer|option|choice|respuesta|opcion)\s*[:\-\)\.]?\s*\(?([A-Z])\b",
     re.IGNORECASE,
 )
-_STANDALONE_LETTER_RE = re.compile(r"(?<![A-Za-z])([A-D])(?![A-Za-z])")
+_STANDALONE_LETTER_RE = re.compile(r"(?<![A-Za-z])([A-Z])(?![A-Za-z])")
 
 
 @runtime_checkable
@@ -139,50 +148,89 @@ def _normalize_text(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def _extract_choice_letter(text: str) -> str | None:
-    """Extract a single ``A``-``D`` choice letter from a model answer.
+def _extract_choice_letter(
+    text: str, valid_letters: frozenset[str] | None = None
+) -> str | None:
+    """Extract a single choice letter (``A``-``Z``) from a model answer.
 
     Tries, in order: an isolated bare letter (``"B"`` / ``"(C)"``), a labelled
-    form (``"Answer: C"``, ``"option D"``), then any standalone A-D token. This
-    ordering keeps prose words such as ``"Answer"`` from leaking their leading
-    ``A``. Returns ``None`` when no letter is present so callers can fall back to
-    text comparison.
+    form (``"Answer: F"``, ``"option D"``), then any standalone letter token.
+    This ordering keeps prose words such as ``"Answer"`` from leaking their
+    leading ``A``. Returns ``None`` when no letter is present so callers can fall
+    back to text comparison.
+
+    The real AgroMind subset has items with up to ten options (``A``-``J``), so
+    the recogniser spans the full ``A``-``Z`` range (B-5). When ``valid_letters``
+    is given (the labels that exist for the item, e.g. ``frozenset("ABC")``) the
+    match is constrained to that set: a bare/labelled letter outside the set is
+    rejected and the standalone fallback only fires on an in-set letter, so a
+    stray capital from prose (``"GIS"``) is never mistaken for a choice.
 
     Args:
         text: Raw answer string.
+        valid_letters: Optional set of uppercase labels that actually exist for
+            the item; ``None`` accepts any ``A``-``Z`` letter.
 
     Returns:
         The uppercase choice letter, or ``None`` if none is found.
     """
     stripped = text.strip()
+
+    def _accept(letter: str) -> str | None:
+        upper = letter.upper()
+        if valid_letters is not None and upper not in valid_letters:
+            return None
+        return upper
+
     bare = _BARE_LETTER_RE.match(stripped)
     if bare is not None:
-        return bare.group(1).upper()
+        accepted = _accept(bare.group(1))
+        if accepted is not None:
+            return accepted
     labelled = _LABELLED_LETTER_RE.search(stripped)
     if labelled is not None:
-        return labelled.group(1).upper()
-    standalone = _STANDALONE_LETTER_RE.search(stripped)
-    return standalone.group(1).upper() if standalone is not None else None
+        accepted = _accept(labelled.group(1))
+        if accepted is not None:
+            return accepted
+    # Standalone fallback: scan every standalone capital and return the first one
+    # allowed by ``valid_letters`` (or the first capital when unconstrained).
+    for match in _STANDALONE_LETTER_RE.finditer(stripped):
+        accepted = _accept(match.group(1))
+        if accepted is not None:
+            return accepted
+    return None
 
 
-def exact_match(pred: str, gold: str) -> float:
+def exact_match(
+    pred: str, gold: str, valid_letters: frozenset[str] | None = None
+) -> float:
     """Exact-match score for an AgroMind multiple-choice answer.
 
-    The AgroMind gold answer is a letter ``A``-``D``. When both strings reduce
-    to a choice letter they are compared as letters; otherwise they fall back to
-    SQuAD-normalised string equality (robust to free-text answers).
+    AgroMind golds are mostly a choice letter (``A``-``J`` in the real subset),
+    but the subset also carries open numeric/text golds with no options. When
+    both strings reduce to a choice letter they are compared as letters;
+    otherwise they fall back to SQuAD-normalised string equality (so a free
+    numeric/text answer like ``"10"`` still scores correctly).
+
+    Passing ``valid_letters`` (the item's option labels) keeps the letter path
+    from firing on open-ended items and from misreading a stray capital, while a
+    correct answer like ``"F"`` or ``"The answer is F"`` still scores ``1.0``
+    when ``F`` is a real option (B-5).
 
     Args:
         pred: Model prediction (may be a bare letter or contain extra prose).
-        gold: Gold answer (a letter for AgroMind).
+        gold: Gold answer (a letter for multiple-choice items, free text/number
+            for open ones).
+        valid_letters: Optional set of the item's option labels; constrains the
+            letter match to the labels that exist (``None`` accepts any letter).
 
     Returns:
         ``1.0`` on match, ``0.0`` otherwise. Empty inputs score ``0.0``.
     """
     if not pred or not gold:
         return 0.0
-    pred_letter = _extract_choice_letter(pred)
-    gold_letter = _extract_choice_letter(gold)
+    pred_letter = _extract_choice_letter(pred, valid_letters)
+    gold_letter = _extract_choice_letter(gold, valid_letters)
     if pred_letter is not None and gold_letter is not None:
         return 1.0 if pred_letter == gold_letter else 0.0
     return 1.0 if _normalize_text(pred) == _normalize_text(gold) else 0.0

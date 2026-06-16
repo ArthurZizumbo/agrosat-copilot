@@ -210,9 +210,12 @@ class Agent:
         """Drive the bounded backend round-trips until a text-only answer.
 
         On each turn the backend is asked to generate; the chunks are split into
-        text deltas (buffered) and function calls. If the turn requested tools,
-        they are executed and their responses fed back; otherwise the buffered
-        text is streamed out and the loop terminates with :class:`DoneEvent`.
+        text deltas (buffered) and function calls. Any buffered text is streamed
+        out as :class:`TextDeltaEvent` for the turn (even when the same turn also
+        requested tools, so the model's interleaved reasoning is never lost). If
+        the turn requested tools, they are executed -- with the model's text kept
+        in the reconstructed ``model`` content -- and their responses fed back;
+        otherwise the loop terminates with :class:`DoneEvent`.
 
         Args:
             contents: The conversation contents accumulated so far (mutated in
@@ -239,10 +242,16 @@ class Agent:
                 if call is not None:
                     tool_calls.append(call)
 
+            # Stream any text the model emitted this turn *before* deciding what
+            # to do with it. Gemini and Qwen frequently interleave reasoning text
+            # with the function calls in the same turn; that text must reach the
+            # SSE stream (and the persisted history) instead of being dropped when
+            # the turn also requested tools.
+            for piece in text_parts:
+                if piece:
+                    yield TextDeltaEvent(text=piece)
+
             if not tool_calls:
-                for piece in text_parts:
-                    if piece:
-                        yield TextDeltaEvent(text=piece)
                 logger.info(
                     "agent_loop_completed",
                     session_id=str(session_id),
@@ -251,9 +260,10 @@ class Agent:
                 yield DoneEvent()
                 return
 
-            # Record the model's function-call turn before its responses so the
-            # backend sees a well-formed call/response pairing on the next turn.
-            contents.append(self._model_function_call_content(tool_calls))
+            # Record the model's turn (its reasoning text plus the function calls)
+            # before the responses so the backend sees a well-formed call/response
+            # pairing on the next turn and the history keeps the model's text.
+            contents.append(self._model_function_call_content(tool_calls, text_parts))
             response_parts: list[types.Part] = []
             for call in tool_calls:
                 async for event in self._execute_tool(call, session_id, ctx, response_parts):
@@ -408,24 +418,36 @@ class Agent:
         return contents
 
     @staticmethod
-    def _model_function_call_content(tool_calls: list[_ToolCall]) -> types.Content:
-        """Render the model's function-call turn as a single ``model`` content.
+    def _model_function_call_content(
+        tool_calls: list[_ToolCall], text_parts: list[str] | None = None
+    ) -> types.Content:
+        """Render the model's mixed turn as a single ``model`` content.
+
+        The reasoning text the model emitted alongside its function calls is kept
+        as leading text parts so the reconstructed ``Content`` mirrors what the
+        model actually produced. Without it, the model's reasoning would vanish
+        from the history and the next backend turn would see a call/response
+        pairing stripped of its rationale.
 
         Args:
             tool_calls: The calls requested by the model in this turn.
+            text_parts: The interleaved reasoning-text deltas emitted in the same
+                turn, in order; empty/absent when the turn was pure function calls.
 
         Returns:
             A ``role="model"`` :class:`google.genai.types.Content` whose parts are
-            the function calls, mirroring what the model emitted so the backend
-            sees a coherent call/response pairing.
+            the (non-empty) text deltas followed by the function calls, mirroring
+            what the model emitted so the backend sees a coherent call/response
+            pairing and the history keeps the model's reasoning.
         """
-        return types.Content(
-            role="model",
-            parts=[
-                types.Part.from_function_call(name=call.name, args=call.args)
-                for call in tool_calls
-            ],
+        parts: list[types.Part] = [
+            types.Part.from_text(text=piece) for piece in (text_parts or []) if piece
+        ]
+        parts.extend(
+            types.Part.from_function_call(name=call.name, args=call.args)
+            for call in tool_calls
         )
+        return types.Content(role="model", parts=parts)
 
     @staticmethod
     def _read_chunk(chunk: Any) -> tuple[str | None, _ToolCall | None]:
