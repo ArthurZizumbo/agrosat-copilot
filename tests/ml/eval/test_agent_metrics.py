@@ -19,7 +19,7 @@ Spanish; no emojis; full type hints.
 from __future__ import annotations
 
 import math
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 import pytest
@@ -296,6 +296,173 @@ class TestHallucinationRate:
         samples = [{"input": "q", "actual_output": "a", "context": ["c"]}]
         result = agent_metrics.hallucination_rate(samples, judge=_RaisingJudge())
         assert math.isnan(result)
+
+
+# --------------------------------------------------------------------------- #
+# DeepEvalHallucinationJudge (DeepEval wrapper, fully stubbed -- no network)
+# --------------------------------------------------------------------------- #
+
+
+class _FakeHallucinationMetric:
+    """Stand-in for DeepEval's ``HallucinationMetric`` (no LLM/network).
+
+    Records the test case passed to :meth:`measure` and exposes a fixed
+    ``.score`` so the wrapper's plumbing can be exercised offline. When
+    ``raise_on_measure`` is set, :meth:`measure` raises to exercise the
+    resilient NaN path of :meth:`DeepEvalHallucinationJudge.score`.
+    """
+
+    last_kwargs: ClassVar[dict[str, Any]] = {}
+    last_test_case: ClassVar[Any] = None
+
+    def __init__(self, *, score: float, raise_on_measure: bool = False) -> None:
+        self.score = score
+        self._raise = raise_on_measure
+        self.measured: list[Any] = []
+
+    def measure(self, test_case: Any) -> float:
+        """Record the test case and return the constant score (or raise)."""
+        if self._raise:
+            raise RuntimeError("deepeval measure boom")
+        self.measured.append(test_case)
+        type(self).last_test_case = test_case
+        return self.score
+
+
+def _patch_deepeval_metric(
+    monkeypatch: pytest.MonkeyPatch, metric: _FakeHallucinationMetric
+) -> None:
+    """Patch ``deepeval.metrics.HallucinationMetric`` with a no-op factory.
+
+    The wrapper imports ``HallucinationMetric`` lazily inside ``__init__``, so we
+    patch the symbol on the ``deepeval.metrics`` module to a callable that
+    records the construction kwargs and returns the supplied fake instance. No
+    real DeepEval metric (and therefore no evaluation LLM) is ever built.
+    """
+    import deepeval.metrics
+
+    def _factory(**kwargs: Any) -> _FakeHallucinationMetric:
+        _FakeHallucinationMetric.last_kwargs = kwargs
+        return metric
+
+    monkeypatch.setattr(deepeval.metrics, "HallucinationMetric", _factory)
+
+
+class TestDeepEvalHallucinationJudge:
+    """The concrete DeepEval-backed judge, with DeepEval fully stubbed."""
+
+    def test_score_returns_metric_score(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        metric = _FakeHallucinationMetric(score=0.42)
+        _patch_deepeval_metric(monkeypatch, metric)
+
+        judge = agent_metrics.DeepEvalHallucinationJudge(model="stub-model")
+        sample = {
+            "input": "What crop is in the parcel?",
+            "actual_output": "Maize.",
+            "context": ["The parcel is classified as maize."],
+        }
+        result = judge.score(sample)
+
+        assert result == pytest.approx(0.42, abs=1e-9)
+        # The DeepEval test case was built from the sample's three fields.
+        test_case = _FakeHallucinationMetric.last_test_case
+        assert test_case.input == sample["input"]
+        assert test_case.actual_output == sample["actual_output"]
+        assert test_case.context == sample["context"]
+
+    def test_satisfies_judge_protocol(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        metric = _FakeHallucinationMetric(score=0.1)
+        _patch_deepeval_metric(monkeypatch, metric)
+        judge = agent_metrics.DeepEvalHallucinationJudge(model="stub-model")
+        assert isinstance(judge, agent_metrics.HallucinationJudge)
+
+    def test_score_returns_nan_when_metric_raises(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        metric = _FakeHallucinationMetric(score=0.9, raise_on_measure=True)
+        _patch_deepeval_metric(monkeypatch, metric)
+
+        judge = agent_metrics.DeepEvalHallucinationJudge(model="stub-model")
+        sample = {"input": "q", "actual_output": "a", "context": ["c"]}
+        # A failing underlying metric must degrade to NaN, never raise.
+        result = judge.score(sample)
+        assert math.isnan(result)
+
+    def test_integrates_with_hallucination_rate(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The stubbed judge plugs into the aggregate metric just like a real one.
+        metric = _FakeHallucinationMetric(score=0.3)
+        _patch_deepeval_metric(monkeypatch, metric)
+        judge = agent_metrics.DeepEvalHallucinationJudge(model="stub-model")
+        samples = [
+            {"input": "q1", "actual_output": "a1", "context": ["c1"]},
+            {"input": "q2", "actual_output": "a2", "context": ["c2"]},
+        ]
+        result = agent_metrics.hallucination_rate(samples, judge=judge)
+        assert result == pytest.approx(0.3, abs=1e-9)
+
+
+# --------------------------------------------------------------------------- #
+# build_gemini_judge (factory, no network -- settings injected/stubbed)
+# --------------------------------------------------------------------------- #
+
+
+class _FakeSettings:
+    """Minimal stand-in for the project ``Settings`` (only the key fields)."""
+
+    def __init__(self, gemini_api_key: str = "", google_api_key: str = "") -> None:
+        self.gemini_api_key = gemini_api_key
+        self.google_api_key = google_api_key
+
+
+class TestBuildGeminiJudge:
+    """Graceful construction of the Gemini-backed judge (DeepEval stubbed)."""
+
+    def test_returns_none_without_api_key(self) -> None:
+        settings = _FakeSettings(gemini_api_key="", google_api_key="")
+        assert agent_metrics.build_gemini_judge(settings=settings) is None
+
+    def test_builds_judge_when_key_present(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured: dict[str, Any] = {}
+
+        class _FakeGeminiModel:
+            def __init__(self, **kwargs: Any) -> None:
+                captured.update(kwargs)
+
+        import deepeval.models
+
+        monkeypatch.setattr(deepeval.models, "GeminiModel", _FakeGeminiModel)
+        _patch_deepeval_metric(monkeypatch, _FakeHallucinationMetric(score=0.0))
+
+        settings = _FakeSettings(gemini_api_key="test-key-not-a-secret")
+        judge = agent_metrics.build_gemini_judge(
+            model="gemini-3.5-flash", settings=settings
+        )
+
+        assert isinstance(judge, agent_metrics.DeepEvalHallucinationJudge)
+        # The key flowed into the GeminiModel exactly once, no env lookup.
+        assert captured["api_key"] == "test-key-not-a-secret"
+        assert captured["model"] == "gemini-3.5-flash"
+
+    def test_returns_none_when_model_build_fails(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        class _BoomModel:
+            def __init__(self, **_kwargs: Any) -> None:
+                raise RuntimeError("gemini wiring failed")
+
+        import deepeval.models
+
+        monkeypatch.setattr(deepeval.models, "GeminiModel", _BoomModel)
+        settings = _FakeSettings(gemini_api_key="test-key-not-a-secret")
+        assert agent_metrics.build_gemini_judge(settings=settings) is None
 
 
 # --------------------------------------------------------------------------- #

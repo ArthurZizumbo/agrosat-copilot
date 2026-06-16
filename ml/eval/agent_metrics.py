@@ -55,9 +55,12 @@ if TYPE_CHECKING:  # pragma: no cover - import only for type checking
 logger = structlog.get_logger(__name__)
 
 __all__ = [
+    "DEFAULT_GEMINI_JUDGE_MODEL",
     "DEFAULT_SENTENCE_MODEL",
+    "DeepEvalHallucinationJudge",
     "HallucinationJudge",
     "bertscore_f1",
+    "build_gemini_judge",
     "codebleu_score",
     "exact_match",
     "f1_squad",
@@ -69,6 +72,10 @@ __all__ = [
 #: Sentence encoder used for the semantic proxies (same frozen model the rest of
 #: the project standardises on, see ``ml/features/phenology_description.py``).
 DEFAULT_SENTENCE_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
+
+#: Default Gemini model used as the DeepEval LLM-as-judge for hallucination.
+#: Overridable per call so the judge can be pinned to a cheaper/faster variant.
+DEFAULT_GEMINI_JUDGE_MODEL: str = "gemini-3.5-flash"
 
 #: Lazy module-level cache for the sentence encoder so the (heavy) model is
 #: loaded at most once per process and tests can monkeypatch
@@ -109,6 +116,148 @@ class HallucinationJudge(Protocol):
     def score(self, sample: dict[str, Any]) -> float:
         """Return the hallucination score in ``[0.0, 1.0]`` for one sample."""
         ...
+
+
+class DeepEvalHallucinationJudge:
+    """Concrete :class:`HallucinationJudge` backed by DeepEval.
+
+    Wraps DeepEval's ``HallucinationMetric``: each sample is turned into an
+    ``LLMTestCase(input, actual_output, context)`` and scored by an evaluation
+    LLM. The continuous ``HallucinationMetric.score`` (proportion of contexts the
+    output contradicts) is returned in ``[0.0, 1.0]`` (1.0 == fully
+    hallucinated); the binary pass/fail ``threshold`` is irrelevant to us.
+
+    The evaluation LLM is **injectable** via the constructor so this class never
+    hardcodes a provider or secret: pass a DeepEval-compatible model object (any
+    ``DeepEvalBaseLLM`` subclass, e.g. a ``GeminiModel``) or a provider model
+    name string. :func:`build_gemini_judge` is the wired-up factory that
+    constructs a Gemini-backed judge from the project ``Settings``.
+
+    Both ``deepeval`` and the metric/test-case constructions are imported lazily
+    (inside the constructor and :meth:`score`) so importing this module stays
+    cheap and offline-test-safe; tests monkeypatch the metric to avoid any
+    network or LLM call.
+    """
+
+    def __init__(
+        self,
+        model: str | Any = DEFAULT_GEMINI_JUDGE_MODEL,
+        *,
+        threshold: float = 0.5,
+        include_reason: bool = False,
+    ) -> None:
+        """Build the judge over a DeepEval-compatible evaluation model.
+
+        Args:
+            model: Either a DeepEval model object (a ``DeepEvalBaseLLM`` such as
+                ``GeminiModel``) or a provider model-name string that DeepEval
+                resolves to its default provider. Prefer passing a model object
+                (see :func:`build_gemini_judge`) so credentials are explicit.
+            threshold: Binary pass/fail threshold for ``HallucinationMetric``.
+                Only the continuous ``.score`` is consumed, so this has no effect
+                on the returned value; kept for API completeness.
+            include_reason: When ``True`` the metric also generates a natural
+                language rationale (extra LLM call). Defaults to ``False`` to keep
+                the judge cheap.
+
+        Raises:
+            ImportError: If ``deepeval`` is not importable. Callers that want a
+                graceful degradation should use :func:`build_gemini_judge`, which
+                returns ``None`` instead of raising.
+        """
+        from deepeval.metrics import HallucinationMetric
+
+        self._model = model
+        self._threshold = threshold
+        self._include_reason = include_reason
+        self._metric = HallucinationMetric(
+            threshold=threshold,
+            model=model,
+            include_reason=include_reason,
+            async_mode=False,
+        )
+
+    def score(self, sample: dict[str, Any]) -> float:
+        """Score one ``{input, actual_output, context}`` sample with DeepEval.
+
+        Args:
+            sample: A DeepEval-shaped dict with keys ``input`` (the question),
+                ``actual_output`` (the model answer) and ``context`` (a list of
+                grounding/reference strings).
+
+        Returns:
+            The continuous ``HallucinationMetric.score`` in ``[0.0, 1.0]``
+            (1.0 == fully hallucinated). On any failure (LLM/network/parse
+            error) returns ``float('nan')`` and logs ``deepeval_judge_failed`` so
+            a judge failure degrades to ``n/a`` rather than crashing the eval,
+            consistent with :func:`hallucination_rate`'s no-judge policy.
+        """
+        try:
+            from deepeval.test_case import LLMTestCase
+
+            test_case = LLMTestCase(
+                input=sample["input"],
+                actual_output=sample["actual_output"],
+                context=list(sample["context"]),
+            )
+            self._metric.measure(test_case)
+            return float(self._metric.score)
+        except Exception as exc:  # noqa: BLE001 - judge errors must not crash eval
+            logger.warning("deepeval_judge_failed", error=str(exc))
+            return math.nan
+
+
+def build_gemini_judge(
+    model: str = DEFAULT_GEMINI_JUDGE_MODEL, settings: Any = None
+) -> HallucinationJudge | None:
+    """Build a Gemini-backed :class:`DeepEvalHallucinationJudge`, or ``None``.
+
+    Constructs a DeepEval ``GeminiModel`` wired with the project's Gemini API key
+    (``settings.gemini_api_key``, falling back to ``settings.google_api_key``),
+    matching the credential pattern used by ``ml.agent.backends.make_backend``,
+    and wraps it in a :class:`DeepEvalHallucinationJudge`. When ``settings`` is
+    ``None`` the project ``Settings`` are loaded lazily via
+    ``backend.app.core.config.get_settings``.
+
+    Degrades gracefully: returns ``None`` (with a structlog warning) when
+    ``deepeval`` is unavailable, the settings cannot be loaded, or no Gemini key
+    is configured, so callers (e.g. ``scripts/run_us049_system_eval.py``) render
+    the RAG hallucination metric as ``n/a`` instead of crashing.
+
+    Args:
+        model: Gemini model name for the judge (default
+            :data:`DEFAULT_GEMINI_JUDGE_MODEL`).
+        settings: Optional project ``Settings`` instance. When ``None`` the
+            settings are loaded from ``backend.app.core.config``.
+
+    Returns:
+        A ready :class:`DeepEvalHallucinationJudge`, or ``None`` when no judge can
+        be built.
+    """
+    if settings is None:
+        try:
+            from backend.app.core.config import get_settings
+
+            settings = get_settings()
+        except Exception as exc:  # noqa: BLE001 - settings optional outside the app
+            logger.warning("gemini_judge_no_settings", error=str(exc))
+            return None
+
+    api_key = getattr(settings, "gemini_api_key", "") or getattr(
+        settings, "google_api_key", ""
+    )
+    if not api_key:
+        logger.warning("gemini_judge_no_api_key", reason="key_not_configured")
+        return None
+
+    try:
+        from deepeval.models import GeminiModel
+
+        gemini_model = GeminiModel(model=model, api_key=api_key)
+        return DeepEvalHallucinationJudge(model=gemini_model)
+    except Exception as exc:  # noqa: BLE001 - any wiring failure -> graceful None
+        logger.warning("gemini_judge_build_failed", error=str(exc))
+        return None
 
 
 def _normalize_text(text: str) -> str:
