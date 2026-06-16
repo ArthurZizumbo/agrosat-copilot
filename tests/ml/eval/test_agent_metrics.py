@@ -304,18 +304,28 @@ class TestHallucinationRate:
 
 
 class TestCodeBleuScore:
-    """Simplified CodeBLEU (BLEU n-gram + keyword/identifier Jaccard)."""
+    """REAL canonical CodeBLEU (n-gram + weighted n-gram + AST + data-flow).
+
+    These tests exercise the genuine ``codebleu.calc_codebleu`` path (no mock):
+    identical code must score ~1.0, unrelated code clearly lower, and a
+    catastrophically unparseable prediction must fall back to ``0.0`` instead of
+    crashing the eval.
+    """
 
     def test_identical_code_scores_near_one(self) -> None:
         code = "def ndvi(red, nir):\n    return (nir - red) / (nir + red)\n"
         score = agent_metrics.codebleu_score(code, code)
         assert score == pytest.approx(1.0, abs=1e-6)
 
-    def test_unrelated_code_scores_low(self) -> None:
+    def test_unrelated_code_scores_lower_than_identical(self) -> None:
+        # Real CodeBLEU: two unrelated snippets share almost no n-grams, AST
+        # structure or data-flow, so they score far below an identical match.
         pred = "x = 1\nprint(x)\n"
         ref = "def compute_slope(dem):\n    return gradient(dem, axis=0)\n"
-        score = agent_metrics.codebleu_score(pred, ref)
-        assert score < 0.3
+        unrelated = agent_metrics.codebleu_score(pred, ref)
+        identical = agent_metrics.codebleu_score(ref, ref)
+        assert 0.0 <= unrelated < 0.5
+        assert unrelated < identical
 
     def test_score_in_unit_interval(self) -> None:
         pred = "def ndvi(red, nir):\n    return (nir - red)\n"
@@ -323,13 +333,32 @@ class TestCodeBleuScore:
         score = agent_metrics.codebleu_score(pred, ref)
         assert 0.0 <= score <= 1.0
 
-    def test_bleu_weight_zero_is_pure_keyword_overlap(self) -> None:
-        pred = "def ndvi(red, nir):\n    return (nir - red) / (nir + red)\n"
+    def test_bleu_weight_is_ignored_for_back_compat(self) -> None:
+        # The deprecated bleu_weight no longer affects the canonical score: the
+        # same pair scores identically regardless of the value passed.
+        pred = "def ndvi(red, nir):\n    return (nir - red)\n"
         ref = "def ndvi(red, nir):\n    return (nir - red) / (nir + red)\n"
-        # With identical code the keyword Jaccard is 1.0 regardless of weight.
+        base = agent_metrics.codebleu_score(pred, ref)
         assert agent_metrics.codebleu_score(pred, ref, bleu_weight=0.0) == pytest.approx(
-            1.0, abs=1e-9
+            base, abs=1e-12
         )
+        assert agent_metrics.codebleu_score(pred, ref, bleu_weight=1.0) == pytest.approx(
+            base, abs=1e-12
+        )
+
+    def test_unparseable_pred_falls_back_to_zero(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # If calc_codebleu raises on a pathological prediction, the metric must
+        # swallow the error and return 0.0 (one bad task never crashes the run).
+        import codebleu
+
+        def _boom(*_args: Any, **_kwargs: Any) -> dict[str, float]:
+            raise ValueError("tree-sitter parse failed")
+
+        monkeypatch.setattr(codebleu, "calc_codebleu", _boom)
+        ref = "def compute_slope(dem):\n    return gradient(dem, axis=0)\n"
+        assert agent_metrics.codebleu_score("def f(): pass", ref) == 0.0
 
     def test_empty_inputs_score_zero(self) -> None:
         assert agent_metrics.codebleu_score("", "x = 1") == 0.0

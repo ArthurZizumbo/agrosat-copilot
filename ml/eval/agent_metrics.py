@@ -23,11 +23,11 @@ Metric provenance and approximations (documented per plan Section 6 / Risks):
   ``sentence-transformers/all-MiniLM-L6-v2`` and use mean cosine similarity as a
   semantic-overlap surrogate. It correlates with answer quality but is not
   token-level BERTScore; it must be reported as a proxy.
-- ``codebleu_score`` is a **simplified CodeBLEU**. There is no ``codebleu``
-  package in the deps, so we combine (a) an n-gram BLEU (NLTK
-  ``sentence_bleu`` over Python tokens) with (b) a Python keyword/identifier set
-  overlap. It omits the weighted-AST and data-flow components of canonical
-  CodeBLEU and must be reported as an approximation.
+- ``codebleu_score`` is **real, canonical CodeBLEU** computed with the
+  ``codebleu`` package (``calc_codebleu``): n-gram BLEU + weighted n-gram BLEU +
+  AST syntax-match + data-flow match. It is no longer the previous
+  BLEU + keyword-overlap approximation; the ``bleu_weight`` parameter is kept for
+  back-compat but ignored.
 - ``hallucination_rate`` uses DeepEval (LLM-as-judge) only when an injectable
   ``judge`` is provided. With no judge configured it returns ``float('nan')``
   (reported as ``n/a``) instead of fabricating a score.
@@ -70,20 +70,6 @@ __all__ = [
 #: the project standardises on, see ``ml/features/phenology_description.py``).
 DEFAULT_SENTENCE_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
 
-#: Python keywords + common builtins used by the simplified CodeBLEU keyword
-#: overlap component. Kept explicit (not ``keyword.kwlist``) so the set is stable
-#: across interpreter versions and includes the geospatial-relevant builtins.
-_PYTHON_KEYWORDS: frozenset[str] = frozenset(
-    {
-        "and", "as", "assert", "async", "await", "break", "class", "continue",
-        "def", "del", "elif", "else", "except", "finally", "for", "from",
-        "global", "if", "import", "in", "is", "lambda", "nonlocal", "not", "or",
-        "pass", "raise", "return", "try", "while", "with", "yield", "True",
-        "False", "None", "self", "print", "len", "range", "list", "dict", "set",
-        "tuple", "open", "int", "float", "str", "bool",
-    }
-)
-
 #: Lazy module-level cache for the sentence encoder so the (heavy) model is
 #: loaded at most once per process and tests can monkeypatch
 #: ``sentence_transformers.SentenceTransformer`` before first use.
@@ -91,11 +77,6 @@ _sentence_model: SentenceTransformer | None = None
 
 #: Token pattern for SQuAD-style F1 (alphanumeric word tokens).
 _WORD_RE = re.compile(r"[a-z0-9]+")
-
-#: Token pattern for code (identifiers, numbers and single non-space symbols),
-#: a lightweight tokenizer that avoids a hard dependency on ``tokenize`` which
-#: raises on syntactically incomplete model output.
-_CODE_TOKEN_RE = re.compile(r"[A-Za-z_]\w*|\d+\.?\d*|[^\s\w]")
 
 # Multiple-choice option labels recognised in AgroMind answers, tried in order:
 # an isolated bare letter (``"B"``), then a labelled form (``"Answer: C"``,
@@ -406,106 +387,48 @@ def hallucination_rate(
     return sum(scores) / len(scores)
 
 
-def _tokenize_code(code: str) -> list[str]:
-    """Tokenise a (possibly incomplete) Python snippet for scoring.
-
-    Uses a regex tokenizer instead of :mod:`tokenize` because model output may
-    be syntactically incomplete, which would make the stdlib tokenizer raise.
-
-    Args:
-        code: Python source string.
-
-    Returns:
-        The list of token strings (identifiers, numbers, single symbols).
-    """
-    return _CODE_TOKEN_RE.findall(code)
-
-
-def _ngram_bleu(pred_tokens: list[str], ref_tokens: list[str]) -> float:
-    """Sentence-level n-gram BLEU (up to 4-grams) over token lists.
-
-    Wraps NLTK ``sentence_bleu`` with a smoothing function so short snippets do
-    not collapse to ``0.0`` on a single missing higher-order n-gram.
-
-    Args:
-        pred_tokens: Predicted code tokens.
-        ref_tokens: Reference code tokens.
-
-    Returns:
-        BLEU score in ``[0.0, 1.0]``; ``0.0`` if either side is empty.
-    """
-    if not pred_tokens or not ref_tokens:
-        return 0.0
-    from nltk.translate.bleu_score import SmoothingFunction, sentence_bleu
-
-    smoothing = SmoothingFunction().method1
-    weights = (0.25, 0.25, 0.25, 0.25)
-    return float(
-        sentence_bleu(
-            [ref_tokens], pred_tokens, weights=weights, smoothing_function=smoothing
-        )
-    )
-
-
-def _keyword_overlap(pred_tokens: list[str], ref_tokens: list[str]) -> float:
-    """Jaccard overlap of Python keywords + identifiers between two snippets.
-
-    Approximates CodeBLEU's syntactic/keyword-match signal without an AST: the
-    intersection-over-union of the token sets, biased toward Python keywords and
-    identifiers (symbols are ignored).
-
-    Args:
-        pred_tokens: Predicted code tokens.
-        ref_tokens: Reference code tokens.
-
-    Returns:
-        Jaccard similarity in ``[0.0, 1.0]``; ``0.0`` when both sets are empty.
-    """
-    def _ids(tokens: list[str]) -> set[str]:
-        return {
-            t for t in tokens if t in _PYTHON_KEYWORDS or re.fullmatch(r"[A-Za-z_]\w*", t)
-        }
-
-    pred_set = _ids(pred_tokens)
-    ref_set = _ids(ref_tokens)
-    if not pred_set and not ref_set:
-        return 0.0
-    union = pred_set | ref_set
-    if not union:
-        return 0.0
-    return len(pred_set & ref_set) / len(union)
-
-
 def codebleu_score(
     pred_code: str, ref_code: str, *, bleu_weight: float = 0.5
 ) -> float:
-    """Simplified CodeBLEU between predicted and reference Python code.
+    """REAL CodeBLEU between predicted and reference Python code.
 
-    APPROXIMATION, not canonical CodeBLEU (no ``codebleu`` package in deps):
-    a weighted average of (a) n-gram BLEU over code tokens and (b) Python
-    keyword/identifier set overlap. It omits the weighted-AST and data-flow
-    components of the published CodeBLEU and must be reported as an
-    approximation.
+    Computes the canonical CodeBLEU via the ``codebleu`` package
+    (``calc_codebleu``), which combines n-gram BLEU, weighted n-gram BLEU, an
+    **AST syntax-match** component and a **data-flow match** component -- the
+    full published metric, not the previous BLEU + keyword-overlap approximation.
+    The ``codebleu`` import is deferred to inside the function so importing this
+    module stays cheap and metric tests that never touch code skip the
+    ``tree-sitter`` load.
+
+    If ``calc_codebleu`` raises (e.g. a catastrophically unparseable prediction
+    that defeats the tree-sitter parser), the failure is caught, logged as
+    ``codebleu_failed`` and the score falls back to ``0.0`` so one bad task never
+    crashes the eval run.
 
     Args:
-        pred_code: Generated Python code.
+        pred_code: Generated Python code (the candidate).
         ref_code: Reference Python code (GeoAnalystBench ``CodeString``).
-        bleu_weight: Weight on the BLEU component in ``[0.0, 1.0]``; the
-            keyword-overlap component gets ``1 - bleu_weight``.
+        bleu_weight: DEPRECATED and IGNORED. Kept only for back-compat with the
+            previous approximation signature; canonical CodeBLEU uses its own
+            fixed component weights, so this parameter no longer has any effect.
 
     Returns:
-        Combined score in ``[0.0, 1.0]``. Empty inputs score ``0.0``.
+        Canonical CodeBLEU in ``[0.0, 1.0]``. Empty inputs score ``0.0``;
+        ``calc_codebleu`` failures fall back to ``0.0``.
     """
+    del bleu_weight  # deprecated/ignored: canonical CodeBLEU has fixed weights.
     if not pred_code or not pred_code.strip():
         return 0.0
     if not ref_code or not ref_code.strip():
         return 0.0
-    weight = max(0.0, min(1.0, bleu_weight))
-    pred_tokens = _tokenize_code(pred_code)
-    ref_tokens = _tokenize_code(ref_code)
-    bleu = _ngram_bleu(pred_tokens, ref_tokens)
-    keyword = _keyword_overlap(pred_tokens, ref_tokens)
-    return weight * bleu + (1.0 - weight) * keyword
+    try:
+        from codebleu import calc_codebleu
+
+        result = calc_codebleu([ref_code], [pred_code], lang="python")
+        return max(0.0, min(1.0, float(result["codebleu"])))
+    except Exception as exc:  # noqa: BLE001 - a bad pred must not crash the eval
+        logger.warning("codebleu_failed", error=str(exc))
+        return 0.0
 
 
 def _steps_to_text(steps: str | Sequence[str]) -> str:

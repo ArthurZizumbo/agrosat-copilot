@@ -463,9 +463,12 @@ def build_report_html(
   indican si la celda cumple el objetivo de rubrica (AgroMind exact-match
   &gt;= 0.75 Gemini y &gt;= 0.70 Qwen; GeoAnalystBench pass-rate &gt;= 0.65).
   Qwen es solo texto: su numero de AgroMind corresponde al subconjunto textual,
-  no a la evaluacion multimodal completa. BERTScore es un proxy semantico
-  (all-MiniLM-L6-v2), y CodeBLEU es una aproximacion (BLEU n-gram + solape de
-  identificadores), no las metricas canonicas.
+  no a la evaluacion multimodal completa. Ademas del exact-match destacado, la
+  tabla muestra f1_squad (F1 de solape de tokens estilo SQuAD) y bertscore por
+  celda. BERTScore es un proxy semantico (all-MiniLM-L6-v2), pero CodeBLEU ahora
+  es la metrica canonica real (BLEU n-gram + AST + flujo de datos), no una
+  aproximacion. La similitud de flujo usa un umbral calibrado de 0.35 y se
+  reporta tambien su media cruda (mean_semantic_sim) junto al pass-rate.
 </p>
 <h2>Grafico comparativo</h2>
 {chart_html}

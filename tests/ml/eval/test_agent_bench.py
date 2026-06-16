@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -182,12 +183,13 @@ class TestBuildAgromindPrompt:
 
     def test_open_item_asks_for_direct_answer_not_a_letter(self) -> None:
         # B-6: an item with no options must NOT be told to pick a letter; it asks
-        # for the direct numeric/text answer instead.
+        # for the direct numeric/text answer (few-shot + CoT) instead, ending with
+        # the ``Respuesta:`` contract.
         item = _make_item(options={}, answer="10", question="Cuantas parcelas?")
         prompt = agent_bench._build_agromind_prompt(item, with_images=False)
         assert "letra" not in prompt.lower()
         assert "Opciones:" not in prompt
-        assert "forma directa" in prompt
+        assert "Respuesta:" in prompt
         assert "Cuantas parcelas?" in prompt
 
     def test_multiple_choice_lists_the_real_letter_set(self) -> None:
@@ -218,6 +220,88 @@ class TestBuildAgromindPrompt:
         prompt = agent_bench._build_agromind_prompt(item, with_images=False)
         assert "A, B, C, D, E o F" in prompt
         assert "  F. seis" in prompt
+
+
+class TestBuildAgromindPromptCoT:
+    """The few-shot + CoT prompt branches by answer type with one example each."""
+
+    def test_multiple_choice_prompt_is_few_shot_and_cot(self) -> None:
+        # A multiple-choice item ships exactly one worked example and the
+        # ``Respuesta: <letra>`` contract so the model reasons before committing.
+        item = _make_item(
+            options={"A": "maiz", "B": "trigo", "C": "arroz"}, answer="B"
+        )
+        prompt = agent_bench._build_agromind_prompt(item, with_images=False)
+        assert "Ejemplo:" in prompt
+        assert "Razonemos:" in prompt
+        assert "Respuesta: B" in prompt  # the worked example's final line
+        assert "paso a paso" in prompt
+
+    def test_open_numeric_prompt_states_the_number_or_bbox_format(self) -> None:
+        item = _make_item(options={}, answer="3", question="Cuantas parcelas?")
+        prompt = agent_bench._build_agromind_prompt(item, with_images=False)
+        assert "Ejemplo:" in prompt
+        assert "[x,y,x,y]" in prompt
+        assert "Respuesta: 3" in prompt  # the worked example
+
+    def test_yes_no_prompt_ends_with_si_no_contract(self) -> None:
+        item = _make_item(options={}, answer="si", question="Hay agua?")
+        prompt = agent_bench._build_agromind_prompt(item, with_images=False)
+        assert "Respuesta: Si" in prompt
+        assert "Respuesta: No" in prompt
+
+    def test_open_text_prompt_asks_for_concise_no_letter(self) -> None:
+        item = _make_item(options={}, answer="trigo de invierno", question="Cultivo?")
+        prompt = agent_bench._build_agromind_prompt(item, with_images=False)
+        assert "letra" in prompt.lower()  # only as a negative instruction
+        assert "sin una letra" in prompt.lower()
+        assert "Respuesta:" in prompt
+
+
+# --------------------------------------------------------------------------- #
+# _extract_final_answer (CoT final-answer extraction, US-049 prompting upgrade)
+# --------------------------------------------------------------------------- #
+
+
+class TestExtractFinalAnswer:
+    """The extractor reads the text after the LAST ``Respuesta:`` marker."""
+
+    def test_reads_text_after_last_respuesta_marker(self) -> None:
+        answer = "Razonemos: el NDVI mide vegetacion.\nRespuesta: C"
+        assert agent_bench._extract_final_answer(answer) == "C"
+
+    def test_reads_open_numeric_final_answer(self) -> None:
+        answer = "Razonemos: cuento cero lotes de maiz.\nRespuesta: 0"
+        assert agent_bench._extract_final_answer(answer) == "0"
+
+    def test_last_marker_wins_when_several_present(self) -> None:
+        # A model may echo the example's ``Respuesta:`` before its own; the LAST
+        # one is the real final answer.
+        answer = "Respuesta: B\nrevisando...\nRespuesta: D"
+        assert agent_bench._extract_final_answer(answer) == "D"
+
+    def test_answer_marker_in_english_is_also_recognised(self) -> None:
+        answer = "Reasoning...\nAnswer: A"
+        assert agent_bench._extract_final_answer(answer) == "A"
+
+    def test_no_marker_falls_back_to_full_answer(self) -> None:
+        # Un-marked responses keep today's behaviour (the whole answer is scored).
+        assert agent_bench._extract_final_answer("B") == "B"
+        assert agent_bench._extract_final_answer("The answer is F") == "The answer is F"
+
+    def test_cot_answer_scores_exact_match_against_gold_letter(self) -> None:
+        # End to end: a CoT answer must parse to exact_match 1.0 against gold "C".
+        answer = "Razonemos: la opcion C describe trigo.\nRespuesta: C"
+        final = agent_bench._extract_final_answer(answer)
+        assert agent_metrics.exact_match(final, "C", frozenset("ABC")) == pytest.approx(
+            1.0, abs=1e-9
+        )
+
+    def test_cot_open_answer_extracts_zero(self) -> None:
+        answer = "Razonemos: no hay parcelas.\nRespuesta: 0"
+        final = agent_bench._extract_final_answer(answer)
+        assert final == "0"
+        assert agent_metrics.exact_match(final, "0", None) == pytest.approx(1.0, abs=1e-9)
 
 
 # --------------------------------------------------------------------------- #
@@ -315,11 +399,13 @@ class TestEvalAgromind:
         assert backend.calls == 6
 
     async def test_open_numeric_item_scores_via_text_fallback(
-        self, fake_sentence_model: None
+        self, fake_sentence_model: None, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # B-5/B-6: an item with no options carries a numeric gold; the backend
         # returns the number directly and it must score 1.0 through the text
-        # fallback (no spurious letter parsing).
+        # fallback (no spurious letter parsing). The coverage floor is patched to
+        # 1 so this single-item scoring unit test is not NaN'd by it.
+        monkeypatch.setattr(agent_bench, "_MIN_AGROMIND_N", 1)
         item = _make_item(options={}, answer="10", question="Cuantas?")
         variant = agent_bench.ReasonerVariant(
             name="qwen", model="mock", multimodal=False
@@ -330,11 +416,39 @@ class TestEvalAgromind:
         assert result["n_evaluated"] == 1
         assert result["exact_match"] == pytest.approx(1.0, abs=1e-9)
 
+    async def test_cot_answer_is_scored_on_final_respuesta_line(
+        self, fake_sentence_model: None, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The model returns reasoning THEN ``Respuesta: B``; the harness must
+        # extract the final line and score it, not the chain-of-thought. Floor
+        # patched to 1 so the single-item score is not NaN'd by the coverage gate.
+        monkeypatch.setattr(agent_bench, "_MIN_AGROMIND_N", 1)
+        item = _make_item(
+            options={"A": "maiz", "B": "trigo", "C": "arroz"}, answer="B"
+        )
+        variant = agent_bench.ReasonerVariant(
+            name="qwen", model="mock", multimodal=False
+        )
+        backend = _FixedBackend(
+            answer="Razonemos: el patron de NDVI corresponde a trigo.\nRespuesta: B"
+        )
+        records: list[dict[str, Any]] = []
+        result = await agent_bench.eval_agromind(
+            variant, [item], backend=backend, judge=None, seed=0,
+            trace_sink=records.append,
+        )
+        assert result["exact_match"] == pytest.approx(1.0, abs=1e-9)
+        # The trace keeps the full CoT prediction and the extracted final answer.
+        assert records[0]["final_answer"] == "B"
+        assert "Razonemos" in records[0]["prediction"]
+
     async def test_high_letter_item_scores_when_answer_is_f(
-        self, fake_sentence_model: None
+        self, fake_sentence_model: None, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # B-5: a six-option item whose gold is F must score 1.0 when the backend
-        # answers "F" wrapped in prose (the old [A-D] parser scored 0).
+        # answers "F" wrapped in prose (the old [A-D] parser scored 0). Floor
+        # patched to 1 so this single-item unit test is not NaN'd by it.
+        monkeypatch.setattr(agent_bench, "_MIN_AGROMIND_N", 1)
         item = _make_item(
             options={
                 "A": "uno", "B": "dos", "C": "tres",
@@ -370,14 +484,14 @@ class TestEvalAgromind:
             seed=0,
             image_root=Path("data/agromind/images_does_not_exist"),
         )
-        import math
-
         assert math.isnan(float(result["hallucination"]))
 
     async def test_judge_injected_yields_finite_hallucination(
-        self, fake_sentence_model: None
+        self, fake_sentence_model: None, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _require_data()
+        # Patch the coverage floor so the 4-item judge sample is scored, not NaN'd.
+        monkeypatch.setattr(agent_bench, "_MIN_AGROMIND_N", 1)
         items = agent_bench.load_agromind_subset(_AGROMIND_PATH)[:4]
 
         class _Judge:
@@ -495,8 +609,18 @@ class TestRunBenchmark:
                 assert set(metric_stats) == {"mean", "std"}
                 assert isinstance(metric_stats["mean"], float)
                 assert isinstance(metric_stats["std"], float)
-            # std over the two seeds is 0.0 because the mock is deterministic.
-            assert agro["exact_match"]["std"] == pytest.approx(0.0, abs=1e-9)
+            # The deterministic GeoAnalystBench pass_rate has std 0.0 across seeds.
+            assert geo["pass_rate"]["std"] == pytest.approx(0.0, abs=1e-9)
+        # Gemini scores the full 500-item subset: its AgroMind exact_match is a
+        # finite number with std 0.0 (deterministic mock). Qwen is text-only and
+        # evaluates only the 6 textual items (< the coverage floor), so its
+        # AgroMind exact_match is NaN by design -- the honest "not evaluable"
+        # verdict, not a fabricated comparable score.
+        assert results["gemini"]["AgroMind"]["exact_match"]["std"] == pytest.approx(
+            0.0, abs=1e-9
+        )
+        assert not math.isnan(results["gemini"]["AgroMind"]["exact_match"]["mean"])
+        assert math.isnan(results["qwen"]["AgroMind"]["exact_match"]["mean"])
 
         # The text-only Qwen carries the n_skipped signal in its AgroMind table.
         assert results["qwen"]["AgroMind"]["n_skipped"]["mean"] == pytest.approx(

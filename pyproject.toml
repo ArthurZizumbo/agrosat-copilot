@@ -55,6 +55,8 @@ ipython = "^9.13.0"
 nbstripout = "^0.9.1"
 notebook = "^7.5.6"
 psycopg = {extras = ["binary"], version = "^3.3.4"}
+codebleu = "^0.7.0"
+tree-sitter-python = "<0.22"
 
 [tool.poetry.group.test.dependencies]
 pytest = "^9.0.3"
