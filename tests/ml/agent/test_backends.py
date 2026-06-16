@@ -406,6 +406,57 @@ async def test_vllm_backend_parses_tool_calls() -> None:
 
 
 # ---------------------------------------------------------------------------
+# VLLMOpenAIBackend: history serialisation (tool_call_id round-trip, US-048)
+# ---------------------------------------------------------------------------
+def test_vllm_messages_carry_unique_tool_call_ids() -> None:
+    """Tool messages reference the assistant ``tool_calls`` via ``tool_call_id``.
+
+    The OpenAI/vLLM API returns 400 for a ``tool`` message without a
+    ``tool_call_id`` and requires each assistant ``tool_calls[].id`` to be unique.
+    ``genai`` function-call/response parts carry no ids, so the backend must
+    synthesise unique ids on the model turn and replay them, in order, onto the
+    following tool messages -- even when the same tool is requested twice in one
+    turn (regression for the US-048 multi-turn tool bug).
+    """
+    backend = backends.VLLMOpenAIBackend(
+        base_url="http://vllm.invalid/v1", model="qwen35", api_key="EMPTY"
+    )
+    contents = [
+        types.Content(role="user", parts=[types.Part.from_text(text="dos AOIs")]),
+        types.Content(
+            role="model",
+            parts=[
+                types.Part.from_function_call(name="list_parcels", args={"aoi": 1}),
+                types.Part.from_function_call(name="list_parcels", args={"aoi": 2}),
+            ],
+        ),
+        types.Content(
+            role="tool",
+            parts=[
+                types.Part.from_function_response(name="list_parcels", response={"n": 1}),
+                types.Part.from_function_response(name="list_parcels", response={"n": 2}),
+            ],
+        ),
+    ]
+
+    messages = backend._messages_from_contents(contents, "system-prompt")
+
+    assistant = [m for m in messages if m["role"] == "assistant" and m.get("tool_calls")]
+    assert len(assistant) == 1
+    call_ids = [tc["id"] for tc in assistant[0]["tool_calls"]]
+    assert len(call_ids) == 2
+    assert len(set(call_ids)) == 2, "tool_call ids must be unique within a turn"
+
+    tool_msgs = [m for m in messages if m["role"] == "tool"]
+    assert len(tool_msgs) == 2
+    assert all(m.get("tool_call_id") for m in tool_msgs), (
+        "every tool message must carry a tool_call_id"
+    )
+    # Each response maps back to its call, in emission order.
+    assert [m["tool_call_id"] for m in tool_msgs] == call_ids
+
+
+# ---------------------------------------------------------------------------
 # Contract guards (independent of the network)
 # ---------------------------------------------------------------------------
 def test_generate_stream_is_async_generator() -> None:

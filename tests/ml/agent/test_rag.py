@@ -240,6 +240,39 @@ async def test_ingest_null_embedding_is_kept_none() -> None:
     assert rows[0][6] == "POINT(0 0)"  # geom_wkt fallback bound
 
 
+async def test_spatial_rag_clamps_opposite_hemisphere_cosine(monkeypatch, make_ctx) -> None:
+    """A cosine distance > 1 (opposite-hemisphere embeddings) keeps score >= 0.
+
+    pgvector ``<=>`` ranges over [0, 2]; without clamping ``1 - cosine_distance``
+    goes negative and the fused score can fall below the documented [0, 1] range.
+    With ``spatial_weight=0.1`` and a far candidate, an unclamped score would be
+    negative; the fix clamps the semantic term to 0.
+    """
+    candidates = [
+        FakeRecord(
+            id=1, content="opp", source="phenology_caption",
+            parcel_id="10000_1", embedding=_vec(0.1), distance_m=900.0,
+        ),
+    ]
+    cosine_rows = [FakeRecord(id=1, cosine_distance=1.9)]
+    conn = _ScriptedConn([candidates, cosine_rows])
+    monkeypatch.setattr(rag_mod, "session_scoped_conn", fake_session_scoped_conn(conn))
+
+    docs = await spatial_rag(
+        make_ctx(), query="q", aoi=_AOI, top_k=5, spatial_weight=0.1, radius_m=1000.0
+    )
+
+    assert docs, "candidate should still be returned"
+    assert all(d.score >= 0.0 for d in docs), "fused score must stay >= 0 after clamp"
+
+
+def test_to_pgvector_literal_sanitizes_non_finite() -> None:
+    """NaN/Inf/-Inf embedding components become 0.0 (pgvector rejects them)."""
+    literal = rag_mod._to_pgvector_literal([1.5, float("nan"), float("inf"), float("-inf"), -2.0])
+    assert "nan" not in literal and "inf" not in literal
+    assert literal == "[1.5,0.0,0.0,0.0,-2.0]"
+
+
 def test_session_a_is_the_test_tenant() -> None:
     """Sanity: the shared fixture session id is a stable UUID."""
     assert str(SESSION_A) == "11111111-1111-1111-1111-111111111111"

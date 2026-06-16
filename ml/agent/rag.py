@@ -35,6 +35,7 @@ degrades gracefully to a spatial-only ranking (documented below).
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
@@ -195,9 +196,7 @@ async def spatial_rag(
                 _to_pgvector_literal(query_embedding),
                 candidate_ids,
             )
-            cosine_by_id = {
-                int(row["id"]): float(row["cosine_distance"]) for row in semantic_rows
-            }
+            cosine_by_id = {int(row["id"]): float(row["cosine_distance"]) for row in semantic_rows}
 
     # Stage 3: weighted fusion of spatial proximity and semantic similarity.
     # When no embedding could be resolved, the semantic term is absent for every
@@ -281,7 +280,11 @@ def _to_pgvector_literal(embedding: list[float]) -> str:
     Returns:
         The pgvector literal accepted by an ``$1::vector`` bind.
     """
-    return "[" + ",".join(repr(float(v)) for v in embedding) + "]"
+    # pgvector rejects NaN/Infinity in a ``vector`` literal; coerce non-finite
+    # components to 0.0 (mirrors the AlphaEarth feature sanitisation in
+    # ``tools/classify.py``) so a single bad ``dim_k`` does not abort the whole
+    # ingest batch on the ``::vector`` cast.
+    return "[" + ",".join(repr(f if math.isfinite(f := float(v)) else 0.0) for v in embedding) + "]"
 
 
 def _fuse_and_rank(
@@ -323,7 +326,10 @@ def _fuse_and_rank(
         spatial_term = 1.0 / (1.0 + dist / radius)
 
         cosine_distance = cosine_by_id.get(doc_id)
-        semantic_term = (1.0 - cosine_distance) if cosine_distance is not None else 0.0
+        # pgvector cosine distance is in [0, 2] (2 for opposite-hemisphere
+        # vectors); clamp the semantic term to [0, 1] so the fused score honours
+        # its documented range and the ranking stays monotone.
+        semantic_term = max(0.0, 1.0 - cosine_distance) if cosine_distance is not None else 0.0
 
         score = spatial_weight * spatial_term + (1.0 - spatial_weight) * semantic_term
         scored.append(
@@ -395,9 +401,7 @@ async def ingest_rag_documents(conn: asyncpg.Connection, documents: list[dict]) 
     for doc in documents:
         embedding = doc.get("embedding")
         embedding_literal = (
-            _to_pgvector_literal([float(v) for v in embedding])
-            if embedding is not None
-            else None
+            _to_pgvector_literal([float(v) for v in embedding]) if embedding is not None else None
         )
         rows.append(
             (

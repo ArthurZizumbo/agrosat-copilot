@@ -271,9 +271,7 @@ class GeminiBackend(LLMBackend):
             return await aio.models.generate_content(
                 model=self.model, contents=contents, config=config
             )
-        return client.models.generate_content(
-            model=self.model, contents=contents, config=config
-        )
+        return client.models.generate_content(model=self.model, contents=contents, config=config)
 
     async def _stream_text(
         self,
@@ -478,23 +476,37 @@ class VLLMOpenAIBackend(LLMBackend):
         Returns:
             OpenAI-format messages.
         """
-        messages: list[dict[str, Any]] = [
-            {"role": "system", "content": system_instruction}
-        ]
+        messages: list[dict[str, Any]] = [{"role": "system", "content": system_instruction}]
+        # The OpenAI/vLLM API requires every ``tool`` message to carry a
+        # ``tool_call_id`` that matches the ``id`` of the assistant ``tool_calls``
+        # entry it answers. ``genai`` function-call/response parts do not carry
+        # ids, so synthesise stable per-(turn, index) ids on the assistant turn and
+        # replay them, in order, onto the following tool messages (the agent loop
+        # emits responses in the same order it emitted the calls).
+        pending_call_ids: list[str] = []
+        turn = 0
         for content in contents:
             role = getattr(content, "role", "user")
             parts = getattr(content, "parts", None) or []
             if role == "tool":
+                response_idx = 0
                 for part in parts:
                     fr = getattr(part, "function_response", None)
                     if fr is not None:
+                        if response_idx < len(pending_call_ids):
+                            call_id = pending_call_ids[response_idx]
+                        else:
+                            call_id = f"call_{turn}_{response_idx}"
                         messages.append(
                             {
                                 "role": "tool",
+                                "tool_call_id": call_id,
                                 "name": getattr(fr, "name", ""),
                                 "content": json.dumps(getattr(fr, "response", {})),
                             }
                         )
+                        response_idx += 1
+                pending_call_ids = []
                 continue
             mapped_role = "assistant" if role == "model" else "user"
             text_bits: list[str] = []
@@ -505,9 +517,12 @@ class VLLMOpenAIBackend(LLMBackend):
                     text_bits.append(text)
                 fc = getattr(part, "function_call", None)
                 if fc is not None and getattr(fc, "name", None):
+                    # Unique per call so two invocations of the same tool in one
+                    # turn do not collide on ``id`` (OpenAI requires uniqueness).
+                    call_id = getattr(fc, "id", None) or f"call_{turn}_{len(tool_calls)}"
                     tool_calls.append(
                         {
-                            "id": getattr(fc, "id", None) or fc.name,
+                            "id": call_id,
                             "type": "function",
                             "function": {
                                 "name": fc.name,
@@ -518,7 +533,9 @@ class VLLMOpenAIBackend(LLMBackend):
             message: dict[str, Any] = {"role": mapped_role, "content": "".join(text_bits)}
             if tool_calls:
                 message["tool_calls"] = tool_calls
+                pending_call_ids = [tc["id"] for tc in tool_calls]
             messages.append(message)
+            turn += 1
         return messages
 
     @staticmethod
@@ -646,8 +663,9 @@ class OllamaBackend(VLLMOpenAIBackend):
 
         Args:
             contents: Conversation contents (may carry image parts).
-            tools: Function declarations (unused by the benchmark's direct-answer
-                calls; forwarded for completeness).
+            tools: Function declarations. Accepted for interface parity but
+                ignored by this multimodal benchmark backend (Gemma is used for
+                direct-answer evaluation, not tool calling).
             system_instruction: System prompt.
 
         Yields:
@@ -772,9 +790,7 @@ def make_backend(model: str, settings: Settings | None = None) -> LLMBackend:
     project = ""
     location = ""
     if settings is not None:
-        api_key = getattr(settings, "gemini_api_key", "") or getattr(
-            settings, "google_api_key", ""
-        )
+        api_key = getattr(settings, "gemini_api_key", "") or getattr(settings, "google_api_key", "")
         use_vertexai = str(getattr(settings, "google_genai_use_vertexai", "")).lower() in (
             "1",
             "true",

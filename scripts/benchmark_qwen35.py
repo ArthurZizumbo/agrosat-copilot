@@ -170,6 +170,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--mlflow-uri", default="http://127.0.0.1:5010")
     parser.add_argument("--no-mlflow", action="store_true", help="Skip MLflow logging.")
     args = parser.parse_args(argv)
+    if args.n < 1:
+        parser.error("--n debe ser >= 1 (se necesita al menos una muestra de latencia)")
 
     try:
         metrics = run_benchmark(args.base_url, args.model, args.api_key, args.n)
