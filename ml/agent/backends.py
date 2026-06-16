@@ -23,6 +23,7 @@ are injectable so tests mock them with zero network calls.
 from __future__ import annotations
 
 import json
+import os
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
@@ -42,6 +43,7 @@ __all__ = [
     "BackendFunctionCall",
     "GeminiBackend",
     "LLMBackend",
+    "OllamaBackend",
     "VLLMOpenAIBackend",
     "make_backend",
 ]
@@ -56,6 +58,11 @@ _DEFAULT_QWEN_MODEL: str = "qwen35"
 #: Fallback vLLM endpoint when ``settings.vllm_qwen35_url`` is empty. Matches the
 #: serving script default port of US-048.
 _DEFAULT_VLLM_BASE_URL: str = "http://127.0.0.1:8002/v1"
+
+#: Default Ollama OpenAI-compatible endpoint for the local Gemma variant. The
+#: benchmark reaches the H100 Ollama through a local SSH forward (default :11435
+#: to avoid clashing with a local Ollama on :11434).
+_DEFAULT_OLLAMA_BASE_URL: str = "http://127.0.0.1:11435/v1"
 
 
 @dataclass(frozen=True)
@@ -588,6 +595,142 @@ class VLLMOpenAIBackend(LLMBackend):
         return calls
 
 
+class OllamaBackend(VLLMOpenAIBackend):
+    """On-prem multimodal backend served by Ollama (OpenAI-compatible).
+
+    Used for the local Gemma variant (``gemma4:31b-it-q8_0`` on the H100), so the
+    benchmark's Gemma runs at zero API cost. Differs from the plain vLLM backend:
+
+    - Multimodal: image parts in ``contents`` are forwarded as OpenAI
+      ``image_url`` data URIs (Gemma 4 is a VLM), so AgroMind images reach it.
+    - ``max_tokens``: Gemma 4 is a *thinking* model that spends tokens on a
+      ``reasoning`` trace before the answer; a generous budget ensures the final
+      ``content`` is emitted (a small budget leaves ``content`` empty).
+    - Fallback: if the API returns an empty ``content`` but a ``reasoning`` trace,
+      the reasoning tail is used so the answer is never silently lost.
+    """
+
+    #: Generous output budget so Gemma's reasoning trace does not starve the
+    #: final answer. Overridable per instance.
+    _DEFAULT_MAX_TOKENS: int = 1024
+
+    def __init__(
+        self,
+        base_url: str,
+        model: str,
+        *,
+        api_key: str = "EMPTY",
+        max_tokens: int = _DEFAULT_MAX_TOKENS,
+        client: Any | None = None,
+    ) -> None:
+        """Initialise the Ollama backend.
+
+        Args:
+            base_url: Ollama OpenAI-compatible base URL (``.../v1``).
+            model: Ollama model tag (e.g. ``gemma4:31b-it-q8_0``).
+            api_key: Ignored by Ollama; the client requires a value.
+            max_tokens: Output token budget per call.
+            client: Optional pre-built async OpenAI client (tests).
+        """
+        super().__init__(base_url=base_url, model=model, api_key=api_key, client=client)
+        self._max_tokens = max_tokens
+
+    async def generate_stream(
+        self,
+        *,
+        contents: list[types.Content],
+        tools: list[types.FunctionDeclaration],
+        system_instruction: str,
+    ) -> AsyncIterator[BackendChunk]:
+        """Stream Gemma output via Ollama, forwarding images and a token budget.
+
+        Args:
+            contents: Conversation contents (may carry image parts).
+            tools: Function declarations (unused by the benchmark's direct-answer
+                calls; forwarded for completeness).
+            system_instruction: System prompt.
+
+        Yields:
+            :class:`BackendChunk` text deltas (the benchmark ignores tool calls).
+        """
+        messages = self._messages_with_images(contents, system_instruction)
+        client = self._get_client()
+        stream = await client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            max_tokens=self._max_tokens,
+            stream=True,
+        )
+        produced = False
+        reasoning_tail: list[str] = []
+        async for event in stream:
+            for choice in getattr(event, "choices", None) or []:
+                delta = getattr(choice, "delta", None)
+                if delta is None:
+                    continue
+                text = getattr(delta, "content", None)
+                if text:
+                    produced = True
+                    yield BackendChunk(text=text)
+                reasoning = getattr(delta, "reasoning", None)
+                if reasoning:
+                    reasoning_tail.append(reasoning)
+        # Fallback: if the model only emitted a reasoning trace (no final content),
+        # surface the tail so the answer is never lost (Gemma thinking models).
+        if not produced and reasoning_tail:
+            yield BackendChunk(text="".join(reasoning_tail)[-512:])
+
+    @classmethod
+    def _messages_with_images(
+        cls,
+        contents: list[types.Content],
+        system_instruction: str,
+    ) -> list[dict[str, Any]]:
+        """Map contents to OpenAI messages, forwarding image parts as data URIs.
+
+        Args:
+            contents: The neutral conversation history (may carry image parts).
+            system_instruction: System prompt (omitted when empty).
+
+        Returns:
+            OpenAI-format messages with multimodal user content blocks.
+        """
+        import base64
+
+        messages: list[dict[str, Any]] = []
+        if system_instruction:
+            messages.append({"role": "system", "content": system_instruction})
+        for content in contents:
+            role = getattr(content, "role", "user")
+            mapped_role = "assistant" if role == "model" else "user"
+            blocks: list[dict[str, Any]] = []
+            for part in getattr(content, "parts", None) or []:
+                text = getattr(part, "text", None)
+                if text:
+                    blocks.append({"type": "text", "text": text})
+                    continue
+                inline = getattr(part, "inline_data", None)
+                data = getattr(inline, "data", None) if inline is not None else None
+                if data is not None:
+                    mime = getattr(inline, "mime_type", "image/jpeg")
+                    b64 = base64.b64encode(data).decode("ascii")
+                    blocks.append(
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:{mime};base64,{b64}"},
+                        }
+                    )
+            if not blocks:
+                continue
+            # Collapse to a plain string when there is a single text block (Ollama
+            # accepts both forms; the string form is simpler for text-only turns).
+            if len(blocks) == 1 and blocks[0]["type"] == "text":
+                messages.append({"role": mapped_role, "content": blocks[0]["text"]})
+            else:
+                messages.append({"role": mapped_role, "content": blocks})
+        return messages
+
+
 def make_backend(model: str, settings: Settings | None = None) -> LLMBackend:
     """Select the backend from the model name (AC-5).
 
@@ -603,6 +746,13 @@ def make_backend(model: str, settings: Settings | None = None) -> LLMBackend:
         The concrete :class:`LLMBackend`.
     """
     name = (model or "").lower()
+    if name.startswith("gemma"):
+        # Local Gemma served by Ollama (OpenAI-compatible) -> zero API cost.
+        base_url = os.environ.get("OLLAMA_BASE_URL", _DEFAULT_OLLAMA_BASE_URL)
+        if settings is not None:
+            base_url = getattr(settings, "ollama_base_url", "") or base_url
+        logger.info("backend_selected", kind="ollama", model=model, base_url=base_url)
+        return OllamaBackend(base_url=base_url, model=model)
     if name.startswith("qwen"):
         base_url = _DEFAULT_VLLM_BASE_URL
         api_key = "EMPTY"

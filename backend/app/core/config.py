@@ -80,6 +80,8 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-3.1-pro"
     vllm_qwen35_url: str = ""
     vllm_api_key: str = ""
+    # Ollama OpenAI-compatible endpoint for the local Gemma variant (US-049).
+    ollama_base_url: str = ""
     # Gemini / google-genai credentials (read by the SDK via the environment;
     # declared here so ``extra="forbid"`` accepts them in ``.env.local``).
     gemini_api_key: str = ""

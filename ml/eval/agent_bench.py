@@ -207,9 +207,9 @@ class ReasonerVariant:
 # Populated here (after the dataclass is defined) so the module exposes the
 # canonical three variants used by the CLI and the rubric targets.
 DEFAULT_VARIANTS = (
-    ReasonerVariant(name="gemini", model="gemini-2.5-pro", multimodal=True),
+    ReasonerVariant(name="gemini", model="gemini-3.5-flash", multimodal=True),
     ReasonerVariant(name="qwen", model="qwen35", multimodal=False),
-    ReasonerVariant(name="gemma-base", model="gemma-3-27b-it", multimodal=True),
+    ReasonerVariant(name="gemma-base", model="gemma4:26b-a4b-it-q4_K_M", multimodal=True),
 )
 
 #: Variant lookup by tag for the CLI.
@@ -532,7 +532,15 @@ def _resolve_backend(
         return backend
     from ml.agent.backends import make_backend
 
-    return make_backend(variant.model)
+    # Pass Settings so the Gemini/vLLM credentials from .env.local reach the
+    # backend (they are NOT exported to os.environ for the SDK to auto-discover).
+    try:
+        from backend.app.core.config import get_settings
+
+        settings = get_settings()
+    except Exception:  # noqa: BLE001 - settings optional (tests inject the backend)
+        settings = None
+    return make_backend(variant.model, settings)
 
 
 async def eval_agromind(
