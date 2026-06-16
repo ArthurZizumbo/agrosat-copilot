@@ -219,9 +219,7 @@ class ChatService:
             session_id=session_id,
         )
 
-    async def _observe(
-        self, request: ChatRequest, ctx: ToolContext
-    ) -> PerceiverObservation | None:
+    async def _observe(self, request: ChatRequest, ctx: ToolContext) -> PerceiverObservation | None:
         """Run the perceiver over the request's parcel/AOI, if any.
 
         Args:

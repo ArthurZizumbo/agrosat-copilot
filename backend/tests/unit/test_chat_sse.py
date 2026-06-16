@@ -159,12 +159,7 @@ def _parse_frames(raw_frames: list[str]) -> list[tuple[str, dict]]:
 
 async def _collect(service: ChatService, request: ChatRequest) -> list[tuple[str, dict]]:
     """Drain the SSE async generator into parsed ``(event, data)`` tuples."""
-    frames = [
-        frame
-        async for frame in service.stream(
-            request.messages, _SESSION, request=request
-        )
-    ]
+    frames = [frame async for frame in service.stream(request.messages, _SESSION, request=request)]
     return _parse_frames(frames)
 
 
@@ -212,9 +207,7 @@ async def test_perceiver_observation_payload_is_real_text(monkeypatch) -> None:
 async def test_no_subject_completes_without_observation(monkeypatch) -> None:
     """No parcel and no AOI -> stream completes with ``done`` and no observation."""
     service = _service(monkeypatch, _FakePerceiver)
-    request = ChatRequest(
-        messages=[ChatMessage(role="user", content="hola")], session_id=_SESSION
-    )
+    request = ChatRequest(messages=[ChatMessage(role="user", content="hola")], session_id=_SESSION)
 
     events = await _collect(service, request)
     names = [name for name, _ in events]
@@ -314,9 +307,7 @@ async def test_perceiver_block_injected_as_grounding_turn(monkeypatch) -> None:
 async def test_no_subject_history_has_no_grounding_turn(monkeypatch) -> None:
     """Without a subject the agent history is the bare user messages (no system)."""
     service = _service(monkeypatch, _FakePerceiver)
-    request = ChatRequest(
-        messages=[ChatMessage(role="user", content="hola")], session_id=_SESSION
-    )
+    request = ChatRequest(messages=[ChatMessage(role="user", content="hola")], session_id=_SESSION)
 
     await _collect(service, request)
 
