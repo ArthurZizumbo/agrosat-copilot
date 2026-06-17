@@ -1,0 +1,140 @@
+{
+  "gemini": {
+    "AgroMind": {
+      "exact_match": {
+        "mean": 0.5389221556886228,
+        "std": 0.0
+      },
+      "f1_squad": {
+        "mean": 0.16227544910179642,
+        "std": 0.0
+      },
+      "hallucination": {
+        "mean": NaN,
+        "std": NaN
+      },
+      "n_evaluated": {
+        "mean": 167.0,
+        "std": 0.0
+      },
+      "n_skipped": {
+        "mean": 0.0,
+        "std": 0.0
+      },
+      "bertscore": {
+        "mean": 0.4168235465973437,
+        "std": 0.0
+      }
+    },
+    "GeoAnalystBench": {
+      "mean_codebleu": {
+        "mean": 0.15980774050636737,
+        "std": 0.0
+      },
+      "mean_semantic_sim": {
+        "mean": 0.3607671092450619,
+        "std": 0.0
+      },
+      "pass_rate": {
+        "mean": 0.18,
+        "std": 0.0
+      },
+      "n": {
+        "mean": 50.0,
+        "std": 0.0
+      }
+    }
+  },
+  "qwen": {
+    "AgroMind": {
+      "exact_match": {
+        "mean": 0.0,
+        "std": 0.0
+      },
+      "f1_squad": {
+        "mean": 0.0,
+        "std": 0.0
+      },
+      "hallucination": {
+        "mean": NaN,
+        "std": NaN
+      },
+      "n_evaluated": {
+        "mean": 2.0,
+        "std": 0.0
+      },
+      "n_skipped": {
+        "mean": 165.0,
+        "std": 0.0
+      },
+      "bertscore": {
+        "mean": 0.7494438588619232,
+        "std": 0.0
+      }
+    },
+    "GeoAnalystBench": {
+      "mean_codebleu": {
+        "mean": 0.164623711335509,
+        "std": 0.0
+      },
+      "mean_semantic_sim": {
+        "mean": 0.5234019255638123,
+        "std": 0.0
+      },
+      "pass_rate": {
+        "mean": 0.54,
+        "std": 0.0
+      },
+      "n": {
+        "mean": 50.0,
+        "std": 0.0
+      }
+    }
+  },
+  "gemma-base": {
+    "AgroMind": {
+      "exact_match": {
+        "mean": 0.33532934131736525,
+        "std": 0.0
+      },
+      "f1_squad": {
+        "mean": 0.1243730664224768,
+        "std": 0.0
+      },
+      "hallucination": {
+        "mean": NaN,
+        "std": NaN
+      },
+      "n_evaluated": {
+        "mean": 167.0,
+        "std": 0.0
+      },
+      "n_skipped": {
+        "mean": 0.0,
+        "std": 0.0
+      },
+      "bertscore": {
+        "mean": 0.35317289322882356,
+        "std": 0.0
+      }
+    },
+    "GeoAnalystBench": {
+      "mean_codebleu": {
+        "mean": 0.004119093318822313,
+        "std": 0.0
+      },
+      "mean_semantic_sim": {
+        "mean": 0.4030822828412056,
+        "std": 0.0
+      },
+      "pass_rate": {
+        "mean": 0.36,
+        "std": 0.0
+      },
+      "n": {
+        "mean": 50.0,
+        "std": 0.0
+      }
+    }
+  }
+}

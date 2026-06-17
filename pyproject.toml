@@ -55,6 +55,8 @@ ipython = "^9.13.0"
 nbstripout = "^0.9.1"
 notebook = "^7.5.6"
 psycopg = {extras = ["binary"], version = "^3.3.4"}
+codebleu = "^0.7.0"
+tree-sitter-python = "<0.22"
 
 [tool.poetry.group.test.dependencies]
 pytest = "^9.0.3"
@@ -264,6 +266,9 @@ ignore = ["S101", "S301"]  # asserts ok en tests; pickle ok para ML
 # tipografico (entregable visual), de ahi RUF001/RUF002/RUF003.
 "scripts/build_segmentation_notebook.py" = ["E501", "B008", "RUF001", "RUF002", "RUF003"]
 "scripts/build_avance4_notebook.py" = ["E501", "B008", "RUF001", "RUF002", "RUF003"]
+# Avance 6: builder del notebook de demostracion del copiloto conversacional,
+# con celdas por strings concatenadas largas (E501) y Typer Option (B008).
+"scripts/build_avance6_demo_notebook.py" = ["E501", "B008", "RUF001", "RUF002", "RUF003"]
 # US-023-preview: builder del notebook 05 con f-strings largas (E501) y signo
 # de multiplicacion tipografico en narrativa agronomica (RUF001).
 "scripts/build_reencuadre_notebook.py" = ["E501", "B008", "RUF001"]

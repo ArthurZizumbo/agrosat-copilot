@@ -18,7 +18,7 @@ import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.app.api import health
+from backend.app.api import chat, health
 from backend.app.core.config import get_settings
 from backend.app.core.logging import configure_logging
 
@@ -61,6 +61,7 @@ def create_app() -> FastAPI:
         expose_headers=["X-Request-ID", "X-RateLimit-Remaining", "X-RateLimit-Reset"],
     )
     app.include_router(health.router)
+    app.include_router(chat.router)
     return app
 
 

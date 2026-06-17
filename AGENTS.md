@@ -2,7 +2,7 @@
 
 **Proyecto**: SaaS conversacional open-source para análisis satelital agrícola — orquestador único de agentes IA.
 
-**Stack**: FastAPI + Polars | Nuxt 4 SSR | PostgreSQL 15 + PostGIS + pgvector | Google ADK | Gemma 4 26B-MoE LoRA | Dagster + dbmate + DVC + MLflow | Terraform GCP + Azure H100 NVL 96GB.
+**Stack**: FastAPI + Polars | Nuxt 4 SSR | PostgreSQL 15 + PostGIS + pgvector | Google ADK | Gemini 2.5-pro + Qwen vLLM on-prem (Gemma 4 LoRA = FUTURE, [ADR-011](docs/decisions/ADR-011-gemma4-lora-future.md)) | Dagster + dbmate + DVC + MLflow | Terraform GCP + Azure H100 NVL 96GB.
 
 > Plan vigente, US, calendario, presupuesto y métricas de éxito: [`context/RefinamientoPlaneacionAgroSatCopilot_v8.md`](context/RefinamientoPlaneacionAgroSatCopilot_v8.md) (ratificado por [ADR-009](docs/decisions/ADR-009-h100-reactivacion-pivote-farslip-alcance-v8.md); calendario en [ADR-008](docs/decisions/ADR-008-rediseno-calendario-presentacion-27jun.md)).
 
@@ -36,10 +36,10 @@ pytest tests/ml/train/test_baseline.py::test_name -q   # un solo test
 |------|--------------|------------|
 | FM EO | AlphaEarth Foundations (`SATELLITE_EMBEDDING/V1/ANNUAL`, data v1.1) | GEE gratis CC-BY-4.0 · global incl. México · NO entrenar FM propio |
 | Feature self-sup | DINOv3-satellite | `facebook/dinov3-vitl16-pretrain-sat493m` frozen |
-| VLM principal | Gemma 4 26B-MoE | Apache 2.0 · LoRA rank 16 BF16 · ~82 GB H100 · **defer**: confirmar disponibilidad antes de comprometer |
+| VLM principal | Gemma 4 26B-A4B-MoE (`google/gemma-4-26B-A4B-it`) | Apache 2.0 · LoRA `target_parameters` (QLoRA bloqueado, MoE 3D) · **FUTURE post-27jun** ([ADR-011](docs/decisions/ADR-011-gemma4-lora-future.md)) · el id `gemma-4-26b-it` NO existe |
 | VLM comparativo | Qwen3-VL-30B-A3B | MoE 30B/3B · 256K ctx |
-| LLM cloud | Gemini 2.5 Pro (GA, default) | Vertex AI · **1M ctx** · $1.25/$10 por M |
-| LLM on-prem | Qwen3.5-35B-A3B | vLLM en H100 · sin `-Instruct` |
+| LLM cloud | Gemini 2.5 Pro (GA, default) | Vertex AI · **1M ctx** · $1.25/$10 por M · reasoner del copiloto |
+| LLM on-prem | Qwen MoE-A3B Int4 (`Qwen/Qwen3-30B-A3B-Instruct-2507-GPTQ-Int4`) | vLLM single-GPU GPTQ-Int4 ([US-048](docs/serving/qwen35.md)) · el id `Qwen3.5-35B-A3B` no existe |
 | Framework agente | Google ADK | Tracing built-in + Vertex AI Agent Engine |
 
 **Arquitecturas por rúbrica**: EPIC 5 segmentación (U-Net · DeepLabv3+ · SegFormer-B2 · U-TAE · TSViT · Swin-UNETR) · EPIC 6 ensambles (Voting top-3 · Bagging XGB+AlphaEarth · Stacking +Gemma 4 · Blending Optuna).

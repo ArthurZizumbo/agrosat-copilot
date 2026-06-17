@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     redis_url: str = Field(default=_DEV_REDIS_URL)
     upstash_redis_rest_url: str = ""
     upstash_redis_rest_token: str = ""
+    db_pass: str = ""
 
     # Cloud
     gcp_project_id: str = "agrosat-prod"
@@ -57,6 +58,11 @@ class Settings(BaseSettings):
     azure_h100_vm_name: str = "agrosat-h100-prod"
     azure_storage_connection_string: str = ""
     azure_blob_checkpoints_container: str = "agrosat-checkpoints"
+    # H100 VM access via Cloudflare tunnel (declared for extra=forbid; the tunnel
+    # is operated outside the backend).
+    azure_tunnel_cloudflare_token: str = ""
+    cf_access_client_id: str = ""
+    cf_access_client_secret: str = ""
 
     # Earth Engine / CDSE
     gee_service_account_path: str = ""
@@ -74,6 +80,21 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-3.1-pro"
     vllm_qwen35_url: str = ""
     vllm_api_key: str = ""
+    # Ollama OpenAI-compatible endpoint for the local Gemma variant (US-049).
+    ollama_base_url: str = ""
+    # Gemini / google-genai credentials (read by the SDK via the environment;
+    # declared here so ``extra="forbid"`` accepts them in ``.env.local``).
+    gemini_api_key: str = ""
+    google_genai_use_vertexai: str = ""
+    google_cloud_project: str = ""
+    google_cloud_location: str = ""
+    agrosat_llm_provider: str = ""
+
+    # Spatial-RAG lite (US-046). Feature flag gating the deferred
+    # ``retrieve_context`` tool. Default off: with it disabled the reasoner runs
+    # ungrounded and the agent loop never touches the ``rag_documents`` corpus
+    # (AC-5, AC-10). Set ``RAG_ENABLED=true`` in ``.env.local`` to opt in.
+    rag_enabled: bool = False
 
     # MLflow / Dagster
     mlflow_tracking_uri: str = "http://localhost:5000"
