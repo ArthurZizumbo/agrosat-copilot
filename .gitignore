@@ -357,3 +357,12 @@ _vm_scratch/
 # US-049 eval datasets (AgroMind images/QA, GeoAnalystBench) — no al Git, via DVC/descarga
 data/agromind/
 data/geoanalystbench/
+
+# ── US-049 agent_bench: artefactos pesados/temporales (codigo+docs si van a git) ──
+.deepeval/
+reports/agent_bench/traces/
+reports/agent_bench/_smoke_system.json
+reports/agent_bench/us049_report_v2.html
+reports/agent_bench/us049_system_report.html
+reports/agent_bench/us049_system_eval.json
+reports/agent_bench/us049_checkpoint_v2.json
