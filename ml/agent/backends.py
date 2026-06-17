@@ -610,6 +610,7 @@ class OllamaBackend(VLLMOpenAIBackend):
         *,
         api_key: str = "EMPTY",
         max_tokens: int = _DEFAULT_MAX_TOKENS,
+        disable_thinking: bool = False,
         client: Any | None = None,
     ) -> None:
         """Initialise the Ollama backend.
@@ -619,10 +620,18 @@ class OllamaBackend(VLLMOpenAIBackend):
             model: Ollama model tag (e.g. ``gemma4:31b-it-q8_0``).
             api_key: Ignored by Ollama; the client requires a value.
             max_tokens: Output token budget per call.
+            disable_thinking: When ``True``, send
+                ``chat_template_kwargs={"enable_thinking": False}`` so a
+                *thinking* model (e.g. Qwen3.6-VL) does NOT spend the whole token
+                budget on a ``<think>`` trace and leave ``content`` empty. Needed
+                for Qwen3.6 on long prompts (its reasoning is unbounded and
+                exhausts ``max_tokens`` before emitting the answer); Gemma's
+                thinking is well-behaved so it stays ``False`` there.
             client: Optional pre-built async OpenAI client (tests).
         """
         super().__init__(base_url=base_url, model=model, api_key=api_key, client=client)
         self._max_tokens = max_tokens
+        self._disable_thinking = disable_thinking
 
     async def generate_stream(
         self,
@@ -645,11 +654,21 @@ class OllamaBackend(VLLMOpenAIBackend):
         """
         messages = self._messages_with_images(contents, system_instruction)
         client = self._get_client()
+        # Disable the model's chain-of-thought via the chat-template kwarg when
+        # requested: an unbounded thinking trace (Qwen3.6-VL) otherwise consumes
+        # the whole ``max_tokens`` budget and returns an EMPTY ``content`` on long
+        # prompts. ``extra_body`` reaches the llama.cpp/Ollama server verbatim.
+        extra_body: dict[str, Any] | None = (
+            {"chat_template_kwargs": {"enable_thinking": False}}
+            if self._disable_thinking
+            else None
+        )
         stream = await client.chat.completions.create(
             model=self.model,
             messages=messages,
             max_tokens=self._max_tokens,
             stream=True,
+            extra_body=extra_body,
         )
         produced = False
         reasoning_tail: list[str] = []
@@ -753,7 +772,11 @@ def make_backend(model: str, settings: Settings | None = None) -> LLMBackend:
             base_url = getattr(settings, "qwen36_vl_url", "") or base_url
         served_model = "qwen36-vl"
         logger.info("backend_selected", kind="ollama", model=served_model, base_url=base_url)
-        return OllamaBackend(base_url=base_url, model=served_model)
+        # Qwen3.6-VL is a thinking model whose reasoning is unbounded on the long
+        # eval prompts -> disable_thinking so it emits the answer, not an empty
+        # content after burning the budget on <think> (verified: enable_thinking
+        # False recovers a 5k-char answer where the default returns "").
+        return OllamaBackend(base_url=base_url, model=served_model, disable_thinking=True)
     if name.startswith("qwen"):
         base_url = _DEFAULT_VLLM_BASE_URL
         api_key = "EMPTY"
