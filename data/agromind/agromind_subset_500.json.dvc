@@ -1,0 +1,5 @@
+outs:
+- md5: 6e4134fefb0751684a9ae30d0015d9c8
+  size: 228661
+  hash: md5
+  path: agromind_subset_500.json
