@@ -87,11 +87,19 @@ class BackendFunctionCall:
         args: Argument mapping decoded from the model output (pre-validation).
         id: Provider-supplied call identifier when available (Gemini omits it;
             the OpenAI-compatible path carries it).
+        thought_signature: Opaque per-part signature Gemini 3.x attaches to each
+            function-call part. It MUST be echoed back verbatim on the rebuilt
+            part when the conversation is sent for the next turn, or Gemini 3.x
+            rejects the follow-up request with ``400 INVALID_ARGUMENT`` ("Function
+            call is missing a thought_signature"). ``None`` for backends/models
+            that do not emit one (Qwen/vLLM/Ollama and older Gemini).
+            See https://ai.google.dev/gemini-api/docs/thought-signatures.
     """
 
     name: str
     args: dict[str, Any] = field(default_factory=dict)
     id: str | None = None
+    thought_signature: bytes | None = None
 
 
 @dataclass(frozen=True)
@@ -242,13 +250,19 @@ class GeminiBackend(LLMBackend):
         response = await self._generate(client, contents, config)
         calls = list(getattr(response, "function_calls", None) or [])
         if calls:
-            for call in calls:
+            signatures = self._part_thought_signatures(response)
+            for idx, call in enumerate(calls):
                 if getattr(call, "name", None):
+                    # Pair this call with the thought_signature of its part, in
+                    # emission order. The signature lives on the PART, not on the
+                    # FunctionCall, so ``response.function_calls`` alone loses it.
+                    sig = signatures[idx] if idx < len(signatures) else None
                     yield BackendChunk(
                         function_call=BackendFunctionCall(
                             name=call.name,
                             args=dict(getattr(call, "args", None) or {}),
                             id=getattr(call, "id", None),
+                            thought_signature=sig,
                         )
                     )
             return
@@ -257,6 +271,35 @@ class GeminiBackend(LLMBackend):
         # caller sees is exactly the one inspected for tool calls.
         for chunk in self._chunks_from_response(response):
             yield chunk
+
+    @staticmethod
+    def _part_thought_signatures(response: Any) -> list[bytes | None]:
+        """Collect the per-function-call ``thought_signature`` in emission order.
+
+        Gemini 3.x returns an opaque ``thought_signature`` on each function-call
+        PART of ``candidate.content.parts``; ``response.function_calls`` flattens
+        those parts and drops it. This walks the first candidate's parts and, for
+        every part that carries a function call, records its signature (or
+        ``None``), yielding a list aligned 1:1 with ``response.function_calls``.
+
+        Args:
+            response: The provider response object.
+
+        Returns:
+            One ``bytes | None`` per function-call part, in order. Empty when the
+            response exposes no candidate parts (e.g. flat test doubles), in which
+            case the caller treats every signature as ``None``.
+        """
+        signatures: list[bytes | None] = []
+        candidates = getattr(response, "candidates", None) or []
+        if not candidates:
+            return signatures
+        content = getattr(candidates[0], "content", None)
+        for part in getattr(content, "parts", None) or []:
+            fc = getattr(part, "function_call", None)
+            if fc is not None and getattr(fc, "name", None):
+                signatures.append(getattr(part, "thought_signature", None))
+        return signatures
 
     async def _generate(
         self,
@@ -315,6 +358,8 @@ class GeminiBackend(LLMBackend):
                                 name=fc.name,
                                 args=dict(getattr(fc, "args", None) or {}),
                                 id=getattr(fc, "id", None),
+                                # Signature lives on the part, not the call.
+                                thought_signature=getattr(part, "thought_signature", None),
                             )
                         )
                     )

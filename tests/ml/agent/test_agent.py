@@ -53,12 +53,15 @@ class FakeFunctionCall:
     """Duck-typed stand-in for ``google.genai.types.FunctionCall``.
 
     The agent reads ``name`` / ``args`` (and an optional ``id``) off the chunk's
-    ``function_call`` attribute, so a plain dataclass is enough.
+    ``function_call`` attribute, so a plain dataclass is enough. ``thought_signature``
+    mirrors the Gemini 3.x per-part signature the agent must round-trip into the
+    rebuilt model turn; ``None`` for backends that emit none.
     """
 
     name: str
     args: dict[str, Any]
     id: str | None = None
+    thought_signature: bytes | None = None
 
 
 @dataclass
@@ -578,3 +581,109 @@ async def test_max_turns_guard_stops_infinite_tool_loop(
     assert not any(isinstance(e, DoneEvent) for e in events)
     # Exactly MAX_TURNS tool calls were executed (one per turn).
     assert sum(isinstance(e, ToolCallEvent) for e in events) == MAX_TURNS
+
+
+# ---------------------------------------------------------------------------
+# Gemini 3.x thought_signature round-trip (multi-turn tool-calling bug fix)
+# ---------------------------------------------------------------------------
+def _function_call_parts(content: Any) -> list[Any]:
+    """Return the parts of ``content`` that carry a function call."""
+    return [
+        part
+        for part in getattr(content, "parts", None) or []
+        if getattr(part, "function_call", None) is not None
+    ]
+
+
+async def test_thought_signature_round_trips_into_rebuilt_content(
+    monkeypatch: pytest.MonkeyPatch, make_ctx
+) -> None:
+    """A function call WITH a ``thought_signature`` echoes it back next turn.
+
+    Regression for the Gemini 3.x ``400 INVALID_ARGUMENT`` ("missing a
+    thought_signature") bug: when the model emits a signed function-call part, the
+    agent must rebuild that part WITH the same signature so the follow-up request
+    is accepted. We assert on the ``contents`` the backend received on its SECOND
+    turn (which carries the rebuilt model turn from the first).
+    """
+    conn = FakeConn(fetch_rows=[])
+    _patch_db(monkeypatch, conn)
+
+    sig = b"opaque-gemini-3-signature"
+    backend = FakeBackend(
+        turns=[
+            [
+                FakeChunk(
+                    function_call=FakeFunctionCall(
+                        name="list_parcels", args={}, thought_signature=sig
+                    )
+                )
+            ],
+            [FakeChunk(text="Listo.")],
+        ]
+    )
+    agent = _agent_with_list_parcels(backend)
+
+    await _collect(agent, [{"role": "user", "content": "x"}], make_ctx())
+
+    # The second generate call saw the rebuilt model turn from turn 1.
+    assert len(backend.calls) == 2
+    second_turn_contents = backend.calls[1]["contents"]
+    model_turns = [c for c in second_turn_contents if getattr(c, "role", None) == "model"]
+    fc_parts = [p for c in model_turns for p in _function_call_parts(c)]
+    assert fc_parts, "expected a rebuilt function-call part in the model turn"
+    assert any(
+        getattr(p, "thought_signature", None) == sig for p in fc_parts
+    ), "the thought_signature must round-trip verbatim onto the rebuilt part"
+
+
+async def test_no_thought_signature_leaves_rebuilt_content_unchanged(
+    monkeypatch: pytest.MonkeyPatch, make_ctx
+) -> None:
+    """Back-compat: a call WITHOUT a signature rebuilds with ``None`` (Qwen path).
+
+    Non-Gemini backends (and older Gemini) emit no ``thought_signature``; the
+    rebuilt function-call part must carry ``None`` exactly as before the fix, so
+    those backends are entirely unaffected.
+    """
+    conn = FakeConn(fetch_rows=[])
+    _patch_db(monkeypatch, conn)
+
+    backend = FakeBackend(
+        turns=[
+            [FakeChunk(function_call=FakeFunctionCall(name="list_parcels", args={}))],
+            [FakeChunk(text="Listo.")],
+        ]
+    )
+    agent = _agent_with_list_parcels(backend)
+
+    await _collect(agent, [{"role": "user", "content": "x"}], make_ctx())
+
+    assert len(backend.calls) == 2
+    second_turn_contents = backend.calls[1]["contents"]
+    model_turns = [c for c in second_turn_contents if getattr(c, "role", None) == "model"]
+    fc_parts = [p for c in model_turns for p in _function_call_parts(c)]
+    assert fc_parts, "expected a rebuilt function-call part in the model turn"
+    assert all(getattr(p, "thought_signature", None) is None for p in fc_parts)
+
+
+def test_model_function_call_content_attaches_signature_per_part() -> None:
+    """Unit test: ``_model_function_call_content`` sets the signature per call.
+
+    Mixed batch -> only the signed call's rebuilt part carries the signature; the
+    unsigned one stays ``None`` (no leakage across parts).
+    """
+    from ml.agent.agent import Agent, _ToolCall
+
+    signed = _ToolCall(name="classify_new_parcel", args={"id": 1}, thought_signature=b"sig")
+    unsigned = _ToolCall(name="list_parcels", args={})
+
+    content = Agent._model_function_call_content([signed, unsigned], ["razonando..."])
+
+    fc_parts = _function_call_parts(content)
+    by_name = {p.function_call.name: p for p in fc_parts}
+    assert by_name["classify_new_parcel"].thought_signature == b"sig"
+    assert by_name["list_parcels"].thought_signature is None
+    # The leading reasoning text is preserved as a text part.
+    texts = [p.text for p in content.parts if getattr(p, "text", None)]
+    assert "razonando..." in texts

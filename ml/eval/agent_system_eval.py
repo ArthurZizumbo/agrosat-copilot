@@ -367,6 +367,36 @@ async def _drive_for_call(
     return tool_name, args, "".join(text_parts).strip()
 
 
+def _declarations_for_generate(
+    declarations: list[types.FunctionDeclaration],
+) -> list[types.FunctionDeclaration]:
+    """Strip the ``behavior`` field so the non-bidi ``generate_content`` accepts them.
+
+    ``build_function_declarations`` tags deferred tools with
+    ``Behavior.NON_BLOCKING`` for the real agent's async (bidi) loop, but the
+    plain ``generate_content`` API rejects any ``FunctionDeclaration.behavior``
+    with ``400 INVALID_ARGUMENT`` (it is only valid for ``BidiGenerateContent``).
+    The eval only needs the name + parameter schema for the model to choose a
+    tool, so a ``behavior``-less copy is built here.
+
+    Args:
+        declarations: The declarations from ``build_function_declarations``.
+
+    Returns:
+        Equivalent declarations with ``behavior`` cleared.
+    """
+    cleaned: list[types.FunctionDeclaration] = []
+    for decl in declarations:
+        cleaned.append(
+            types.FunctionDeclaration(
+                name=decl.name,
+                description=decl.description,
+                parameters=decl.parameters,
+            )
+        )
+    return cleaned
+
+
 async def _drive_for_text(backend: LLMBackend, prompt: str) -> str:
     """Drive a backend for one non-streaming text answer (no tools).
 
@@ -552,7 +582,7 @@ async def eval_tool_calling(
         ``n``.
     """
     native = variant.name not in _NON_TOOL_VARIANTS
-    declarations = build_function_declarations()
+    declarations = _declarations_for_generate(build_function_declarations())
     selection_scores: list[float] = []
     arg_scores: list[float] = []
     n_no_call = 0
@@ -774,7 +804,17 @@ async def eval_grounded_crop(
         routed = False
         tool_crop: str | None = None
         answer_parts: list[str] = []
-        messages = [{"role": "user", "content": case.user_query}]
+        # Hand the AOI + year to the model the way the frontend does when the user
+        # draws a parcel: without the geometry the reasoner correctly REFUSES and
+        # asks for the area (so it would never call classify), which is not what
+        # this eval measures. Embedding the AOI lets it route to the tool with the
+        # right args; the classifier result is still the injected/stubbed one.
+        user_content = (
+            f"{case.user_query}\n"
+            f"AOI (GeoJSON): {json.dumps(case.aoi_geometry, ensure_ascii=False)}\n"
+            f"Anio: {case.year}"
+        )
+        messages = [{"role": "user", "content": user_content}]
         try:
             async for event in agent.stream_response(messages, ctx.session_id, ctx):
                 name = getattr(event, "name", None)

@@ -178,6 +178,81 @@ async def test_gemini_backend_parses_function_calls() -> None:
     assert dict(parsed[0].args) == {"limit": 5}
 
 
+@dataclass
+class _CandidateContent:
+    """Stand-in for ``candidate.content`` exposing ``parts``."""
+
+    parts: list[types.Part] = field(default_factory=list)
+
+
+@dataclass
+class _Candidate:
+    """Stand-in for one ``response.candidates[i]`` exposing ``content``."""
+
+    content: _CandidateContent | None = None
+
+
+@dataclass
+class FakeGenAIResponseWithParts:
+    """Response double that exposes BOTH the flat ``function_calls`` surface and
+    the per-candidate ``parts`` carrying Gemini 3.x ``thought_signature`` (the
+    signature lives on the part, not on the flat ``FunctionCall``).
+    """
+
+    function_calls: list[types.FunctionCall] = field(default_factory=list)
+    candidates: list[_Candidate] = field(default_factory=list)
+    text: str | None = None
+
+
+async def test_gemini_backend_captures_thought_signature_from_part() -> None:
+    """Gemini 3.x signature on the function-call PART reaches the chunk (bug fix).
+
+    ``response.function_calls`` flattens the parts and drops the per-part
+    ``thought_signature``; the backend must recover it from
+    ``candidates[0].content.parts`` and expose it on the emitted
+    :class:`BackendFunctionCall` so the agent can echo it back next turn.
+    """
+    sig = b"opaque-signature-bytes"
+    part = types.Part.from_function_call(name="classify_new_parcel", args={"id": 7})
+    part.thought_signature = sig
+    flat_call = _make_function_call("classify_new_parcel", {"id": 7})
+    response = FakeGenAIResponseWithParts(
+        function_calls=[flat_call],
+        candidates=[_Candidate(content=_CandidateContent(parts=[part]))],
+    )
+    backend = backends.GeminiBackend(
+        model="gemini-3.5-pro",
+        client=FakeGenAIClient(FakeModels(response=response)),  # type: ignore[arg-type]
+    )
+
+    chunks = await _drain(backend)
+
+    parsed = [c.function_call for c in chunks if getattr(c, "function_call", None)]
+    assert parsed, "expected at least one function-call chunk"
+    assert parsed[0].name == "classify_new_parcel"
+    assert parsed[0].thought_signature == sig
+
+
+async def test_gemini_backend_thought_signature_none_without_part() -> None:
+    """No candidate parts (flat double / older Gemini) -> signature is ``None``.
+
+    Back-compat: a response exposing only the flat ``function_calls`` surface must
+    still parse, with ``thought_signature`` defaulting to ``None`` so the Qwen and
+    legacy-Gemini paths are unchanged.
+    """
+    call = _make_function_call("list_parcels", {"limit": 5})
+    models = FakeModels(response=FakeGenAIResponse(function_calls=[call]))
+    backend = backends.GeminiBackend(
+        model="gemini-2.5-pro", client=FakeGenAIClient(models)
+    )
+
+    chunks = await _drain(backend)
+
+    parsed = [c.function_call for c in chunks if getattr(c, "function_call", None)]
+    assert parsed, "expected at least one function-call chunk"
+    assert parsed[0].thought_signature is None
+
+
 async def test_gemini_backend_streams_text_chunks() -> None:
     """A text-only response is surfaced from the SINGLE non-streaming call (B-4).
 

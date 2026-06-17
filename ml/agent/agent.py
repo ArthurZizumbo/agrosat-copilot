@@ -93,11 +93,18 @@ class _ToolCall:
         name: Tool name the model wants to invoke.
         args: Raw argument mapping produced by the model (pre-validation).
         call_id: Provider-supplied call identifier, if any (Gemini omits it).
+        thought_signature: Opaque per-part signature Gemini 3.x attaches to a
+            function-call part. It MUST be echoed back verbatim when the model's
+            turn is rebuilt into ``contents`` for the next turn, or Gemini 3.x
+            rejects the follow-up with ``400 INVALID_ARGUMENT``. ``None`` for
+            backends/models that do not emit one (Qwen/vLLM and older Gemini),
+            in which case the rebuilt part is unchanged from before.
     """
 
     name: str
     args: dict[str, Any]
     call_id: str | None = None
+    thought_signature: bytes | None = None
 
 
 class Agent:
@@ -438,15 +445,22 @@ class Agent:
             A ``role="model"`` :class:`google.genai.types.Content` whose parts are
             the (non-empty) text deltas followed by the function calls, mirroring
             what the model emitted so the backend sees a coherent call/response
-            pairing and the history keeps the model's reasoning.
+            pairing and the history keeps the model's reasoning. Each function-call
+            part re-attaches its ``thought_signature`` when the model emitted one
+            (Gemini 3.x), since the API requires it echoed back verbatim on the
+            next turn; calls without a signature (Qwen/vLLM, older Gemini) are
+            rebuilt exactly as before.
         """
         parts: list[types.Part] = [
             types.Part.from_text(text=piece) for piece in (text_parts or []) if piece
         ]
-        parts.extend(
-            types.Part.from_function_call(name=call.name, args=call.args)
-            for call in tool_calls
-        )
+        for call in tool_calls:
+            part = types.Part.from_function_call(name=call.name, args=call.args)
+            if call.thought_signature is not None:
+                # Round-trip Gemini 3.x's opaque signature verbatim; required for
+                # the follow-up request to be accepted (otherwise 400).
+                part.thought_signature = call.thought_signature
+            parts.append(part)
         return types.Content(role="model", parts=parts)
 
     @staticmethod
@@ -472,7 +486,13 @@ class Agent:
             if name:
                 args = getattr(call_obj, "args", None) or {}
                 call_id = getattr(call_obj, "id", None) or getattr(call_obj, "call_id", None)
-                call = _ToolCall(name=name, args=dict(args), call_id=call_id)
+                # Carry Gemini 3.x's per-part thought_signature through so the
+                # rebuilt model turn can echo it back (required for multi-turn
+                # tool calls). Absent on non-Gemini backends -> None.
+                sig = getattr(call_obj, "thought_signature", None)
+                call = _ToolCall(
+                    name=name, args=dict(args), call_id=call_id, thought_signature=sig
+                )
         return (text if text else None), call
 
     @staticmethod
