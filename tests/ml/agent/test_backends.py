@@ -132,6 +132,86 @@ def backends_declarations() -> list[types.FunctionDeclaration]:
 
 
 # ---------------------------------------------------------------------------
+# genai Schema -> JSON Schema normaliser (Bug 1: llama.cpp 400 on UPPERCASE types)
+# ---------------------------------------------------------------------------
+def test_genai_schema_lowercases_nested_types() -> None:
+    """``_genai_schema_to_json_schema`` lowercases every nested ``type`` value.
+
+    The ``google.genai`` ``Schema.model_dump`` emits the genai enum names in
+    UPPERCASE (``OBJECT``/``STRING``/``ARRAY``/...), which the OpenAI-compatible
+    vLLM/llama.cpp grammar compiler rejects with a ``400``. The normaliser must
+    recurse into ``properties`` and ``items`` and lowercase each ``type`` while
+    preserving ``description``/``enum``/``required``/``nullable``.
+    """
+    raw = {
+        "type": "OBJECT",
+        "properties": {
+            "name": {"type": "STRING", "description": "n", "enum": ["a", "b"]},
+            "limit": {"type": "INTEGER"},
+            "tags": {"type": "ARRAY", "items": {"type": "STRING"}},
+            "flag": {"type": "BOOLEAN", "nullable": True},
+        },
+        "required": ["name"],
+    }
+
+    out = backends._genai_schema_to_json_schema(raw)
+
+    assert out["type"] == "object"
+    props = out["properties"]
+    assert props["name"]["type"] == "string"
+    assert props["limit"]["type"] == "integer"
+    assert props["tags"]["type"] == "array"
+    assert props["tags"]["items"]["type"] == "string"  # nested items recursed
+    assert props["flag"]["type"] == "boolean"
+    # Non-type annotations preserved verbatim.
+    assert props["name"]["description"] == "n"
+    assert props["name"]["enum"] == ["a", "b"]
+    assert props["flag"]["nullable"] is True
+    assert out["required"] == ["name"]
+
+
+def test_genai_schema_normaliser_is_defensive() -> None:
+    """The normaliser tolerates missing keys, lowercase types and non-dict nodes."""
+    # Already-lowercase + missing properties: returned equivalent, not mangled.
+    assert backends._genai_schema_to_json_schema({"type": "object"}) == {"type": "object"}
+    # Non-dict node returned untouched.
+    assert backends._genai_schema_to_json_schema("STRING") == "STRING"
+    assert backends._genai_schema_to_json_schema(None) is None
+    # anyOf list of schemas is recursed.
+    out = backends._genai_schema_to_json_schema({"anyOf": [{"type": "STRING"}, {"type": "NULL"}]})
+    assert [s["type"] for s in out["anyOf"]] == ["string", "null"]
+
+
+def test_tools_from_declarations_emit_lowercase_json_schema() -> None:
+    """The OpenAI tool envelope carries a lowercase-typed JSON Schema (Bug 1).
+
+    Before the fix the genai dump leaked ``"type": "OBJECT"`` into the
+    ``function.parameters`` sent to llama.cpp, which 400'd. The envelope shape
+    (``type``/``function`` keys) is unchanged; only the schema is normalised.
+    """
+    decl = types.FunctionDeclaration(
+        name="list_parcels",
+        description="list parcels",
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties={"limit": types.Schema(type=types.Type.INTEGER)},
+        ),
+    )
+
+    tools = backends.VLLMOpenAIBackend._tools_from_declarations([decl])
+
+    assert tools[0]["type"] == "function"
+    fn = tools[0]["function"]
+    assert fn["name"] == "list_parcels"
+    params = fn["parameters"]
+    assert params["type"] == "object"
+    assert params["properties"]["limit"]["type"] == "integer"
+    # No UPPERCASE genai type names survive anywhere in the schema.
+    assert "OBJECT" not in json.dumps(params)
+    assert "INTEGER" not in json.dumps(params)
+
+
+# ---------------------------------------------------------------------------
 # make_backend routing
 # ---------------------------------------------------------------------------
 def test_make_backend_gemini_returns_gemini_backend() -> None:
@@ -166,9 +246,7 @@ async def test_gemini_backend_parses_function_calls() -> None:
     """
     call = _make_function_call("list_parcels", {"limit": 5})
     models = FakeModels(response=FakeGenAIResponse(function_calls=[call]))
-    backend = backends.GeminiBackend(
-        model="gemini-2.5-pro", client=FakeGenAIClient(models)
-    )
+    backend = backends.GeminiBackend(model="gemini-2.5-pro", client=FakeGenAIClient(models))
 
     chunks = await _drain(backend)
 
@@ -242,9 +320,7 @@ async def test_gemini_backend_thought_signature_none_without_part() -> None:
     """
     call = _make_function_call("list_parcels", {"limit": 5})
     models = FakeModels(response=FakeGenAIResponse(function_calls=[call]))
-    backend = backends.GeminiBackend(
-        model="gemini-2.5-pro", client=FakeGenAIClient(models)
-    )
+    backend = backends.GeminiBackend(model="gemini-2.5-pro", client=FakeGenAIClient(models))
 
     chunks = await _drain(backend)
 
@@ -271,9 +347,7 @@ async def test_gemini_backend_streams_text_chunks() -> None:
         ],
         response=FakeGenAIResponse(text="Hola, mundo."),
     )
-    backend = backends.GeminiBackend(
-        model="gemini-2.5-pro", client=FakeGenAIClient(models)
-    )
+    backend = backends.GeminiBackend(model="gemini-2.5-pro", client=FakeGenAIClient(models))
 
     chunks = await _drain(backend)
 
@@ -295,9 +369,7 @@ async def test_gemini_backend_single_generation_no_tool_calls() -> None:
         stream_chunks=[FakeGenAIStreamChunk(text="unused")],
         response=FakeGenAIResponse(text="respuesta unica"),
     )
-    backend = backends.GeminiBackend(
-        model="gemini-2.5-pro", client=FakeGenAIClient(models)
-    )
+    backend = backends.GeminiBackend(model="gemini-2.5-pro", client=FakeGenAIClient(models))
 
     chunks = await _drain(backend)
 
@@ -319,9 +391,7 @@ async def test_gemini_backend_disables_automatic_function_calling() -> None:
         stream_chunks=[FakeGenAIStreamChunk(text="ok")],
         response=FakeGenAIResponse(text="ok"),
     )
-    backend = backends.GeminiBackend(
-        model="gemini-2.5-pro", client=FakeGenAIClient(models)
-    )
+    backend = backends.GeminiBackend(model="gemini-2.5-pro", client=FakeGenAIClient(models))
 
     await _drain(backend)
 
@@ -465,9 +535,7 @@ async def test_vllm_backend_parses_tool_calls() -> None:
                                 _OAToolCall(
                                     index=0,
                                     id="call_1",
-                                    function=_OAFunction(
-                                        name="list_parcels", arguments=""
-                                    ),
+                                    function=_OAFunction(name="list_parcels", arguments=""),
                                 )
                             ]
                         )

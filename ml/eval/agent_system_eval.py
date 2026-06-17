@@ -734,6 +734,191 @@ def _answer_signals_needs_gee(answer: str, crop_names: Sequence[str]) -> bool:
     return signals and not names_crop
 
 
+def _crop_followup_prompt(query: str, result: dict[str, Any]) -> str:
+    """Build the follow-up prompt that injects the classifier output verbatim.
+
+    Used on the JSON-fallback path (the two Ollama variants): once the model has
+    routed to ``classify_new_parcel``, the REAL (stubbed) classifier result is
+    injected as the tool's response and the model is asked to report it. This
+    isolates FAITHFUL REPORTING -- whether the model echoes the crop the tool
+    returned -- from tool selection, so the non-native variants are scored on the
+    SAME contract as the native path (route, then faithfully name the crop the
+    classifier returned) and never penalised for the backend ignoring ``tools``.
+
+    Args:
+        query: The Spanish user turn.
+        result: The ``ClassificationResult`` dump returned by ``classify.run``
+            (carries ``crop_class``, ``confidence`` and ``class_probabilities``).
+
+    Returns:
+        The composed Spanish follow-up prompt.
+    """
+    return "\n".join(
+        [
+            "Eres un copiloto agricola satelital. La herramienta de clasificacion "
+            "ya se ejecuto y devolvio el siguiente resultado:",
+            "",
+            json.dumps(result, ensure_ascii=False),
+            "",
+            "Responde al usuario reportando FIELMENTE el cultivo de 'crop_class' tal "
+            "como aparece en el resultado. No inventes otro cultivo ni cambies el "
+            "valor; si 'crop_class' es 'needs_gee_sampling', explica que la parcela "
+            "requiere muestreo GEE y NO menciones ningun cultivo.",
+            "",
+            f"Peticion original del usuario: {query}",
+        ]
+    )
+
+
+async def _score_crop_case_native(
+    case: CropCase,
+    *,
+    variant: ReasonerVariant,
+    backend: LLMBackend,
+    ctx: ToolContext,
+    classify_spec: Any,
+) -> tuple[bool, str | None, str]:
+    """Drive the REAL :class:`Agent` loop for one crop case (native-FC variants).
+
+    Runs ``Agent.stream_response`` with the single ``classify_new_parcel`` tool
+    (its ``run`` executes under the per-case stubs the caller installed). The
+    model must route to the tool and then name the returned crop.
+
+    Args:
+        case: The crop case under test.
+        variant: The reasoner variant (for logging).
+        backend: The injected native-FC backend.
+        ctx: The per-case tool context.
+        classify_spec: The ``classify_new_parcel`` tool spec.
+
+    Returns:
+        ``(routed, tool_crop, answer)`` -- ``routed`` is ``True`` when the loop
+        emitted a ``classify_new_parcel`` call, ``tool_crop`` is the crop the
+        tool returned (``None`` if it never ran), ``answer`` is the final prose.
+    """
+    from ml.agent.agent import Agent
+
+    agent = Agent(backend=backend, tools=[classify_spec], instruction="")
+    if hasattr(backend, "reset"):
+        backend.reset()
+
+    routed = False
+    tool_crop: str | None = None
+    answer_parts: list[str] = []
+    # Hand the AOI + year to the model the way the frontend does when the user
+    # draws a parcel: without the geometry the reasoner correctly REFUSES and asks
+    # for the area (so it would never call classify), which is not what this eval
+    # measures. Embedding the AOI lets it route to the tool with the right args;
+    # the classifier result is still the injected/stubbed one.
+    user_content = (
+        f"{case.user_query}\n"
+        f"AOI (GeoJSON): {json.dumps(case.aoi_geometry, ensure_ascii=False)}\n"
+        f"Anio: {case.year}"
+    )
+    messages = [{"role": "user", "content": user_content}]
+    try:
+        async for event in agent.stream_response(messages, ctx.session_id, ctx):
+            name = getattr(event, "name", None)
+            if name == "classify_new_parcel" and type(event).__name__ == "ToolCallEvent":
+                routed = True
+            if type(event).__name__ == "ToolResultEvent" and getattr(event, "ok", False):
+                result = getattr(event, "result", {}) or {}
+                tool_crop = result.get("crop_class")
+            if type(event).__name__ == "TextDeltaEvent":
+                answer_parts.append(getattr(event, "text", "") or "")
+    except Exception as exc:  # noqa: BLE001 - one case must not crash the run
+        logger.warning("crop_case_failed", variant=variant.name, case=case.id, error=str(exc))
+    return routed, tool_crop, "".join(answer_parts).strip()
+
+
+async def _score_crop_case_fallback(
+    case: CropCase,
+    *,
+    variant: ReasonerVariant,
+    backend: LLMBackend,
+    ctx: ToolContext,
+    classify_spec: Any,
+) -> tuple[bool, str | None, str]:
+    """Score one crop case via the JSON tool-selection fallback (Ollama variants).
+
+    The two Ollama backends (``gemma-base``, ``qwen36-vl``) IGNORE the ``tools``
+    argument, so the real ``Agent`` loop never routes for them and would score a
+    hard zero that measures the backend's missing tool API, not the model. To
+    stay HONEST and COMPARABLE with the native path this mirrors
+    :func:`eval_tool_calling`'s handicap-adjusted fallback in two turns:
+
+    1. **Routing** -- the model is asked (via :func:`_json_fallback_prompt`, with
+       the AOI appended) to emit ``{"tool", "args"}``; routing succeeds iff it
+       selects ``classify_new_parcel`` (parsed by :func:`_parse_json_tool_answer`).
+    2. **Faithful reporting** -- when (and only when) it routed, the REAL
+       (stubbed) ``classify.run`` is executed directly to obtain the injected
+       ``ClassificationResult``; that result is injected into a follow-up prompt
+       (:func:`_crop_followup_prompt`) and the model's prose is checked for the
+       crop the classifier returned. This measures AGENT ORCHESTRATION + faithful
+       reporting (never the classifier, which is stubbed).
+
+    Args:
+        case: The crop case under test.
+        variant: The reasoner variant (for logging).
+        backend: The injected non-native backend.
+        ctx: The per-case tool context (threaded into ``classify.run``).
+        classify_spec: The ``classify_new_parcel`` tool spec (its ``input_model``
+            + ``fn`` are reused so the same plumbing runs as on the native path).
+
+    Returns:
+        ``(routed, tool_crop, answer)`` with the same contract as
+        :func:`_score_crop_case_native`.
+    """
+    from uuid import UUID
+
+    aoi_line = (
+        f"\nAOI (GeoJSON): {json.dumps(case.aoi_geometry, ensure_ascii=False)}\nAnio: {case.year}"
+    )
+    route_prompt = _json_fallback_prompt(case.user_query) + aoi_line
+    if hasattr(backend, "reset"):
+        backend.reset()
+    try:
+        route_text = await asyncio.wait_for(
+            _drive_for_text(backend, route_prompt), timeout=_ITEM_TIMEOUT_S
+        )
+    except Exception as exc:  # noqa: BLE001 - one case must not crash the run
+        logger.warning("crop_route_failed", variant=variant.name, case=case.id, error=str(exc))
+        return False, None, ""
+    tool_name, _args = _parse_json_tool_answer(route_text)
+    routed = tool_name == "classify_new_parcel"
+    if not routed:
+        return False, None, ""
+
+    # Run the REAL (stubbed) classify.run so the injected ensemble result is the
+    # SAME deterministic plumbing the native path exercises.
+    inp = classify_spec.input_model.model_validate(
+        {
+            "session_id": ctx.session_id or UUID("00000000-0000-0000-0000-000000000000"),
+            "aoi": case.aoi_geometry,
+            "year": case.year,
+        }
+    )
+    try:
+        result_obj = await classify_spec.fn(inp, ctx)
+    except Exception as exc:  # noqa: BLE001 - one case must not crash the run
+        logger.warning("crop_classify_failed", variant=variant.name, case=case.id, error=str(exc))
+        return True, None, ""
+    result = result_obj.model_dump(mode="json")
+    tool_crop = result.get("crop_class")
+
+    if hasattr(backend, "reset"):
+        backend.reset()
+    try:
+        answer = await asyncio.wait_for(
+            _drive_for_text(backend, _crop_followup_prompt(case.user_query, result)),
+            timeout=_ITEM_TIMEOUT_S,
+        )
+    except Exception as exc:  # noqa: BLE001 - one case must not crash the run
+        logger.warning("crop_report_failed", variant=variant.name, case=case.id, error=str(exc))
+        answer = ""
+    return True, tool_crop, answer
+
+
 async def eval_grounded_crop(
     variant: ReasonerVariant,
     cases: Sequence[CropCase],
@@ -745,18 +930,37 @@ async def eval_grounded_crop(
 ) -> dict[str, float | int]:
     """Evaluate agent orchestration + faithful crop reporting (Eval 2).
 
-    The agent runs the REAL ``classify_new_parcel.run`` under a stubbed embedding
-    fetch + estimator (the known ensemble result is injected per case), so the
-    routing + ``ClassificationResult`` plumbing is exercised end-to-end while
-    only the embedding + classifier are mocked. The reasoner is driven by the
-    injected ``backend`` (scripted in CI, real live), which must (1) call
+    The REAL ``classify_new_parcel.run`` executes under a stubbed embedding fetch
+    + estimator (the known ensemble result is injected per case), so the routing +
+    ``ClassificationResult`` plumbing is exercised end-to-end while only the
+    embedding + classifier are mocked. The reasoner must (1) route to
     ``classify_new_parcel`` and (2) faithfully name the returned crop.
+
+    Two scoring paths keep the metric COMPARABLE across backends without
+    rewarding any of them for a capability they lack:
+
+    - **Native-FC variants** (Gemini; Qwen-text once Bug 1's JSON-Schema fix lets
+      vLLM/llama.cpp accept the tools) take the REAL :class:`Agent` loop
+      (:func:`_score_crop_case_native`): the model routes via the function-call
+      API and the loop feeds the stubbed ``ClassificationResult`` back so the
+      model can report the crop.
+    - **Non-native variants** (the two Ollama backends in ``_NON_TOOL_VARIANTS``,
+      which IGNORE ``tools``) take the JSON tool-selection fallback
+      (:func:`_score_crop_case_fallback`), mirroring :func:`eval_tool_calling`:
+      the model picks the tool from a JSON ``{"tool", "args"}`` answer (routing),
+      then -- once routed -- the same stubbed ``classify.run`` is executed
+      directly and its result injected into a follow-up prompt so faithful
+      reporting is measured. Both paths score the SAME contract (route, then echo
+      the classifier's crop); only the routing CHANNEL differs, transparently.
+
+    This stays HONEST: it measures orchestration + faithful reporting, never the
+    classifier (stubbed). The two ``_NON_TOOL_VARIANTS`` previously scored a hard
+    zero here because the Agent loop dropped their ignored tools.
 
     Args:
         variant: The reasoner variant under test.
         cases: The crop cases.
-        backend: The injected backend scripting a classify call then a final
-            answer naming the crop.
+        backend: The injected backend (scripted in CI, real live).
         make_ctx: Factory ``(session_id=..., defer=...) -> ToolContext``.
         monkeypatch_target: An object exposing ``setattr(obj, name, value)``
             (a ``pytest.MonkeyPatch`` in CI) used to stub the classify module's
@@ -768,10 +972,10 @@ async def eval_grounded_crop(
         ``faithfulness_crop`` and ``n``.
     """
     import ml.agent.tools.classify as classify_mod
-    from ml.agent.agent import Agent
     from ml.agent.tools import get_tool
     from ml.data.pastis_filter import SEMANTIC18_CLASS_NAMES
 
+    native = variant.name not in _NON_TOOL_VARIANTS
     crop_names = list(SEMANTIC18_CLASS_NAMES.values())
     classify_spec = get_tool("classify_new_parcel")
     routing_scores: list[float] = []
@@ -780,6 +984,7 @@ async def eval_grounded_crop(
 
     for case in cases:
         ctx = make_ctx()
+
         # Stub the embedding fetch: a fresh AOI (needs_gee) returns None; a
         # positive case returns a deterministic (64,) vector so classify.run
         # reaches the stubbed estimator.
@@ -797,40 +1002,15 @@ async def eval_grounded_crop(
             classify_mod, "_load_classifier", lambda c=case: _build_stub_classifier(c)
         )
 
-        agent = Agent(backend=backend, tools=[classify_spec], instruction="")
-        if hasattr(backend, "reset"):
-            backend.reset()
-
-        routed = False
-        tool_crop: str | None = None
-        answer_parts: list[str] = []
-        # Hand the AOI + year to the model the way the frontend does when the user
-        # draws a parcel: without the geometry the reasoner correctly REFUSES and
-        # asks for the area (so it would never call classify), which is not what
-        # this eval measures. Embedding the AOI lets it route to the tool with the
-        # right args; the classifier result is still the injected/stubbed one.
-        user_content = (
-            f"{case.user_query}\n"
-            f"AOI (GeoJSON): {json.dumps(case.aoi_geometry, ensure_ascii=False)}\n"
-            f"Anio: {case.year}"
-        )
-        messages = [{"role": "user", "content": user_content}]
-        try:
-            async for event in agent.stream_response(messages, ctx.session_id, ctx):
-                name = getattr(event, "name", None)
-                if name == "classify_new_parcel" and type(event).__name__ == "ToolCallEvent":
-                    routed = True
-                if type(event).__name__ == "ToolResultEvent" and getattr(event, "ok", False):
-                    result = getattr(event, "result", {}) or {}
-                    tool_crop = result.get("crop_class")
-                if type(event).__name__ == "TextDeltaEvent":
-                    answer_parts.append(getattr(event, "text", "") or "")
-        except Exception as exc:  # noqa: BLE001 - one case must not crash the run
-            logger.warning(
-                "crop_case_failed", variant=variant.name, case=case.id, error=str(exc)
+        if native:
+            routed, tool_crop, answer = await _score_crop_case_native(
+                case, variant=variant, backend=backend, ctx=ctx, classify_spec=classify_spec
+            )
+        else:
+            routed, tool_crop, answer = await _score_crop_case_fallback(
+                case, variant=variant, backend=backend, ctx=ctx, classify_spec=classify_spec
             )
 
-        answer = "".join(answer_parts).strip()
         routing_scores.append(1.0 if routed else 0.0)
 
         if case.expects_needs_gee:
@@ -970,9 +1150,7 @@ async def _run_rag_side(
             logger.warning("rag_case_failed", case=case.id, grounded=grounded, error=str(exc))
             answer = ""
         context = case.grounding_text if grounded else case.gold_grounded_answer
-        samples.append(
-            {"input": case.question, "actual_output": answer, "context": [context]}
-        )
+        samples.append({"input": case.question, "actual_output": answer, "context": [context]})
     return agent_metrics.hallucination_rate(samples, judge)
 
 
@@ -1016,9 +1194,7 @@ async def eval_rag_ab(
     ungrounded = await _run_rag_side(backend, cases, grounded=False, judge=judge)
     grounded = await _run_rag_side(backend, cases, grounded=True, judge=judge)
     delta = (
-        ungrounded - grounded
-        if not (math.isnan(ungrounded) or math.isnan(grounded))
-        else math.nan
+        ungrounded - grounded if not (math.isnan(ungrounded) or math.isnan(grounded)) else math.nan
     )
     faithfulness = (1.0 - grounded) if not math.isnan(grounded) else math.nan
     logger.info(
@@ -1130,9 +1306,7 @@ def run_system_eval(
                     tc_backend.reset()
                 seed_metrics.append(
                     asyncio.run(
-                        eval_tool_calling(
-                            variant, toolcall_cases, backend=tc_backend, seed=seed
-                        )
+                        eval_tool_calling(variant, toolcall_cases, backend=tc_backend, seed=seed)
                     )
                 )
             per_variant["tool_calling"] = _aggregate(seed_metrics)
@@ -1163,9 +1337,7 @@ def run_system_eval(
                     rag_backend.reset()
                 seed_metrics.append(
                     asyncio.run(
-                        eval_rag_ab(
-                            variant, rag_cases, backend=rag_backend, judge=judge, seed=seed
-                        )
+                        eval_rag_ab(variant, rag_cases, backend=rag_backend, judge=judge, seed=seed)
                     )
                 )
             per_variant["rag_ab"] = _aggregate(seed_metrics)

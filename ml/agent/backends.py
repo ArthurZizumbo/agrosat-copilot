@@ -77,6 +77,60 @@ _DEFAULT_QWEN_VL_BASE_URL: str = "http://127.0.0.1:8003/v1"
 _GENAI_TIMEOUT_MS: int = 120_000
 _OPENAI_TIMEOUT_S: float = 180.0
 
+#: Keys whose value is a NESTED schema (one ``Schema``) and must be recursed.
+_NESTED_SCHEMA_KEYS: tuple[str, ...] = ("items",)
+
+#: Keys whose value is a LIST of schemas (``anyOf``/``allOf``/``oneOf``) and must
+#: have each element recursed.
+_SCHEMA_LIST_KEYS: tuple[str, ...] = ("anyOf", "allOf", "oneOf")
+
+
+def _genai_schema_to_json_schema(schema: Any) -> Any:
+    """Normalise a ``google.genai`` ``Schema`` dump to standard JSON Schema.
+
+    ``google.genai`` ``Schema.model_dump`` serialises its ``type`` enum with the
+    UPPERCASE genai names (``"STRING"``, ``"INTEGER"``, ``"NUMBER"``,
+    ``"BOOLEAN"``, ``"OBJECT"``, ``"ARRAY"``, ``"NULL"``), which the
+    OpenAI-compatible endpoints served by vLLM and llama.cpp do not recognise --
+    llama.cpp answers ``400 ... Unrecognized schema: ... 'type': 'STRING'`` and
+    Qwen-text then never receives usable tools. This recursively lowercases every
+    ``type`` value so the result is a valid JSON Schema the grammar compiler
+    accepts.
+
+    The lowercasing of ``type`` is the load-bearing fix. ``description``,
+    ``enum``, ``required`` and ``nullable`` are preserved verbatim (JSON Schema
+    tolerates ``nullable`` as an annotation). The walker recurses into
+    ``properties`` (a mapping of name to sub-schema), ``items`` (a single
+    sub-schema) and the ``anyOf``/``allOf``/``oneOf`` schema lists, and is
+    defensive against missing keys, already-lowercase values and non-dict nodes
+    (returned untouched).
+
+    Args:
+        schema: The raw ``Schema.model_dump`` output (or any nested node).
+
+    Returns:
+        An equivalent JSON-Schema-shaped structure with lowercase ``type``
+        values; non-dict inputs are returned unchanged.
+    """
+    if isinstance(schema, list):
+        return [_genai_schema_to_json_schema(item) for item in schema]
+    if not isinstance(schema, dict):
+        return schema
+
+    out: dict[str, Any] = {}
+    for key, value in schema.items():
+        if key == "type" and isinstance(value, str):
+            out[key] = value.lower()
+        elif key == "properties" and isinstance(value, dict):
+            out[key] = {prop: _genai_schema_to_json_schema(sub) for prop, sub in value.items()}
+        elif key in _NESTED_SCHEMA_KEYS:
+            out[key] = _genai_schema_to_json_schema(value)
+        elif key in _SCHEMA_LIST_KEYS and isinstance(value, list):
+            out[key] = [_genai_schema_to_json_schema(sub) for sub in value]
+        else:
+            out[key] = value
+    return out
+
 
 @dataclass(frozen=True)
 class BackendFunctionCall:
@@ -561,16 +615,27 @@ class VLLMOpenAIBackend(LLMBackend):
     ) -> list[dict[str, Any]]:
         """Map ``genai`` function declarations to OpenAI ``tools`` schema.
 
+        Each declaration's ``parameters`` is a ``google.genai`` ``Schema`` whose
+        ``model_dump`` emits the genai enum type names in UPPERCASE
+        (``"STRING"``, ``"OBJECT"``, ...). Standard JSON Schema -- which the
+        OpenAI-compatible endpoints (vLLM, llama.cpp) parse to build their
+        grammar -- requires lowercase type names, so the raw dump is normalised
+        through :meth:`_genai_schema_to_json_schema` before being wrapped in the
+        OpenAI tool envelope. llama.cpp rejects the un-normalised dump with a
+        ``400`` (``Unrecognized schema: ... 'type': 'STRING' ...``), which left
+        Qwen-text without usable tools.
+
         Args:
             tools: The function declarations advertised this turn.
 
         Returns:
-            OpenAI-format tool definitions.
+            OpenAI-format tool definitions with JSON-Schema ``parameters``.
         """
         out: list[dict[str, Any]] = []
         for decl in tools:
             parameters = decl.parameters
-            schema = parameters.model_dump(exclude_none=True) if parameters is not None else {}
+            raw = parameters.model_dump(exclude_none=True) if parameters is not None else {}
+            schema = _genai_schema_to_json_schema(raw)
             out.append(
                 {
                     "type": "function",
@@ -704,9 +769,7 @@ class OllamaBackend(VLLMOpenAIBackend):
         # the whole ``max_tokens`` budget and returns an EMPTY ``content`` on long
         # prompts. ``extra_body`` reaches the llama.cpp/Ollama server verbatim.
         extra_body: dict[str, Any] | None = (
-            {"chat_template_kwargs": {"enable_thinking": False}}
-            if self._disable_thinking
-            else None
+            {"chat_template_kwargs": {"enable_thinking": False}} if self._disable_thinking else None
         )
         stream = await client.chat.completions.create(
             model=self.model,

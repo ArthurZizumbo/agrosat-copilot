@@ -197,9 +197,7 @@ async def test_tool_selection_accuracy_native_fc() -> None:
             rationale="",
         )
     ]
-    backend = ScriptedBackend(
-        turns=[[_Chunk(function_call=_FC(name="list_parcels", args={}))]]
-    )
+    backend = ScriptedBackend(turns=[[_Chunk(function_call=_FC(name="list_parcels", args={}))]])
     out = await eval_tool_calling(GEMINI, cases, backend=backend, seed=0)
     assert out["tool_selection_accuracy"] == 1.0
     assert out["tool_calling_native"] == 1.0
@@ -347,9 +345,7 @@ def _classify_backend(crop: str) -> ScriptedBackend:
     )
 
 
-async def test_grounded_crop_routing_and_match(
-    monkeypatch: pytest.MonkeyPatch, make_ctx
-) -> None:
+async def test_grounded_crop_routing_and_match(monkeypatch: pytest.MonkeyPatch, make_ctx) -> None:
     """The agent routes to classify and faithfully names the injected crop."""
     case = CropCase(
         id="crop-x",
@@ -375,9 +371,7 @@ async def test_grounded_crop_routing_and_match(
     assert out["faithfulness_crop"] == 1.0
 
 
-async def test_grounded_crop_needs_gee_control(
-    monkeypatch: pytest.MonkeyPatch, make_ctx
-) -> None:
+async def test_grounded_crop_needs_gee_control(monkeypatch: pytest.MonkeyPatch, make_ctx) -> None:
     """A needs-GEE case is satisfied only by a faithful refusal (no crop named)."""
     case = CropCase(
         id="crop-gee",
@@ -408,9 +402,7 @@ async def test_grounded_crop_needs_gee_control(
     assert out["crop_match_accuracy"] == 1.0
 
 
-async def test_grounded_crop_faithfulness_trap(
-    monkeypatch: pytest.MonkeyPatch, make_ctx
-) -> None:
+async def test_grounded_crop_faithfulness_trap(monkeypatch: pytest.MonkeyPatch, make_ctx) -> None:
     """Naming a neighbour crop (drift) fails crop_match and faithfulness."""
     case = CropCase(
         id="crop-trap",
@@ -437,9 +429,7 @@ async def test_grounded_crop_faithfulness_trap(
     assert out["faithfulness_crop"] == 0.0
 
 
-async def test_grounded_crop_no_routing_fails(
-    monkeypatch: pytest.MonkeyPatch, make_ctx
-) -> None:
+async def test_grounded_crop_no_routing_fails(monkeypatch: pytest.MonkeyPatch, make_ctx) -> None:
     """Answering the crop WITHOUT calling the tool fails routing (must orchestrate)."""
     case = CropCase(
         id="crop-noroute",
@@ -455,6 +445,104 @@ async def test_grounded_crop_no_routing_fails(
     backend = ScriptedBackend(turns=[[_Chunk(text="Es maiz (Corn) sin duda.")]])
     out = await eval_grounded_crop(
         GEMINI,
+        [case],
+        backend=backend,
+        make_ctx=make_ctx,
+        monkeypatch_target=monkeypatch,
+        seed=0,
+    )
+    assert out["routing_accuracy"] == 0.0
+    assert out["crop_match_accuracy"] == 0.0
+
+
+@dataclass
+class SequencedTextBackend:
+    """Text backend yielding ``answers[i]`` on the i-th ``generate_stream`` call.
+
+    Models the JSON-fallback path of an Ollama variant (which ignores ``tools``):
+    the first call is the routing turn (a ``{"tool", "args"}`` JSON answer) and
+    the second is the faithful-reporting turn. ``reset`` rewinds the cursor; the
+    harness resets between the two turns of a single case, so the cursor is NOT
+    rewound here on ``reset`` (it must keep advancing across the two turns).
+    """
+
+    answers: list[str]
+    model: str = "sequenced"
+    _idx: int = 0
+
+    def reset(self) -> None:
+        """No-op: the cursor must persist across the two turns of one case."""
+
+    async def generate_stream(
+        self, *, contents: list, tools: list, system_instruction: str
+    ) -> AsyncIterator[_Chunk]:
+        """Yield the next scripted text answer."""
+        index = self._idx
+        self._idx += 1
+        text = self.answers[index] if index < len(self.answers) else "(fin)"
+        yield _Chunk(text=text)
+
+
+async def test_grounded_crop_fallback_for_non_native_variant(
+    monkeypatch: pytest.MonkeyPatch, make_ctx
+) -> None:
+    """A non-native (Ollama) variant is scored via the JSON-fallback path.
+
+    ``gemma-base`` ignores ``tools``, so ``eval_grounded_crop`` must route via a
+    JSON ``{"tool", "args"}`` answer and then, once routed, run the stubbed
+    ``classify.run`` and check the model faithfully echoes the returned crop.
+    This is the Bug 2 regression test: previously this scored a hard zero because
+    the Agent loop dropped the ignored tools.
+    """
+    case = CropCase(
+        id="crop-fb",
+        parcel_id=7,
+        true_crop="Corn",
+        injected_confidence=0.91,
+        injected_class_probabilities={"Corn": 0.91, "Sunflower": 0.09},
+        aoi_geometry=_POLY,
+        year=2019,
+        user_query="que cultivo hay en esta parcela?",
+        expects_needs_gee=False,
+    )
+    # Turn 1: routes to classify_new_parcel. Turn 2: faithfully names the crop.
+    backend = SequencedTextBackend(
+        answers=[
+            '{"tool": "classify_new_parcel", "args": {"year": 2019}}',
+            "El cultivo de la parcela es Corn.",
+        ]
+    )
+    out = await eval_grounded_crop(
+        GEMMA,
+        [case],
+        backend=backend,
+        make_ctx=make_ctx,
+        monkeypatch_target=monkeypatch,
+        seed=0,
+    )
+    assert out["routing_accuracy"] == 1.0
+    assert out["crop_match_accuracy"] == 1.0
+    assert out["faithfulness_crop"] == 1.0
+
+
+async def test_grounded_crop_fallback_wrong_tool_fails_routing(
+    monkeypatch: pytest.MonkeyPatch, make_ctx
+) -> None:
+    """A non-native variant that picks the wrong tool fails routing (no crop run)."""
+    case = CropCase(
+        id="crop-fb-wrong",
+        parcel_id=8,
+        true_crop="Corn",
+        injected_confidence=0.91,
+        injected_class_probabilities={"Corn": 0.91, "Sunflower": 0.09},
+        aoi_geometry=_POLY,
+        year=2019,
+        user_query="que cultivo hay aqui?",
+        expects_needs_gee=False,
+    )
+    backend = SequencedTextBackend(answers=['{"tool": "list_parcels", "args": {}}'])
+    out = await eval_grounded_crop(
+        GEMMA,
         [case],
         backend=backend,
         make_ctx=make_ctx,
@@ -511,13 +599,9 @@ async def test_rag_ab_no_judge_is_nan() -> None:
 # ---------------------------------------------------------------------------
 # Aggregator
 # ---------------------------------------------------------------------------
-def test_run_system_eval_aggregates_all_three(
-    monkeypatch: pytest.MonkeyPatch, make_ctx
-) -> None:
+def test_run_system_eval_aggregates_all_three(monkeypatch: pytest.MonkeyPatch, make_ctx) -> None:
     """``run_system_eval`` wires the three evals and aggregates mean+-std."""
-    tc_backend = ScriptedBackend(
-        turns=[[_Chunk(function_call=_FC(name="list_parcels", args={}))]]
-    )
+    tc_backend = ScriptedBackend(turns=[[_Chunk(function_call=_FC(name="list_parcels", args={}))]])
     crop_backend = _classify_backend("Corn")
     rag_backend = StaticTextBackend(text="r")
 
