@@ -354,9 +354,15 @@ _vm_scratch/
 *.orig
 .env.bak
 
-# US-049 eval datasets (AgroMind images/QA, GeoAnalystBench) — no al Git, via DVC/descarga
-data/agromind/
-data/geoanalystbench/
+# US-049 eval datasets (AgroMind images/QA, GeoAnalystBench) — datos via DVC, no a Git.
+# Se ignoran los datos pero se permiten los punteros .dvc y los .gitignore que DVC
+# autogenera, para que la version quede trazable (data_version) y reproducible.
+data/agromind/*
+!data/agromind/.gitignore
+!data/agromind/*.dvc
+data/geoanalystbench/*
+!data/geoanalystbench/.gitignore
+!data/geoanalystbench/*.dvc
 
 # ── US-049 agent_bench: artefactos pesados/temporales (codigo+docs si van a git) ──
 .deepeval/
