@@ -7,17 +7,100 @@
     "home": "Home",
     "chat": "Chat",
     "map": "Mappa",
-    "settings": "Impostazioni"
+    "settings": "Impostazioni",
+    "tools": "Strumenti",
+    "language": "Lingua",
+    "toggle_tools": "Apri o chiudi gli strumenti",
+    "toggle_theme": "Cambia tema chiaro/scuro",
+    "collapse": "Comprimi la barra laterale"
+  },
+  "basemap": {
+    "label": "Mappa di base",
+    "satellite": "Satellite",
+    "streets": "Mappa",
+    "topo": "Topografica"
+  },
+  "tools": {
+    "title": "Strumenti",
+    "draw": "Seleziona area",
+    "demo": "Area demo (Toscana)",
+    "clear": "Cancella selezione",
+    "draw_hint": "Trascina sulla mappa per disegnare un'area",
+    "cancel": "Annulla"
+  },
+  "layers": {
+    "title": "Livelli",
+    "parcels": "Particelle"
+  },
+  "aoi": {
+    "title": "Aree di interesse",
+    "empty": "Nessuna area ancora. Disegnane una sulla mappa.",
+    "refresh": "Aggiorna le aree",
+    "drawn_label": "Area disegnata"
+  },
+  "area": {
+    "active": "Area: {area}",
+    "none": "Nessuna area selezionata"
+  },
+  "ws": {
+    "live": "In diretta",
+    "idle": "Inattivo",
+    "connecting": "Connessione...",
+    "error": "Errore di connessione"
+  },
+  "status": {
+    "label": "Barra di stato",
+    "parcels": "particelle"
   },
   "chat": {
     "placeholder": "Chiedi qualcosa sulle tue colture...",
     "send": "Invia",
     "thinking": "Sto ragionando...",
-    "switch_llm": "Cambia LLM"
+    "switch_llm": "Cambia LLM",
+    "panel_label": "Pannello di conversazione",
+    "assistant_title": "Assistente",
+    "empty": "Inizia la conversazione facendo una domanda sulle tue colture.",
+    "empty_title": "Come posso aiutarti?",
+    "you": "Tu",
+    "assistant": "Assistente",
+    "plan": "Piano",
+    "observation": "Cosa ha visto l'agente",
+    "tools": "Strumenti",
+    "tool_running": "in corso",
+    "tool_ok": "completato",
+    "tool_failed": "fallito",
+    "citations": "Citazioni",
+    "parcel": "Particella",
+    "input_label": "Messaggio per il copilota",
+    "findings": "Risultati",
+    "view_on_map": "Vedi sulla mappa",
+    "suggestions": "Suggerimenti",
+    "suggest_1": "Che colture ci sono in quest'area?",
+    "suggest_2": "Mostrami l'NDVI delle particelle",
+    "suggest_3": "Riassumi lo stato delle colture",
+    "see_example": "Vedi esempio",
+    "preview_badge": "Anteprima di esempio (dati dimostrativi)",
+    "preview_answer": "Esempio: in questa area sono state rilevate 3 particelle. Predominano vigneto e oliveto, con un'ottima vigoria vegetativa (NDVI medio 0,59).",
+    "close": "Chiudi chat",
+    "toggle": "Apri o chiudi la chat",
+    "expand": "Espandi o riduci la chat"
+  },
+  "map": {
+    "label": "Mappa delle particelle",
+    "empty": "Nessuna particella ancora. Seleziona un'area o fai una domanda.",
+    "crop": "Coltura",
+    "crop_unknown": "Coltura sconosciuta",
+    "confidence": "Confidenza",
+    "ndvi": "NDVI",
+    "area": "Area",
+    "source": "Fonte",
+    "legend": "Legenda colture",
+    "coords": "Coordinate"
   },
   "llm": {
-    "gemini": "Gemini 3.1 Pro (cloud)",
-    "qwen": "Qwen3.5-35B-A3B (on-prem)"
+    "gemini": "Gemini 2.5 Pro (cloud)",
+    "qwen": "Qwen3.5-35B-A3B (on-prem)",
+    "server_fixed": "Impostato dalla configurazione del server"
   },
   "errors": {
     "generic": "Si è verificato un errore. Riprova.",

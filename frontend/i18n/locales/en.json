@@ -7,17 +7,100 @@
     "home": "Home",
     "chat": "Chat",
     "map": "Map",
-    "settings": "Settings"
+    "settings": "Settings",
+    "tools": "Tools",
+    "language": "Language",
+    "toggle_tools": "Open or close tools",
+    "toggle_theme": "Toggle light/dark theme",
+    "collapse": "Collapse sidebar"
+  },
+  "basemap": {
+    "label": "Base map",
+    "satellite": "Satellite",
+    "streets": "Map",
+    "topo": "Topographic"
+  },
+  "tools": {
+    "title": "Tools",
+    "draw": "Select area",
+    "demo": "Demo area (Tuscany)",
+    "clear": "Clear selection",
+    "draw_hint": "Drag on the map to draw an area",
+    "cancel": "Cancel"
+  },
+  "layers": {
+    "title": "Layers",
+    "parcels": "Parcels"
+  },
+  "aoi": {
+    "title": "Areas of interest",
+    "empty": "No areas yet. Draw one on the map.",
+    "refresh": "Refresh areas",
+    "drawn_label": "Drawn area"
+  },
+  "area": {
+    "active": "Area: {area}",
+    "none": "No area selected"
+  },
+  "ws": {
+    "live": "Live",
+    "idle": "Idle",
+    "connecting": "Connecting...",
+    "error": "Connection error"
+  },
+  "status": {
+    "label": "Status bar",
+    "parcels": "parcels"
   },
   "chat": {
     "placeholder": "Ask anything about your crops...",
     "send": "Send",
     "thinking": "Thinking...",
-    "switch_llm": "Switch LLM"
+    "switch_llm": "Switch LLM",
+    "panel_label": "Conversation panel",
+    "assistant_title": "Assistant",
+    "empty": "Start the conversation by asking something about your crops.",
+    "empty_title": "How can I help you?",
+    "you": "You",
+    "assistant": "Assistant",
+    "plan": "Plan",
+    "observation": "What the agent saw",
+    "tools": "Tools",
+    "tool_running": "running",
+    "tool_ok": "done",
+    "tool_failed": "failed",
+    "citations": "Citations",
+    "parcel": "Parcel",
+    "input_label": "Message to the copilot",
+    "findings": "Findings",
+    "view_on_map": "View on map",
+    "suggestions": "Suggestions",
+    "suggest_1": "What crops are in this area?",
+    "suggest_2": "Show me the NDVI of the parcels",
+    "suggest_3": "Summarize the crop status",
+    "see_example": "See example",
+    "preview_badge": "Sample preview (demo data)",
+    "preview_answer": "Example: 3 parcels were detected in this area. Vineyard and olive grove predominate, with strong vegetation vigour (mean NDVI 0.59).",
+    "close": "Close chat",
+    "toggle": "Open or close chat",
+    "expand": "Expand or collapse chat"
+  },
+  "map": {
+    "label": "Parcels map",
+    "empty": "No parcels yet. Select an area or ask a question.",
+    "crop": "Crop",
+    "crop_unknown": "Unknown crop",
+    "confidence": "Confidence",
+    "ndvi": "NDVI",
+    "area": "Area",
+    "source": "Source",
+    "legend": "Crop legend",
+    "coords": "Coordinates"
   },
   "llm": {
-    "gemini": "Gemini 3.1 Pro (cloud)",
-    "qwen": "Qwen3.5-35B-A3B (on-prem)"
+    "gemini": "Gemini 2.5 Pro (cloud)",
+    "qwen": "Qwen3.5-35B-A3B (on-prem)",
+    "server_fixed": "Set by server configuration"
   },
   "errors": {
     "generic": "Something went wrong. Please try again.",
