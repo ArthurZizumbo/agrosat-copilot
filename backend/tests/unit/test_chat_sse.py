@@ -35,6 +35,8 @@ import json
 from collections.abc import AsyncIterator
 from uuid import UUID
 
+import pytest
+
 import backend.app.services.chat_service as chat_mod
 from backend.app.services.chat_service import ChatMessage, ChatRequest, ChatService
 from ml.agent.events import (
@@ -64,6 +66,8 @@ class _SettingsStub:
     """Minimal settings stub so ``ChatService`` never reads the real .env.local."""
 
     rag_enabled = False
+    llm_variant_default = "gemini"
+    gemini_model = "gemini-3.5-flash"
 
 
 class _FakePerceiver:
@@ -121,6 +125,26 @@ class _StubAgent:
             yield event
 
 
+class _RaisingAgent:
+    """Reasoner double whose ``stream_response`` raises mid-stream.
+
+    Models a backend that surfaces a failure as an exception (rather than the
+    documented terminal :class:`ErrorEvent`): used to pin the service boundary
+    -- the perceiver observation is emitted first and only then does the reasoner
+    error surface.
+    """
+
+    def __init__(self, events: list[AgentEvent] | None = None) -> None:
+        self._events = events or []
+
+    async def stream_response(
+        self, messages: list[dict], session_id: UUID, ctx
+    ) -> AsyncIterator[AgentEvent]:
+        for event in self._events:
+            yield event
+        raise RuntimeError("backend connection reset")
+
+
 def _service(monkeypatch, perceiver_cls, agent_events=None) -> ChatService:
     """Build a ``ChatService`` with the pool, perceiver and reasoner mocked out.
 
@@ -161,6 +185,93 @@ async def _collect(service: ChatService, request: ChatRequest) -> list[tuple[str
     """Drain the SSE async generator into parsed ``(event, data)`` tuples."""
     frames = [frame async for frame in service.stream(request.messages, _SESSION, request=request)]
     return _parse_frames(frames)
+
+
+# ---------------------------------------------------------------------------
+# AC-2: default reasoner model is gemini-3.5-flash (deviation from the original
+# AC's gemini-2.5-pro, decided by Arthur for cost/latency).
+# ---------------------------------------------------------------------------
+def test_default_reasoner_model_is_gemini_flash() -> None:
+    """The ``gemini`` variant resolves to ``gemini-3.5-flash`` from settings."""
+    service = ChatService(settings=_SettingsStub())  # type: ignore[arg-type]
+    assert service._reasoner_model() == "gemini-3.5-flash"
+
+
+def test_reasoner_model_reads_gemini_model_setting() -> None:
+    """``_reasoner_model`` reads ``settings.gemini_model`` (single source, D2)."""
+
+    class _PinnedSettings(_SettingsStub):
+        gemini_model = "gemini-3.5-flash-002"
+
+    service = ChatService(settings=_PinnedSettings())  # type: ignore[arg-type]
+    assert service._reasoner_model() == "gemini-3.5-flash-002"
+
+
+async def test_default_model_passed_to_agent_factory(monkeypatch) -> None:
+    """The resolved ``gemini-3.5-flash`` reaches ``create_agent`` via the factory.
+
+    ``test_default_reasoner_model_is_gemini_flash`` pins the *resolution*; this
+    asserts the *flow*: the model the service hands to its ``agent_factory`` (the
+    real boundary is :func:`~ml.agent.agent.create_agent`) during an actual stream
+    is exactly ``gemini-3.5-flash``, so the network-facing reasoner is built with
+    the configured cloud model and not a stale hardcode.
+    """
+    captured: dict[str, object] = {}
+
+    def _capturing_factory(model: str, *, settings) -> _StubAgent:
+        captured["model"] = model
+        captured["settings"] = settings
+        return _StubAgent()
+
+    async def _fake_get_pool():
+        return object()
+
+    monkeypatch.setattr(chat_mod, "get_pool", _fake_get_pool)
+    monkeypatch.setattr(chat_mod, "PerceiverLayer", _FakePerceiver)
+    service = ChatService(
+        settings=_SettingsStub(),  # type: ignore[arg-type]
+        agent_factory=_capturing_factory,
+    )
+    request = ChatRequest(messages=[ChatMessage(role="user", content="hola")], session_id=_SESSION)
+
+    await _collect(service, request)
+
+    assert captured["model"] == "gemini-3.5-flash"
+    # The typed settings are forwarded by keyword (never mistaken for ``tools``).
+    assert captured["settings"] is service._settings
+
+
+async def test_qwen_variant_passes_vllm_model_to_factory(monkeypatch) -> None:
+    """The ``qwen35`` variant routes the on-prem vLLM model name to the factory.
+
+    Guards the dual-backend contract: switching ``llm_variant_default`` to
+    ``qwen35`` must hand ``create_agent`` the ``qwen35`` model (which the agent
+    layer routes to the vLLM backend), never the Gemini default.
+    """
+
+    class _QwenSettings(_SettingsStub):
+        llm_variant_default = "qwen35"
+
+    captured: dict[str, object] = {}
+
+    def _capturing_factory(model: str, *, settings) -> _StubAgent:
+        captured["model"] = model
+        return _StubAgent()
+
+    async def _fake_get_pool():
+        return object()
+
+    monkeypatch.setattr(chat_mod, "get_pool", _fake_get_pool)
+    monkeypatch.setattr(chat_mod, "PerceiverLayer", _FakePerceiver)
+    service = ChatService(
+        settings=_QwenSettings(),  # type: ignore[arg-type]
+        agent_factory=_capturing_factory,
+    )
+    request = ChatRequest(messages=[ChatMessage(role="user", content="hola")], session_id=_SESSION)
+
+    await _collect(service, request)
+
+    assert captured["model"] == "qwen35"
 
 
 # ---------------------------------------------------------------------------
@@ -331,3 +442,38 @@ async def test_agent_error_event_forwarded_as_terminal_frame(monkeypatch) -> Non
 
     assert names == ["perceiver_observation", "error"]
     assert dict(events)["error"] == {"message": "backend 503"}
+
+
+async def test_reasoner_raise_surfaces_after_observation(monkeypatch) -> None:
+    """If the reasoner *raises* (not emits ``ErrorEvent``) the error propagates.
+
+    The production agent (:meth:`~ml.agent.agent.Agent.stream_response`) never
+    raises -- it converts any backend or tool failure into a terminal
+    ``ErrorEvent`` (covered by
+    :func:`test_agent_error_event_forwarded_as_terminal_frame`). This test pins
+    the service contract for a misbehaving reasoner that *does* raise: the
+    perceiver observation is still emitted first, then the exception surfaces out
+    of the generator (the service does not silently swallow reasoner failures).
+    """
+
+    def _raising_factory(model: str, *, settings) -> _RaisingAgent:
+        return _RaisingAgent()
+
+    async def _fake_get_pool():
+        return object()
+
+    monkeypatch.setattr(chat_mod, "get_pool", _fake_get_pool)
+    monkeypatch.setattr(chat_mod, "PerceiverLayer", _FakePerceiver)
+    service = ChatService(
+        settings=_SettingsStub(),  # type: ignore[arg-type]
+        agent_factory=_raising_factory,
+    )
+    request = ChatRequest(session_id=_SESSION, parcel_id=11)
+
+    emitted: list[tuple[str, dict]] = []
+    with pytest.raises(RuntimeError, match="backend connection reset"):
+        async for frame in service.stream(request.messages, _SESSION, request=request):
+            emitted.extend(_parse_frames([frame]))
+
+    # The perceiver frame was flushed to the client before the reasoner blew up.
+    assert [name for name, _ in emitted] == ["perceiver_observation"]

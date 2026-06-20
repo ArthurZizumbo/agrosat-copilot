@@ -18,9 +18,16 @@ import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+# slowapi ships an async-friendly handler that builds the ``429`` response (with
+# the ``Retry-After`` / ``X-RateLimit-*`` headers when enabled). Imported under a
+# private alias so it is not re-exported from this module.
+from slowapi import _rate_limit_exceeded_handler as _slowapi_rate_limit_handler
+from slowapi.errors import RateLimitExceeded
+
 from backend.app.api import chat, health
 from backend.app.core.config import get_settings
 from backend.app.core.logging import configure_logging
+from backend.app.core.rate_limit import limiter
 
 
 @asynccontextmanager
@@ -43,6 +50,16 @@ def create_app() -> FastAPI:
         description="SaaS conversacional agrícola con Foundation Models satelitales.",
         lifespan=lifespan,
     )
+    # Per-session rate limiting (US-052). slowapi reads the limiter from
+    # ``app.state.limiter``; the ``@limiter.limit`` decorator on ``/chat`` does
+    # the enforcement and the registered handler renders a JSON ``429`` (no
+    # global ``SlowAPIMiddleware`` -- only ``/chat`` is limited, keyed per
+    # session). The handler is evaluated before the SSE stream opens.
+    app.state.limiter = limiter
+    # slowapi types its handler against the concrete ``RateLimitExceeded`` while
+    # Starlette's signature expects the base ``Exception``; the registration is
+    # the documented slowapi pattern, so the variance is narrowed here.
+    app.add_exception_handler(RateLimitExceeded, _slowapi_rate_limit_handler)  # type: ignore[arg-type]
     # CORS with explicit allow_headers (SEC hardening): combining allow_credentials=True
     # with allow_headers=["*"] exposes the API to abuse. Whitelist the minimum headers
     # that the Nuxt frontend + SSE client actually send.

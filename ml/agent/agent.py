@@ -69,9 +69,11 @@ logger = structlog.get_logger(__name__)
 
 __all__ = ["MAX_TURNS", "Agent", "create_agent"]
 
-#: Default reasoner model. Gemini 2.5 Pro on Vertex AI / the GenAI API; swapped
-#: per request via ``/llm/switch`` without touching the factory (AC-5).
-DEFAULT_MODEL: str = "gemini-2.5-pro"
+#: Default reasoner model. Gemini 3.5 Flash on Vertex AI / the GenAI API (US-052
+#: conscious deviation from ``gemini-2.5-pro`` for cost/latency); swapped per
+#: request via ``/llm/switch`` without touching the factory (AC-5). The chat
+#: service always passes the model explicitly, so this is the bare-call default.
+DEFAULT_MODEL: str = "gemini-3.5-flash"
 
 #: Hard cap on backend round-trips per ``stream_response`` call. Guards against a
 #: model that keeps requesting tools forever. Each turn is one ``generate`` call;

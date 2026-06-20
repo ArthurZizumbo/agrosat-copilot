@@ -42,7 +42,7 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
@@ -50,18 +50,20 @@ import structlog
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.app.core.config import Settings, get_settings
+from backend.app.core.db import get_pool
 from ml.agent.agent import create_agent
 from ml.agent.context import ToolContext
-from ml.agent.db import get_pool
 from ml.agent.perceiver import PerceiverLayer, PerceiverObservation
 from ml.agent.schemas import GeoJSONGeometry
 
 if TYPE_CHECKING:
+    import asyncpg
+
     from ml.agent.agent import Agent
 
 logger = structlog.get_logger(__name__)
 
-__all__ = ["AgentFactory", "ChatMessage", "ChatRequest", "ChatService"]
+__all__ = ["AgentFactory", "ChatMessage", "ChatRequest", "ChatService", "PoolFactory"]
 
 #: Default campaign year for an AOI observation (matches the perceiver default).
 _DEFAULT_YEAR: int = 2019
@@ -69,15 +71,20 @@ _DEFAULT_YEAR: int = 2019
 #: Maps the persisted ``llm_variant_default`` value to the concrete reasoner
 #: model name understood by :func:`~ml.agent.agent.create_agent` (which routes
 #: ``gemini-*`` to the Gemini backend and ``qwen*`` to the vLLM backend). Kept
-#: here so the HTTP layer never hardcodes a model string.
+#: here so the HTTP layer never hardcodes a model string. The ``gemini`` entry
+#: is only a fallback: :meth:`ChatService._reasoner_model` resolves that variant
+#: from ``settings.gemini_model`` (the single source of truth, D2), so the
+#: persisted config drives the Gemini model name without a second hardcode.
 _VARIANT_TO_MODEL: dict[str, str] = {
-    "gemini": "gemini-2.5-pro",
+    "gemini": "gemini-3.5-flash",
     "qwen35": "qwen35",
 }
 
 #: Fallback model when ``llm_variant_default`` carries an unmapped value (the
 #: setting is a CHECK-constrained ``Literal``, so this is defensive only).
-_DEFAULT_MODEL: str = "gemini-2.5-pro"
+#: US-052: ``gemini-3.5-flash`` is a conscious deviation from the original AC
+#: (``gemini-2.5-pro``) decided by Arthur for cost/latency of the copilot.
+_DEFAULT_MODEL: str = "gemini-3.5-flash"
 
 #: Signature of the injectable reasoner factory: it receives the resolved model
 #: name and the typed ``settings`` keyword and returns a ready-to-stream
@@ -86,6 +93,15 @@ _DEFAULT_MODEL: str = "gemini-2.5-pro"
 #: is never mistaken for the positional ``tools`` argument); tests pass a stub so
 #: the stream runs without the real ``google-genai`` client or any network call.
 AgentFactory = Callable[..., "Agent"]
+
+#: Signature of the injectable pool factory: an awaitable returning the shared
+#: asyncpg pool the :class:`ToolContext` runs the tools against. The default is
+#: :func:`backend.app.core.db.get_pool` (the ``app_database_url`` pool, role
+#: ``agrosat_app`` WITHOUT ``BYPASSRLS``) so the per-session ``SET LOCAL
+#: app.current_session`` emitted by the tools actually enforces the US-051 RLS
+#: policies (B2). Using the ``ml.agent.db`` superuser pool would silently bypass
+#: RLS. Tests inject a fake so the stream runs without a real database.
+PoolFactory = Callable[[], "Awaitable[asyncpg.Pool]"]
 
 
 def _default_agent_factory(model: str, *, settings: Settings) -> Agent:
@@ -175,8 +191,9 @@ class ChatService:
         settings: Settings | None = None,
         *,
         agent_factory: AgentFactory | None = None,
+        pool_factory: PoolFactory | None = None,
     ) -> None:
-        """Initialise the service with typed settings and an injectable reasoner.
+        """Initialise the service with typed settings and injectable boundaries.
 
         Args:
             settings: Application settings; defaults to the cached singleton via
@@ -187,19 +204,34 @@ class ChatService:
                 adapter over :func:`~ml.agent.agent.create_agent`). Tests pass a
                 stub so the stream runs without the real ``google-genai`` client
                 or any network call.
+            pool_factory: Awaitable returning the asyncpg pool the tools run
+                against; defaults to :func:`backend.app.core.db.get_pool` (the
+                ``app_database_url`` pool, role ``agrosat_app`` NOBYPASSRLS) so
+                the US-051 RLS policies enforce on the ``/chat`` tools (B2).
+                Tests inject a fake so the stream runs without a real database.
         """
         self._settings = settings or get_settings()
         self._agent_factory: AgentFactory = agent_factory or _default_agent_factory
+        self._pool_factory: PoolFactory = pool_factory or get_pool
 
     def _reasoner_model(self) -> str:
         """Resolve the reasoner model name from the configured LLM variant.
 
+        For the ``gemini`` variant the model name is read from
+        ``settings.gemini_model`` (the single source of truth, D2), so
+        ``config.py`` alone drives the cloud reasoner (``gemini-3.5-flash`` by
+        default). Other variants fall back to :data:`_VARIANT_TO_MODEL`
+        (``qwen35`` -> the on-prem vLLM model), then to :data:`_DEFAULT_MODEL`.
+
         Returns:
             The concrete model name for :func:`~ml.agent.agent.create_agent`
-            (e.g. ``"gemini-2.5-pro"`` for the ``gemini`` variant, ``"qwen35"``
+            (e.g. ``"gemini-3.5-flash"`` for the ``gemini`` variant, ``"qwen35"``
             for the on-prem vLLM variant).
         """
         variant = getattr(self._settings, "llm_variant_default", "gemini")
+        if variant == "gemini":
+            model = getattr(self._settings, "gemini_model", None)
+            return model or _DEFAULT_MODEL
         return _VARIANT_TO_MODEL.get(variant, _DEFAULT_MODEL)
 
     async def _build_context(self, session_id: UUID) -> ToolContext:
@@ -208,11 +240,16 @@ class ChatService:
         Args:
             session_id: Tenant session driving every downstream DB read.
 
+        The pool comes from :attr:`_pool_factory` (by default the
+        ``app_database_url`` pool of :func:`backend.app.core.db.get_pool`, role
+        ``agrosat_app`` NOBYPASSRLS), so the per-session ``SET LOCAL`` the tools
+        emit isolates them under the US-051 RLS policies (B2).
+
         Returns:
             A :class:`ToolContext` with the shared asyncpg pool, settings and
             session id (no deferred executor in this MVP).
         """
-        pool = await get_pool()
+        pool = await self._pool_factory()
         return ToolContext(
             pool=pool,
             settings=self._settings,

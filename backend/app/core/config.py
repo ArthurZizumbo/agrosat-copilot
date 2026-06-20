@@ -86,7 +86,12 @@ class Settings(BaseSettings):
     # LLM backends
     llm_variant_default: Literal["gemini", "qwen35"] = "gemini"
     vertex_ai_location: str = "us-central1"
-    gemini_model: str = "gemini-3.1-pro"
+    # Reasoner model for the ``gemini`` LLM variant (single source of truth read
+    # by ``ChatService._reasoner_model``). US-052: ``gemini-3.5-flash`` is a
+    # CONSCIOUS DEVIATION from the original AC (``gemini-2.5-pro``) decided by
+    # Arthur for cost/latency of the copilot; the legacy ``gemini-3.1-pro``
+    # hardcode (never read by the service) is dropped.
+    gemini_model: str = "gemini-3.5-flash"
     vllm_qwen35_url: str = ""
     vllm_api_key: str = ""
     # Ollama OpenAI-compatible endpoint for the local Gemma variant (US-049).

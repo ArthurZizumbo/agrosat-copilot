@@ -48,8 +48,10 @@ __all__ = [
     "make_backend",
 ]
 
-#: Default Gemini reasoner model when the caller does not pin one.
-_DEFAULT_GEMINI_MODEL: str = "gemini-2.5-pro"
+#: Default Gemini reasoner model when the caller does not pin one (US-052:
+#: ``gemini-3.5-flash``, conscious deviation from ``gemini-2.5-pro`` for
+#: cost/latency).
+_DEFAULT_GEMINI_MODEL: str = "gemini-3.5-flash"
 
 #: Default Qwen model id served by vLLM (OpenAI-compatible). The on-prem serving
 #: of US-048 publishes the model under this name; overridable via settings.
