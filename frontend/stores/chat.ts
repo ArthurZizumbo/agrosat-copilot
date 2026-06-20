@@ -136,6 +136,10 @@ interface ChatState {
   errorMessage: string | null;
   /** Monotonic counter to synthesise tool_call ids (backend has none). */
   toolSeq: number;
+  /** Parcel the user clicked on the map; sent as `ChatRequest.parcel_id` on the
+   *  next POST /chat so the reasoner scopes the answer to it (US-058). REAL id
+   *  from the rendered feature (backend or demo); null = no parcel selected. */
+  activeParcelId: number | null;
 }
 
 export const useChatStore = defineStore("chat", {
@@ -149,6 +153,7 @@ export const useChatStore = defineStore("chat", {
     activeAssistantId: null,
     errorMessage: null,
     toolSeq: 0,
+    activeParcelId: null,
   }),
 
   getters: {
@@ -172,6 +177,12 @@ export const useChatStore = defineStore("chat", {
     /** Display-only; transport does not send this (see useChat.switchLlm). */
     setLlmVariant(variant: LlmVariant) {
       this.llmVariant = variant;
+    },
+
+    /** Set the active parcel (clicked on the map) that the next POST /chat
+     *  sends as `ChatRequest.parcel_id`. Pass null to clear it. */
+    setActiveParcelId(parcelId: number | null) {
+      this.activeParcelId = parcelId;
     },
 
     /** Append the user's turn and prepare the per-turn state. */
@@ -305,6 +316,7 @@ export const useChatStore = defineStore("chat", {
       this.status = "idle";
       this.activeAssistantId = null;
       this.errorMessage = null;
+      this.activeParcelId = null;
     },
 
     /**

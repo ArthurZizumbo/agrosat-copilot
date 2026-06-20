@@ -1,6 +1,6 @@
 // Nuxt 4 SSR config — AgroSatCopilot
 // Regla §13 CLAUDE.md: i18n it/es/en obligatorio.
-// Regla §3.5: MapLibre GL + deck.gl (OSS), nada de Mapbox.
+// Regla §3.5: MapLibre GL (OSS, raster keyless), nada de Mapbox.
 
 export default defineNuxtConfig({
   compatibilityDate: "2026-05-01",

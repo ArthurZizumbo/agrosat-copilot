@@ -2,7 +2,7 @@
 
 > Sub-guía del orquestador. Las reglas NON-NEGOTIABLE viven en [`../CLAUDE.md`](../CLAUDE.md) — aquí no se repiten, solo lo operativo de `frontend/`.
 
-Web app **Nuxt 4 SSR** trilingüe (it/es/en). Mapa MapLibre + deck.gl, chat SSE y switch A/B LLM son el destino del producto, **aún no implementados**.
+Web app **Nuxt 4 SSR** trilingüe (it/es/en). Mapa MapLibre, chat SSE y switch A/B LLM son el destino del producto, **aún no implementados**.
 
 ## Estado
 
@@ -38,7 +38,7 @@ make bootstrap      # poetry install + (cd frontend && pnpm install)
 | i18n | `@nuxtjs/i18n` (it default, prefix_except_default) |
 | Estado | `@pinia/nuxt` + `pinia` |
 | CSS | Tailwind **v4** — tema vía `@theme` en `assets/css/main.css`, NO config v3 |
-| Mapa | `maplibre-gl` 5.24 + `deck.gl` 9.3 — instalados, **sin usar todavía** |
+| Mapa | `maplibre-gl` 5.24 — en uso (MapCanvas + `useMap`). `deck.gl` **removido** (US-058, 0 usos reales; reañadir con `pnpm add` y acuerdo de equipo si una US futura necesita densidad alta) |
 | Chat | `@ai-sdk/vue` — instalado, sin usar |
 | Test | `vitest` + `@playwright/test` — instalados, sin config |
 

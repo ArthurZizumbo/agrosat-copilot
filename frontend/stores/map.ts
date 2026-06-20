@@ -8,6 +8,22 @@
 import { defineStore } from "pinia";
 import type { Aoi, BasemapId, LngLat } from "~/types/map";
 
+/** Parcel the user clicked on the map (US-058 link parcel->chat).
+ *
+ * Map-side state for highlight + "selected parcel" chip. It is complementary to
+ * `chatStore.activeParcelId` (which is what travels to the backend on the next
+ * POST /chat), not a duplicate. `parcel_id` is REAL (from the rendered feature,
+ * a backend or demo id); geometry is NOT stored here (the dense parcel geometry
+ * is FUTURE — tool_result carries no boundaries, see types/agent.ts).
+ */
+export interface SelectedParcel {
+  parcel_id: number;
+  crop_class?: string | null;
+}
+
+/** Visible map extent as a flat bbox `[minLng, minLat, maxLng, maxLat]`. */
+export type VisibleBbox = [number, number, number, number];
+
 interface MapState {
   /** AOI currently selected; null = no zone chosen. */
   activeAoi: Aoi | null;
@@ -25,6 +41,11 @@ interface MapState {
   parcelCount: number;
   /** True while a preview (demo) answer is shown instead of live data. */
   previewActive: boolean;
+  /** Parcel currently selected by clicking the map; null = none. */
+  selectedParcel: SelectedParcel | null;
+  /** Latest visible map extent `[minLng, minLat, maxLng, maxLat]`; null until
+   *  the map first reports a `moveend`. Kept for future spatial scoping. */
+  visibleBbox: VisibleBbox | null;
 }
 
 export const useMapStore = defineStore("map", {
@@ -37,12 +58,15 @@ export const useMapStore = defineStore("map", {
     cursorCoords: null,
     parcelCount: 0,
     previewActive: false,
+    selectedParcel: null,
+    visibleBbox: null,
   }),
 
   getters: {
     hasActiveAoi: (state): boolean => state.activeAoi !== null,
     activeAoiLabel: (state): string | null =>
       state.activeAoi?.label ?? null,
+    hasSelectedParcel: (state): boolean => state.selectedParcel !== null,
   },
 
   actions: {
@@ -78,6 +102,17 @@ export const useMapStore = defineStore("map", {
     },
     setPreviewActive(on: boolean) {
       this.previewActive = on;
+    },
+    /** Mark a parcel as selected (map highlight + chip). Complement to
+     *  chatStore.setActiveParcelId, which the click handler also calls. */
+    setSelectedParcel(parcel: SelectedParcel) {
+      this.selectedParcel = parcel;
+    },
+    clearSelectedParcel() {
+      this.selectedParcel = null;
+    },
+    setVisibleBbox(bbox: VisibleBbox) {
+      this.visibleBbox = bbox;
     },
   },
 });

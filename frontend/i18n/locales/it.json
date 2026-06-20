@@ -98,7 +98,10 @@
     "area": "Area",
     "source": "Fonte",
     "legend": "Legenda colture",
-    "coords": "Coordinate"
+    "coords": "Coordinate",
+    "selected_parcel": "Particella selezionata",
+    "parcel_in_chat": "Chiedi alla chat di questa particella",
+    "clear_selection": "Rimuovi selezione"
   },
   "llm": {
     "gemini": "Gemini 2.5 Pro (cloud)",

@@ -163,10 +163,16 @@ export function useChat() {
     // backend adds `locale`, it is ignored (or 422s). Sent only on the client.
     const activeLocale = locale.value as "it" | "es" | "en";
 
+    // Active parcel clicked on the map (US-058 link parcel->chat). REAL id from
+    // the rendered feature; null when no parcel is selected. The contract
+    // `ChatRequest.parcel_id` already declares it (types/agent.ts).
+    const parcelId = store.activeParcelId ?? null;
+
     const body: ChatRequestWithLocale = {
       messages,
       session_id: sessionId,
       aoi,
+      parcel_id: parcelId,
       year: 2019,
       locale: activeLocale,
     };
