@@ -4,15 +4,23 @@ Documenta TODOS los datasets y modelos usados durante el proyecto. Sin esto, el 
 
 ## Datasets
 
-### AlphaEarth Foundations v2.1 — Google DeepMind
+### AlphaEarth Satellite Embedding V1/ANNUAL (data v1.1) — Google DeepMind
 - Source: Google Earth Engine Data Catalog `GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL`
-- License: [GEE Terms of Service](https://earthengine.google.com/terms/)
+  (embeddings anuales de 64 dimensiones, cobertura global incl. Mexico).
+- License: **CC-BY-4.0** (licencia del dataset Satellite Embedding en el GEE
+  Data Catalog). El acceso a Earth Engine se rige ademas por los
+  [GEE Terms of Service](https://earthengine.google.com/terms/).
 - Use: research + commercial with attribution
 - Citation: Brown et al. (2024). AlphaEarth Foundations. Google DeepMind.
-- Attribution required: "Google AlphaEarth Foundations" en figuras y reportes
-  derivados. Cada query a `GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL` debe cumplir
-  con los limites de cuota EE para uso no-comercial; uso comercial requiere
-  contrato con Google Earth Engine for Business.
+- Attribution required: "Google DeepMind AlphaEarth Foundations (Satellite
+  Embedding V1 Annual, CC-BY-4.0)" en figuras y reportes derivados. Cada query
+  a `GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL` debe cumplir con los limites de cuota
+  EE para uso no-comercial; uso comercial requiere contrato con Google Earth
+  Engine for Business.
+- Nota de correccion: esta entrada se titulaba "AlphaEarth Foundations v2.1",
+  version que no existe. La realidad del catalogo es el asset
+  `SATELLITE_EMBEDDING/V1/ANNUAL` con data v1.1 y licencia CC-BY-4.0 (correccion
+  de realidad del plan v8, US-066).
 - Use scope US-011: muestreo on-the-fly de 64 dims via `sample()` y
   `reduceRegions()` sobre las 3 ROIs italianas (Pianura Padana, Toscana,
   Apulia) y sobre los 2,433 patches PASTIS-R en Francia. Cache parquet local
@@ -123,6 +131,70 @@ Documenta TODOS los datasets y modelos usados durante el proyecto. Sin esto, el 
   `52802ffe4cee88ac99a9ed42c658d8d7.dir`) como dataset de control
   cross-region complementario a PASTIS-R.
 
+### Sen4AgriNet — Sykas et al. (NOA / paren8esis)
+- Source: HuggingFace `paren8esis/S4A`. Subset Catalonia (tile Sentinel-2
+  31TCG) versionado en DVC/GCS (`data/sen4agrinet.dvc`, md5
+  `e292ab8cfbfb05ecc9ab5310e01dd79e.dir`, 88 files, ~943 MB, 40 patches).
+- License: **CC-BY-SA-4.0** (share-alike).
+- Citation: Sykas, D., Sdraka, M., Zografakis, D., Papoutsis, I. (2022).
+  _A Sentinel-2 Multi-Year, Multi-Country Benchmark Dataset for Crop
+  Classification and Segmentation with Deep Learning (Sen4AgriNet)_. IEEE
+  Journal of Selected Topics in Applied Earth Observations and Remote Sensing
+  (J-STARS). DOI [10.1109/JSTARS.2022.3198140](https://doi.org/10.1109/JSTARS.2022.3198140).
+- Contents: patches Sentinel-2 multitemporales con anotaciones de cultivo
+  armonizadas; subset utilizado limitado al tile 31TCG (Catalonia, Espana).
+- Attribution required: "Sen4AgriNet (Sykas et al. 2022, CC-BY-SA-4.0)" en
+  figuras y reportes derivados de la demo Catalonia.
+- Use scope US-075 (EPIC 12): transferencia densa Francia -> Catalonia. Zero-shot
+  mIoU 0.0000, few-shot mIoU 0.2468, Delta +0.2468 (REAL,
+  `reports/segmentation/sen4agrinet_transfer_result.json`).
+- Nota share-alike: las obras derivadas del subset (figuras, recortes, mosaicos)
+  heredan la clausula CC-BY-SA-4.0 y deben redistribuirse bajo licencia
+  compatible.
+
+### EuroCropsML — Reuter et al. (TUM)
+- Source: paquete PyPI/Conda `eurocropsml` (`pip install eurocropsml` /
+  `poetry add eurocropsml`); el paquete descarga el subset desde Zenodo. Subset
+  few-shot versionado en DVC (`data/transfer/eurocropsml.dvc`).
+- License: **CC-BY-SA-4.0** (share-alike).
+- DOI Zenodo: **10.5281/zenodo.15095445** (verbatim del plan v8). El DOI concept
+  canonico (todas las versiones) es `10.5281/zenodo.10629609`; se documentan
+  ambos y se deja que el paquete resuelva la version efectiva, que se fija en el
+  `.dvc` y en el lineage MLflow.
+- Citation: Reuter et al. (2025). _EuroCropsML: A Time Series Benchmark Dataset
+  For Few-Shot Crop Type Classification_. Nature Scientific Data 12:664 /
+  arXiv:2407.17458.
+- Contents: series temporales anuales de medianas Sentinel-2 L1C (13 bandas,
+  B10 excluida) por parcela, etiqueta `EC_hcat_c` (176 clases hoja HCAT), paises
+  Estonia / Letonia / Portugal.
+- Attribution required: "EuroCropsML (Reuter et al. 2025, CC-BY-SA-4.0)" en
+  figuras y reportes few-shot.
+- Use scope US-076 (EPIC 12): curva k-shot (LV+PT -> EE / LV -> EE) del baseline
+  AlphaEarth + XGB.
+- Referencia cruzada: comparte el linaje taxonomico HCAT con la entrada
+  **EuroCrops / HCAT3** ya documentada arriba; son **datasets distintos**
+  (EuroCrops/HCAT3 es la taxonomia + parcelas vectoriales EU; EuroCropsML es el
+  subset few-shot tabular de series temporales Sentinel-2).
+- Nota share-alike: derivados del subset heredan CC-BY-SA-4.0.
+
+### WorldCereal RDM / Harmonized Global Crops (FUTURE)
+- Estado: **FUTURE / paper** — no ingerido aun. Atribucion pre-registrada por
+  el criterio de aceptacion del plan v8 (US-066) para tener el cumplimiento
+  legal resuelto antes de cualquier ingesta.
+- WorldCereal RDM (Reference Data Module): licencia **CC-BY por coleccion**
+  (varia segun el contribuyente de cada coleccion; verificar la licencia
+  especifica por coleccion en el momento de la ingesta).
+- Harmonized Global Crops: HuggingFace `torchgeo/harmonized_global_crops`,
+  licencia **CC-BY-SA-4.0**.
+- Nota de compatibilidad share-alike (clave para HCAT v3): Sen4AgriNet,
+  EuroCropsML y Harmonized Global Crops son CC-BY-SA-4.0. Cualquier espacio de
+  etiquetas unificado HCAT v3 que combine derivados de estos en una sola obra
+  hereda la clausula share-alike: la obra unificada y todos sus derivados deben
+  redistribuirse bajo una licencia CC-BY-SA-4.0 compatible. Las colecciones
+  WorldCereal RDM CC-BY (sin SA) son compatibles aguas arriba (CC-BY es menos
+  restrictivo y absorbible por SA), pero el resultado combinado queda gobernado
+  por la clausula SA mas restrictiva.
+
 ### GSAA Italia — AGEA Open Data
 - Source: portales regionales Open Data AGEA (Agenzia per le Erogazioni in
   Agricoltura), descarga manual por region (Pianura Padana, Toscana, Puglia).
@@ -146,6 +218,23 @@ Documenta TODOS los datasets y modelos usados durante el proyecto. Sin esto, el 
 - Source: build by team, validated by Scuola Sant'Anna native reviewer
 - License (target): CC-BY-4.0
 - DOI Zenodo: TBD (publicación semana 10-11)
+
+### Atribucion requerida por region (figuras y reportes derivados)
+
+Toda figura o reporte derivado de cada region debe incluir la atribucion de su
+dataset fuente. Resumen centralizado (criterio de cumplimiento US-066):
+
+| Region | Dataset fuente | Licencia | Texto de atribucion requerido |
+|--------|----------------|----------|-------------------------------|
+| Francia | PASTIS-R (INRAE) + EuroCrops/HCAT3 + RPG 2018 | CC-BY-SA-4.0 / CC-BY-4.0 / ODbL 1.0 | "PASTIS-R (Sainte-Fare-Garnot & Landrieu 2021, CC-BY-SA-4.0)"; "EuroCrops / HCAT3 (Schneider et al. 2023, CC-BY-4.0, TUM)"; "Registre Parcellaire Graphique 2018 (IGN, ODbL 1.0)" |
+| Catalonia (Espana) | Sen4AgriNet, tile 31TCG | CC-BY-SA-4.0 | "Sen4AgriNet (Sykas et al. 2022, CC-BY-SA-4.0)" |
+| Estonia / Letonia / Portugal | EuroCropsML | CC-BY-SA-4.0 | "EuroCropsML (Reuter et al. 2025, CC-BY-SA-4.0)" |
+| Mexico (zero-shot AlphaEarth) | AlphaEarth Satellite Embedding V1/ANNUAL | CC-BY-4.0 | "Google DeepMind AlphaEarth Foundations (Satellite Embedding V1 Annual, CC-BY-4.0)" |
+| Tropical (FUTURE) | WorldCereal RDM / Harmonized Global Crops | CC-BY por coleccion / CC-BY-SA-4.0 | "WorldCereal RDM (CC-BY por coleccion)"; "Harmonized Global Crops (CC-BY-SA-4.0)" |
+
+Nota share-alike: cuando una figura o reporte combina derivados CC-BY-SA-4.0
+(Sen4AgriNet, EuroCropsML, HGC), la obra resultante hereda la clausula
+share-alike y debe redistribuirse bajo licencia compatible.
 
 ## Modelos
 
