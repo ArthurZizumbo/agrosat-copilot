@@ -373,6 +373,10 @@ data/transfer/eurocropsml/_feature_cache/
 # La curva de resultados (ligera) SI va al Git directo, pese al *.parquet global.
 !data/transfer/eurocropsml_fewshot_results.parquet
 
+# ── US-077 demo Mexico: artefactos REALES ligeros (NDVI + embedding) al Git ──
+!data/transfer/mexico_demo_ndvi.parquet
+!data/transfer/mexico_demo_alphaearth.parquet
+
 # ── US-049 agent_bench: artefactos pesados/temporales (codigo+docs si van a git) ──
 .deepeval/
 reports/agent_bench/traces/
