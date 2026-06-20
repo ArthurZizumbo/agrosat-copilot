@@ -1,4 +1,4 @@
-.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip notebooks-check i18n-check db-migrate db-rollback db-new db-status db-seed db-test-us015 features-extract-demo features-persist features-fuse-demo features-fuse-italy dagster-materialize-features feature-selection-subset feature-selection-build feature-selection-notebook feature-selection-test feature-fusion-build feature-fusion-notebook avance2-figures avance2-build mlflow-up mlflow-down train-baseline baseline-test ensembles-test baseline-notebook baseline-notebook-check baseline-v2-full s2-raw-parcels interpretability-test learning-curves-test ml-train-image train-l4 train-l4-smoke train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eda-sentinel2 eda-alphaearth eda-bivariado eda-figures-avance1 eda-figures-paper-methods eda-pastis-subset eda-notebook-avance1 paper-methods-notebook eda-pdf eda-dashboard eda-dashboard-test eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate farslip-dataset-build farslip-dataset-check farslip-train farslip-eval-pastis farslip-smoke-eval farslip-extract-embeddings feature-ablation phenology-train phenology-description-test reencuadre-notebook reencuadre-notebook-check reencuadre-notebook-full
+.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip notebooks-check i18n-check db-migrate db-rollback db-new db-status db-seed db-test-us015 features-extract-demo features-persist features-fuse-demo features-fuse-italy dagster-materialize-features feature-selection-subset feature-selection-build feature-selection-notebook feature-selection-test feature-fusion-build feature-fusion-notebook avance2-figures avance2-build mlflow-up mlflow-down train-baseline baseline-test ensembles-test baseline-notebook baseline-notebook-check baseline-v2-full s2-raw-parcels interpretability-test learning-curves-test ml-train-image train-l4 train-l4-smoke train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eda-sentinel2 eda-alphaearth eda-bivariado eda-figures-avance1 eda-figures-paper-methods eda-pastis-subset eda-notebook-avance1 paper-methods-notebook eda-pdf eda-dashboard eda-dashboard-test eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate farslip-dataset-build farslip-dataset-check farslip-train farslip-eval-pastis farslip-smoke-eval farslip-extract-embeddings feature-ablation phenology-train phenology-description-test reencuadre-notebook reencuadre-notebook-check reencuadre-notebook-full docs-pdf docs-pdf-clean
 
 help:
 	@echo "AgroSatCopilot — comandos disponibles:"
@@ -450,3 +450,19 @@ farslip-smoke-eval:  ## US-017 — smoke eval extractor desde GCS o cache local
 # === Security ===
 security-audit:
 	bash scripts/security_audit.sh
+
+# === Documentation ===
+DOCS_DIR := docs/final_doc
+PDFLATEX := pdflatex -interaction=nonstopmode -halt-on-error -file-line-error
+
+docs-pdf:  ## Compila los PDFs de docs/final_doc (Avance7 ES + EN) con pdflatex (2 pasadas c/u). Requiere LaTeX (MiKTeX/TeX Live).
+	cd $(DOCS_DIR) && $(PDFLATEX) Avance7_equipo17.tex
+	cd $(DOCS_DIR) && $(PDFLATEX) Avance7_equipo17.tex
+	cd $(DOCS_DIR) && $(PDFLATEX) Avance7_equipo17_english.tex
+	cd $(DOCS_DIR) && $(PDFLATEX) Avance7_equipo17_english.tex
+	@echo PDFs generados en $(DOCS_DIR): Avance7_equipo17.pdf y Avance7_equipo17_english.pdf
+
+docs-pdf-clean:  ## Borra auxiliares LaTeX (.aux .log .out .toc ...) de docs/final_doc, conserva los .pdf
+	cd $(DOCS_DIR) && rm -f *.aux *.log *.out *.toc *.lof *.lot *.fls *.fdb_latexmk
+
+

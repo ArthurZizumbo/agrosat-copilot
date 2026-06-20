@@ -348,6 +348,17 @@ _vm_scratch/
 # .local.md marca cualquier doc que NO debe versionarse.
 *.local.md
 
+# ── LaTeX (auxiliares de compilacion pdflatex, ver `make docs-pdf`) ───────────
+# Los .pdf ya estan ignorados arriba; aqui van los byproducts regenerables.
+*.aux
+*.out
+*.toc
+*.lof
+*.lot
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+
 # ── Misc ──────────────────────────────────────────────────────────────────────
 *.bak
 *.tmp
