@@ -84,7 +84,11 @@ class Settings(BaseSettings):
     hf_home: str = ""
 
     # LLM backends
-    llm_variant_default: Literal["gemini", "qwen35"] = "gemini"
+    # US-054: startup/fallback variant only -- the per-request reasoner reads the
+    # variant from ``chat_sessions.llm_model`` (D3), so this is no longer the
+    # per-request source. The four values are 1:1 with the routing table
+    # (``ml.agent.llm_routing.VARIANTS``) and the DB CHECK constraint.
+    llm_variant_default: Literal["gemini", "qwen-api", "qwen-onprem", "gemma"] = "gemini"
     vertex_ai_location: str = "us-central1"
     # Reasoner model for the ``gemini`` LLM variant (single source of truth read
     # by ``ChatService._reasoner_model``). US-052: ``gemini-3.5-flash`` is a
@@ -96,6 +100,21 @@ class Settings(BaseSettings):
     vllm_api_key: str = ""
     # Ollama OpenAI-compatible endpoint for the local Gemma variant (US-049).
     ollama_base_url: str = ""
+    # US-054 routing table env vars (backend-agnostic). Each names WHERE a
+    # variant's OpenAI-compatible host lives, so moving a model H100 -> L4 -> a
+    # hosted API is an env edit, zero code (AC-4). Safe empty dev defaults: an
+    # unset variant degrades to ``gemini`` at request time (the resolver logs
+    # ``llm_route_env_missing``). ``qwen-onprem`` reuses ``vllm_qwen35_url`` /
+    # ``vllm_api_key``; ``gemma`` falls back to ``ollama_base_url`` when
+    # ``gemma_api_url`` is empty.
+    # ``qwen-api``: hosted OpenAI-compatible Qwen (Together / Fireworks / OpenRouter).
+    qwen_api_url: str = ""
+    qwen_api_key: str = ""
+    qwen_api_model: str = ""
+    # ``gemma``: Google AI Studio or on-prem Ollama serving Gemma 4.
+    gemma_api_url: str = ""
+    gemma_api_key: str = ""
+    gemma_model: str = ""
     # Gemini / google-genai credentials (read by the SDK via the environment;
     # declared here so ``extra="forbid"`` accepts them in ``.env.local``).
     gemini_api_key: str = ""

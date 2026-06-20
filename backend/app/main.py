@@ -24,7 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler as _slowapi_rate_limit_handler
 from slowapi.errors import RateLimitExceeded
 
-from backend.app.api import aois, chat, health, stac, tiles, timeseries
+from backend.app.api import aois, chat, health, llm, stac, tiles, timeseries
 from backend.app.core.config import get_settings
 from backend.app.core.logging import configure_logging
 from backend.app.core.rate_limit import limiter
@@ -79,6 +79,8 @@ def create_app() -> FastAPI:
     )
     app.include_router(health.router)
     app.include_router(chat.router)
+    # US-054 hot-swap of the per-session reasoner variant (session-scoped, RLS).
+    app.include_router(llm.router)
     # US-053 geospatial data endpoints (all session-scoped via RLS).
     app.include_router(aois.router)
     app.include_router(timeseries.router)

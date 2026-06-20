@@ -33,7 +33,13 @@ from slowapi.util import get_remote_address
 from backend.app.core.config import Settings, get_settings
 from backend.app.utils.session import SESSION_ID_HEADER
 
-__all__ = ["CHAT_RATE_LIMIT", "build_limiter", "limiter", "session_id_key"]
+__all__ = [
+    "CHAT_RATE_LIMIT",
+    "LLM_SWITCH_RATE_LIMIT",
+    "build_limiter",
+    "limiter",
+    "session_id_key",
+]
 
 logger = structlog.get_logger(__name__)
 
@@ -94,6 +100,19 @@ def _chat_rate_limit(settings: Settings) -> str:
     return f"{settings.rate_limit_chat_per_min}/minute"
 
 
+def _llm_switch_rate_limit(settings: Settings) -> str:
+    """Render the ``/llm/switch`` limit string from ``rate_limit_llm_switch_per_min``.
+
+    Args:
+        settings: Application settings (``rate_limit_llm_switch_per_min`` defaults
+            to ``5``).
+
+    Returns:
+        A slowapi limit expression such as ``"5/minute"``.
+    """
+    return f"{settings.rate_limit_llm_switch_per_min}/minute"
+
+
 #: Process-wide limiter singleton. Built at import time from the cached settings
 #: so the ``@limiter.limit(...)`` decorator on the ``/chat`` endpoint can
 #: reference it. Tests rebuild it with ``memory://`` storage (or fakeredis) and
@@ -104,3 +123,7 @@ limiter: Limiter = build_limiter(get_settings())
 #: The ``/chat`` limit expression (``"10/minute"`` by default), resolved once
 #: from settings so the decorator never hardcodes the per-minute budget.
 CHAT_RATE_LIMIT: str = _chat_rate_limit(get_settings())
+
+#: The ``/llm/switch`` limit expression (``"5/minute"`` by default, US-054
+#: AC-6), resolved once from settings so the decorator never hardcodes it.
+LLM_SWITCH_RATE_LIMIT: str = _llm_switch_rate_limit(get_settings())
