@@ -6,7 +6,7 @@
 
 ## Estado
 
-PARCIAL. Solo aterrizó la cadena FarSLIP + features + modelos temporales. NO existen schedules ni sensors (`schedules/__init__.py` vacío); el entrenamiento es on-demand para no gastar GPU por accidente.
+PARCIAL. Aterrizó la cadena FarSLIP + features + modelos temporales + el monitor de drift semanal (US-060). El entrenamiento sigue on-demand (sin schedule) para no gastar GPU por accidente; el ÚNICO schedule del proyecto es `drift_check_weekly_schedule` (lunes 06:00 UTC, default STOPPED). No hay sensors.
 
 Assets reales (registrados en `definitions.py` vía `load_assets_from_modules`):
 
@@ -16,10 +16,11 @@ Assets reales (registrados en `definitions.py` vía `load_assets_from_modules`):
 - `farslip_embeddings_consolidated` — consolida a `data/farslip/embeddings_pastis.parquet` (consumido por `ml/features/fusion.py`). US-022b-B.
 - `parcel_features_fused` + `parcel_splits_spatial_kfold` + `parcel_features_scaler` — bundle de 3 assets de fusión multisensor parcel-level (group `feature_engineering`). US-016.
 - `phenology_model_tempcnn` + `phenology_model_inceptiontime` + `temporal_models_comparison` — modelos temporales con spatial CV 5-fold (group `phenology_models`). US-022b-C.
+- `drift_check` — monitor de drift semanal con Evidently 0.7.x (group `monitoring`). Depende de `farslip_embeddings_consolidated` + `parcel_features_fused`. KS (bandas Sentinel-2), MMD (embeddings AlphaEarth/FarSLIP), Chi-cuadrado (clases, espacio 18-clase US-030). Publica HTML en `data/monitoring/drift/` (+ `gs://agrosat-reports/drift/{week}/` si hay ADC) y alerta vía resource `drift_notifier` si `drift_score > 0.3`. Lógica pura en `ml/monitoring/drift.py`. US-060.
 
 External `AssetSpec` (solo lineage UI, no materializables): `farslip_pairs_italy`, `farslip_clip_italy_v1` (modelo en MLflow Registry, se entrena con `make train-l4`).
 
-Job: `farslip_full_pipeline_job` (`AssetSelection.groups("farslip")`). Resource: `mlflow`.
+Jobs: `farslip_full_pipeline_job` (`AssetSelection.groups("farslip")`), `drift_check_job` (`AssetSelection.assets("drift_check")`, disparado por el schedule semanal). Resources: `mlflow`, `drift_notifier` (`ConfigurableResource` SMTP con fallback structlog en dev; vars `DRIFT_SMTP_*` en el resource, NO en `backend/app/core/config.py`). Schedule: `drift_check_weekly_schedule` (cron `0 6 * * 1`).
 
 ## Comandos
 
@@ -45,7 +46,7 @@ dagster job execute -m dagster_project.definitions -j farslip_full_pipeline_job
 - ✅ MLflow vía `context.resources.mlflow` con `required_resource_keys={"mlflow"}`; el logging falla silencioso si está offline.
 - ✅ Lógica de negocio delegada a `ml/` (`ml.features.*`, `ml.train.*`, `ml.farslip.*`); el asset solo orquesta.
 - ❌ Afirmar particionado temporal: solo hay `StaticPartitionsDefinition` por ROI (`ITALY_REGIONS`). No hay particiones por año/fecha.
-- ❌ Reintroducir assets aspiracionales (`alphaearth_annual`, `spectral_indices`, `baseline_model`, `final_vlm`, `ensemble`, `pgstac_catalog`, drift Evidently): no existen como assets.
+- ❌ Reintroducir assets aspiracionales (`alphaearth_annual`, `spectral_indices`, `baseline_model`, `final_vlm`, `ensemble`, `pgstac_catalog`): no existen como assets. (El drift Evidently SÍ existe ya como `drift_check` desde US-060 — ya no es aspiracional.)
 
 ## No tocar
 
