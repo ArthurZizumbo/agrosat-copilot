@@ -77,6 +77,51 @@ class _FakePerceiver:
         return _OBSERVATION
 
 
+class _FakeConn:
+    """asyncpg connection double for ``ChatService._resolve_variant`` (US-054).
+
+    Supports the exact contract ``_resolve_variant`` exercises: ``transaction()``
+    (async context manager), ``execute`` (the ``set_config`` RLS prime) and
+    ``fetchrow`` (the ``SELECT llm_model`` row). With ``variant=None`` the missing
+    row makes the service degrade to its ``gemini`` fallback, which is what these
+    endpoint tests assume.
+    """
+
+    def __init__(self, variant: str | None) -> None:
+        self._variant = variant
+
+    def transaction(self):
+        conn = self
+
+        class _Tx:
+            async def __aenter__(self_inner):
+                return conn
+
+            async def __aexit__(self_inner, *exc):
+                return False
+
+        return _Tx()
+
+    async def execute(self, *args, **kwargs) -> str:
+        return "SET"
+
+    async def fetchrow(self, *args, **kwargs):
+        return None if self._variant is None else {"llm_model": self._variant}
+
+
+class _FakePool:
+    """asyncpg pool double: ``acquire``/``release`` hand out a :class:`_FakeConn`."""
+
+    def __init__(self, variant: str | None = None) -> None:
+        self._variant = variant
+
+    async def acquire(self) -> _FakeConn:
+        return _FakeConn(self._variant)
+
+    async def release(self, conn: _FakeConn) -> None:
+        return None
+
+
 class _StubAgent:
     """Reasoner double yielding a scripted event stream (no network)."""
 
@@ -127,7 +172,7 @@ def _make_app_client(monkeypatch, agent_events: list[AgentEvent] | None = None):
     """
 
     async def _fake_get_pool():
-        return object()
+        return _FakePool()
 
     monkeypatch.setattr(chat_mod, "get_pool", _fake_get_pool)
     monkeypatch.setattr(chat_mod, "PerceiverLayer", _FakePerceiver)
@@ -374,7 +419,7 @@ async def test_session_id_threaded_from_header_to_service(monkeypatch, memory_li
                 yield event
 
     async def _fake_get_pool():
-        return object()
+        return _FakePool()
 
     monkeypatch.setattr(chat_mod, "get_pool", _fake_get_pool)
     monkeypatch.setattr(chat_mod, "PerceiverLayer", _FakePerceiver)

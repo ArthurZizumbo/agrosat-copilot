@@ -36,6 +36,7 @@ from collections.abc import AsyncIterator
 from uuid import UUID
 
 import pytest
+import structlog
 
 import backend.app.services.chat_service as chat_mod
 from backend.app.services.chat_service import ChatMessage, ChatRequest, ChatService
@@ -142,19 +143,29 @@ class _RaisingPerceiver:
         raise RuntimeError("classifier exploded")
 
 
+class _StubBackend:
+    """Backend double exposing only ``model`` (read for ``chat_model_resolved``)."""
+
+    def __init__(self, model: str = "gemini-3.5-flash") -> None:
+        self.model = model
+
+
 class _StubAgent:
     """Reasoner double: yields a scripted :data:`AgentEvent` stream (no network).
 
     Records the ``messages`` history and ``session_id`` it was driven with so the
     grounding-injection and multi-tenancy assertions can inspect them. The default
     script (``text_delta`` then ``done``) mimics a plain answer; tests that need a
-    tool round-trip or an error pass an explicit ``events`` list.
+    tool round-trip or an error pass an explicit ``events`` list. It carries a
+    :class:`_StubBackend` so the service resolves a concrete ``model`` for the
+    ``chat_model_resolved`` / ``chat_turn_metrics`` FinOps logs (US-065).
     """
 
     last_messages: list[dict] | None = None
     last_session_id: UUID | None = None
 
     def __init__(self, events: list[AgentEvent] | None = None) -> None:
+        self.backend = _StubBackend()
         self._events: list[AgentEvent] = (
             events
             if events is not None
@@ -284,8 +295,9 @@ async def test_perceiver_observation_payload_is_real_text(monkeypatch) -> None:
     # (The block header reads "sin logits", so the bare word is legitimate.)
     for forbidden in ("tensor(", "array(", "ndarray", "dtype", "predict_proba"):
         assert forbidden not in block
-    # The terminal frame is the agent's ``done`` (no extra payload fields).
-    assert events["done"] == {}
+    # The terminal frame is the agent's ``done``; the only payload field is the
+    # optional token ``usage`` (US-065), ``None`` when the provider reported none.
+    assert events["done"] == {"usage": None}
 
 
 async def test_no_subject_completes_without_observation(monkeypatch) -> None:
@@ -487,3 +499,73 @@ async def test_reasoner_raise_surfaces_after_observation(monkeypatch) -> None:
 
     # The perceiver frame was flushed to the client before the reasoner blew up.
     assert [name for name, _ in emitted] == ["perceiver_observation"]
+
+
+# ---------------------------------------------------------------------------
+# US-065: per-turn chat observability (chat_turn_metrics) via a synthetic flow
+# ---------------------------------------------------------------------------
+async def test_chat_turn_metrics_multi_step_with_tokens(monkeypatch) -> None:
+    """A synthetic tool round-trip emits ``chat_turn_metrics`` (multi_step).
+
+    The stub agent emits ``tool_call`` + ``tool_result`` + ``text_delta`` +
+    ``done`` (with provider ``usage``), so the service must classify the turn as
+    ``multi_step``, count the single tool call, surface the token total and the
+    active variant/model, and report whether the latency SLO was met -- all in a
+    single ``chat_turn_metrics`` line. No network, no DB (US-065 synthetic flow).
+    """
+    agent_events: list[AgentEvent] = [
+        ToolCallEvent(name="list_parcels", arguments={"session_id": str(_SESSION)}),
+        ToolResultEvent(name="list_parcels", result={"count": 2}, ok=True),
+        TextDeltaEvent(text="Tienes 2 parcelas."),
+        DoneEvent(usage={"prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 120}),
+    ]
+    service = _service(monkeypatch, _FakePerceiver, agent_events=agent_events)
+    request = ChatRequest(
+        messages=[ChatMessage(role="user", content="lista mis parcelas")],
+        session_id=_SESSION,
+        parcel_id=11,
+    )
+
+    with structlog.testing.capture_logs() as logs:
+        await _collect(service, request)
+
+    entries = [e for e in logs if e["event"] == "chat_turn_metrics"]
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry["turn_type"] == "multi_step"
+    assert entry["tool_calls"] == 1
+    assert entry["tokens_total"] == 120
+    assert entry["tokens_prompt"] == 100
+    assert entry["variant"] == "gemini"
+    assert entry["model"] == "gemini-3.5-flash"
+    assert entry["slo_target_ms"] == 15000.0
+    assert isinstance(entry["slo_met"], bool)
+    assert entry["session_id"] == str(_SESSION)
+
+
+async def test_chat_turn_metrics_simple_without_tokens(monkeypatch) -> None:
+    """A plain answer (no tools, no usage) emits a ``simple`` turn with None tokens.
+
+    The default stub script is ``text_delta`` + ``done`` (no ``usage``): the
+    service classifies the turn as ``simple`` (3 s SLO) and reports the token
+    fields as ``None`` -- never synthesised when the provider does not report
+    usage (US-065 honest-degradation rule).
+    """
+    service = _service(monkeypatch, _FakePerceiver)
+    request = ChatRequest(
+        messages=[ChatMessage(role="user", content="hola")],
+        session_id=_SESSION,
+    )
+
+    with structlog.testing.capture_logs() as logs:
+        await _collect(service, request)
+
+    entries = [e for e in logs if e["event"] == "chat_turn_metrics"]
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry["turn_type"] == "simple"
+    assert entry["tool_calls"] == 0
+    assert entry["slo_target_ms"] == 3000.0
+    assert entry["tokens_total"] is None
+    assert entry["tokens_prompt"] is None
+    assert entry["tokens_completion"] is None

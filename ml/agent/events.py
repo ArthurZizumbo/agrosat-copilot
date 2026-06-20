@@ -119,11 +119,19 @@ class DoneEvent(BaseModel):
 
     Attributes:
         type: Discriminant literal ``"done"``.
+        usage: Provider token accounting for the turn, when the backend exposes
+            it (``prompt_tokens`` / ``completion_tokens`` / ``total_tokens``).
+            ``None`` when the provider does not report usage (e.g. vLLM streaming
+            without ``include_usage``), so the FinOps consumer (US-065) records
+            ``None`` instead of inventing token counts. The mapping is kept as a
+            plain JSON-serialisable dict so the event still round-trips to the SSE
+            wire under ``extra="forbid"``.
     """
 
     model_config = _EVENT_CONFIG
 
     type: Literal["done"] = "done"
+    usage: dict[str, int] | None = None
 
 
 class ErrorEvent(BaseModel):

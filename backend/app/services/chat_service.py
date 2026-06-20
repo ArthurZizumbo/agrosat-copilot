@@ -60,6 +60,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.db import get_pool
+from backend.app.utils.chat_metrics import ChatMetricsAccumulator, emit_chat_turn_metrics
 from ml.agent.context import ToolContext
 from ml.agent.llm_routing import DEFAULT_VARIANT, VARIANTS, make_backend_for_variant
 from ml.agent.perceiver import PerceiverLayer, PerceiverObservation
@@ -436,7 +437,7 @@ class ChatService:
             )
 
         async for frame in self._stream_reasoner(
-            messages, observation, session_id, ctx, locale=request.locale
+            messages, observation, session_id, ctx, locale=request.locale, start=start
         ):
             yield frame
 
@@ -455,6 +456,7 @@ class ChatService:
         ctx: ToolContext,
         *,
         locale: Literal["it", "es", "en"] | None = None,
+        start: float,
     ) -> AsyncIterator[str]:
         """Run the reasoner loop and forward its events as SSE frames.
 
@@ -466,11 +468,22 @@ class ChatService:
         fields. The agent already turns its own failures into a terminal
         ``error`` event, so the stream always ends with ``done`` or ``error``.
 
+        Observability (US-065): the reasoner events are observed in flight to
+        build a per-turn :class:`~backend.app.utils.chat_metrics.ChatMetricsAccumulator`
+        -- one increment per ``tool_call``, one ``usage`` capture on the terminal
+        ``done`` -- and a single ``chat_turn_metrics`` line is emitted once the
+        stream ends, scored against the latency SLO using the END-TO-END timer
+        owned by :meth:`stream` (``start``), so there is a single source of truth
+        for the turn latency.
+
         Args:
             messages: The conversation history.
             observation: The perceiver grounding observation, if any.
             session_id: Effective tenant session.
             ctx: Shared, session-scoped tool execution context.
+            locale: Active UI locale conditioning the answer language, if any.
+            start: The ``time.perf_counter`` mark taken by :meth:`stream` at the
+                turn's start, reused so the SLO latency is not double-measured.
 
         Yields:
             SSE frames for each reasoner event.
@@ -481,16 +494,32 @@ class ChatService:
         # ``model`` is the concrete reasoner id behind the variant (surfaced by the
         # backend for logging); ``latency_ms`` here is the per-request resolution
         # cost (DB read + backend build), the FinOps US-065 input (AC-5).
+        model = getattr(getattr(agent, "backend", None), "model", None)
         logger.info(
             "chat_model_resolved",
             session_id=str(session_id),
             variant=variant,
-            model=getattr(getattr(agent, "backend", None), "model", None),
+            model=model,
             latency_ms=round((time.perf_counter() - resolve_start) * 1000.0, 2),
         )
         agent_messages = self._agent_messages(messages, observation, locale)
 
+        metrics = ChatMetricsAccumulator(variant=variant, model=model)
         async for event in agent.stream_response(agent_messages, session_id, ctx):
             payload = event.model_dump(mode="json")
             event_name = payload.pop("type")
+            # Observe the FinOps/SLO signal without altering the forwarded frame:
+            # count tool calls, capture provider token usage off the terminal
+            # ``done`` (``None`` when the provider reports none -- never invented).
+            if event_name == "tool_call":
+                metrics = metrics.observe_tool_call()
+            elif event_name == "done":
+                metrics = metrics.observe_usage(payload.get("usage"))
             yield _sse_event(event_name, payload)
+
+        duration_ms = round((time.perf_counter() - start) * 1000.0, 2)
+        emit_chat_turn_metrics(
+            metrics.finalise(duration_ms),
+            session_id=str(session_id),
+            settings=self._settings,
+        )

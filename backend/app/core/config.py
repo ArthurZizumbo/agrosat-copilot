@@ -145,6 +145,11 @@ class Settings(BaseSettings):
     # Observability
     prometheus_pushgateway: str = ""
     sentry_dsn: str = ""
+    # US-065: gate the Prometheus export of the per-turn chat metrics
+    # (``chat_turn_metrics``). Off by default so structlog is always emitted but
+    # the exporter is only touched when an operator opts in; the export degrades
+    # to a no-op when ``prometheus-client`` is absent (honest degradation).
+    chat_metrics_prometheus_enabled: bool = False
 
     # JWT / security
     jwt_secret: str = _JWT_PLACEHOLDER
