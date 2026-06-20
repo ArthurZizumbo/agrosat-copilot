@@ -11,6 +11,9 @@ export default defineNuxtConfig({
     "@nuxt/ui-pro",
     "@nuxtjs/i18n",
     "@pinia/nuxt",
+    // MUST come after @pinia/nuxt: registers the persistedstate plugin and the
+    // global `piniaPluginPersistedstate` helper used by stores' `persist` block.
+    "pinia-plugin-persistedstate/nuxt",
   ],
 
   css: ["~/assets/css/main.css"],

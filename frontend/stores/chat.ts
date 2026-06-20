@@ -242,6 +242,7 @@ export const useChatStore = defineStore("chat", {
           if (tracked) {
             tracked.status = event.ok ? "ok" : "failed";
             tracked.summary = summary;
+            tracked.result = event.result;
           } else {
             this.toolSeq += 1;
             this.toolCalls.push({
@@ -250,6 +251,7 @@ export const useChatStore = defineStore("chat", {
               args: {},
               status: event.ok ? "ok" : "failed",
               summary,
+              result: event.result,
             });
           }
           if (findings.length > 0) this.findings.push(...findings);
@@ -332,5 +334,18 @@ export const useChatStore = defineStore("chat", {
     loadDemoParcels(findings: Finding[]) {
       this.findings = [...findings];
     },
+  },
+
+  // Persist only durable conversation state. Transient per-turn state
+  // (toolCalls, perceiverNotes, findings, status, activeAssistantId,
+  // errorMessage, toolSeq) is intentionally excluded: rehydrating a "running"
+  // tool or a half-streamed turn would be incorrect. `session_id` is NOT
+  // duplicated here — it already persists via the `agrosat-session-id` cookie
+  // in useSession. SSR-safe: `localStorage()` is a no-op on the server, so the
+  // store hydrates from localStorage on the client only (transcript wrapped in
+  // <ClientOnly> in ChatDock to avoid a hydration mismatch).
+  persist: {
+    storage: piniaPluginPersistedstate.localStorage(),
+    pick: ["messages", "llmVariant"],
   },
 });

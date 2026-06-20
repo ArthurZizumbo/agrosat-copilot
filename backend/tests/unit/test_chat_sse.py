@@ -388,6 +388,43 @@ async def test_perceiver_block_injected_as_grounding_turn(monkeypatch) -> None:
     assert _StubAgent.last_session_id == _SESSION
 
 
+async def test_locale_injects_language_instruction_as_leading_turn(monkeypatch) -> None:
+    """US-057: ``locale`` prepends a language-instruction ``system`` turn.
+
+    A request with ``locale='it'`` and no subject (no perceiver grounding) must
+    lead the reasoner history with the Italian language instruction so the frozen
+    reasoner answers in the user's UI language.
+    """
+    service = _service(monkeypatch, _FakePerceiver)
+    request = ChatRequest(
+        messages=[ChatMessage(role="user", content="ciao")],
+        session_id=_SESSION,
+        locale="it",
+    )
+
+    await _collect(service, request)
+
+    messages = _StubAgent.last_messages
+    assert messages is not None
+    assert messages[0] == {"role": "system", "content": "Rispondi sempre in italiano."}
+    assert messages[-1] == {"role": "user", "content": "ciao"}
+
+
+async def test_no_locale_has_no_language_instruction(monkeypatch) -> None:
+    """Without ``locale`` no language-instruction turn is injected (agent default)."""
+    service = _service(monkeypatch, _FakePerceiver)
+    request = ChatRequest(
+        messages=[ChatMessage(role="user", content="hola")],
+        session_id=_SESSION,
+    )
+
+    await _collect(service, request)
+
+    messages = _StubAgent.last_messages
+    assert messages is not None
+    assert all("sempre" not in m["content"] and "siempre" not in m["content"] for m in messages)
+
+
 async def test_no_subject_history_has_no_grounding_turn(monkeypatch) -> None:
     """Without a subject the agent history is the bare user messages (no system)."""
     service = _service(monkeypatch, _FakePerceiver)

@@ -52,7 +52,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
 import structlog
@@ -73,6 +73,15 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 __all__ = ["AgentFactory", "ChatMessage", "ChatRequest", "ChatService", "PoolFactory"]
+
+#: Reasoner language instruction per UI locale (US-057). Injected as a leading
+#: ``system`` turn so the frozen reasoner answers in the user's language without
+#: changing the analyst system prompt.
+_LOCALE_INSTRUCTION: dict[str, str] = {
+    "it": "Rispondi sempre in italiano.",
+    "es": "Responde siempre en español.",
+    "en": "Always answer in English.",
+}
 
 #: Default campaign year for an AOI observation (matches the perceiver default).
 _DEFAULT_YEAR: int = 2019
@@ -175,6 +184,10 @@ class ChatRequest(BaseModel):
     parcel_id: int | None = None
     aoi: GeoJSONGeometry | None = None
     year: int = _DEFAULT_YEAR
+    #: Active UI locale (US-057). Conditions the reasoner's answer language so a
+    #: trilingual frontend gets replies in the user's language. ``None`` -> the
+    #: agent answers in its default (Spanish, per the analyst system prompt).
+    locale: Literal["it", "es", "en"] | None = None
 
 
 def _sse_event(event: str, data: dict[str, Any]) -> str:
@@ -334,6 +347,7 @@ class ChatService:
     def _agent_messages(
         messages: Sequence[ChatMessage],
         observation: PerceiverObservation | None,
+        locale: Literal["it", "es", "en"] | None = None,
     ) -> list[dict[str, str]]:
         """Build the reasoner's message history, grounded by the perceiver.
 
@@ -341,18 +355,24 @@ class ChatService:
         rendering is injected as a leading grounding turn so the reasoner reasons
         over the structured TEXT the agent "saw" (Be My Eyes), never over raw
         logits. The agent maps any non ``user``/``model`` role into the ``user``
-        role, so a ``system`` grounding turn reaches the model as context.
+        role, so a ``system`` grounding turn reaches the model as context. When a
+        ``locale`` is supplied (US-057) a language-instruction ``system`` turn is
+        prepended so the reasoner answers in the user's UI language.
 
         Args:
             messages: The validated conversation history.
             observation: The perceiver observation to ground the reasoner with,
                 or ``None`` when there is no subject to observe.
+            locale: Active UI locale (``it``/``es``/``en``) or ``None`` for the
+                agent's default answer language.
 
         Returns:
             A list of ``{"role", "content"}`` dicts for
             :meth:`~ml.agent.agent.Agent.stream_response`.
         """
         history: list[dict[str, str]] = []
+        if locale is not None:
+            history.append({"role": "system", "content": _LOCALE_INSTRUCTION[locale]})
         if observation is not None:
             history.append({"role": "system", "content": observation.to_prompt_block()})
         history.extend({"role": m.role, "content": m.content} for m in messages)
@@ -415,7 +435,9 @@ class ChatService:
                 },
             )
 
-        async for frame in self._stream_reasoner(messages, observation, session_id, ctx):
+        async for frame in self._stream_reasoner(
+            messages, observation, session_id, ctx, locale=request.locale
+        ):
             yield frame
 
         logger.info(
@@ -431,6 +453,8 @@ class ChatService:
         observation: PerceiverObservation | None,
         session_id: UUID,
         ctx: ToolContext,
+        *,
+        locale: Literal["it", "es", "en"] | None = None,
     ) -> AsyncIterator[str]:
         """Run the reasoner loop and forward its events as SSE frames.
 
@@ -464,7 +488,7 @@ class ChatService:
             model=getattr(getattr(agent, "backend", None), "model", None),
             latency_ms=round((time.perf_counter() - resolve_start) * 1000.0, 2),
         )
-        agent_messages = self._agent_messages(messages, observation)
+        agent_messages = self._agent_messages(messages, observation, locale)
 
         async for event in agent.stream_response(agent_messages, session_id, ctx):
             payload = event.model_dump(mode="json")
