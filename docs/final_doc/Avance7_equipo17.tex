@@ -129,7 +129,7 @@ entre entrenamiento y evaluación.
 \section{Hallazgos del Análisis Exploratorio}
 % ══════════════════════════════════════════════════════════════════════════════
 
-El análisis exploratorio de datos (Avance~1) estableció las hipótesis de
+El análisis exploratorio de datos estableció las hipótesis de
 diseño que guiaron toda la fase de modelado.
 
 \subsection{Señal temporal dominante}
@@ -166,7 +166,7 @@ siendo imprescindible para la discriminación fina de cultivos.
 \section{Modelos Generados y Elección del Modelo Final}
 % ══════════════════════════════════════════════════════════════════════════════
 
-\subsection{Modelos individuales (Avance 4)}
+\subsection{Modelos individuales}
 
 Se evaluaron seis arquitecturas de segmentación semántica
 (Tabla~\ref{tab:individual_models}). La mejor fue
@@ -175,7 +175,7 @@ rama fenológica, que alcanzó F1-macro~0.625 a nivel de parcela sobre el
 fold reservado.
 
 \begin{table}[htbp]
-\caption{Comparativa de modelos individuales (Avance 4)}
+\caption{Comparativa de modelos individuales}
 \label{tab:individual_models}
 \centering
 \begin{tabular}{lcc}
@@ -193,7 +193,7 @@ SegFormer-B0    & 0.232 & Espacial \\
 \end{tabular}
 \end{table}
 
-\subsection{Familia de ensambles (Avance 5)}
+\subsection{Familia de ensambles}
 
 Se construyeron siete ensambles cubriendo estrategias homogéneas y
 heterogéneas (Tabla~\ref{tab:ensembles}). Todas las métricas se reportan
@@ -201,7 +201,7 @@ sobre el fold espacialmente reservado; las probabilidades que alimentan
 los ensambles son \textit{out-of-fold} (sin fuga de información).
 
 \begin{table}[htbp]
-\caption{Comparativa de ensambles --- datos no vistos (Avance 5)}
+\caption{Comparativa de ensambles --- datos no vistos}
 \label{tab:ensembles}
 \centering
 \begin{tabular}{lccc}
@@ -254,7 +254,7 @@ como modelo final por los siguientes argumentos:
 \end{enumerate}
 
 % ══════════════════════════════════════════════════════════════════════════════
-\section{Integración FarSLIP y Frontend (Avance 6)}
+\section{Integración FarSLIP y Frontend}
 % ══════════════════════════════════════════════════════════════════════════════
 
 \subsection{FarSLIP como componente visión-lenguaje}
@@ -286,7 +286,7 @@ se integra en el sistema con tres roles diferenciados:
 
 \subsection{Copiloto conversacional: patrón \textit{Be My Eyes}}
 
-El Avance~6 despliega el copiloto conversacional completo con las
+El trabajo relacionado con \textit{Be My Eyes} despliega el copiloto conversacional completo con las
 siguientes características arquitectónicas:
 
 \paragraph{Separación perceiver/reasoner.}

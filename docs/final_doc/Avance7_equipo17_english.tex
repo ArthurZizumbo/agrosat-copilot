@@ -123,7 +123,7 @@ folds to prevent information leakage between training and evaluation.
 \section{Exploratory Data Analysis Findings}
 % ══════════════════════════════════════════════════════════════════════════════
 
-The exploratory data analysis (Milestone~1) established the design
+The exploratory data analysis established the design
 hypotheses that guided the entire modelling phase.
 
 \subsection{Dominant temporal signal}
@@ -160,7 +160,7 @@ fine-grained crop discrimination.
 \section{Models and Final Model Selection}
 % ══════════════════════════════════════════════════════════════════════════════
 
-\subsection{Individual models (Milestone 4)}
+\subsection{Individual models}
 
 Seven semantic segmentation architectures were evaluated
 (Table~\ref{tab:individual_models}). The best performer was
@@ -169,7 +169,7 @@ a phenological branch, which achieved macro F1~0.625 at the parcel level
 on the held-out fold.
 
 \begin{table}[htbp]
-\caption{Individual model comparison (Milestone 4)}
+\caption{Individual model comparison}
 \label{tab:individual_models}
 \centering
 \begin{tabular}{lcc}
@@ -187,7 +187,7 @@ SegFormer-B0    & 0.232 & Spatial \\
 \end{tabular}
 \end{table}
 
-\subsection{Ensemble family (Milestone 5)}
+\subsection{Ensemble family}
 
 Seven ensembles were built covering both homogeneous and heterogeneous
 strategies (Table~\ref{tab:ensembles}). All metrics are reported on the
@@ -195,7 +195,7 @@ spatially reserved fold; the probabilities feeding the ensembles are
 \textit{out-of-fold} (no information leakage).
 
 \begin{table}[htbp]
-\caption{Ensemble comparison --- held-out data (Milestone 5)}
+\caption{Ensemble comparison --- held-out data}
 \label{tab:ensembles}
 \centering
 \begin{tabular}{lccc}
@@ -247,7 +247,7 @@ branch} is selected as the final model for the following reasons:
 \end{enumerate}
 
 % ══════════════════════════════════════════════════════════════════════════════
-\section{FarSLIP Integration and Frontend (Milestone 6)}
+\section{FarSLIP Integration and Frontend}
 % ══════════════════════════════════════════════════════════════════════════════
 
 \subsection{FarSLIP as a vision-language component}
@@ -279,7 +279,7 @@ is integrated into the system in three distinct roles:
 
 \subsection{Conversational copilot: the \textit{Be My Eyes} pattern}
 
-Milestone~6 deploys the complete conversational copilot with the following
+The work related to \textit{Be My Eyes} deploys the complete conversational copilot with the following
 architectural characteristics:
 
 \paragraph{Perceiver/reasoner separation.}

@@ -1,4 +1,4 @@
-.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip notebooks-check i18n-check db-migrate db-rollback db-new db-status db-seed db-test-us015 features-extract-demo features-persist features-fuse-demo features-fuse-italy dagster-materialize-features feature-selection-subset feature-selection-build feature-selection-notebook feature-selection-test feature-fusion-build feature-fusion-notebook avance2-figures avance2-build mlflow-up mlflow-down train-baseline baseline-test ensembles-test baseline-notebook baseline-notebook-check baseline-v2-full s2-raw-parcels interpretability-test learning-curves-test ml-train-image train-l4 train-l4-smoke train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eda-sentinel2 eda-alphaearth eda-bivariado eda-figures-avance1 eda-figures-paper-methods eda-pastis-subset eda-notebook-avance1 paper-methods-notebook eda-pdf eda-dashboard eda-dashboard-test eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate farslip-dataset-build farslip-dataset-check farslip-train farslip-eval-pastis farslip-smoke-eval farslip-extract-embeddings feature-ablation phenology-train phenology-description-test reencuadre-notebook reencuadre-notebook-check reencuadre-notebook-full docs-pdf docs-pdf-clean
+.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip notebooks-check i18n-check db-migrate db-rollback db-new db-status db-seed db-test-us015 features-extract-demo features-persist features-fuse-demo features-fuse-italy dagster-materialize-features feature-selection-subset feature-selection-build feature-selection-notebook feature-selection-test feature-fusion-build feature-fusion-notebook avance2-figures avance2-build mlflow-up mlflow-down train-baseline baseline-test ensembles-test baseline-notebook baseline-notebook-check baseline-v2-full s2-raw-parcels interpretability-test learning-curves-test ml-train-image train-l4 train-l4-smoke train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eda-sentinel2 eda-alphaearth eda-bivariado eda-figures-avance1 eda-figures-paper-methods eda-pastis-subset eda-notebook-avance1 paper-methods-notebook eda-pdf eda-dashboard eda-dashboard-test eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate farslip-dataset-build farslip-dataset-check farslip-train farslip-eval-pastis farslip-smoke-eval farslip-extract-embeddings feature-ablation phenology-train phenology-description-test reencuadre-notebook reencuadre-notebook-check reencuadre-notebook-full docs-pdf docs-pdf-clean docs-pdf-docker
 
 help:
 	@echo "AgroSatCopilot — comandos disponibles:"
@@ -463,6 +463,12 @@ docs-pdf:  ## Compila los PDFs de docs/final_doc (Avance7 ES + EN) con pdflatex 
 	@echo PDFs generados en $(DOCS_DIR): Avance7_equipo17.pdf y Avance7_equipo17_english.pdf
 
 docs-pdf-clean:  ## Borra auxiliares LaTeX (.aux .log .out .toc ...) de docs/final_doc, conserva los .pdf
-	cd $(DOCS_DIR) && rm -f *.aux *.log *.out *.toc *.lof *.lot *.fls *.fdb_latexmk
+	cd $(DOCS_DIR) && rm -f *.aux *.log *.out *.toc *.lof *.lot *.fls *.fdb_latexmk *.pdf
+
+DOCS_IMAGE := agrosat-docs-latex:dev
+
+docs-pdf-docker:  ## Compila los PDFs en un contenedor texlive (no requiere LaTeX local). Solo necesita Docker.
+	docker build -f infrastructure/docker/docs-latex.Dockerfile -t $(DOCS_IMAGE) infrastructure/docker
+	docker run --rm -v "$(CURDIR):/repo" -w /repo/$(DOCS_DIR) $(DOCS_IMAGE)
 
 
