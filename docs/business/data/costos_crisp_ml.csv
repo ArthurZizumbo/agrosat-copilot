@@ -1,0 +1,7 @@
+fase_crisp_ml_q,costo_real,origen_dato,comentario
+Business & Data Understanding,$0,Datos publicos,AlphaEarth GEE CC-BY-4.0 + Sentinel-2 Copernicus + PASTIS-R + Sen4AgriNet CC-BY-SA-4.0 + EuroCropsML CC-BY-SA-4.0; sin licencia paga
+Data Engineering / Preparation,~$0 (centavos GCP),Factura GCP ~$0.30-0.49,Ingesta GEE/Copernicus y versionado DVC sobre GCS
+ML Model Engineering (training),$0 al equipo (hist. $262 spot - $602 on-demand),Factura del sponsor / historico,Segmentacion + FarSLIP + baseline en H100 NVL 96GB prestada 24/7; L4 spot con auto-shutdown
+Model Evaluation,~$0,CPU local + H100 sponsor,Evaluacion sobre datasets ya descargados; sin costo incremental
+Deployment,~$115/mes (proyectado),docs/operations/finops.md,Cloud Run scale-to-zero + Cloud SQL dev apagada (activation_policy=NEVER) + tiling TiTiler
+Monitoring & Maintenance,dentro de ~$115/mes,docs/operations/finops.md,Evidently drift (US-060) + observabilidad chat (US-065) + alertas (US-059)

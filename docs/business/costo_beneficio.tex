@@ -1,0 +1,41 @@
+% Tablas costo-beneficio AgroSatCopilot (US-061) para el paper (Track opcional).
+% Generado desde docs/business/data/costos_crisp_ml.csv y beneficios_500ha.csv.
+% Requiere \usepackage{booktabs} y \usepackage{tabularx} en el preambulo.
+
+% Tabla 1: Costos por fase CRISP-ML(Q) con cifras reales del proyecto.
+\begin{table}[ht]
+  \centering
+  \caption{Costos por fase CRISP-ML(Q) de AgroSatCopilot (cifras reales verificadas).}
+  \label{tab:costos-crisp-mlq}
+  \begin{tabularx}{\textwidth}{llX}
+    \toprule
+    \textbf{Fase CRISP-ML(Q)} & \textbf{Costo real} & \textbf{Comentario} \\
+    \midrule
+    Business \& Data Understanding & \$0 & Datos publicos (CC-BY-4.0 / CC-BY-SA-4.0); sin licencia paga. \\
+    Data Engineering / Preparation & $\sim$\$0 (centavos GCP) & Ingesta GEE/Copernicus; DVC sobre GCS. Factura GCP $\sim$\$0.30--0.49. \\
+    ML Model Engineering (training) & \$0 al equipo & H100 NVL 96GB del sponsor 24/7; historico \$262--602 spot/on-demand. \\
+    Model Evaluation & $\sim$\$0 & CPU local + H100 sponsor; sin costo incremental. \\
+    Deployment & $\sim$\$115/mes & Cloud Run scale-to-zero, Cloud SQL controlada, tiling. \\
+    Monitoring \& Maintenance & dentro de $\sim$\$115/mes & Evidently drift, observabilidad chat, alertas. \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+% Tabla 2: Beneficios cuantificables estimados para cliente tipo 500 ha.
+% NOTA: estimaciones de literatura agronomica, NO medidas de un cliente real.
+\begin{table}[ht]
+  \centering
+  \caption{Beneficios cuantificables estimados para cliente tipo de 500 ha.
+    Cifras de literatura de agricultura de precision, no medidas de un cliente real.}
+  \label{tab:beneficios-500ha}
+  \begin{tabularx}{\textwidth}{Xll}
+    \toprule
+    \textbf{Beneficio} & \textbf{Rango estimado} & \textbf{Naturaleza} \\
+    \midrule
+    Horas de agronomo ahorradas / mes & 30--60 h/mes & Estimacion, no medida \\
+    Ahorro de agua (estres hidrico) & 10--25\% del riego & Estimacion, no medida \\
+    Ahorro de insumos (fertilizacion focalizada) & 10--20\% del fertilizante & Estimacion, no medida \\
+    Reduccion del tiempo de deteccion de plagas & de dias a 24--72 h & Estimacion, no medida \\
+    \bottomrule
+  \end{tabularx}
+\end{table}

@@ -1,0 +1,5 @@
+beneficio,rango_estimado,supuesto,fuente_tipo_estimacion,naturaleza
+Horas de agronomo ahorradas por mes,30-60 h/mes,Sustituir scouting manual por alertas dirigidas del copiloto sobre parcelas marcadas anomalas; 1-2 jornadas/semana redirigidas,Estimacion de productividad teledeteccion vs scouting manual,ESTIMACION no medida
+Ahorro de agua por estres hidrico,10-25% del agua de riego,Deteccion temprana de estres hidrico (NDWI) que permite riego de precision por zona,Rango literatura FAO / riego de precision,ESTIMACION no medida
+Ahorro de insumos por fertilizacion focalizada,10-20% del gasto en fertilizante,Aplicacion variable guiada por NDRE/CCCI en lugar de dosis uniforme,Rango literatura fertilizacion de precision / VRA,ESTIMACION no medida
+Reduccion del tiempo de deteccion de plagas,de dias a 24-72 h,Alertas por anomalia espectral satelital sustituyen inspeccion presencial periodica,Estimacion operativa teledeteccion de plagas/enfermedades,ESTIMACION no medida
