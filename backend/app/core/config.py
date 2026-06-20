@@ -11,6 +11,10 @@ from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _DEV_DATABASE_URL = "postgresql+asyncpg://agrosat:agrosat@localhost:5432/agrosat"
+# Application-role DSN (role ``agrosat_app``, NOBYPASSRLS) used by the backend
+# pool so RLS policies actually enforce (US-051). Separate from the superuser
+# ``agrosat`` migration role, which bypasses RLS.
+_DEV_APP_DATABASE_URL = "postgresql+asyncpg://agrosat_app:agrosat_app@localhost:55432/agrosat"
 _DEV_REDIS_URL = "redis://localhost:6379/0"
 # Placeholder rejected by the validator if env != dev.
 _JWT_PLACEHOLDER = "change-me-in-prod"
@@ -39,6 +43,11 @@ class Settings(BaseSettings):
     # Connections — local docker-compose defaults. In staging/prod they are
     # mandatory and validated in ``_require_real_urls_in_cloud``.
     database_url: str = Field(default=_DEV_DATABASE_URL)
+    # DSN of the non-superuser application role ``agrosat_app`` (NOBYPASSRLS):
+    # the backend pool connects with this so the multi-tenant RLS policies
+    # enforce (US-051). The superuser ``agrosat`` (``database_url`` /
+    # ``dbmate_database_url``) is the migration role and bypasses RLS.
+    app_database_url: str = Field(default=_DEV_APP_DATABASE_URL)
     dbmate_database_url: str = Field(default="")
     redis_url: str = Field(default=_DEV_REDIS_URL)
     upstash_redis_rest_url: str = ""
@@ -158,6 +167,11 @@ class Settings(BaseSettings):
                 raise ValueError(
                     f"DATABASE_URL is required when env={self.env!r} "
                     "(do not use the development default in cloud)."
+                )
+            if self.app_database_url == _DEV_APP_DATABASE_URL:
+                raise ValueError(
+                    f"APP_DATABASE_URL is required when env={self.env!r} "
+                    "(do not ship the dev agrosat_app password to cloud)."
                 )
             if self.redis_url == _DEV_REDIS_URL and not self.upstash_redis_rest_url:
                 raise ValueError(
