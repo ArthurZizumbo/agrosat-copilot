@@ -49,4 +49,14 @@
   el repo VM en main, solo torch+checkpoints+datos). Notebooks se ejecutan en local
   con papermill (CPU US-074/076/077) y el finetune se lanza en la VM.
 - Si más adelante se necesita el repo VM en main, queda para que Arthur lo haga a
-  mano (o autorice el stash+pull).
+  mano (o autorice el stash+pull). **ACTUALIZACIÓN:** Arthur autorizó actualizar el
+  repo VM con main/cambios locales.
+
+### B2 — EPIC 12 parte de la rama de la cadena, no de main (decisión, no bloqueo)
+- `main` NO tiene el hook label-space de US-053 ni el clasificador con banderas
+  (viven en `feature/E9-US-058-mapview`, PR #49 sin mergear todavía).
+- EPIC 12 (US-074 amplía el label-space registry de US-053) **necesita** ese código,
+  así que la rama `feature/E12-transfer-multiregion` se creó **desde
+  `feature/E9-US-058-mapview`** (no desde main). Cuando el PR #49 se mergee, EPIC 12
+  rebasa/mergea limpio. Verificado: la rama tiene `register_label_space` +
+  `restrict_to_resolved_classes`/`use_stacking`.

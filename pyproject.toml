@@ -225,6 +225,9 @@ ignore = ["S101", "S301"]  # asserts ok en tests; pickle ok para ML
 "**/tests/**" = ["S"]
 "notebooks/**" = ["E402", "F401"]
 "scripts/**" = ["S603", "S607"]
+# US-074: populate_nb_02f construye el notebook del crosswalk HCAT con f-strings
+# concatenadas y filas de tabla markdown largas (E501 inevitable).
+"notebooks/eda/populate_nb_02f.py" = ["E501"]
 # US-013: contenido editorial en español con tipografía rica (em/en dash, comillas tipográficas,
 # signo de multiplicación). RUF001/002/003 marcan estos caracteres como "ambiguos" en código,
 # pero aquí son texto para humanos. El dashboard Streamlit también usa estos caracteres en HTML.

@@ -43,6 +43,7 @@ __all__ = [
     "HARNESS_IGNORE_INDEX",
     "HARNESS_NUM_CLASSES",
     "HARNESS_SIZE",
+    "HCAT_MACRO",
     "LabelSpace",
     "get_label_space",
     "list_label_spaces",
@@ -525,3 +526,90 @@ def restrict_posterior(
     # No probability mass landed on the resolved classes: report an explicit
     # zero distribution rather than inventing a uniform prior.
     return {cid: 0.0 for cid in kept}
+
+
+# ---------------------------------------------------------------------------
+# EPIC 12 US-074: ``hcat-macro`` label-space (HCAT v3 crosswalk).
+# ---------------------------------------------------------------------------
+# US-074 AMPLIES this registry with a label-space carrying the PASTIS-18 -> HCAT
+# v3 macro-group mapping (data/reference/hcat_crosswalk.parquet), WITHOUT touching
+# ``ml.agent.tools.classify`` or the ``restrict_posterior`` signature. Unlike
+# ``france-9`` (a *subset* of well-resolved ids), ``hcat-macro`` keeps ALL 18
+# semantic18 ids and EXPOSES the macro-group label per id in ``class_names``; the
+# actual semantic18->macro aggregation is done by the adapter/consumer reading the
+# parquet, not by the registry. So ``restrict_posterior`` (a mask + renormalize
+# over a subset) is untouched and US-053 keeps working: the kept set is the
+# trivial subset "all 18", and the macro grouping rides along in the names.
+
+#: Mapping ``semantic18_id -> "MACRO_L1_6|macro_hcat_group"`` derived from the
+#: US-074 crosswalk (legacy 6-family HCAT L1 used by E4/E6 + the finer 10-group
+#: HCAT L2 macro). Hardcoded here (not read from the parquet) so importing the
+#: registry never depends on a data file being present; the parquet is the
+#: single source of truth and a test asserts the two agree.
+_HCAT_MACRO_BY_ID: dict[int, str] = {
+    0: "GRASSLAND_OTHER|grassland",
+    1: "CEREALS|cereals",
+    2: "CEREALS|cereals",
+    3: "CEREALS|cereals",
+    4: "OILSEEDS|oilseed_industrial",
+    5: "CEREALS|cereals",
+    6: "OILSEEDS|oilseed_industrial",
+    7: "PERMANENT_WOODY|vineyard",
+    8: "ROOT_CROPS|sugar_beet",
+    9: "CEREALS|cereals",
+    10: "CEREALS|cereals",
+    11: "GRASSLAND_OTHER|vegetables",
+    12: "ROOT_CROPS|potato",
+    13: "LEGUMES|legumes_fodder",
+    14: "LEGUMES|soybean",
+    15: "PERMANENT_WOODY|orchard",
+    16: "CEREALS|cereals",
+    17: "CEREALS|cereals",
+}
+
+
+def _build_hcat_macro() -> LabelSpace:
+    """Construct the ``hcat-macro`` label-space over all 18 semantic18 ids.
+
+    Keeps every semantic18 id (the trivial subset = all 18) and carries the
+    ``"MACRO_L1_6|macro_hcat_group|crop_name"`` triple in ``class_names`` so a
+    consumer can aggregate the semantic18 posterior into HCAT macro families
+    without touching the classifier. Derived from the US-074 crosswalk
+    (``data/reference/hcat_crosswalk.parquet``).
+
+    Returns:
+        The frozen :class:`LabelSpace` for ``hcat-macro`` with 18 kept ids, an
+        empty dropped set, and the macro-annotated name mapping.
+
+    Raises:
+        ValueError: if an id is missing from the semantic18 name table or the
+            macro mapping (a guard against the crosswalk drifting silently).
+    """
+    from ml.data.pastis_filter import SEMANTIC18_CLASS_NAMES
+
+    kept = tuple(range(_SEMANTIC18_SIZE))  # all 18, no class is dropped
+    for cid in kept:
+        if cid not in SEMANTIC18_CLASS_NAMES or cid not in _HCAT_MACRO_BY_ID:
+            raise ValueError(
+                f"hcat-macro id {cid} is missing from the semantic18 name table "
+                "or the macro mapping; re-derive from the US-074 crosswalk."
+            )
+    class_names = {
+        cid: f"{_HCAT_MACRO_BY_ID[cid]}|{SEMANTIC18_CLASS_NAMES[cid]}"
+        for cid in kept
+    }
+    return LabelSpace(
+        name="hcat-macro",
+        kept_class_ids=kept,
+        dropped_class_ids=(),
+        class_names=class_names,
+        source=(
+            "US-074 crosswalk PASTIS-18 -> HCAT v3 "
+            "(data/reference/hcat_crosswalk.parquet)"
+        ),
+    )
+
+
+#: Module-level singleton for the HCAT macro label-space (convenience export).
+HCAT_MACRO: LabelSpace = _build_hcat_macro()
+register_label_space(HCAT_MACRO)
