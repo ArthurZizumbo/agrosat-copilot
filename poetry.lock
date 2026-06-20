@@ -10499,12 +10499,11 @@ version = "0.25.0"
 description = "Python client for the Prometheus monitoring system."
 optional = false
 python-versions = ">=3.9"
-groups = ["dev", "ml", "ml-gpu-linux"]
+groups = ["main", "dev", "ml", "ml-gpu-linux"]
 files = [
     {file = "prometheus_client-0.25.0-py3-none-any.whl", hash = "sha256:d5aec89e349a6ec230805d0df882f3807f74fd6c1a2fa86864e3c2279059fed1"},
     {file = "prometheus_client-0.25.0.tar.gz", hash = "sha256:5e373b75c31afb3c86f1a52fa1ad470c9aace18082d39ec0d2f918d11cc9ba28"},
 ]
-markers = {ml-gpu-linux = "sys_platform == \"linux\""}
 
 [package.extras]
 aiohttp = ["aiohttp"]
@@ -17313,4 +17312,4 @@ test = ["pytest"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12,<3.13"
-content-hash = "80f226d04ca6d99973dfeebb7667dc7bec46a9307638abda3312cd7076a0ca51"
+content-hash = "83bfbf08be2264a4b2eb9c04a79f880d917d13fc4972a6a0c9e5d7bb57356d6b"

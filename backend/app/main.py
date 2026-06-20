@@ -32,10 +32,11 @@ from slowapi.errors import RateLimitExceeded
 from titiler.core.errors import DEFAULT_STATUS_CODES, add_exception_handlers
 
 # isort: on
-from backend.app.api import aois, chat, health, llm, stac, tiles, timeseries
+from backend.app.api import aois, chat, health, llm, metrics, stac, tiles, timeseries
 from backend.app.core.config import get_settings
 from backend.app.core.logging import configure_logging
 from backend.app.core.rate_limit import limiter
+from backend.app.middleware.metrics import PrometheusMiddleware
 from backend.app.services.cog_tiler import cog_tiler
 
 
@@ -86,7 +87,15 @@ def create_app() -> FastAPI:
         ],
         expose_headers=["X-Request-ID", "X-RateLimit-Remaining", "X-RateLimit-Reset"],
     )
+    # US-059 observability: outermost middleware (added after CORS so it runs
+    # first/last in the stack) records real per-process HTTP latency + request
+    # counters by route template. The ``/metrics`` scrape endpoint below exposes
+    # them in Prometheus text format; the middleware excludes ``/metrics`` from
+    # its own histogram to avoid skewing the percentiles with scrape traffic.
+    app.add_middleware(PrometheusMiddleware)
     app.include_router(health.router)
+    # US-059 Prometheus scrape endpoint (process metrics, not session-scoped).
+    app.include_router(metrics.router)
     app.include_router(chat.router)
     # US-054 hot-swap of the per-session reasoner variant (session-scoped, RLS).
     app.include_router(llm.router)
