@@ -14,10 +14,16 @@ permissions:
   contents: read
 
 env:
-  POETRY_VERSION: "1.8.4"
+  # Bumped to match the repo manifests: pyproject.toml declares
+  # ``requires-poetry = ">=2.0"`` (Poetry 1.8.4 rejected it with "The fields
+  # ... are required in package mode" + "requires-poetry was unexpected") and
+  # frontend/package.json pins ``packageManager: pnpm@10.24.0`` / ``engines.pnpm
+  # >=10`` (pnpm 9 failed with ERR_PNPM_UNSUPPORTED_ENGINE). 2.2.1 / 10.24.0 are
+  # the versions verified working locally.
+  POETRY_VERSION: "2.2.1"
   PYTHON_VERSION: "3.12"
   NODE_VERSION: "20"
-  PNPM_VERSION: "9"
+  PNPM_VERSION: "10.24.0"
   TERRAFORM_VERSION: "1.9.8"
 
 jobs:
