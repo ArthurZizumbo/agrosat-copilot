@@ -57,6 +57,7 @@ notebook = "^7.5.6"
 psycopg = {extras = ["binary"], version = "^3.3.4"}
 codebleu = "^0.7.0"
 tree-sitter-python = "<0.22"
+rio-cogeo = "^7.0.2"
 
 [tool.poetry.group.test.dependencies]
 pytest = "^9.0.3"

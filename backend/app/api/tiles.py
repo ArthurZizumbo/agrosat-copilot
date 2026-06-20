@@ -1,48 +1,120 @@
-"""``/tiles`` router: documented ``501`` stub until US-055 mounts TiTiler.
+"""``/tiles`` router: the stable US-053 contract over the COG render service.
 
-US-055 will mount ``titiler.core.factory.TilerFactory(...).router`` with
-``prefix="/tiles"`` onto the backend image to serve dynamic COG/AlphaEarth tiles.
-For US-053 the ``TilerFactory`` is **not** mounted yet (it would couple the image
-to rio-tiler/GDAL runtime concerns prematurely), and there is no upstream tiler
-to proxy. The honest degradation is therefore a ``501 Not Implemented`` that names
-the contract and the US that fulfils it -- not a fabricated empty PNG.
+US-055 replaces the documented ``501`` stub with the real tile adapter. The
+public contract ``GET /tiles/{z}/{x}/{y}.png?url&index`` (US-053) is unchanged:
+the adapter fixes ``WebMercatorQuad`` (the MapLibre/XYZ default) and resolves the
+``index`` (ndvi/ndwi/ndmi) to an expression/rescale/colormap, then delegates to
+the shared :func:`~backend.app.services.cog_tiler.render_cog_tile` wrapped by the
+Redis tile cache. It does **not** reimplement tiling.
 
-The mount point is marked in ``backend/app/main.py``; replacing this stub router
-with the ``TilerFactory`` router there is the entire US-055 wiring change.
+The full TiTiler ``TilerFactory`` is mounted separately under ``/cog`` in
+``main.py`` for the literal AC endpoint with free ``expression``/``colormap``.
 """
 
 from __future__ import annotations
 
+from typing import Annotated
+
 import structlog
-from fastapi import APIRouter, status
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import Response
+
+from backend.app.services.cog_tiler import (
+    CogUrlNotAllowedError,
+    TileRenderError,
+    UnsupportedIndexError,
+    render_cog_tile,
+    resolve_index,
+)
+from backend.app.services.tile_cache import RedisLike, cached_tile, make_redis
 
 logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/tiles", tags=["tiles"])
 
-#: Body returned by the stub so the frontend (and tests) can distinguish a
-#: deliberate not-yet-implemented state from a real server error.
-_NOT_IMPLEMENTED_BODY = {
-    "detail": ("Tile serving is mounted by US-055 (TiTiler TilerFactory); not yet available."),
-    "contract": "GET /tiles/{z}/{x}/{y}.png",
-}
 
-
-@router.get("/{z}/{x}/{y}.png")
-async def get_tile(z: int, x: int, y: int) -> JSONResponse:
-    """Return a documented ``501`` until US-055 mounts the TiTiler ``TilerFactory``.
-
-    Args:
-        z: Tile zoom level (XYZ scheme).
-        x: Tile column.
-        y: Tile row.
+def get_tile_redis() -> RedisLike:
+    """Provide the Redis client for the tile cache (overridable in tests).
 
     Returns:
-        A JSON ``501 Not Implemented`` response describing the deferred contract.
+        The async Redis client backed by ``settings.redis_url``.
     """
-    logger.info("tiles_not_implemented", z=z, x=x, y=y)
-    return JSONResponse(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        content=_NOT_IMPLEMENTED_BODY,
-    )
+    return make_redis()
+
+
+@router.get(
+    "/{z}/{x}/{y}.png",
+    responses={
+        200: {"content": {"image/png": {}}, "description": "Rendered XYZ tile."},
+        422: {"description": "Missing ``url`` or an unsupported ``index``."},
+    },
+)
+async def get_tile(
+    request: Request,
+    z: int,
+    x: int,
+    y: int,
+    url: Annotated[str, Query(description="COG location (path, file://, http(s)://, gs://).")],
+    redis: Annotated[RedisLike, Depends(get_tile_redis)],
+    index: Annotated[str, Query(description="Spectral index: ndvi | ndwi | ndmi.")] = "ndvi",
+) -> Response:
+    """Render an NDVI/NDWI XYZ PNG tile for a COG (US-053 contract).
+
+    Fixes ``WebMercatorQuad``, resolves ``index`` to render parameters, and serves
+    through the Redis tile cache (``X-Tile-Cache: HIT|MISS``).
+
+    Args:
+        request: Incoming request (forms the cache key).
+        z: XYZ zoom level.
+        x: XYZ tile column.
+        y: XYZ tile row.
+        url: COG location (local/file/http/gs).
+        redis: Tile-cache Redis client (injected; ``fakeredis`` in tests).
+        index: Spectral index name (``ndvi`` default).
+
+    Returns:
+        A ``200`` ``image/png`` tile response.
+
+    Raises:
+        HTTPException: ``422`` if ``index`` is unknown or unsupported (e.g.
+            ``ndmi`` on a 4-band COG without SWIR); ``404`` if the COG cannot be
+            read.
+    """
+    try:
+        spec = resolve_index(index)
+    except UnsupportedIndexError as exc:
+        logger.info("tile_index_unsupported", index=index, z=z, x=x, y=y)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+
+    # ``resolve_index`` guarantees a non-None expression for a supported index;
+    # bind it to a local so the type narrows inside the closure below.
+    expression = spec.expression
+    assert expression is not None
+
+    async def _render() -> bytes:
+        try:
+            png: bytes = render_cog_tile(
+                url,
+                z,
+                x,
+                y,
+                expression=expression,
+                rescale=spec.rescale,
+                colormap_name=spec.colormap_name,
+            )
+        except CogUrlNotAllowedError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"COG url not allowed: {exc}",
+            ) from exc
+        except TileRenderError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"COG not readable: {exc}",
+            ) from exc
+        return png
+
+    response: Response = await cached_tile(request, _render, redis=redis)
+    return response

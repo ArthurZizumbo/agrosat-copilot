@@ -150,6 +150,11 @@ class Settings(BaseSettings):
     jwt_secret: str = _JWT_PLACEHOLDER
     jwt_algorithm: str = "HS256"
     cors_allowed_origins: str = "http://localhost:3000"
+    # SSRF allowlist for the COG ``url`` tile param (US-055): comma-separated
+    # http(s) hosts the tiler may fetch server-side. ``gs://`` is gated separately
+    # by ``gcs_data_bucket``; local/``file://`` COGs are always allowed. Empty in
+    # prod = no arbitrary remote http(s) COGs.
+    tile_url_allowed_hosts: str = "localhost,127.0.0.1"
     rate_limit_chat_per_min: int = 10
     rate_limit_llm_switch_per_min: int = 5
 

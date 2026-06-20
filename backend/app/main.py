@@ -11,6 +11,12 @@ Routers are mounted progressively as the US are closed:
 - /jobs                         — EPIC 8 (asynchronous inference via Pub/Sub)
 """
 
+# isort: off
+# US-055 PROJ fix: pin PROJ_DATA to rasterio's bundled DB BEFORE titiler /
+# rio-tiler initialise GDAL's PROJ (Riesgo R1 on the Windows dev box). This MUST
+# stay above the ``titiler.core`` import below -- do not reorder.
+from backend.app.services import proj_env as _proj_env  # noqa: F401
+
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -23,11 +29,14 @@ from fastapi.middleware.cors import CORSMiddleware
 # private alias so it is not re-exported from this module.
 from slowapi import _rate_limit_exceeded_handler as _slowapi_rate_limit_handler
 from slowapi.errors import RateLimitExceeded
+from titiler.core.errors import DEFAULT_STATUS_CODES, add_exception_handlers
 
+# isort: on
 from backend.app.api import aois, chat, health, llm, stac, tiles, timeseries
 from backend.app.core.config import get_settings
 from backend.app.core.logging import configure_logging
 from backend.app.core.rate_limit import limiter
+from backend.app.services.cog_tiler import cog_tiler
 
 
 @asynccontextmanager
@@ -85,9 +94,17 @@ def create_app() -> FastAPI:
     app.include_router(aois.router)
     app.include_router(timeseries.router)
     app.include_router(stac.router)
-    # TiTiler mount point (US-055): replace this documented ``501`` stub router
-    # with ``TilerFactory(...).router`` (prefix "/tiles") to serve dynamic COG
-    # tiles. The contract path ``GET /tiles/{z}/{x}/{y}.png`` stays identical.
+    # US-055 tiling -- two surfaces, one render path:
+    #   /cog  -> the full TiTiler ``TilerFactory`` (literal AC endpoint
+    #            ``/cog/tiles/{tileMatrixSetId}/{z}/{x}/{y}.png?url&expression&
+    #            rescale&colormap_name`` + /cog/info, /cog/tilejson.json, ...).
+    #   /tiles -> the stable US-053 contract ``GET /tiles/{z}/{x}/{y}.png?url&index``
+    #            (adapter fixes WebMercatorQuad and delegates to the shared render).
+    # ``add_exception_handlers`` maps rio-tiler/titiler errors to typed HTTP
+    # responses (no bare 500 without a body). The existing hardened CORS
+    # middleware already covers GET/OPTIONS for both surfaces.
+    app.include_router(cog_tiler.router, prefix="/cog", tags=["cog"])
+    add_exception_handlers(app, DEFAULT_STATUS_CODES)
     app.include_router(tiles.router)
     return app
 

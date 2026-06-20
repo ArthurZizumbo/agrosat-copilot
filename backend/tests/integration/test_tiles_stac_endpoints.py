@@ -1,4 +1,4 @@
-"""``/tiles`` + ``/stac/search`` endpoint tests (US-053 AC-3 / AC-4).
+"""``/stac/search`` endpoint tests (US-053 AC-4).
 
 Drives the real FastAPI app through ``httpx.AsyncClient`` + ``ASGITransport`` (no
 live server, no network, no Docker). The DB boundary is faked: the auth-guard is
@@ -6,11 +6,12 @@ overridden to accept the test session, and ``get_scoped_conn`` yields a fake
 connection whose ``fetchrow`` reports pgstac **absent** -- the current production
 state -- so ``/stac/search`` exercises the graceful-degradation path end to end.
 
-- AC-3: ``GET /tiles/{z}/{x}/{y}.png`` -> ``501`` with the documented JSON body
-  naming US-055 and the contract path (a deliberate not-yet-implemented state).
 - AC-4: ``GET /stac/search`` -> ``200`` with a valid empty STAC
   ``FeatureCollection`` (``features: []``, ``numberMatched: 0``) when pgstac is
   not deployed; the output shape is identical to the pgstac-present case.
+
+The ``/tiles`` endpoint is no longer a ``501`` stub (US-055 mounted the real
+COG tiler); its rendering is covered by ``test_tiles_render.py``.
 """
 
 from __future__ import annotations
@@ -70,17 +71,6 @@ def _client() -> tuple[AsyncClient, object]:
     app.dependency_overrides[core_db.get_scoped_conn] = _fake_scoped_conn
     transport = ASGITransport(app=app)
     return AsyncClient(transport=transport, base_url="http://test"), app
-
-
-async def test_tiles_returns_documented_501() -> None:
-    """``GET /tiles/10/1/1.png`` returns ``501`` with the US-055 contract body."""
-    client, _app = _client()
-    async with client:
-        resp = await client.get("/tiles/10/1/1.png", headers={"X-Session-ID": _VALID_SESSION})
-    assert resp.status_code == 501
-    body = resp.json()
-    assert "US-055" in body["detail"]
-    assert body["contract"] == "GET /tiles/{z}/{x}/{y}.png"
 
 
 async def test_stac_search_empty_collection_when_pgstac_absent() -> None:
