@@ -47,6 +47,7 @@ google-cloud-storage = "^3.10.1"
 google-cloud-secret-manager = "^2.28.0"
 # Earth Engine
 earthengine-api = "^1.7.26"
+eurocropsml = "^0.4.1"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.15.12"

@@ -364,6 +364,15 @@ data/geoanalystbench/*
 !data/geoanalystbench/.gitignore
 !data/geoanalystbench/*.dvc
 
+# ── US-076 EuroCropsML: subset crudo pesado (npz/splits) via DVC, .dvc si va a git ──
+data/transfer/eurocropsml/
+!data/transfer/eurocropsml/*.dvc
+data/transfer/eurocropsml/*.zip
+data/transfer/eurocropsml/*.part
+data/transfer/eurocropsml/_feature_cache/
+# La curva de resultados (ligera) SI va al Git directo, pese al *.parquet global.
+!data/transfer/eurocropsml_fewshot_results.parquet
+
 # ── US-049 agent_bench: artefactos pesados/temporales (codigo+docs si van a git) ──
 .deepeval/
 reports/agent_bench/traces/
