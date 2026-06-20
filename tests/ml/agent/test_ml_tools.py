@@ -80,10 +80,16 @@ class _FakeClassifier:
 # ---------------------------------------------------------------------------
 # classify_new_parcel
 # ---------------------------------------------------------------------------
-async def test_classify_uses_real_posterior(monkeypatch, make_ctx) -> None:
-    """``classify_new_parcel`` returns the argmax of a real model posterior."""
+async def test_classify_restrict_default_nine_classes(monkeypatch, make_ctx) -> None:
+    """US-053: the default (restrict ON) returns the france-9 resolved posterior.
+
+    The default ``restrict_to_resolved_classes=True`` masks the 18-class posterior
+    down to the nine ``france-9`` classes and renormalizes; the surfaced classes
+    are the real semantic18 names of those nine and they sum to ~1.
+    """
+    from ml.eval.class_remap import get_label_space, restrict_posterior
+
     proba = _real_xgb_posterior()
-    expected_idx = int(np.argmax(proba))
     class_names = {i: f"class_{i}" for i in range(18)}
 
     async def _fake_fetch_embedding(ctx, year, aoi):
@@ -98,12 +104,138 @@ async def test_classify_uses_real_posterior(monkeypatch, make_ctx) -> None:
         ClassifyParcelInput(session_id=SESSION_A, aoi=_POLYGON, year=2019), make_ctx()
     )
 
+    space = get_label_space("france-9")
+    assert isinstance(out, ClassificationResult)
+    # Nine resolved classes, renormalized to ~1.
+    assert len(out.class_probabilities) == 9
+    assert sum(out.class_probabilities.values()) == pytest.approx(1.0, abs=1e-6)
+    # The surfaced labels are the real france-9 crop names, not class_xx.
+    assert set(out.class_probabilities) == set(space.class_names.values())
+    # The reported argmax matches the renormalized restricted distribution.
+    expected = restrict_posterior(proba, space)
+    top_cid = max(expected, key=lambda c: expected[c])
+    assert out.crop_class == space.class_names[top_cid]
+    assert out.confidence == pytest.approx(float(expected[top_cid]))
+
+
+async def test_classify_restrict_off_full_eighteen(monkeypatch, make_ctx) -> None:
+    """With ``restrict_to_resolved_classes=False`` the full 18-class posterior shows."""
+    proba = _real_xgb_posterior()
+    expected_idx = int(np.argmax(proba))
+    class_names = {i: f"class_{i}" for i in range(18)}
+
+    async def _fake_fetch_embedding(ctx, year, aoi):
+        return np.linspace(0.0, 1.0, 64, dtype=np.float64)
+
+    monkeypatch.setattr(classify_mod, "_fetch_parcel_embedding", _fake_fetch_embedding)
+    monkeypatch.setattr(
+        classify_mod, "_load_classifier", lambda: _FakeClassifier(proba, class_names)
+    )
+
+    out = await classify_mod.run(
+        ClassifyParcelInput(
+            session_id=SESSION_A,
+            aoi=_POLYGON,
+            year=2019,
+            restrict_to_resolved_classes=False,
+        ),
+        make_ctx(),
+    )
+
     assert isinstance(out, ClassificationResult)
     assert out.crop_class == f"class_{expected_idx}"
     assert out.confidence == pytest.approx(float(proba[expected_idx]))
     # Full 18-class posterior surfaced and summing to ~1 (post-softmax).
     assert len(out.class_probabilities) == 18
     assert sum(out.class_probabilities.values()) == pytest.approx(1.0, abs=1e-6)
+
+
+async def test_classify_use_stacking_with_oof(monkeypatch, make_ctx) -> None:
+    """``use_stacking=True`` serves the Stacking-5 posterior when one is available.
+
+    ``_stacking_posterior`` is stubbed to return a real OOF-shaped 18-vector (so
+    no PASTIS-R / OOF I/O happens); the restricted result must reflect THAT
+    posterior, not the xgb fallback. The classifier is patched to fail if invoked
+    so the test proves the stacking branch was taken.
+    """
+    from ml.eval.class_remap import get_label_space, restrict_posterior
+
+    stack_proba = _real_xgb_posterior()  # real probabilities, never random
+
+    async def _fake_fetch_embedding(ctx, year, aoi):
+        return np.linspace(0.0, 1.0, 64, dtype=np.float64)
+
+    async def _fake_stacking(ctx, inp):
+        return stack_proba
+
+    monkeypatch.setattr(classify_mod, "_fetch_parcel_embedding", _fake_fetch_embedding)
+    monkeypatch.setattr(classify_mod, "_stacking_posterior", _fake_stacking)
+    # The xgb fallback must NOT predict when stacking succeeds.
+    monkeypatch.setattr(
+        classify_mod,
+        "_load_classifier",
+        lambda: _FakeClassifier(
+            np.full(18, np.nan), {i: f"class_{i}" for i in range(18)}
+        ),
+    )
+
+    out = await classify_mod.run(
+        ClassifyParcelInput(
+            session_id=SESSION_A, aoi=_POLYGON, year=2019, use_stacking=True
+        ),
+        make_ctx(),
+    )
+
+    space = get_label_space("france-9")
+    expected = restrict_posterior(stack_proba, space)
+    top_cid = max(expected, key=lambda c: expected[c])
+    assert out.crop_class == space.class_names[top_cid]
+    assert out.confidence == pytest.approx(float(expected[top_cid]))
+
+
+async def test_classify_use_stacking_degrades_without_oof(monkeypatch, make_ctx) -> None:
+    """``use_stacking=True`` with no OOF degrades to xgb-alphaearth, no crash (AC-8).
+
+    ``_resolve_canonical_parcel_id`` returns a parcel id but ``_load_stacking_five``
+    raises ``FileNotFoundError`` (DVC not pulled); ``run`` must fall back to the xgb
+    posterior and emit the structured ``classify_stacking_unavailable`` warning
+    rather than propagating the error.
+    """
+    proba = _real_xgb_posterior()
+    class_names = {i: f"class_{i}" for i in range(18)}
+
+    async def _fake_fetch_embedding(ctx, year, aoi):
+        return np.linspace(0.0, 1.0, 64, dtype=np.float64)
+
+    async def _fake_resolve(ctx, aoi):
+        return "10003_1103071"
+
+    def _raise_no_oof():
+        raise FileNotFoundError("Stacking-5 OOF parquet missing (dvc not pulled).")
+
+    monkeypatch.setattr(classify_mod, "_fetch_parcel_embedding", _fake_fetch_embedding)
+    monkeypatch.setattr(classify_mod, "_resolve_canonical_parcel_id", _fake_resolve)
+    monkeypatch.setattr(classify_mod, "_load_stacking_five", _raise_no_oof)
+    monkeypatch.setattr(
+        classify_mod, "_load_classifier", lambda: _FakeClassifier(proba, class_names)
+    )
+
+    out = await classify_mod.run(
+        ClassifyParcelInput(
+            session_id=SESSION_A,
+            aoi=_POLYGON,
+            year=2019,
+            use_stacking=True,
+            restrict_to_resolved_classes=False,
+        ),
+        make_ctx(),
+    )
+
+    # Fell back to xgb (full 18-class posterior since restrict is off), no crash.
+    assert isinstance(out, ClassificationResult)
+    assert len(out.class_probabilities) == 18
+    expected_idx = int(np.argmax(proba))
+    assert out.crop_class == f"class_{expected_idx}"
 
 
 async def test_classify_needs_gee_when_no_embedding(monkeypatch, make_ctx) -> None:

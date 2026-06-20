@@ -1,26 +1,40 @@
-"""``classify_new_parcel`` tool: per-parcel crop classification (synchronous).
+"""``classify_new_parcel`` tool: honest per-parcel crop classification (sync).
 
-For a NEW parcel polygon the only direct per-parcel inference available is the
-tabular ``xgb-alphaearth`` member of the EPIC 6 ensemble: an XGBoost trained over
-the 64-dim AlphaEarth annual embedding. This tool:
+This tool is deliberately HONEST about which model serves a classification (it
+used to advertise itself as a "stacking ensemble" while only ever running the
+``xgb-alphaearth`` member -- US-053 corrects that oversell). Two independent flags
+on :class:`~ml.agent.schemas.ClassifyParcelInput` shape the output:
 
-1. Resolves the AlphaEarth embedding of the parcel. If the polygon already maps to
-   a persisted parcel of the session (``features_parcels.alphaearth_embedding``),
-   that embedding is used; the query is session-scoped (multi-tenant). If no
-   embedding is found (a fresh AOI with no persisted parcel/embedding), the tool
-   does NOT hallucinate a class: it returns a controlled low-confidence result
-   flagged ``needs_gee_sampling`` (the AlphaEarth GEE sampler that would produce
-   the embedding is out of scope for this US).
-2. Loads the XGBoost-AlphaEarth classifier (CPU, cached with ``functools.lru_cache``)
-   trained leak-free on folds 1-4 of ``features_fused_pastis.parquet`` -- the exact
-   same recipe the EPIC 6 stacking ensemble uses to materialize the
-   ``xgb-alphaearth`` base member (``scripts/run_us040_ensembles.py``).
-3. Runs ``predict_proba`` on the embedding and returns a
-   :class:`~ml.agent.schemas.ClassificationResult` with the argmax crop class, its
-   confidence and the full posterior over the 18 PASTIS semantic classes.
+- ``restrict_to_resolved_classes`` (default ON): the posterior is masked down to
+  the well-resolved classes of the active label-space (``france-9`` by default,
+  the nine classes with the highest F1 OOF fold-5) and renormalized over them
+  (see :mod:`ml.eval.class_remap`). It costs no GPU and works for any parcel with
+  a persisted 64-dim embedding -- it just declines to report classes the model
+  resolves poorly. When OFF the full 18-class posterior is returned (legacy).
+- ``use_stacking`` (default OFF): for a parcel ALREADY materialized in the cached
+  fold-5 OOF, the tool serves the Stacking-5 champion posterior (the logreg meta
+  refit on all five members' OOF; F1-macro 0.912). A new polygon with no OOF row,
+  or absent OOF artifacts (DVC not pulled), degrades CLEANLY to ``xgb-alphaearth``
+  with a structured warning -- it never crashes.
 
-The classifier load is CPU-light (a single XGBoost fit over ~13k tabular rows) and
-cached process-wide, so repeated calls reuse the fitted estimator (no GPU, per the
+Default (both flags at their defaults) the tool serves the ``xgb-alphaearth``
+tabular member restricted to ``france-9``.
+
+The per-parcel inference path:
+
+1. Resolves the AlphaEarth embedding of the parcel. If the polygon maps to a
+   persisted parcel of the session (``features_parcels.alphaearth_embedding``),
+   that embedding is used (session-scoped, multi-tenant). If none is found (a
+   fresh AOI), the tool returns a controlled ``needs_gee_sampling`` result rather
+   than hallucinating a class -- the flags are NOT evaluated before the embedding.
+2. Loads the XGBoost-AlphaEarth classifier (CPU, ``functools.lru_cache``) trained
+   leak-free on folds 1-4 of ``features_fused_pastis.parquet`` -- the same recipe
+   the EPIC 6 stacking ensemble materializes its ``xgb-alphaearth`` base member.
+3. Optionally re-scores via the Stacking-5 logreg meta (cached) when
+   ``use_stacking`` and the parcel is in the fold-5 OOF universe.
+4. Optionally restricts + renormalizes the posterior over the active label-space.
+
+Every load is CPU-light and cached process-wide (no GPU, per the
 ``ml/agent/AGENTS.md`` rule that heavy GPU inference must go behind Pub/Sub).
 """
 
@@ -29,16 +43,27 @@ from __future__ import annotations
 import functools
 import json
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import structlog
 
 from ml.agent.context import ToolContext
 from ml.agent.schemas import ClassificationResult, ClassifyParcelInput, GeoJSONGeometry
+from ml.eval.class_remap import LabelSpace, get_label_space, restrict_posterior
 
 logger = structlog.get_logger(__name__)
 
 __all__ = ["run"]
+
+#: Five EPIC 6 stacking members whose cached fold-5 OOF feed the Stacking-5 meta.
+_STACKING_MEMBERS: tuple[str, ...] = (
+    "tsvit-pheno",
+    "utae",
+    "xgb-alphaearth",
+    "farslip-ft18",
+    "farslip-zeroshot",
+)
 
 #: Repo root resolved from this file (``ml/agent/tools/classify.py`` -> repo).
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -46,6 +71,13 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 #: Fused tabular features parquet holding the AlphaEarth ``dim_*`` columns,
 #: the PASTIS ``class_id`` and the spatial ``fold`` (1..5).
 _FEATURES_PATH = _REPO_ROOT / "data" / "features" / "features_fused_pastis.parquet"
+
+#: Directory holding the US-031 per-parcel OOF parquet artifacts (DVC-tracked).
+_OOF_DIR = _REPO_ROOT / "ml" / "eval" / "oof"
+
+#: PASTIS-R root used to reconstruct the per-parcel GT for the Stacking-5 meta
+#: re-fit (the OOF dump discards the target). Absent when DVC data is not pulled.
+_PASTIS_ROOT = _REPO_ROOT / "data" / "PASTIS-R"
 
 #: Column prefix of the 64-dim AlphaEarth embedding in the features parquet.
 _ALPHAEARTH_PREFIX: str = "dim_"
@@ -206,6 +238,261 @@ def _load_classifier() -> _XgbAlphaEarthClassifier:
     )
 
 
+class _StackingFive:
+    """Stacking-5 logreg meta refit on the five members' cached fold-5 OOF.
+
+    Holds the fitted multinomial logistic-regression meta-learner plus the joined
+    meta-feature frame keyed by ``canonical_parcel_id`` so a single parcel can be
+    re-scored by id without recomputing anything. This mirrors the EPIC 6
+    :class:`ml.ensemble.stacking.StackingEnsemble` final refit (the model
+    ``predict_proba`` uses) -- the logreg meta over OOF predictions ONLY, never
+    raw features or logits -- but skips the spatial-CV quality estimate (that
+    produces the reported F1, not the deployed posterior).
+
+    Attributes:
+        meta: The fitted ``LogisticRegression`` meta-learner.
+        meta_classes: The semantic18 class ids the meta can emit, column-aligned
+            with ``meta.predict_proba``.
+        feature_cols: The ``member__prob_xxx`` meta-feature columns, in fit order.
+        meta_features_by_id: Mapping ``canonical_parcel_id -> (90,)`` meta-feature
+            row, for O(1) per-parcel lookup.
+    """
+
+    def __init__(
+        self,
+        meta: Any,
+        meta_classes: np.ndarray,
+        feature_cols: list[str],
+        meta_features_by_id: dict[str, np.ndarray],
+    ) -> None:
+        self.meta = meta
+        self.meta_classes = meta_classes
+        self.feature_cols = feature_cols
+        self.meta_features_by_id = meta_features_by_id
+
+    def posterior_for_parcel(self, canonical_id: str) -> np.ndarray | None:
+        """Return the Stacking-5 ``(18,)`` posterior for a fold-5 parcel.
+
+        Args:
+            canonical_id: Canonical parcel id (``"{patch}_{local}"``) to score.
+
+        Returns:
+            A ``(18,)`` ``float64`` post-softmax distribution, or ``None`` when the
+            parcel is not in the joined fold-5 OOF universe (caller degrades).
+        """
+        row = self.meta_features_by_id.get(canonical_id)
+        if row is None:
+            return None
+        proba_local = np.asarray(
+            self.meta.predict_proba(row.reshape(1, -1)), dtype=np.float64
+        )[0]
+        full = np.zeros(_NUM_CLASSES, dtype=np.float64)
+        for col, cls in enumerate(self.meta_classes):
+            cls_int = int(cls)
+            if 0 <= cls_int < _NUM_CLASSES:
+                full[cls_int] = proba_local[col]
+        total = full.sum()
+        return full / total if total > 1e-12 else full
+
+
+@functools.lru_cache(maxsize=1)
+def _load_stacking_five() -> _StackingFive:
+    """Load (and cache) the Stacking-5 logreg meta from the cached fold-5 OOF.
+
+    Inner-joins the five members' per-parcel OOF parquets on
+    ``canonical_parcel_id`` (post-softmax ``prob_000..prob_017`` -> ``5 x 18 = 90``
+    meta-features), reconstructs the per-parcel semantic18 GT from the PASTIS-R
+    rasters (the OOF dump discards the target) and fits a multinomial
+    ``LogisticRegression`` meta-learner. The result is cached process-wide.
+
+    Returns:
+        A ready :class:`_StackingFive`.
+
+    Raises:
+        FileNotFoundError: if any member OOF parquet or the PASTIS-R GT source is
+            missing (run ``dvc pull ml/eval/oof`` / ``dvc pull data/PASTIS-R``);
+            the caller catches this and degrades to ``xgb-alphaearth``.
+        ValueError: if the OOF join or the OOF/GT join leaves no parcels.
+    """
+    import polars as pl
+    from sklearn.linear_model import LogisticRegression
+
+    from ml.utils.parcel_id import canonical_parcel_id
+    from ml.utils.parcel_reconcile import PROB_COLUMNS
+
+    key = "canonical_parcel_id"
+    joined: pl.DataFrame | None = None
+    feature_cols: list[str] = []
+    for member in _STACKING_MEMBERS:
+        path = _OOF_DIR / f"oof_parcel_{member}_fold5.parquet"
+        if not path.exists():
+            raise FileNotFoundError(
+                f"Stacking-5 OOF parquet missing: {path}. Run `dvc pull ml/eval/oof`."
+            )
+        frame = canonical_parcel_id(pl.read_parquet(path), col=key)
+        renamed = {col: f"{member}__{col}" for col in PROB_COLUMNS}
+        feature_cols.extend(renamed.values())
+        sub = frame.select([key, *PROB_COLUMNS]).rename(renamed)
+        joined = sub if joined is None else joined.join(sub, on=key, how="inner")
+    if joined is None or joined.height == 0:
+        raise ValueError("the five members share no common fold-5 parcel.")
+    joined = joined.sort(key)
+
+    gt = _build_parcel_ground_truth(joined.get_column(key).to_list())
+    train = joined.join(gt, on=key, how="inner").sort(key)
+    if train.height == 0:
+        raise ValueError(
+            "no parcels remain after joining the OOF with the PASTIS-R ground truth."
+        )
+
+    x_meta = train.select(feature_cols).to_numpy().astype(np.float64)
+    y_meta = train.get_column("label").to_numpy().astype(np.int64)
+    meta = LogisticRegression(
+        max_iter=2000, class_weight="balanced", random_state=42
+    ).fit(x_meta, y_meta)
+
+    # Index EVERY joined parcel's meta-features (not just the GT-labelled subset)
+    # so a parcel present in all five OOF can be scored even if its GT was dropped.
+    all_features = joined.select(feature_cols).to_numpy().astype(np.float64)
+    all_ids = joined.get_column(key).to_list()
+    meta_features_by_id = {pid: all_features[i] for i, pid in enumerate(all_ids)}
+
+    logger.info(
+        "classify_stacking_five_loaded",
+        n_members=len(_STACKING_MEMBERS),
+        n_parcels=int(joined.height),
+        n_train=int(train.height),
+        n_meta_features=len(feature_cols),
+    )
+    return _StackingFive(
+        meta=meta,
+        meta_classes=np.asarray(meta.classes_, dtype=np.int64),
+        feature_cols=feature_cols,
+        meta_features_by_id=meta_features_by_id,
+    )
+
+
+def _build_parcel_ground_truth(canonical_ids: list[str]):  # type: ignore[no-untyped-def]
+    """Reconstruct per-parcel semantic18 GT from PASTIS-R for the given parcels.
+
+    The OOF dump discards the target, so the per-parcel ground truth is rebuilt
+    from the PASTIS-R semantic ``TARGET`` + ``ParcelIDs`` rasters: each parcel gets
+    the MAJORITY semantic18 label of its pixels, keyed by the SAME canonical id
+    (``f"{patch}_{local}"``) the OOF parcels use. Only the patches actually present
+    in ``canonical_ids`` are read (fold-5), keeping the I/O bounded.
+
+    Args:
+        canonical_ids: Canonical parcel ids whose patches must be reconstructed.
+
+    Returns:
+        A Polars frame with ``canonical_parcel_id`` (Utf8) + ``label`` (Int64 in
+        the ``[0..17]`` semantic18 space).
+
+    Raises:
+        FileNotFoundError: if a required PASTIS-R raster is absent (data not
+            pulled); the caller catches this and degrades to ``xgb-alphaearth``.
+    """
+    import polars as pl
+
+    from ml.data.pastis_seg_dataset import _build_semantic18_lut
+    from ml.utils.parcel_id import canonical_parcel_id
+    from ml.utils.parcel_reconcile import load_pastis_parcel_ids
+
+    if not _PASTIS_ROOT.exists():
+        raise FileNotFoundError(
+            f"PASTIS-R root not found: {_PASTIS_ROOT}. Run `dvc pull data/PASTIS-R`."
+        )
+
+    ignore_index = 255
+    label_lut = _build_semantic18_lut(ignore_index)
+    patch_ids = sorted({cid.split("_")[0] for cid in canonical_ids})
+
+    keys: list[str] = []
+    labels: list[int] = []
+    for pid in patch_ids:
+        target_path = _PASTIS_ROOT / "ANNOTATIONS" / f"TARGET_{pid}.npy"
+        if not target_path.exists():
+            raise FileNotFoundError(
+                f"PASTIS-R semantic TARGET not found: {target_path}."
+            )
+        target = np.load(target_path)
+        if target.ndim == 3:  # PASTIS ships (3, H, W); the semantic channel is 0.
+            target = target[0]
+        parcel_ids = load_pastis_parcel_ids(pid, _PASTIS_ROOT)
+
+        flat_pids = parcel_ids.reshape(-1)
+        raw = np.clip(target.reshape(-1).astype(np.int64), 0, 19)
+        flat_labels = label_lut[raw]
+        valid = (flat_pids != 0) & (flat_labels != ignore_index)
+        flat_pids = flat_pids[valid]
+        flat_labels = flat_labels[valid]
+        if flat_pids.size == 0:
+            continue
+
+        unique_ids, inverse = np.unique(flat_pids, return_inverse=True)
+        votes = np.zeros((unique_ids.size, _NUM_CLASSES), dtype=np.int64)
+        in_range = flat_labels < _NUM_CLASSES
+        np.add.at(votes, (inverse[in_range], flat_labels[in_range]), 1)
+        majority = votes.argmax(axis=1)
+        for local, lab in zip(unique_ids, majority, strict=True):
+            keys.append(f"{pid}_{int(local)}")
+            labels.append(int(lab))
+
+    frame = pl.DataFrame({"canonical_parcel_id": keys, "label": labels}).with_columns(
+        pl.col("label").cast(pl.Int64)
+    )
+    return canonical_parcel_id(frame, col="canonical_parcel_id")
+
+
+async def _resolve_canonical_parcel_id(
+    ctx: ToolContext, aoi: GeoJSONGeometry
+) -> str | None:
+    """Resolve the canonical fold-5 OOF key of the persisted parcel under ``aoi``.
+
+    The Stacking-5 OOF is keyed by a canonical ``parcel_id`` (Utf8). The DB has no
+    dedicated canonical-id column (``features_parcels`` keys only by integer
+    ``parcel_id``), so -- exactly like :func:`ml.agent.tools.compare._compute_comparison`
+    -- the DB integer ``parcels.id`` is BRIDGED to the OOF Utf8 namespace via
+    :func:`ml.utils.parcel_id.canonical_parcel_id` (a lossless integer->Utf8 cast).
+    The lookup is session-scoped and spatially anchored to the drawn AOI, mirroring
+    :func:`_fetch_parcel_embedding`. A bridged id absent from the fold-5 OOF
+    universe (a fresh, non-PASTIS parcel) yields no Stacking-5 row and the caller
+    degrades to ``xgb-alphaearth``.
+
+    Args:
+        ctx: Tool execution context (pool, session id).
+        aoi: Drawn AOI polygon used to spatially resolve the parcel.
+
+    Returns:
+        The bridged canonical parcel id string, or ``None`` when no persisted
+        parcel of the session intersects ``aoi``.
+    """
+    import polars as pl
+
+    from ml.agent.db import session_scoped_conn
+    from ml.utils.parcel_id import canonical_parcel_id
+
+    query = """
+        SELECT p.id
+        FROM parcels p
+        WHERE p.session_id = $1
+          AND ST_Intersects(p.geom, ST_SetSRID(ST_GeomFromGeoJSON($2), 4326))
+        ORDER BY p.id DESC
+        LIMIT 1
+    """
+    aoi_geojson = json.dumps({"type": aoi.type, "coordinates": aoi.coordinates})
+    async with session_scoped_conn(ctx.session_id) as conn:
+        row = await conn.fetchrow(query, ctx.session_id, aoi_geojson)
+    if row is None or row["id"] is None:
+        return None
+    parcel_id = int(row["id"])
+    # Bridge the DB integer id to the Utf8 OOF key namespace (same as compare.py).
+    bridged = canonical_parcel_id(
+        pl.DataFrame({"canonical_parcel_id": [parcel_id]}), col="canonical_parcel_id"
+    )["canonical_parcel_id"][0]
+    return str(bridged)
+
+
 async def _fetch_parcel_embedding(
     ctx: ToolContext, year: int, aoi: GeoJSONGeometry | None = None
 ) -> np.ndarray | None:
@@ -313,24 +600,151 @@ def _needs_gee_result() -> ClassificationResult:
     )
 
 
-async def run(inp: ClassifyParcelInput, ctx: ToolContext) -> ClassificationResult:
-    """Classify the crop of a new parcel polygon with the XGBoost-AlphaEarth model.
+def _build_result(
+    proba: np.ndarray,
+    class_names: dict[int, str],
+    *,
+    restrict: bool,
+    label_space: LabelSpace,
+) -> ClassificationResult:
+    """Assemble a :class:`ClassificationResult` from an 18-class posterior.
+
+    When ``restrict`` is ``True`` the posterior is masked + renormalized over the
+    ``label_space`` resolved classes (the default, honest path); the result then
+    carries only the kept classes. When ``False`` the full 18-class posterior is
+    surfaced (legacy behaviour). The argmax / confidence are always computed over
+    the SAME distribution that is reported (no mismatch between the headline class
+    and the surfaced probabilities).
 
     Args:
-        inp: Validated arguments (session id, AOI polygon, campaign year).
+        proba: A ``(18,)`` post-softmax distribution over the semantic18 space.
+        class_names: ``{semantic18_id: crop name}`` for naming the kept classes;
+            for the full path it should cover all 18 ids.
+        restrict: Whether to mask + renormalize over ``label_space``.
+        label_space: The active label-space (used only when ``restrict``).
+
+    Returns:
+        The typed :class:`ClassificationResult`. When restricting and no mass
+        landed on the resolved classes, ``crop_class`` is ``"unresolved"`` with
+        zero confidence (an honest "none of the resolved classes apply").
+    """
+    if restrict:
+        restricted = restrict_posterior(proba, label_space)
+        named = {
+            label_space.class_names.get(cid, class_names.get(cid, str(cid))): p
+            for cid, p in restricted.items()
+        }
+        if not named or max(named.values(), default=0.0) <= 0.0:
+            return ClassificationResult(
+                crop_class="unresolved",
+                confidence=0.0,
+                class_probabilities=named,
+            )
+        top_name = max(named, key=lambda k: named[k])
+        return ClassificationResult(
+            crop_class=top_name,
+            confidence=float(named[top_name]),
+            class_probabilities=named,
+        )
+
+    top_idx = int(np.argmax(proba))
+    named = {
+        class_names.get(idx, str(idx)): float(proba[idx]) for idx in range(_NUM_CLASSES)
+    }
+    return ClassificationResult(
+        crop_class=class_names.get(top_idx, str(top_idx)),
+        confidence=float(proba[top_idx]),
+        class_probabilities=named,
+    )
+
+
+async def _stacking_posterior(
+    ctx: ToolContext, inp: ClassifyParcelInput
+) -> np.ndarray | None:
+    """Try to produce the Stacking-5 posterior for the parcel under ``inp.aoi``.
+
+    Resolves the parcel's bridged canonical id, loads the cached Stacking-5 meta
+    and returns its ``(18,)`` posterior. Degrades CLEANLY (returns ``None``, never
+    raises) when:
+
+    - the parcel does not resolve to the fold-5 OOF universe (a new polygon), or
+    - the OOF / PASTIS-R GT artifacts are unavailable (DVC not pulled).
+
+    Each degradation is logged with a structured ``classify_stacking_unavailable``
+    warning so the caller can fall back to ``xgb-alphaearth`` (AC-8).
+
+    Args:
+        ctx: Tool execution context (pool, session id).
+        inp: Validated classify arguments (AOI is used to resolve the parcel).
+
+    Returns:
+        A ``(18,)`` ``float64`` Stacking-5 posterior, or ``None`` to degrade.
+    """
+    canonical_id = await _resolve_canonical_parcel_id(ctx, inp.aoi)
+    if canonical_id is None:
+        logger.warning(
+            "classify_stacking_unavailable",
+            reason="no persisted parcel resolved for the AOI; using xgb-alphaearth.",
+        )
+        return None
+
+    try:
+        stacking = _load_stacking_five()
+    except (FileNotFoundError, ValueError) as exc:
+        logger.warning(
+            "classify_stacking_unavailable",
+            reason="fold-5 OOF / PASTIS-R ground truth not available",
+            error=str(exc),
+        )
+        return None
+
+    posterior = stacking.posterior_for_parcel(canonical_id)
+    if posterior is None:
+        logger.warning(
+            "classify_stacking_unavailable",
+            reason="parcel not in the fold-5 OOF universe; using xgb-alphaearth.",
+            canonical_parcel_id=canonical_id,
+        )
+        return None
+
+    logger.info(
+        "classify_stacking_used",
+        canonical_parcel_id=canonical_id,
+        member="stacking-5",
+    )
+    return posterior
+
+
+async def run(inp: ClassifyParcelInput, ctx: ToolContext) -> ClassificationResult:
+    """Classify a parcel's crop honestly (xgb-alphaearth or Stacking-5).
+
+    By default serves the ``xgb-alphaearth`` tabular member restricted to the
+    active label-space's resolved classes (``france-9``). With
+    ``inp.use_stacking`` the Stacking-5 posterior is used for a fold-5 parcel,
+    degrading cleanly to ``xgb-alphaearth`` when no OOF row matches or the OOF
+    artifacts are unavailable. With ``inp.restrict_to_resolved_classes=False`` the
+    full 18-class posterior is returned (legacy).
+
+    Args:
+        inp: Validated arguments (session id, AOI polygon, year, and the
+            ``restrict_to_resolved_classes`` / ``use_stacking`` / ``label_space``
+            flags).
         ctx: Tool execution context (asyncpg pool, settings, session id).
 
     Returns:
-        A :class:`ClassificationResult` with the argmax crop class, its confidence
-        and the full 18-class posterior. When no AlphaEarth embedding is available
-        for the session's parcel (a fresh AOI), a controlled
-        ``needs_gee_sampling`` result is returned instead of a guessed class.
+        A :class:`ClassificationResult`. When no AlphaEarth embedding is available
+        for the session's parcel (a fresh AOI), a controlled ``needs_gee_sampling``
+        result is returned instead of a guessed class -- the flags are NOT
+        evaluated before the embedding is resolved.
     """
     logger.info(
         "classify_new_parcel_started",
         session_id=str(inp.session_id),
         year=inp.year,
         geometry_type=inp.aoi.type,
+        restrict=inp.restrict_to_resolved_classes,
+        use_stacking=inp.use_stacking,
+        label_space=inp.label_space,
     )
 
     embedding = await _fetch_parcel_embedding(ctx, inp.year, inp.aoi)
@@ -343,22 +757,33 @@ async def run(inp: ClassifyParcelInput, ctx: ToolContext) -> ClassificationResul
         )
         return _needs_gee_result()
 
-    classifier = _load_classifier()
-    proba = classifier.predict_proba_18(embedding)
-    top_idx = int(np.argmax(proba))
-    crop_class = classifier.class_names.get(top_idx, str(top_idx))
-    class_probabilities = {
-        classifier.class_names.get(idx, str(idx)): float(proba[idx]) for idx in range(_NUM_CLASSES)
-    }
+    # Resolve the label-space up front so an unknown name fails fast (not after
+    # the expensive model load). france-9 is the default.
+    label_space = get_label_space(inp.label_space)
 
-    result = ClassificationResult(
-        crop_class=crop_class,
-        confidence=float(proba[top_idx]),
-        class_probabilities=class_probabilities,
+    classifier = _load_classifier()
+
+    proba: np.ndarray | None = None
+    member = "xgb-alphaearth"
+    if inp.use_stacking:
+        proba = await _stacking_posterior(ctx, inp)
+        if proba is not None:
+            member = "stacking-5"
+    if proba is None:
+        proba = classifier.predict_proba_18(embedding)
+
+    result = _build_result(
+        proba,
+        classifier.class_names,
+        restrict=inp.restrict_to_resolved_classes,
+        label_space=label_space,
     )
     logger.info(
         "classify_new_parcel_finished",
         session_id=str(inp.session_id),
+        member=member,
+        restricted=inp.restrict_to_resolved_classes,
+        n_classes=len(result.class_probabilities),
         crop_class=result.crop_class,
         confidence=round(result.confidence, 4),
     )

@@ -139,7 +139,10 @@ TOOL_SPECS: dict[str, _ToolDescriptor] = {
         ClassifyParcelInput,
         ClassificationResult,
         False,
-        "Classify the crop of a new parcel polygon with the stacking ensemble.",
+        "Classify a parcel's crop. By default serves the xgb-alphaearth tabular "
+        "member restricted to the active label-space's well-resolved classes "
+        "(france-9); with use_stacking=True and cached fold-5 OOF it serves the "
+        "Stacking-5 champion posterior. Not a generic 'stacking ensemble' by default.",
     ),
     "add_aoi": (
         "ml.agent.tools.add_aoi",

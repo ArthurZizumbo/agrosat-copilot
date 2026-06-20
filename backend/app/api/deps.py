@@ -27,7 +27,7 @@ from fastapi import Depends, HTTPException, status
 
 from backend.app.core.db import get_request_session_id, get_scoped_conn
 
-__all__ = ["verify_chat_session"]
+__all__ = ["verify_chat_session", "verify_session"]
 
 logger = structlog.get_logger(__name__)
 
@@ -65,6 +65,44 @@ async def verify_chat_session(
     row = await conn.fetchrow(_SESSION_EXISTS_SQL, session_id)
     if row is None:
         logger.warning("chat_session_forbidden", session_id=str(session_id))
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Session not found or not accessible.",
+        )
+    return session_id
+
+
+async def verify_session(
+    session_id: Annotated[UUID, Depends(get_request_session_id)],
+    conn: Annotated[asyncpg.Connection, Depends(get_scoped_conn)],
+) -> UUID:
+    """Authorise any session-scoped request against its tenant session.
+
+    Endpoint-neutral generalisation of :func:`verify_chat_session` (same SQL,
+    same fail-closed semantics) used by the US-053 data endpoints (``/aois``,
+    ``/aois/{id}/timeseries``, ``/stac/search``). It runs ``SELECT 1 FROM
+    chat_sessions WHERE id = $1`` on the RLS-scoped connection: zero rows means
+    the session is unknown or owned by another tenant, both rejected with
+    ``403`` (fail-closed). A missing/malformed ``X-Session-ID`` already raised
+    ``400`` upstream in :func:`~backend.app.core.db.get_request_session_id`.
+
+    ``verify_chat_session`` is kept as-is (US-052 ``/chat`` imports it) so this
+    generalisation does not touch the chat router.
+
+    Args:
+        session_id: Validated tenant session id (``400`` on a bad header).
+        conn: RLS-scoped connection bound to ``session_id``.
+
+    Returns:
+        The validated and authorised tenant session id.
+
+    Raises:
+        HTTPException: ``403 Forbidden`` when the session does not exist or is
+            not owned by the caller.
+    """
+    row = await conn.fetchrow(_SESSION_EXISTS_SQL, session_id)
+    if row is None:
+        logger.warning("session_forbidden", session_id=str(session_id))
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Session not found or not accessible.",

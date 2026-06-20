@@ -24,7 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler as _slowapi_rate_limit_handler
 from slowapi.errors import RateLimitExceeded
 
-from backend.app.api import chat, health
+from backend.app.api import aois, chat, health, stac, tiles, timeseries
 from backend.app.core.config import get_settings
 from backend.app.core.logging import configure_logging
 from backend.app.core.rate_limit import limiter
@@ -79,6 +79,14 @@ def create_app() -> FastAPI:
     )
     app.include_router(health.router)
     app.include_router(chat.router)
+    # US-053 geospatial data endpoints (all session-scoped via RLS).
+    app.include_router(aois.router)
+    app.include_router(timeseries.router)
+    app.include_router(stac.router)
+    # TiTiler mount point (US-055): replace this documented ``501`` stub router
+    # with ``TilerFactory(...).router`` (prefix "/tiles") to serve dynamic COG
+    # tiles. The contract path ``GET /tiles/{z}/{x}/{y}.png`` stays identical.
+    app.include_router(tiles.router)
     return app
 
 
