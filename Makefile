@@ -451,7 +451,7 @@ farslip-smoke-eval:  ## US-017 — smoke eval extractor desde GCS o cache local
 security-audit:
 	bash scripts/security_audit.sh
 
-# === Documentation ===
+# === Documentation (Paper Track / Avance 7, US-071) ===
 DOCS_DIR := docs/final_doc
 PDFLATEX := pdflatex -interaction=nonstopmode -halt-on-error -file-line-error
 
@@ -470,5 +470,3 @@ DOCS_IMAGE := agrosat-docs-latex:dev
 docs-pdf-docker:  ## Compila los PDFs en un contenedor texlive (no requiere LaTeX local). Solo necesita Docker.
 	docker build -f infrastructure/docker/docs-latex.Dockerfile -t $(DOCS_IMAGE) infrastructure/docker
 	docker run --rm -v "$(CURDIR):/repo" -w /repo/$(DOCS_DIR) $(DOCS_IMAGE)
-
-
