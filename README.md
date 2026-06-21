@@ -2,7 +2,9 @@
 
 > **Cuantificación de superficies de cultivo** mediante segmentación semántica de
 > imágenes satelitales, Foundation Models (AlphaEarth Foundations) y procesamiento
-> conversacional por LLMs (Gemma 4, Qwen3.5-35B-A3B y Gemini 3.1 Pro).
+> conversacional por LLMs (Gemini 2.5 Pro frozen como reasoner + Qwen3.5-35B-A3B
+> vLLM on-prem; patrón "Be My Eyes": el perceiver son nuestros modelos, el reasoner
+> es el LLM frozen).
 
 **Proyecto Integrador MNA** — Tec de Monterrey · Scuola Superiore Sant'Anna (Pisa)
 **Sponsor:** Dr. Gerardo Jesús Camacho González (gjcamacho@tec.mx)
@@ -37,12 +39,15 @@ punto de partida (A0) hasta lo que sigue.
 
 | Avance | Fase | Qué se hizo | Métrica clave |
 |--------|------|-------------|---------------|
-| **A0** | Setup | Elección de PASTIS-R (etiquetas reales de agricultores) como dataset ancla y AlphaEarth como FM de features; plataforma reproducible (Polars, DVC, MLflow, Dagster) y fijación de la hipótesis temporal | Dataset ancla **PASTIS-R** · 18 clases · **AlphaEarth v2.1** |
+| **A0** | Setup | Elección de PASTIS-R (etiquetas reales de agricultores) como dataset ancla y AlphaEarth como FM de features; plataforma reproducible (Polars, DVC, MLflow, Dagster) y fijación de la hipótesis temporal | Dataset ancla **PASTIS-R** · 18 clases · **AlphaEarth V1/ANNUAL v1.1** (CC-BY-4.0) |
 | **A1** | EDA | 6 notebooks: calidad del dato, desbalance (~31x), nubosidad por región y separabilidad de embeddings AlphaEarth | RF crudo sobre AlphaEarth: **OOB 0,83–0,89** |
 | **A2** | Feature Engineering | 3 notebooks: índices espectrales, features temporales (FFT, fenología), fusión multisensor; AlphaEarth (F1 0,52) ≈ espectro-temporal manual (F1 0,54) | Reducción de features hasta **−55,7 %** sin perder señal |
 | **A3** | Baseline | Baseline tabular closed-set + reencuadre fenológico; ablation de features y descarte de leakage geográfico | XGBoost **F1-macro 0,41** (+0,09 sobre el baseline 0,32) |
 | **A4** | Segmentación | 6 arquitecturas densas + ajuste fino Optuna sobre los top-2 | **TSViT-pheno: mIoU 0,625 · F1-macro 0,75 · pixel-acc 0,876** |
-| **Sig.** | Lo que sigue | Ensamble EPIC 6 (voting/bagging/stacking/blending) sobre TSViT-pheno + U-TAE, corrida full en H100 con loss ponderada, y capa conversacional (Gemma 4 + Qwen3.5) | Target final **F1-macro ≥ 0,80** |
+| **A5** | Ensambles | EPIC 6: voting/bagging/stacking/blending sobre TSViT-pheno + U-TAE + AlphaEarth+XGB | Stacking-5 **F1-macro 0,648** |
+| **A6** | Copiloto conversacional | EPIC 7-9: agente Google ADK + 9 tools geo, perceiver "Be My Eyes" + reasoner Gemini 2.5-pro frozen, `/chat` SSE, switch A/B Gemini ↔ Qwen3.5 on-prem, ChatPanel + MapView (Nuxt 4) | MVP demo conversacional |
+| **A7** | Transferencia + Observabilidad | EPIC 12 (multi-región: crosswalk HCAT, Sen4AgriNet FR→Catalonia, EuroCropsML few-shot, demo México) + EPIC 10 (Prometheus, drift Evidently, FinOps, seguridad OWASP, Model Cards) | **Δ mIoU few-shot +0,247** (FR→ES) |
+| **Sig.** | Paper Track (opcional) | EPIC 11: benchmark AgroMind-IT/ES, eval multi-benchmark, manuscrito LaTeX bilingüe (post-presentación) | arXiv + venue |
 
 **Comparativa del Avance 4 (métricas reales, split de validación espacial):**
 
@@ -51,7 +56,7 @@ punto de partida (A0) hasta lo que sigue.
 | **TSViT-pheno** (Paper 1) | **0,625** | **0,750** | Ganador — encoder temporal + reencuadre fenológico |
 | TSViT | 0,622 | 0,747 | Encoder temporal puro |
 | U-TAE | 0,474 | 0,609 | Atención temporal U-Net |
-| AnySAT / Swin-UNETR | 0,446 | 0,572 | Backbone multimodal ligero |
+| AnySat | 0,446 | 0,572 | Backbone multimodal ligero (sustituye a Swin-UNETR, que no se entrenó) |
 | DeepLabv3+ | 0,271 | 0,386 | Baseline denso 2D |
 | U-Net | 0,242 | 0,346 | Baseline denso 2D |
 | SegFormer-B2 | 0,232 | 0,342 | Corrida sobre 3 bandas RGB (no comparable de igual a igual) |
@@ -93,7 +98,7 @@ poetry run streamlit run app/eda_dashboard.py    # local
       <img src="img/IsaacAvila.jpg" width="130" height="130" style="border-radius:50%;object-fit:contain;background:#f0f0f0"><br>
       <strong>Isaac Ávila</strong><br>
       ML Engineer / Data Scientist<br>
-      <sub>Modelos · fine-tune Gemma 4 + Qwen3-VL · AlphaEarth · Polars</sub>
+      <sub>Modelos · segmentación temporal · AlphaEarth · FarSLIP · Polars</sub>
     </td>
   </tr>
 </table>
@@ -107,10 +112,10 @@ agro_sat_copilot/
 ├── app/                  # Dashboard Streamlit (paquete app/dashboard/ + entry point shim)
 │   └── dashboard/        #   theme · loaders · components · layout · spatial · timeline · registry · sections/
 ├── backend/              # FastAPI + SQLModel + TiTiler + SSE + Pub/Sub workers
-├── frontend/             # Nuxt 4 SSR + MapLibre + deck.gl + @ai-sdk/vue + i18n (it/es/en)
+├── frontend/             # Nuxt 4 SSR + MapLibre GL + @ai-sdk/vue + Pinia + i18n (it/es/en)
 ├── ml/                   # Pipeline ML: ingesta, features, baseline, 6 segmentaciones, ensambles
 │   ├── report/           #   contenido editorial del dashboard (avance1..4_content, narrativas)
-│   ├── models/           #   arquitecturas custom (TSViT, U-TAE, Swin-UNETR)
+│   ├── models/           #   arquitecturas custom (TSViT, U-TAE, AnySat)
 │   └── agent/            #   agente conversacional Google ADK + 9 tools geoespaciales
 ├── dagster_project/      # Assets, jobs, schedules; lineage DVC <-> MLflow
 ├── db/                   # Migraciones dbmate · PostGIS · pgvector · pgstac · RLS por sesión
@@ -124,21 +129,21 @@ agro_sat_copilot/
 
 ---
 
-## Stack v5
+## Stack (v8)
 
 | Capa | Tecnología |
 |------|-----------|
-| Frontend | Nuxt 4 SSR + MapLibre GL + deck.gl + `@ai-sdk/vue` + Pinia + `@nuxtjs/i18n` (it/es/en) + Clerk |
-| Backend | FastAPI + Polars + TiTiler + SQLModel + GeoAlchemy2 + structlog |
-| Database | PostgreSQL 15 + PostGIS + pgvector + pgstac (migraciones con **dbmate**) |
-| ML | PyTorch 2.4 + `transformers` + `peft` LoRA + `segmentation_models.pytorch` + `monai` + vLLM |
-| FM EO | AlphaEarth Foundations v2.1 (GEE, gratis) |
+| Frontend | Nuxt 4 SSR + MapLibre GL + `@ai-sdk/vue` + Pinia + `@nuxtjs/i18n` (it/es/en) + Clerk |
+| Backend | FastAPI + Polars + TiTiler + SQLModel + GeoAlchemy2 + structlog + `prometheus-client` |
+| Database | PostgreSQL 15 + PostGIS + pgvector + pgstac (migraciones con **dbmate**, RLS por sesión) |
+| ML | PyTorch 2.11 (cu130) + `transformers` + `peft` LoRA + `segmentation_models.pytorch` + `monai` + vLLM |
+| FM EO | AlphaEarth Foundations `SATELLITE_EMBEDDING/V1/ANNUAL` data v1.1 (GEE, 64-dim, CC-BY-4.0) |
 | Feature extractor | DINOv3-satellite frozen |
-| VLM principal | Gemma 4 26B-MoE LoRA (Apache 2.0) |
-| LLM orquestador | Gemini 3.1 Pro (cloud) + Qwen3.5-35B-A3B (vLLM on-prem) — switch A/B |
-| Framework agente | **Google ADK** con tracing built-in + deploy Vertex AI Agent Engine |
-| MLOps | DVC + MLflow + **Dagster** asset-oriented + Evidently AI drift |
-| Infra | Terraform mono-cloud GCP + Azure H100 NVL 96GB spot puntual |
+| LLM reasoner (frozen) | **Gemini 2.5 Pro** GA (cloud, 1M ctx) + **Qwen3.5-35B-A3B** GPTQ-Int4 (vLLM on-prem) — switch A/B |
+| VLM fine-tune | Gemma 4 26B-MoE LoRA = **FUTURE/OUT** (ADR-009: experts MoE 3D fused bloquean QLoRA) |
+| Framework agente | **Google ADK** / google-genai con tracing built-in + deploy Vertex AI Agent Engine |
+| MLOps | DVC + MLflow + **Dagster** asset-oriented + Evidently AI drift + Prometheus/Grafana |
+| Infra | Terraform GCP (primario) + Azure/on-prem H100 NVL 96GB (training + serving Qwen) |
 
 ## Setup (5 pasos)
 
@@ -168,6 +173,22 @@ open http://localhost:3010     # Nuxt 4 frontend
 # MLflow:  http://localhost:5010
 # TiTiler: http://localhost:8011
 # Postgres: localhost:55432  ·  Redis: localhost:63790
+```
+
+### Arranque end-to-end con un solo comando
+
+Para levantar todo el stack en un paso (compose up + migraciones dbmate + seed +
+smoke check de `/healthz`), o desplegarlo, hay dos entrypoints según el entorno:
+
+```bash
+# Entorno con Docker (laptop o VM cloud):
+bash scripts/bootstrap_cloud.sh            # levanta los 8 servicios + migra + siembra
+bash scripts/bootstrap_cloud.sh --down     # detiene y limpia
+bash scripts/bootstrap_cloud.sh --deploy-gcp   # terraform init+plan a Cloud Run (apply manual)
+
+# VM H100 del sponsor (Windows nativo, sin Docker por nested-virt off):
+pwsh -File scripts/bootstrap_sponsor_h100.ps1            # MLflow SQLite + backend FastAPI nativos
+pwsh -File scripts/bootstrap_sponsor_h100.ps1 -ServeQwen # + serving vLLM Qwen3.5 en la H100
 ```
 
 ## Quickstart adicional
