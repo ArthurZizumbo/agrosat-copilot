@@ -1,0 +1,31 @@
+% Conclusion --- derived from the Avance7 conclusions, restated with the
+% corrected final numbers and defensible framing.
+\section{Conclusion}
+\label{sec:conclusion}
+
+AgroSatCopilot shows that crop-area quantification from Sentinel-2 time
+series is well served by a perceiver/reasoner design. Specialised
+perception models --- temporal transformers, an XGBoost classifier over
+AlphaEarth annual embeddings~\cite{brown2025alphaearth}, and a
+contrastive vision-language branch~\cite{li2025farslip} --- are combined
+through heterogeneous stacking, which improves the out-of-fold macro F1
+over any individual model. The best individual perceiver, TSViT-pheno,
+reaches mIoU 0.6253 and macro F1 0.7500 on the held-out fold, and the
+five-member stacking ensemble attains an out-of-fold macro F1 of 0.6477.
+
+The \emph{Be My Eyes} pattern~\cite{huang2025bemyeyes} establishes a
+clean separation between the models that \emph{see} and a frozen
+reasoner that \emph{communicates}, guaranteeing auditability and
+resistance to hallucination, while a dual cloud/on-premises backend
+preserves data sovereignty. Our transfer study is deliberately honest:
+zero-shot generalisation from France to Catalonia fails, and few-shot
+fine-tuning recovers mIoU 0.2468, consistent with reported limits on
+the spatial transferability of foundation-model
+embeddings~\cite{harvesting2026alphaearth}.
+
+The main outstanding challenge is the six minority classes with low
+F1, which require additional data or targeted augmentation rather than
+more models of the same kind. Future work includes the full FarSLIP
+phenological study (US-072), the multi-region label-space crosswalk and
+$k$-shot curve (US-073), and the quantitative conversational-layer
+benchmark on the H100 (US-069).

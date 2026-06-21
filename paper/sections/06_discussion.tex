@@ -1,0 +1,67 @@
+% Discussion --- defensible claims and honest limitations. This section
+% is the guard against over-claiming; it states explicitly what we do NOT
+% claim.
+\section{Discussion}
+\label{sec:discussion}
+
+\subsection{Defensible claims}
+Our results support four claims, stated conservatively.
+\begin{enumerate}[leftmargin=*]
+    \item Temporal transformers with a phenological branch are the
+    strongest individual perceivers on PASTIS-R (TSViT-pheno, mIoU
+    0.6253), and heterogeneous stacking over decorrelated members
+    improves the out-of-fold macro F1 over any single model.
+    \item A contrastive vision-language branch~\cite{li2025farslip}
+    contributes a useful but modest complementary signal (the
+    five-member stacking gain over three members is $+0.0118$ macro
+    F1). It is a complement, not a standalone classifier.
+    \item The \emph{Be My Eyes} pattern~\cite{huang2025bemyeyes} yields
+    a grounded conversational layer in which every cited figure is
+    traceable to an auditable tool result, with a frozen reasoner that
+    is interchangeable between cloud (Gemini~2.5~Pro) and on-premises
+    (Qwen3.5-35B-A3B) for data sovereignty.
+    \item Spatial transfer from France to Catalonia is not zero-shot;
+    few-shot fine-tuning recovers mIoU 0.2468, in line with reported
+    transferability limits~\cite{harvesting2026alphaearth}.
+\end{enumerate}
+
+\subsection{What we explicitly do not claim}
+To avoid over-claiming, we delimit the boundaries of our evidence.
+\begin{itemize}[leftmargin=*]
+    \item We do \emph{not} claim that a fine-tuned VLM outperforms the
+    frozen Gemini reasoner. The language layer is a communication,
+    explanation, and tool-orchestration component, not a pixel
+    classifier; its value is grounding, auditability, and the
+    on-premises sovereignty option.
+    \item We do \emph{not} claim a classification threshold
+    (e.g.\ F1~$\geq$~0.80) for Mexico. The avocado/guava demonstration
+    over Mexican parcels is a qualitative, zero-shot methodological
+    demo without ground truth; it illustrates the pipeline, not a
+    measured accuracy.
+    \item We do \emph{not} claim that zero-shot transfer works outside
+    France. The France$\rightarrow$Catalonia experiment shows zero-shot
+    failure and few-shot recovery; a $k$-shot curve on
+    EuroCropsML~\cite{reuss2025eurocropsml} characterises the data
+    budget required.
+    \item We do \emph{not} claim TSViT mIoU above 0.75. PASTIS-R
+    saturates near 0.70 mIoU for this class set, and the phenological
+    branch contributes on the order of $0.3$ points, not several.
+\end{itemize}
+
+\subsection{Limitations}
+Three structural limitations remain. First, six minority classes with
+ambiguous phenology drag the global macro F1 down; addressing them
+requires additional data or targeted augmentation, not more models of
+the same type. Second, cloud cover can obscure a large fraction of
+pixels in rainy seasons, motivating fusion with Sentinel-1 radar.
+Third, the conversational-layer benchmark on
+AgroMind~\cite{ruan2025agromind} is pending the H100 evaluation
+(US-069); we report the protocol and column structure but no
+synthetic numbers.
+
+\subsection{Reproducibility}
+Every figure in Section~\ref{sec:results} is anchored to a versioned
+artefact via \texttt{\% src:} comments in the LaTeX source; datasets and
+weights are tracked with DVC and experiment runs with MLflow under
+\texttt{data\_version} and \texttt{code\_version} tags. The repository
+is released under Apache~2.0.

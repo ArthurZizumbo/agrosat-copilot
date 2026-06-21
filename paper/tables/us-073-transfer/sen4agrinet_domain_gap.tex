@@ -1,0 +1,15 @@
+\begin{table}[t]
+\centering
+\caption{Dense France $\rightarrow$ Catalonia transfer (TSViT-pheno finetuned on the Sen4AgriNet 31TCG subset, HCAT macro label-space). Trained on 10 ES patches, evaluated on 20. The catastrophic zero-shot mIoU and the recovered few-shot mIoU yield $\Delta$mIoU $= +0.2468$ -- the measured Franco-Iberian domain gap is the deliverable, not a high accuracy. Source: \texttt{reports/segmentation/sen4agrinet\_transfer\_result.json}. Sen4AgriNet (Sykas et al. 2022, CC-BY-SA-4.0).}
+\label{tab:sen4agrinet_domain_gap}
+\begin{tabular}{lrrr}
+\toprule
+Protocol & mIoU & F1-macro & Pixel-acc. \\
+\midrule
+Zero-shot (FR 18 $\rightarrow$ macro) & 0.0000 & 0.0000 & 0.0000 \\
+Few-shot (10 ES patches) & 0.2468 & 0.3005 & 0.9179 \\
+\midrule
+$\Delta$ (few-shot $-$ zero-shot) & $+0.2468$ & $+0.3005$ & $+0.9179$ \\
+\bottomrule
+\end{tabular}
+\end{table}

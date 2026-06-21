@@ -1,0 +1,27 @@
+% Tabla US-072 -- Ablacion de bandas FarSLIP (US-035). Cifras EXACTAS extraidas
+% de los logs reales reports/farslip/logs/{baseline-rgb,baseline-nir,4band-pheno}.log
+% (linea "training done", epoch 3, ultima de 4 epochs).
+% CAVEAT HONESTO: los 3 logs solo registran las PERDIDAS de destilacion finales
+% (loss_total, loss_patch, loss_cls, loss_aux); NO contienen la metrica de
+% evaluacion consolidada (F1-macro/mIoU) por variante. El F1/mIoU por variante
+% queda PENDIENTE (ver docs/blockers/epic11-notas.md, US-072). NO inventar la cifra.
+\begin{table}[htbp]
+\caption{Ablacion de bandas FarSLIP (US-035): tres corridas reales de
+destilacion CLIP region-aware (4 epochs). \textit{rgb} = B04-B03-B02 (3 canales);
+\textit{nir\_rgb} = B08-B04-B03 falso color (3 canales); \textit{4band} =
+B02-B03-B04-B08 identidad (4 canales, adaptacion 3$\rightarrow$4 con
+NIR\,=\,mean(RGB) anti-neurona-muerta, US-034). Se reportan las perdidas finales
+de destilacion; la metrica de evaluacion (F1-macro/mIoU) por variante no quedo
+consolidada en los logs y se marca como pendiente.}
+\label{tab:band_ablation}
+\centering
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Variante} & \textbf{Canales} & \textbf{loss\_total} & \textbf{loss\_patch} & \textbf{loss\_cls} & \textbf{F1-macro} \\
+\midrule
+rgb     & 3 & 2.2893 & 0.0179 & 4.5244 & pendiente \\
+nir\_rgb & 3 & 2.2858 & 0.0181 & 4.5166 & pendiente \\
+4band   & 4 & 2.3553 & 0.0786 & 4.5510 & pendiente \\
+\bottomrule
+\end{tabular}
+\end{table}

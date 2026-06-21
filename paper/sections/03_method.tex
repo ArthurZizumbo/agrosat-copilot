@@ -1,0 +1,96 @@
+% Method --- perception stack + conversational layer. Lists ONLY models
+% that were actually trained/run (no Gemma 4 LoRA; SegFormer = B0 RGB;
+% Swin-UNETR not trained -> AnySat). Stubs delegate FarSLIP-phenology
+% (US-072) and the multi-region crosswalk (US-073) to their own sections.
+\section{Method}
+\label{sec:method}
+
+AgroSatCopilot is organised as a perceiver/reasoner system. The
+perception stack (Section~\ref{sec:method-perception}) converts
+Sentinel-2 time series into per-parcel observations; the conversational
+layer (Section~\ref{sec:method-bemyeyes}) reasons over those
+observations and communicates with the user.
+
+\subsection{Perception stack}
+\label{sec:method-perception}
+
+\paragraph{Inputs and features.}
+Each parcel is represented by (i)~the raw multi-temporal Sentinel-2
+patch (10 bands), (ii)~spectral indices (NDVI, NDWI, EVI, MSAVI2,
+MCARI, CCCI, NDRE) and temporal features (FFT harmonics, phenological
+calendar descriptors), and (iii)~the 64-dimensional AlphaEarth
+annual embedding~\cite{brown2025alphaearth}. Frozen
+DINOv3-satellite features~\cite{oquab2023dinov3} provide a
+self-supervised complement.
+
+\paragraph{Dense segmentation models.}
+We train and evaluate temporal and spatial architectures on PASTIS-R.
+The temporal family comprises U-TAE~\cite{garnot2021utae} and
+TSViT~\cite{tarasiou2023tsvit}, the latter extended with a phenological
+branch (TSViT-pheno) following~\cite{wen2025phenology}. The spatial
+baselines are U-Net~\cite{ronneberger2015unet},
+DeepLabv3+~\cite{chen2018deeplabv3plus}, and
+SegFormer-B0~\cite{xie2021segformer} run on a three-band RGB input.
+AnySat~\cite{astruc2024anysat} is evaluated as the foundation-model
+backbone. No Swin-UNETR model was trained.
+
+\paragraph{Tabular classifier.}
+An XGBoost classifier~\cite{chen2016xgboost} over the AlphaEarth
+embedding summarises the annual spectral signature in 64 dimensions and
+acts as a decorrelated, low-latency member of the ensemble.
+
+\paragraph{Contrastive vision-language branch.}
+FarSLIP~\cite{li2025farslip} (ViT-B/16) plays two roles: it contributes
+class probabilities to the ensemble meta-model, and it generates a
+natural-language phenological description of each parcel that is
+injected into the grounding block delivered to the reasoner. The
+phenological FarSLIP component, including the diagnosis and fix of its
+contrastive-alignment bug and its faithful-vs.-AlphaEarth comparison,
+is detailed in its dedicated section (Section~\ref{sec:farslip_method},
+contributed by US-072).
+
+\paragraph{Heterogeneous ensembles.}
+The base probabilities feed two heterogeneous combiners trained on
+\emph{out-of-fold} predictions to avoid leakage: a balanced logistic
+regression stacking meta-model, and an Optuna-weighted blending. The
+stacking meta-model acts as a per-class arbiter, weighting each member
+differently by crop type rather than averaging.
+
+\subsection{Conversational layer: the Be My Eyes pattern}
+\label{sec:method-bemyeyes}
+
+\paragraph{Perceiver/reasoner separation.}
+The perception models inspect a parcel and emit a plain-text observation
+(crop type, phenology, vigour, confidence) without sending tensors or
+logits to the LLM. A \emph{frozen} reasoner consumes that text, invokes
+geospatial tools as needed, and drafts a natural-language response.
+Every figure in the response originates from an auditable
+\texttt{tool\_result} in the event stream, following the \emph{Be My
+Eyes} pattern~\cite{huang2025bemyeyes}.
+
+\paragraph{Frozen dual reasoner and data sovereignty.}
+The same agent supports two interchangeable, frozen backends:
+Gemini~2.5~Pro in the cloud (generally available, 1M-token
+context)~\cite{google2025gemini25}, or
+Qwen3.5-35B-A3B~\cite{yang2025qwen3} on-premises via vLLM
+(GPTQ-Int4, single GPU) for clients that require their data never to
+leave their perimeter. Backend selection is handled by a factory
+without touching business logic. The reasoner is never fine-tuned as a
+classifier; Gemma-4 LoRA fine-tuning is out of scope for this work
+(the model's fused 3D MoE experts preclude the planned QLoRA route).
+
+\paragraph{Geospatial toolset.}
+A closed set of ten Pydantic-validated tools is exposed: five
+synchronous (list parcels, time series, area statistics, classify a new
+parcel, explain prediction) and five deferred, executed asynchronously
+via a background worker (scene search, map tiles, save area, compare
+models, retrieve RAG context).
+
+\paragraph{Spatial-RAG.}
+To reduce hallucinations, a spatial pre-filter (\texttt{ST\_DWithin} on
+PostGIS) is combined with semantic search (cosine similarity over
+64-dimensional AlphaEarth embeddings in pgvector). Retrieved documents
+are phenological descriptions of real neighbouring parcels. The
+multi-region label-space harmonisation (HCAT macro space) that enables
+cross-region transfer is developed in its dedicated section
+(Section~\ref{sec:multiregion}, contributed by US-073).

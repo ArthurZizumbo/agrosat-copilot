@@ -1,0 +1,127 @@
+% Results --- every number anchored to a real repo artefact via % src:.
+% Claims kept defensible: no "VLM beats Gemini", no F1>=0.80 in Mexico,
+% no zero-shot outside France, no TSViT 0.75+ mIoU.
+\section{Results}
+\label{sec:results}
+
+\subsection{Individual segmentation models}
+\label{sec:results-individual}
+Table~\ref{tab:individual} reports the held-out comparison.
+TSViT-pheno~\cite{tarasiou2023tsvit} is the best individual model, with
+mIoU 0.6253 and macro F1 0.7500 on the held-out fold (fold-4); on
+fold-5 it reaches mIoU 0.6139 and macro F1 0.7401. The temporal models
+clearly dominate the spatial-only baselines, confirming that the
+phenological temporal signal is indispensable for fine-grained crop
+discrimination. AnySat~\cite{astruc2024anysat}, the foundation-model
+backbone, reaches mIoU 0.4459 on fold-4. We emphasise that PASTIS-R
+saturates around 0.70 mIoU for this class set; we therefore do not
+claim TSViT mIoU above 0.75.
+
+\begin{table}[htbp]
+\caption{Individual segmentation models (held-out fold).}
+\label{tab:individual}
+\centering
+\begin{tabular}{lcc}
+\toprule
+\textbf{Model} & \textbf{mIoU} & \textbf{Macro F1} \\
+\midrule
+TSViT-pheno (fold-4) & \textbf{0.6253} & \textbf{0.7500} \\
+TSViT-pheno (fold-5) & 0.6139 & 0.7401 \\
+AnySat (fold-4)      & 0.4459 & --- \\
+SegFormer-B0 (fold-5, RGB) & 0.2715 & 0.3777 \\
+DeepLabv3+ (fold-5)  & 0.2540 & 0.3614 \\
+U-Net (fold-5)       & 0.2056 & 0.2847 \\
+\bottomrule
+\end{tabular}
+% src(TSViT fold-4 0.6253/0.7500; AnySat 0.4459): grounding US-030 registry
+% src(fold-5 rows): reports/segmentation/metrics/model_comparison_fold5.csv
+\end{table}
+
+\subsection{Heterogeneous ensembles}
+\label{sec:results-ensemble}
+Table~\ref{tab:ensembles} reports the heterogeneous combiners on
+out-of-fold cross-validation. The five-member stacking ensemble
+(TSViT-pheno, U-TAE, XGBoost-on-AlphaEarth, FarSLIP-ft18,
+FarSLIP-zeroshot) attains macro F1 0.6477 and accuracy 0.7935 over a
+universe of 16{,}640 parcels, improving the three-member stacking by
+$+0.0118$ macro F1. Adding the contrastive FarSLIP members helps
+stacking but hurts blending ($-0.0117$ macro F1 for five vs.\ three
+members), so the gain from the vision-language signal is real but
+modest --- consistent with our claim that FarSLIP contributes a useful
+complementary signal, not a standalone classifier.
+
+\begin{table}[htbp]
+\caption{Heterogeneous ensembles (out-of-fold cross-validation).}
+\label{tab:ensembles}
+\centering
+\begin{tabular}{lcc}
+\toprule
+\textbf{Combiner} & \textbf{Macro F1} & \textbf{Accuracy} \\
+\midrule
+Stacking, 5 members & \textbf{0.6477} & 0.7935 \\
+Stacking, 3 members & 0.6359 & 0.7877 \\
+Blending, 5 members & 0.5866 & 0.7864 \\
+Blending, 3 members & 0.5651 & 0.7697 \\
+\bottomrule
+\end{tabular}
+% src: reports/ensemble/us043_farslip_summary.json
+% (stacking_5_oof_cv f1_macro 0.6477; delta_5_vs_3 +0.0118; n_universe 16640)
+\end{table}
+
+On the parcel-level held-out comparison
+(\texttt{comparison\_us040.csv}), stacking reaches macro F1 0.7470 and
+blending 0.7414, both well above the best individual member, at
+inference costs of 0.042\,s and 0.006\,s respectively.
+
+\subsection{FarSLIP feature space}
+\label{sec:results-farslip}
+A faithful re-implementation of FarSLIP~\cite{li2025farslip} yields a
+contrastive feature space with macro F1 0.5551, below the
+AlphaEarth-2019 tabular space (0.6446) on the same 567-sample probe.
+This confirms that the vision-language branch is a complement to, not a
+replacement for, the temporal and tabular signals. The full analysis is
+developed in the FarSLIP study (US-072).
+
+\subsection{Spatial transfer: France to Catalonia}
+\label{sec:results-transfer}
+Table~\ref{tab:transfer} reports the France$\rightarrow$Catalonia
+transfer of the TSViT-pheno segmenter on
+Sen4AgriNet~\cite{sykas2022sen4agrinet}. Zero-shot transfer fails
+entirely (mIoU 0.0000): a model trained on French crop calendars and
+label conventions does not apply directly to Catalonia. After few-shot
+fine-tuning (90 training tiles, 40 epochs), the model recovers mIoU
+0.2468 (macro F1 0.3005, pixel accuracy 0.9179), a delta of $+0.2468$
+mIoU. This is consistent with reported limits on the spatial
+transferability of foundation-model
+embeddings~\cite{harvesting2026alphaearth}: we make no claim that
+zero-shot transfer works outside France; few-shot adaptation is
+required.
+
+\begin{table}[htbp]
+\caption{France$\rightarrow$Catalonia transfer (Sen4AgriNet, hcat-macro
+label space).}
+\label{tab:transfer}
+\centering
+\begin{tabular}{lccc}
+\toprule
+\textbf{Regime} & \textbf{mIoU} & \textbf{Macro F1}
+  & \textbf{Pixel acc.} \\
+\midrule
+Zero-shot  & 0.0000 & 0.0000 & 0.0000 \\
+Few-shot   & \textbf{0.2468} & 0.3005 & 0.9179 \\
+$\Delta$   & $+0.2468$ & --- & --- \\
+\bottomrule
+\end{tabular}
+% src: reports/segmentation/sen4agrinet_transfer_result.json
+\end{table}
+
+\subsection{Conversational-layer evaluation}
+The conversational layer is evaluated on AgroMind~\cite{ruan2025agromind}
+with an LLM-as-judge protocol (Section~\ref{sec:experiments-llm}). The
+quantitative benchmark depends on the H100 evaluation run (US-069) and
+is reported in Table~\ref{tab:llm-bench} once available; we do not
+report fabricated numbers here. We stress that the language layer is a
+communication and tool-orchestration component: we do \emph{not} claim
+that any fine-tuned VLM outperforms the frozen Gemini reasoner at
+classification, nor do we claim an F1 threshold for the qualitative
+Mexico demonstration (Section~\ref{sec:discussion}).

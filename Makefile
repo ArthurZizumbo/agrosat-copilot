@@ -1,4 +1,4 @@
-.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip notebooks-check i18n-check db-migrate db-rollback db-new db-status db-seed db-test-us015 features-extract-demo features-persist features-fuse-demo features-fuse-italy dagster-materialize-features feature-selection-subset feature-selection-build feature-selection-notebook feature-selection-test feature-fusion-build feature-fusion-notebook avance2-figures avance2-build mlflow-up mlflow-down train-baseline baseline-test ensembles-test baseline-notebook baseline-notebook-check baseline-v2-full s2-raw-parcels interpretability-test learning-curves-test ml-train-image train-l4 train-l4-smoke train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eda-sentinel2 eda-alphaearth eda-bivariado eda-figures-avance1 eda-figures-paper-methods eda-pastis-subset eda-notebook-avance1 paper-methods-notebook eda-pdf eda-dashboard eda-dashboard-test eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate farslip-dataset-build farslip-dataset-check farslip-train farslip-eval-pastis farslip-smoke-eval farslip-extract-embeddings feature-ablation phenology-train phenology-description-test reencuadre-notebook reencuadre-notebook-check reencuadre-notebook-full docs-pdf docs-pdf-clean docs-pdf-docker
+.PHONY: help bootstrap bootstrap-gpu bootstrap-gpu-linux verify-structure dev stop test lint format check secrets-scan notebooks-strip notebooks-check i18n-check db-migrate db-rollback db-new db-status db-seed db-test-us015 features-extract-demo features-persist features-fuse-demo features-fuse-italy dagster-materialize-features feature-selection-subset feature-selection-build feature-selection-notebook feature-selection-test feature-fusion-build feature-fusion-notebook avance2-figures avance2-build mlflow-up mlflow-down train-baseline baseline-test ensembles-test baseline-notebook baseline-notebook-check baseline-v2-full s2-raw-parcels interpretability-test learning-curves-test ml-train-image train-l4 train-l4-smoke train-h100 azure-h100-start azure-h100-stop azure-h100-status mlflow-ui dagster-ui dvc-push dvc-pull eda-sentinel2 eda-alphaearth eda-bivariado eda-figures-avance1 eda-figures-paper-methods us073-transfer-figures eda-pastis-subset eda-notebook-avance1 paper-methods-notebook eda-pdf eda-dashboard eda-dashboard-test eval-agromind eval-geoanalyst serve-qwen35 cost-audit deploy-staging deploy-prod tf-init tf-plan tf-apply tf-fmt tf-validate farslip-dataset-build farslip-dataset-check farslip-train farslip-eval-pastis farslip-smoke-eval farslip-extract-embeddings feature-ablation phenology-train phenology-description-test reencuadre-notebook reencuadre-notebook-check reencuadre-notebook-full docs-pdf docs-pdf-clean docs-pdf-docker paper-tables paper-figures paper-pdf paper-pdf-clean paper-pdf-docker paper-cite-check
 
 help:
 	@echo "AgroSatCopilot — comandos disponibles:"
@@ -361,6 +361,9 @@ eda-figures-paper-methods:  ## Copia las figuras de 02e_eda_metodos_paper a pape
 	   reports/paper_methods/cloud_gap_drift.png \
 	   paper/figures/paper-methods/
 
+us073-transfer-figures:  ## Genera las 2 tablas .tex + 2 figuras de transferencia multi-region (US-073) desde artefactos REALES E12
+	poetry run python -m scripts.build_us073_transfer_figures
+
 eda-pastis-subset:  ## Genera subset compacto de PASTIS-R (~500KB) para el mapa folium del dashboard
 	poetry run python -m ml.report.generate_pastis_subset
 
@@ -371,6 +374,20 @@ paper-methods-notebook:  ## Regenera y ejecuta notebooks/eda/02e_eda_metodos_pap
 	poetry run python scripts/build_paper_methods_notebook.py
 	MPLBACKEND=Agg poetry run papermill notebooks/eda/02e_eda_metodos_paper.ipynb \
 	  notebooks/eda/02e_eda_metodos_paper.ipynb --no-progress-bar
+
+paper-tables:  ## US-070: regenera las 6 tablas .tex del paper desde reports/ (sin hardcode)
+	poetry run python -m ml.report.paper_tables
+
+paper-figures: paper-tables  ## US-070: regenera + ejecuta (papermill) los 4 notebooks de figuras del paper
+	poetry run python scripts/build_paper_us070_notebooks.py
+	MPLBACKEND=Agg poetry run papermill paper/notebooks/01_figures_segmentation.ipynb \
+	  paper/notebooks/01_figures_segmentation.ipynb --no-progress-bar
+	MPLBACKEND=Agg poetry run papermill paper/notebooks/02_figures_ensemble_farslip.ipynb \
+	  paper/notebooks/02_figures_ensemble_farslip.ipynb --no-progress-bar
+	MPLBACKEND=Agg poetry run papermill paper/notebooks/03_figures_embeddings_fm.ipynb \
+	  paper/notebooks/03_figures_embeddings_fm.ipynb --no-progress-bar
+	MPLBACKEND=Agg poetry run papermill paper/notebooks/04_figures_agent_llm.ipynb \
+	  paper/notebooks/04_figures_agent_llm.ipynb --no-progress-bar
 
 eda-pdf:  ## Genera el reporte PDF del Avance 1 con las 7 fichas (S2, AlphaEarth, Bivariado, PASTIS, BreizhCrops, Literatura, Globales)
 	poetry run python -m ml.report.export_pdf --output paper/avance1_eda_report.pdf
@@ -470,3 +487,27 @@ DOCS_IMAGE := agrosat-docs-latex:dev
 docs-pdf-docker:  ## Compila los PDFs en un contenedor texlive (no requiere LaTeX local). Solo necesita Docker.
 	docker build -f infrastructure/docker/docs-latex.Dockerfile -t $(DOCS_IMAGE) infrastructure/docker
 	docker run --rm -v "$(CURDIR):/repo" -w /repo/$(DOCS_DIR) $(DOCS_IMAGE)
+
+# === Paper Track manuscript (EPIC 11, US-071) ===
+# Manuscrito modular en paper/ (main.tex + sections/ + bib/refs.bib).
+# Usa BibTeX, asi que la secuencia es pdflatex -> bibtex -> pdflatex x2.
+PAPER_DIR := paper
+PAPER_IMAGE := agrosat-paper-latex:dev
+
+paper-pdf:  ## Compila paper/main.tex (manuscrito EPIC 11) con BibTeX. Requiere LaTeX (MiKTeX/TeX Live) + bibtex.
+	cd $(PAPER_DIR) && $(PDFLATEX) main.tex
+	cd $(PAPER_DIR) && bibtex main
+	cd $(PAPER_DIR) && $(PDFLATEX) main.tex
+	cd $(PAPER_DIR) && $(PDFLATEX) main.tex
+	@echo PDF generado en $(PAPER_DIR): main.pdf
+
+paper-pdf-clean:  ## Borra auxiliares LaTeX (.aux .bbl .blg .log ...) de paper/, conserva main.pdf
+	cd $(PAPER_DIR) && rm -f *.aux *.bbl *.blg *.log *.out *.toc *.lof *.lot *.fls *.fdb_latexmk
+	cd $(PAPER_DIR) && rm -f sections/*.aux
+
+paper-pdf-docker:  ## Compila paper/main.tex en un contenedor texlive (no requiere LaTeX local). Solo necesita Docker.
+	docker build -f infrastructure/docker/paper-latex.Dockerfile -t $(PAPER_IMAGE) infrastructure/docker
+	docker run --rm -v "$(CURDIR):/repo" -w /repo/$(PAPER_DIR) $(PAPER_IMAGE)
+
+paper-cite-check:  ## Valida que cada \cite{} del manuscrito tenga entrada en paper/bib/refs.bib (sin LaTeX).
+	poetry run python scripts/paper_cite_check.py

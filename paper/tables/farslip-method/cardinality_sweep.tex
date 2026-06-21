@@ -1,0 +1,23 @@
+% Tabla US-072 -- Barrido de cardinalidad por parcela (evidencia del protocolo
+% incremental 4->18). Cifras EXACTAS de reports/farslip/metrics/parcel_sweep.csv.
+% Cada fila es un checkpoint real entrenado SOLO sobre las K clases mas cardinales.
+% NO editar a mano: regenerar desde el CSV.
+\begin{table}[htbp]
+\caption{Barrido de cardinalidad por parcela del clasificador FarSLIP-pheno.
+La dificultad crece monotonicamente con el numero de clases: de 4 clases
+($0.7025$) a 12 clases ($0.3328$). Evidencia empirica que motiva el protocolo
+incremental 4$\rightarrow$18 (Stage-1$\rightarrow$Stage-2).}
+\label{tab:cardinality_sweep}
+\centering
+\begin{tabular}{ccccc}
+\toprule
+\textbf{$K$ clases} & \textbf{F1-macro} & \textbf{mIoU} & \textbf{bien resueltas (F1$\geq$0.5)} & \textbf{$n$ parcelas eval} \\
+\midrule
+ 4 & 0.7025 & 0.5547 & 4 & 1301 \\
+ 6 & 0.4579 & 0.3120 & 2 & 1843 \\
+ 8 & 0.4075 & 0.2657 & 3 & 2301 \\
+10 & 0.3589 & 0.2288 & 3 & 2706 \\
+12 & 0.3328 & 0.2071 & 1 & 3200 \\
+\bottomrule
+\end{tabular}
+\end{table}

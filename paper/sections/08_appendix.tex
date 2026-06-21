@@ -1,0 +1,59 @@
+% Appendix --- category-count (cardinality) tuning and reproducibility.
+% The cardinality curve transforms the base macro F1 into an adjustable
+% operating point; the figure is the real winner_cardinality_curve.png.
+\appendix
+\section{Category-Count Tuning: Quality vs.\ Coverage}
+\label{app:cardinality}
+
+A practically relevant deployment decision is how many crop categories
+to commit to. The final ensemble classifies all 18 PASTIS-R classes,
+but six minority crops with ambiguous phenology pull down the global
+macro F1. The cardinality curve answers a concrete business question:
+if the system commits to only the $K$ best-resolved crops, what average
+quality is achieved and what fraction of real parcels is covered?
+
+The methodology is honest: the ranking of which class to drop is
+determined on out-of-fold probabilities from the training set, and the
+metric is measured on the held-out fold restricted to the retained
+classes, so the improvement is not a post-hoc selection artefact.
+Figure~\ref{fig:cardinality} shows the full curve.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.9\columnwidth]
+      {../reports/ensemble/figures/us043_farslip/winner_cardinality_curve.png}
+    \caption{Cardinality curve of the final model (Stacking~+~FarSLIP).
+    The elbow around $K=8$--$9$ marks the optimal quality/coverage
+    trade-off for most use cases.}
+    \label{fig:cardinality}
+\end{figure}
+% src(figure): reports/ensemble/figures/us043_farslip/winner_cardinality_curve.png
+% src(curve data): reports/ensemble/metrics/us043_winner_cardinality_curve.csv
+
+The curve yields three practical operating modes (the per-$K$ macro F1
+and coverage values are taken from the held-out cardinality analysis):
+full mode (18 classes, 100\% coverage), a reduced mode that drops the
+six weakest classes (higher macro F1, around 90\% coverage), and a
+focused high-precision mode on the best-resolved classes (highest macro
+F1, lower coverage). No retraining is required: the stacking meta-model
+already produces per-class probabilities, so the category threshold is
+applied dynamically in production.
+
+\section{Reproducibility Artefacts}
+\label{app:repro}
+
+Every quantitative result is anchored to a versioned artefact:
+
+\begin{itemize}[leftmargin=*]
+    \item Individual segmentation (fold-5):
+    \texttt{reports/segmentation/metrics/model\_comparison\_fold5.csv}.
+    \item Ensembles:
+    \texttt{reports/ensemble/us043\_farslip\_summary.json} and
+    \texttt{reports/ensemble/metrics/comparison\_us040.csv}.
+    \item FarSLIP feature space:
+    \texttt{reports/farslip/metrics/us037\_farslip\_fiel\_vs\_alphaearth.csv}.
+    \item France$\rightarrow$Catalonia transfer:
+    \texttt{reports/segmentation/sen4agrinet\_transfer\_result.json}.
+    \item Datasets (DVC): \texttt{data/sen4agrinet.dvc},
+    \texttt{data/transfer/eurocropsml.dvc}.
+\end{itemize}

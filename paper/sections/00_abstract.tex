@@ -1,0 +1,39 @@
+% Abstract --- <= 250 words. Corrects the Avance7 source:
+%   - reasoner is Gemini 2.5 Pro (GA, 1M ctx) / Qwen3.5-35B-A3B on-prem,
+%     NOT "Gemini 2.5-Flash"; the reasoner is frozen (Be My Eyes).
+%   - final ensemble macro F1-macro = 0.6477 (Stacking-5, out-of-fold CV);
+%     best individual = TSViT-pheno (mIoU 0.6253 / F1 0.7500, fold-4).
+\begin{abstract}
+Accurate quantification of cultivated land without physical field
+inspection is a high-impact challenge for the agri-tech sector.
+We present AgroSatCopilot, an open-source conversational system that
+maps crop types from multi-temporal Sentinel-2 imagery and explains its
+predictions in natural language. The perception stack combines dense
+semantic segmentation over satellite image time series with tabular
+classifiers built on AlphaEarth Foundations annual
+embeddings~\cite{brown2025alphaearth} and a contrastive
+vision-language branch (FarSLIP)~\cite{li2025farslip}. On the PASTIS-R
+benchmark (18 crop classes, metropolitan
+France)~\cite{garnot2021pastis}, our best individual model,
+TSViT-pheno~\cite{tarasiou2023tsvit}, reaches a mean intersection over
+union (mIoU) of 0.6253 and macro F1 of 0.7500 on the held-out fold,
+and a heterogeneous stacking ensemble of five members attains an
+out-of-fold macro F1 of 0.6477. The conversational layer follows the
+\emph{Be My Eyes} pattern~\cite{huang2025bemyeyes}: the team's models
+\emph{perceive} each parcel and emit plain-text observations, while a
+frozen frontier reasoner --- Gemini~2.5~Pro in the cloud or
+Qwen3.5-35B-A3B on-premises for data sovereignty --- reasons over those
+observations, invokes geospatial tools, and answers. The reasoner is
+never used as a pixel classifier. We further study spatial
+transferability: a France-trained segmenter is zero-shot inapplicable
+to Catalonia (Sen4AgriNet)~\cite{sykas2022sen4agrinet} but recovers a
+mIoU of 0.2468 after few-shot fine-tuning, consistent with reported
+limits on the transferability of foundation-model
+embeddings~\cite{harvesting2026alphaearth}. All datasets, code, and
+figures are released under permissive licenses for reproducibility.
+\end{abstract}
+
+\keywords{crop classification \and Sentinel-2 \and satellite image time
+series \and semantic segmentation \and AlphaEarth \and FarSLIP \and
+conversational copilot \and grounded LLM agent \and spatial transfer
+\and precision agriculture}

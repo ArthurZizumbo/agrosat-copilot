@@ -1,0 +1,19 @@
+% Tabla US-072 -- FarSLIP fiel v2 vs AlphaEarth (separabilidad + F1 macro).
+% Cifras EXACTAS de reports/farslip/metrics/us037_farslip_fiel_vs_alphaearth.csv
+% (n_samples=567, 5-fold spatial CV). NO editar a mano: regenerar desde el CSV.
+\begin{table}[htbp]
+\caption{Espacio de representacion FarSLIP fiel (v2) frente a AlphaEarth sobre
+las mismas 567 parcelas PASTIS-R. El espacio FarSLIP (768-dim) NO supera a
+AlphaEarth (64-dim, Satellite Embedding V1 Annual, data version 1.1) ni en
+separabilidad (silhouette) ni en F1-macro; se reporta el resultado honesto.}
+\label{tab:farslip_vs_alphaearth}
+\centering
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Espacio} & \textbf{Silhouette} & \textbf{F1-macro} & \textbf{$n$ dim} & \textbf{$n$ muestras} & \textbf{$\Delta$ vs AlphaEarth} \\
+\midrule
+FarSLIP-pheno (fiel v2) & 0.0120 & $0.5551 \pm 0.0205$ & 768 & 567 & $-0.0024$ \\
+AlphaEarth (2019)       & 0.0145 & $0.6446 \pm 0.0415$ &  64 & 567 & ref. \\
+\bottomrule
+\end{tabular}
+\end{table}
