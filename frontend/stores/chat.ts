@@ -136,6 +136,10 @@ interface ChatState {
   errorMessage: string | null;
   /** Monotonic counter to synthesise tool_call ids (backend has none). */
   toolSeq: number;
+  /** Parcel the user clicked on the map; sent as `ChatRequest.parcel_id` on the
+   *  next POST /chat so the reasoner scopes the answer to it (US-058). REAL id
+   *  from the rendered feature (backend or demo); null = no parcel selected. */
+  activeParcelId: number | null;
 }
 
 export const useChatStore = defineStore("chat", {
@@ -149,6 +153,7 @@ export const useChatStore = defineStore("chat", {
     activeAssistantId: null,
     errorMessage: null,
     toolSeq: 0,
+    activeParcelId: null,
   }),
 
   getters: {
@@ -172,6 +177,12 @@ export const useChatStore = defineStore("chat", {
     /** Display-only; transport does not send this (see useChat.switchLlm). */
     setLlmVariant(variant: LlmVariant) {
       this.llmVariant = variant;
+    },
+
+    /** Set the active parcel (clicked on the map) that the next POST /chat
+     *  sends as `ChatRequest.parcel_id`. Pass null to clear it. */
+    setActiveParcelId(parcelId: number | null) {
+      this.activeParcelId = parcelId;
     },
 
     /** Append the user's turn and prepare the per-turn state. */
@@ -242,6 +253,7 @@ export const useChatStore = defineStore("chat", {
           if (tracked) {
             tracked.status = event.ok ? "ok" : "failed";
             tracked.summary = summary;
+            tracked.result = event.result;
           } else {
             this.toolSeq += 1;
             this.toolCalls.push({
@@ -250,6 +262,7 @@ export const useChatStore = defineStore("chat", {
               args: {},
               status: event.ok ? "ok" : "failed",
               summary,
+              result: event.result,
             });
           }
           if (findings.length > 0) this.findings.push(...findings);
@@ -303,6 +316,7 @@ export const useChatStore = defineStore("chat", {
       this.status = "idle";
       this.activeAssistantId = null;
       this.errorMessage = null;
+      this.activeParcelId = null;
     },
 
     /**
@@ -332,5 +346,18 @@ export const useChatStore = defineStore("chat", {
     loadDemoParcels(findings: Finding[]) {
       this.findings = [...findings];
     },
+  },
+
+  // Persist only durable conversation state. Transient per-turn state
+  // (toolCalls, perceiverNotes, findings, status, activeAssistantId,
+  // errorMessage, toolSeq) is intentionally excluded: rehydrating a "running"
+  // tool or a half-streamed turn would be incorrect. `session_id` is NOT
+  // duplicated here — it already persists via the `agrosat-session-id` cookie
+  // in useSession. SSR-safe: `localStorage()` is a no-op on the server, so the
+  // store hydrates from localStorage on the client only (transcript wrapped in
+  // <ClientOnly> in ChatDock to avoid a hydration mismatch).
+  persist: {
+    storage: piniaPluginPersistedstate.localStorage(),
+    pick: ["messages", "llmVariant"],
   },
 });

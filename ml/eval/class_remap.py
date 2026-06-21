@@ -33,17 +33,26 @@ operate on POST-softmax tensors only, never on logits or ``state_dict`` keys.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 import torch
 
 __all__ = [
+    "FRANCE_9",
     "HARNESS_IGNORE_INDEX",
     "HARNESS_NUM_CLASSES",
     "HARNESS_SIZE",
+    "HCAT_MACRO",
+    "LabelSpace",
+    "get_label_space",
+    "list_label_spaces",
+    "register_label_space",
     "remap_20_to_18",
     "remap_probs_20_to_18",
     "resample_mask_128_nearest",
     "resample_probs_128_bilinear",
+    "restrict_posterior",
 ]
 
 #: Numerical floor used to avoid divide-by-zero when renormalizing a probability
@@ -313,3 +322,294 @@ def _find_class_axis(shape: tuple[int, ...], *, expected: int) -> int:
         f"ambiguous class axis: multiple axes of length {expected} in shape "
         f"{shape}. Pass a tensor with a single 20-length axis."
     )
+
+
+# ---------------------------------------------------------------------------
+# Label-space registry (US-053; hook for EPIC 12 US-074 HCAT crosswalk).
+# ---------------------------------------------------------------------------
+# The 18-class semantic18 posterior the EPIC 6 members emit is NOT uniformly
+# trustworthy: an honest discard curve (F1 OOF fold-5, notebook 06c) shows only
+# nine classes are reliably resolved. Rather than hardcode that set of nine in
+# the classifier, this registry parameterizes *which* contiguous semantic18 ids a
+# given "label-space" keeps, so the classifier (``ml.agent.tools.classify``) can
+# mask + renormalize its posterior over the active space without knowing the set
+# by name. The first space is ``france-9`` (PASTIS-R / France). EPIC 12 US-074
+# will REGISTER further national spaces (``iberia-14``, ``hcat-global-20``) via an
+# HCAT (Harmonized Crop and Agricultural Types) crosswalk WITHOUT touching the
+# classifier: it only calls :func:`register_label_space` with a new
+# :class:`LabelSpace`. That extensibility is the whole point of the registry.
+
+
+@dataclass(frozen=True)
+class LabelSpace:
+    """A named subset of the contiguous semantic18 space the models resolve well.
+
+    A label-space declares which semantic18 class ids (``[0..17]``, the contiguous
+    space :data:`ml.data.pastis_filter.SEMANTIC18_CLASS_NAMES` indexes) a consumer
+    should keep when reporting a crop posterior, dropping the rest. Storing the
+    KEPT semantic18 ids (not free-form names) lets a ``(18,)`` or ``(N, 18)``
+    posterior be masked purely by index, with no name-matching at inference time.
+
+    Attributes:
+        name: Stable identifier of the space (e.g. ``"france-9"``).
+        kept_class_ids: The semantic18 ids the space keeps, in canonical order.
+        dropped_class_ids: The semantic18 ids the space drops (the complement of
+            ``kept_class_ids`` within ``[0, 18)``), kept for traceability.
+        class_names: Mapping ``{semantic18_id: human-readable crop name}`` for the
+            kept ids only.
+        source: Provenance string (how the kept set was chosen), e.g. the F1 OOF
+            fold-5 discard curve that justified ``france-9``.
+    """
+
+    name: str
+    kept_class_ids: tuple[int, ...]
+    dropped_class_ids: tuple[int, ...]
+    class_names: dict[int, str]
+    source: str
+
+
+# ``france-9`` semantic18 ids resolved against
+# ``ml.data.pastis_filter.SEMANTIC18_CLASS_NAMES`` (verified, not by free-form
+# name): the nine classes the Stacking-5 / tsvit-pheno champion resolves well by
+# F1 OOF fold-5 (honest discard curve, notebook 06c celda b3c99833):
+#   Winter rapeseed (id 4, F1 0.937), Corn (2, 0.935), Grapevine (7, 0.924),
+#   Beet (8, 0.920), Meadow (0, 0.902), Soft winter wheat (1, 0.896),
+#   Soybeans (14, 0.865), Winter barley (3, 0.844), Sunflower (6, 0.798).
+# The nine DROPPED (worst F1) are the complement: Winter durum wheat (10),
+# Orchard (15), Fruits/veg/flowers (11), Spring barley (5), Winter triticale (9),
+# Leguminous fodder (13), Sorghum (17), Mixed cereal (16), Potatoes (12).
+_FRANCE_9_KEPT_IDS: tuple[int, ...] = (0, 1, 2, 3, 4, 6, 7, 8, 14)
+
+#: Number of contiguous semantic18 classes any label-space is a subset of.
+_SEMANTIC18_SIZE: int = HARNESS_NUM_CLASSES
+
+
+def _build_france9() -> LabelSpace:
+    """Construct the ``france-9`` label-space, resolving names from semantic18.
+
+    Returns:
+        The frozen :class:`LabelSpace` for ``france-9`` with the nine kept ids,
+        their nine-name mapping (resolved against
+        :data:`ml.data.pastis_filter.SEMANTIC18_CLASS_NAMES`) and the dropped
+        complement.
+
+    Raises:
+        ValueError: if any kept id is outside ``[0, 18)`` or missing from the
+            semantic18 name table (a guard against a future rename drifting the
+            ids silently).
+    """
+    from ml.data.pastis_filter import SEMANTIC18_CLASS_NAMES
+
+    kept = tuple(sorted(_FRANCE_9_KEPT_IDS))
+    for cid in kept:
+        if not 0 <= cid < _SEMANTIC18_SIZE or cid not in SEMANTIC18_CLASS_NAMES:
+            raise ValueError(
+                f"france-9 kept id {cid} is not a valid semantic18 class id; "
+                "the SEMANTIC18_CLASS_NAMES table changed -- re-derive the ids."
+            )
+    dropped = tuple(c for c in range(_SEMANTIC18_SIZE) if c not in set(kept))
+    class_names = {cid: SEMANTIC18_CLASS_NAMES[cid] for cid in kept}
+    return LabelSpace(
+        name="france-9",
+        kept_class_ids=kept,
+        dropped_class_ids=dropped,
+        class_names=class_names,
+        source="F1 OOF fold-5 honest discard curve (notebook 06c, Stacking-5 / tsvit-pheno)",
+    )
+
+
+#: Module-level singleton for the first registered space (convenience export).
+FRANCE_9: LabelSpace = _build_france9()
+
+#: Mutable registry of label-spaces by name. EPIC 12 US-074 adds entries via
+#: :func:`register_label_space` (HCAT crosswalk) without editing the classifier.
+_REGISTRY: dict[str, LabelSpace] = {FRANCE_9.name: FRANCE_9}
+
+
+def register_label_space(space: LabelSpace, *, overwrite: bool = False) -> None:
+    """Register a label-space so consumers can select it by name.
+
+    This is the EPIC 12 US-074 seam: a future HCAT crosswalk registers
+    ``iberia-14`` / ``hcat-global-20`` here and the classifier picks them up by
+    name, with no change to :mod:`ml.agent.tools.classify`.
+
+    Args:
+        space: The :class:`LabelSpace` to register.
+        overwrite: When ``False`` (default) registering an existing name raises;
+            pass ``True`` to replace it deliberately.
+
+    Raises:
+        ValueError: if ``space.kept_class_ids`` is empty, has an out-of-range id,
+            or the name already exists and ``overwrite`` is ``False``.
+    """
+    if not space.kept_class_ids:
+        raise ValueError(f"label-space {space.name!r} must keep at least one class id.")
+    for cid in space.kept_class_ids:
+        if not 0 <= cid < _SEMANTIC18_SIZE:
+            raise ValueError(
+                f"label-space {space.name!r} kept id {cid} is outside the "
+                f"semantic18 range [0, {_SEMANTIC18_SIZE})."
+            )
+    if space.name in _REGISTRY and not overwrite:
+        raise ValueError(
+            f"label-space {space.name!r} is already registered; pass overwrite=True."
+        )
+    _REGISTRY[space.name] = space
+
+
+def get_label_space(name: str = "france-9") -> LabelSpace:
+    """Return a registered label-space by name.
+
+    Args:
+        name: Registered label-space name (default ``"france-9"``).
+
+    Returns:
+        The :class:`LabelSpace` registered under ``name``.
+
+    Raises:
+        KeyError: if ``name`` is not registered.
+    """
+    if name not in _REGISTRY:
+        raise KeyError(
+            f"unknown label-space {name!r}; registered: {sorted(_REGISTRY)}."
+        )
+    return _REGISTRY[name]
+
+
+def list_label_spaces() -> tuple[str, ...]:
+    """Return the names of every registered label-space (sorted).
+
+    Returns:
+        The registered label-space names in sorted order.
+    """
+    return tuple(sorted(_REGISTRY))
+
+
+def restrict_posterior(
+    proba: np.ndarray, label_space: LabelSpace
+) -> dict[int, float]:
+    """Mask a semantic18 posterior to a label-space and renormalize over it.
+
+    Drops the ``dropped_class_ids`` mass of a ``(18,)`` post-softmax row and
+    renormalizes the kept ``kept_class_ids`` so they sum to 1, yielding a
+    distribution OVER the well-resolved classes of ``label_space`` only. The
+    masked mass is discarded (not redistributed proportionally outside the kept
+    set) -- the renormalization redistributes it proportionally AMONG the kept
+    classes, which is exactly "ignore the classes the model cannot resolve".
+
+    Args:
+        proba: A ``(18,)`` post-softmax distribution over the contiguous
+            semantic18 space (e.g. ``xgb-alphaearth`` or the Stacking-5 meta
+            posterior).
+        label_space: The active :class:`LabelSpace` whose ``kept_class_ids`` are
+            retained.
+
+    Returns:
+        Mapping ``{semantic18_id: renormalized_probability}`` over the kept ids
+        only, summing to ~1 (or to 0.0 for every kept id when the kept mass was
+        ~0, an honest "no signal in the resolved classes" rather than a fabricated
+        certainty).
+
+    Raises:
+        ValueError: if ``proba`` is not a 1-D vector of length 18.
+    """
+    arr = np.asarray(proba, dtype=np.float64).ravel()
+    if arr.size != _SEMANTIC18_SIZE:
+        raise ValueError(
+            f"restrict_posterior expects a ({_SEMANTIC18_SIZE},) semantic18 "
+            f"posterior; received size {arr.size}."
+        )
+    kept = label_space.kept_class_ids
+    kept_mass = float(arr[list(kept)].sum())
+    if kept_mass > 1e-12:
+        return {cid: float(arr[cid]) / kept_mass for cid in kept}
+    # No probability mass landed on the resolved classes: report an explicit
+    # zero distribution rather than inventing a uniform prior.
+    return {cid: 0.0 for cid in kept}
+
+
+# ---------------------------------------------------------------------------
+# EPIC 12 US-074: ``hcat-macro`` label-space (HCAT v3 crosswalk).
+# ---------------------------------------------------------------------------
+# US-074 AMPLIES this registry with a label-space carrying the PASTIS-18 -> HCAT
+# v3 macro-group mapping (data/reference/hcat_crosswalk.parquet), WITHOUT touching
+# ``ml.agent.tools.classify`` or the ``restrict_posterior`` signature. Unlike
+# ``france-9`` (a *subset* of well-resolved ids), ``hcat-macro`` keeps ALL 18
+# semantic18 ids and EXPOSES the macro-group label per id in ``class_names``; the
+# actual semantic18->macro aggregation is done by the adapter/consumer reading the
+# parquet, not by the registry. So ``restrict_posterior`` (a mask + renormalize
+# over a subset) is untouched and US-053 keeps working: the kept set is the
+# trivial subset "all 18", and the macro grouping rides along in the names.
+
+#: Mapping ``semantic18_id -> "MACRO_L1_6|macro_hcat_group"`` derived from the
+#: US-074 crosswalk (legacy 6-family HCAT L1 used by E4/E6 + the finer 10-group
+#: HCAT L2 macro). Hardcoded here (not read from the parquet) so importing the
+#: registry never depends on a data file being present; the parquet is the
+#: single source of truth and a test asserts the two agree.
+_HCAT_MACRO_BY_ID: dict[int, str] = {
+    0: "GRASSLAND_OTHER|grassland",
+    1: "CEREALS|cereals",
+    2: "CEREALS|cereals",
+    3: "CEREALS|cereals",
+    4: "OILSEEDS|oilseed_industrial",
+    5: "CEREALS|cereals",
+    6: "OILSEEDS|oilseed_industrial",
+    7: "PERMANENT_WOODY|vineyard",
+    8: "ROOT_CROPS|sugar_beet",
+    9: "CEREALS|cereals",
+    10: "CEREALS|cereals",
+    11: "GRASSLAND_OTHER|vegetables",
+    12: "ROOT_CROPS|potato",
+    13: "LEGUMES|legumes_fodder",
+    14: "LEGUMES|soybean",
+    15: "PERMANENT_WOODY|orchard",
+    16: "CEREALS|cereals",
+    17: "CEREALS|cereals",
+}
+
+
+def _build_hcat_macro() -> LabelSpace:
+    """Construct the ``hcat-macro`` label-space over all 18 semantic18 ids.
+
+    Keeps every semantic18 id (the trivial subset = all 18) and carries the
+    ``"MACRO_L1_6|macro_hcat_group|crop_name"`` triple in ``class_names`` so a
+    consumer can aggregate the semantic18 posterior into HCAT macro families
+    without touching the classifier. Derived from the US-074 crosswalk
+    (``data/reference/hcat_crosswalk.parquet``).
+
+    Returns:
+        The frozen :class:`LabelSpace` for ``hcat-macro`` with 18 kept ids, an
+        empty dropped set, and the macro-annotated name mapping.
+
+    Raises:
+        ValueError: if an id is missing from the semantic18 name table or the
+            macro mapping (a guard against the crosswalk drifting silently).
+    """
+    from ml.data.pastis_filter import SEMANTIC18_CLASS_NAMES
+
+    kept = tuple(range(_SEMANTIC18_SIZE))  # all 18, no class is dropped
+    for cid in kept:
+        if cid not in SEMANTIC18_CLASS_NAMES or cid not in _HCAT_MACRO_BY_ID:
+            raise ValueError(
+                f"hcat-macro id {cid} is missing from the semantic18 name table "
+                "or the macro mapping; re-derive from the US-074 crosswalk."
+            )
+    class_names = {
+        cid: f"{_HCAT_MACRO_BY_ID[cid]}|{SEMANTIC18_CLASS_NAMES[cid]}"
+        for cid in kept
+    }
+    return LabelSpace(
+        name="hcat-macro",
+        kept_class_ids=kept,
+        dropped_class_ids=(),
+        class_names=class_names,
+        source=(
+            "US-074 crosswalk PASTIS-18 -> HCAT v3 "
+            "(data/reference/hcat_crosswalk.parquet)"
+        ),
+    )
+
+
+#: Module-level singleton for the HCAT macro label-space (convenience export).
+HCAT_MACRO: LabelSpace = _build_hcat_macro()
+register_label_space(HCAT_MACRO)

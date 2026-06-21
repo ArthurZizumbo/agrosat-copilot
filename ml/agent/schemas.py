@@ -399,12 +399,33 @@ class TileUrl(BaseModel):
 # classify_new_parcel
 # ---------------------------------------------------------------------------
 class ClassifyParcelInput(BaseModel):
-    """Arguments for ``classify_new_parcel`` (StackingEnsemble inference).
+    """Arguments for ``classify_new_parcel`` (honest per-parcel crop classifier).
+
+    By default this serves the ``xgb-alphaearth`` tabular member (one of the five
+    EPIC 6 stacking members), NOT a generic "stacking ensemble". Two independent
+    flags refine that:
+
+    - ``restrict_to_resolved_classes`` (default ON) masks the posterior down to
+      the well-resolved classes of ``label_space`` (``france-9`` by default, the
+      nine classes with the highest F1 OOF fold-5) and renormalizes. This trades
+      18-class breadth for honesty about which classes the model resolves.
+    - ``use_stacking`` (default OFF) serves the Stacking-5 champion posterior for
+      a parcel already materialized in the cached fold-5 OOF; a new polygon with
+      no OOF (or absent OOF artifacts) degrades cleanly to ``xgb-alphaearth``.
 
     Attributes:
         session_id: Tenant session.
         aoi: Polygon of the new parcel to classify.
         year: Campaign year of the AlphaEarth annual embedding (default 2019).
+        restrict_to_resolved_classes: When ``True`` (default) the posterior is
+            masked + renormalized over the active label-space's resolved classes;
+            when ``False`` the full 18-class posterior is returned.
+        use_stacking: When ``True`` serve the Stacking-5 posterior for a fold-5
+            parcel (cached OOF), degrading to ``xgb-alphaearth`` when no OOF row
+            matches or the OOF artifacts are unavailable. Default ``False``.
+        label_space: Name of the registered label-space whose resolved classes
+            gate the posterior when ``restrict_to_resolved_classes`` is on
+            (default ``"france-9"``; EPIC 12 US-074 will register more).
     """
 
     model_config = _STRICT_CONFIG
@@ -412,6 +433,9 @@ class ClassifyParcelInput(BaseModel):
     session_id: UUID
     aoi: GeoJSONGeometry
     year: int = 2019
+    restrict_to_resolved_classes: bool = True
+    use_stacking: bool = False
+    label_space: str = "france-9"
 
     @field_validator("year")
     @classmethod
@@ -419,6 +443,14 @@ class ClassifyParcelInput(BaseModel):
         """Constrain the year to the AlphaEarth annual coverage range."""
         if not 2017 <= value <= 2100:
             raise ValueError(f"year {value} out of supported range [2017, 2100]")
+        return value
+
+    @field_validator("label_space")
+    @classmethod
+    def _validate_label_space(cls, value: str) -> str:
+        """Require a non-empty label-space name (resolved at run time)."""
+        if not value.strip():
+            raise ValueError("label_space must not be empty")
         return value
 
 

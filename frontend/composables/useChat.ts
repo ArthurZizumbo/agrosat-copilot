@@ -9,10 +9,62 @@
 // Why not EventSource: the endpoint is POST (it carries the message history +
 // AOI), and the browser `EventSource` is GET-only. We therefore stream manually
 // with fetch + a UTF-8 decoder and a frame splitter on the blank-line boundary.
+//
+// Resilience (US-057, D3): `streamWithRetry` wraps the whole fetch + readStream
+// attempt and retries on TRANSIENT failures (network TypeError, 5xx, an early
+// reader cut before any terminal event) with exponential backoff + full jitter,
+// capped. It does NOT retry FATAL failures (AbortError, 4xx contract errors, a
+// backend `error` event, or a stream that already emitted `done`). Idempotency:
+// once a `text_delta` reached the store, a later cut is NOT retried (that would
+// duplicate text); we `failTransport("stream_interrupted")` instead.
 
 import type { AgentEvent, ChatRequest, LlmVariant } from "~/types/agent";
 import { useChatStore } from "~/stores/chat";
 import { useMapStore } from "~/stores/map";
+
+/** Retry tuning (US-057 D3). */
+const MAX_RETRIES = 3;
+const BASE_DELAY_MS = 500;
+const MAX_DELAY_MS = 8000;
+
+/** ChatRequest plus the per-request `locale` (US-057 D4).
+ *
+ * The wire contract in `types/agent.ts` does not yet declare `locale` (it lands
+ * in a sibling change together with the backend `ChatRequest.locale` field).
+ * We type the body locally so this file typechecks and sends the active locale
+ * the moment the backend accepts it. Until then the backend ignores it; see the
+ * handoff note "BACKEND PENDING (locale)".
+ */
+type ChatRequestWithLocale = ChatRequest & { locale?: "it" | "es" | "en" };
+
+/** Marker error: the reader was cut before a terminal event (transient). */
+class StreamCutError extends Error {
+  /** True once at least one `text_delta` reached the store this turn. */
+  readonly afterDelta: boolean;
+  constructor(afterDelta: boolean) {
+    super("stream_cut");
+    this.name = "StreamCutError";
+    this.afterDelta = afterDelta;
+  }
+}
+
+/** Marker error: the backend returned a non-OK HTTP status. */
+class HttpStatusError extends Error {
+  readonly status: number;
+  constructor(status: number) {
+    super(`http_${status}`);
+    this.name = "HttpStatusError";
+    this.status = status;
+  }
+}
+
+/** Outcome of a single stream read. */
+interface ReadOutcome {
+  /** True if a `done`/`error` terminal event was observed. */
+  terminal: boolean;
+  /** True if any `text_delta` reached the store (idempotency guard). */
+  receivedDelta: boolean;
+}
 
 /** Parse one SSE frame (`event:`/`data:` lines) into an AgentEvent.
  *
@@ -20,8 +72,11 @@ import { useMapStore } from "~/stores/map";
  * (the JSON payload without the type). We merge `{type}` back in so the payload
  * matches the discriminated `AgentEvent` union. Returns `null` for keep-alive
  * comments or malformed frames.
+ *
+ * Exported so the SSE-parser unit tests exercise the real implementation
+ * instead of a reimplementation (US-057 §6, REGLA ARTHUR: real contract frames).
  */
-function parseSseFrame(frame: string): AgentEvent | null {
+export function parseSseFrame(frame: string): AgentEvent | null {
   let eventType: string | null = null;
   const dataLines: string[] = [];
   for (const line of frame.split("\n")) {
@@ -41,10 +96,40 @@ function parseSseFrame(frame: string): AgentEvent | null {
   }
 }
 
+/** Sleep `ms` milliseconds (cancellable via `signal`). */
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException("Aborted", "AbortError"));
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    function onAbort() {
+      clearTimeout(timer);
+      reject(new DOMException("Aborted", "AbortError"));
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/** Exponential backoff with full jitter, capped (US-057 D3).
+ *
+ * `base * 2**attempt`, clamped to `MAX_DELAY_MS`, then full jitter
+ * `delay * (0.5 + random*0.5)` so retries spread out and avoid thundering herd.
+ */
+function backoffDelayMs(attempt: number): number {
+  const exp = Math.min(BASE_DELAY_MS * 2 ** attempt, MAX_DELAY_MS);
+  return Math.round(exp * (0.5 + Math.random() * 0.5));
+}
+
 export function useChat() {
   const store = useChatStore();
   const mapStore = useMapStore();
   const { ensureSession, apiUrl } = useSession();
+  const { locale } = useI18n();
 
   let abort: AbortController | null = null;
 
@@ -55,7 +140,7 @@ export function useChat() {
     }
   }
 
-  /** Send a user message and stream the agent's SSE response. */
+  /** Send a user message and stream the agent's SSE response (with retry). */
   async function sendMessage(text: string): Promise<void> {
     const trimmed = text.trim();
     if (!trimmed || store.isBusy) return;
@@ -73,49 +158,138 @@ export function useChat() {
     // perceiver observes it. Demo/drawn AOIs are pure geometry, so no id needed.
     const aoi = mapStore.activeAoi?.geometry ?? null;
 
-    const body: ChatRequest = {
+    // Active UI locale (US-057 D4) so the reasoner replies in the user's
+    // language. BACKEND PENDING: ChatRequest is `extra="forbid"`; until the
+    // backend adds `locale`, it is ignored (or 422s). Sent only on the client.
+    const activeLocale = locale.value as "it" | "es" | "en";
+
+    // Active parcel clicked on the map (US-058 link parcel->chat). REAL id from
+    // the rendered feature; null when no parcel is selected. The contract
+    // `ChatRequest.parcel_id` already declares it (types/agent.ts).
+    const parcelId = store.activeParcelId ?? null;
+
+    const body: ChatRequestWithLocale = {
       messages,
       session_id: sessionId,
       aoi,
+      parcel_id: parcelId,
       year: 2019,
+      locale: activeLocale,
     };
 
     abort = new AbortController();
+    const signal = abort.signal;
     try {
-      const res = await fetch(apiUrl("/chat"), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "text/event-stream",
-          "X-Session-ID": sessionId,
-        },
-        body: JSON.stringify(body),
-        signal: abort.signal,
-      });
-
-      if (!res.ok || !res.body) {
-        store.failTransport(`http_${res.status}`);
-        return;
-      }
-
-      store.markStreaming();
-      await readStream(res.body);
-    } catch (err) {
-      // Aborts are intentional (dispose/stop); anything else is a transport
-      // failure surfaced to the UI.
-      if ((err as Error)?.name === "AbortError") return;
-      store.failTransport("network_error");
+      await streamWithRetry(body, signal);
     } finally {
       abort = null;
     }
   }
 
-  /** Read the SSE body to completion, dispatching each frame to the store. */
-  async function readStream(body: ReadableStream<Uint8Array>): Promise<void> {
+  /** Run one fetch + readStream attempt, retrying transient failures (D3).
+   *
+   * `receivedDeltaEver` tracks, across attempts, whether any `text_delta` has
+   * already reached the store this turn: once it has, a later cut is NOT a
+   * retry candidate (idempotency — retrying would duplicate streamed text).
+   */
+  async function streamWithRetry(
+    body: ChatRequestWithLocale,
+    signal: AbortSignal,
+  ): Promise<void> {
+    let receivedDeltaEver = false;
+
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        const outcome = await runStreamAttempt(body, signal, receivedDeltaEver);
+        // Success: the attempt completed (terminal event or a clean settle).
+        return void outcome;
+      } catch (err) {
+        receivedDeltaEver = receivedDeltaEver || deltaSeen(err);
+
+        // Fatal: never retry — abort, 4xx contract error, or post-delta cut.
+        if (isAbort(err)) return; // intentional stop/dispose: stay silent.
+
+        if (err instanceof HttpStatusError && err.status < 500) {
+          // 4xx (incl. 422 = contract mismatch like extra="forbid"): fatal.
+          store.failTransport(`http_${err.status}`);
+          return;
+        }
+
+        if (err instanceof StreamCutError && err.afterDelta) {
+          // Idempotency: a delta already streamed; retrying duplicates text.
+          console.warn("[useChat] stream cut after delta; not retrying");
+          store.failTransport("stream_interrupted");
+          return;
+        }
+
+        // Transient: network TypeError, 5xx, or an early (pre-delta) cut.
+        if (attempt >= MAX_RETRIES) {
+          console.warn(
+            `[useChat] transport failed after ${attempt + 1} attempts:`,
+            (err as Error)?.message,
+          );
+          store.failTransport("network_error");
+          return;
+        }
+
+        const wait = backoffDelayMs(attempt);
+        console.warn(
+          `[useChat] transient transport error (attempt ${attempt + 1}/` +
+            `${MAX_RETRIES + 1}); retrying in ${wait}ms:`,
+          (err as Error)?.message,
+        );
+        try {
+          await delay(wait, signal);
+        } catch {
+          return; // aborted while backing off.
+        }
+      }
+    }
+  }
+
+  /** A single fetch + readStream. Throws a classified error on failure. */
+  async function runStreamAttempt(
+    body: ChatRequestWithLocale,
+    signal: AbortSignal,
+    receivedDeltaBefore: boolean,
+  ): Promise<ReadOutcome> {
+    const sessionId = body.session_id ?? ensureSession();
+
+    const res = await fetch(apiUrl("/chat"), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+        "X-Session-ID": sessionId,
+      },
+      body: JSON.stringify(body),
+      signal,
+    });
+
+    if (!res.ok || !res.body) {
+      // Non-OK status: classify (4xx fatal, 5xx transient) in the retry loop.
+      throw new HttpStatusError(res.status);
+    }
+
+    store.markStreaming();
+    return readStream(res.body, receivedDeltaBefore);
+  }
+
+  /** Read the SSE body to completion, dispatching each frame to the store.
+   *
+   * Returns whether a terminal event was observed and whether any `text_delta`
+   * reached the store. Throws `StreamCutError` if `reader.read()` fails (or the
+   * stream ends) before a terminal event — the retry loop decides what to do.
+   */
+  async function readStream(
+    body: ReadableStream<Uint8Array>,
+    receivedDeltaBefore: boolean,
+  ): Promise<ReadOutcome> {
     const reader = body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
     let terminal = false;
+    let receivedDelta = receivedDeltaBefore;
 
     try {
       for (;;) {
@@ -132,6 +306,7 @@ export function useChat() {
           const event = parseSseFrame(frame);
           if (event) {
             store.applyEvent(event);
+            if (event.type === "text_delta") receivedDelta = true;
             if (event.type === "done" || event.type === "error") {
               terminal = true;
             }
@@ -142,19 +317,38 @@ export function useChat() {
       }
 
       // Flush a trailing frame that was not blank-line terminated.
-      const tail = buffer.trim();
-      if (!terminal && tail.length > 0) {
-        const event = parseSseFrame(tail);
-        if (event) store.applyEvent(event);
+      if (!terminal) {
+        const tail = buffer.trim();
+        if (tail.length > 0) {
+          const event = parseSseFrame(tail);
+          if (event) {
+            store.applyEvent(event);
+            if (event.type === "text_delta") receivedDelta = true;
+            if (event.type === "done" || event.type === "error") {
+              terminal = true;
+            }
+          }
+        }
       }
-
-      // The stream ended without a terminal event: settle so the UI unblocks.
-      if (!terminal && store.status === "streaming") {
-        store.applyEvent({ type: "done" });
-      }
+    } catch (err) {
+      // The reader cut mid-stream (network drop). Abort is intentional and
+      // re-thrown unchanged so the retry loop stays silent; any other read
+      // failure becomes a (possibly retryable) StreamCutError.
+      if (isAbort(err)) throw err;
+      throw new StreamCutError(receivedDelta);
     } finally {
       reader.releaseLock();
     }
+
+    // The stream ended cleanly but without a terminal event. If a delta had
+    // streamed, settle the turn (the answer is already in the store). If not,
+    // treat the early end as a transient cut so the retry loop can recover.
+    if (!terminal) {
+      if (!receivedDelta) throw new StreamCutError(false);
+      if (store.status === "streaming") store.applyEvent({ type: "done" });
+    }
+
+    return { terminal, receivedDelta };
   }
 
   /**
@@ -180,4 +374,14 @@ export function useChat() {
     switchLlm,
     dispose,
   };
+}
+
+/** True if the error is an intentional abort (stop/dispose). */
+function isAbort(err: unknown): boolean {
+  return (err as Error)?.name === "AbortError";
+}
+
+/** True if the (classified) error indicates a delta already streamed. */
+function deltaSeen(err: unknown): boolean {
+  return err instanceof StreamCutError && err.afterDelta;
 }

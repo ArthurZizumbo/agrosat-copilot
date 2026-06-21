@@ -1,0 +1,33 @@
+{
+  "miou_zero_shot": 0.0,
+  "miou_few_shot": 0.24677903917672497,
+  "delta_miou": 0.24677903917672497,
+  "n_val_patches": 20,
+  "n_val_tiles": 180,
+  "n_train_patches": 10,
+  "n_train_tiles": 90,
+  "epochs_run": 40,
+  "best_ckpt": "checkpoints\\segmentation\\tsvit-pheno-sen4agri-cat-ft-v1\\best.pt",
+  "zero_shot_metrics": {
+    "miou": 0.0,
+    "f1_macro": 0.0,
+    "pixel_accuracy": 0.0
+  },
+  "few_shot_metrics": {
+    "miou": 0.24677903917672497,
+    "f1_macro": 0.30053613651396893,
+    "pixel_accuracy": 0.9178575402565611
+  },
+  "macro_groups": [
+    "grassland",
+    "cereals",
+    "oilseed_industrial",
+    "vineyard",
+    "sugar_beet",
+    "vegetables",
+    "potato",
+    "legumes_fodder",
+    "soybean",
+    "orchard"
+  ]
+}

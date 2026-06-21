@@ -11,6 +11,10 @@ from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _DEV_DATABASE_URL = "postgresql+asyncpg://agrosat:agrosat@localhost:5432/agrosat"
+# Application-role DSN (role ``agrosat_app``, NOBYPASSRLS) used by the backend
+# pool so RLS policies actually enforce (US-051). Separate from the superuser
+# ``agrosat`` migration role, which bypasses RLS.
+_DEV_APP_DATABASE_URL = "postgresql+asyncpg://agrosat_app:agrosat_app@localhost:55432/agrosat"
 _DEV_REDIS_URL = "redis://localhost:6379/0"
 # Placeholder rejected by the validator if env != dev.
 _JWT_PLACEHOLDER = "change-me-in-prod"
@@ -39,6 +43,11 @@ class Settings(BaseSettings):
     # Connections — local docker-compose defaults. In staging/prod they are
     # mandatory and validated in ``_require_real_urls_in_cloud``.
     database_url: str = Field(default=_DEV_DATABASE_URL)
+    # DSN of the non-superuser application role ``agrosat_app`` (NOBYPASSRLS):
+    # the backend pool connects with this so the multi-tenant RLS policies
+    # enforce (US-051). The superuser ``agrosat`` (``database_url`` /
+    # ``dbmate_database_url``) is the migration role and bypasses RLS.
+    app_database_url: str = Field(default=_DEV_APP_DATABASE_URL)
     dbmate_database_url: str = Field(default="")
     redis_url: str = Field(default=_DEV_REDIS_URL)
     upstash_redis_rest_url: str = ""
@@ -75,13 +84,37 @@ class Settings(BaseSettings):
     hf_home: str = ""
 
     # LLM backends
-    llm_variant_default: Literal["gemini", "qwen35"] = "gemini"
+    # US-054: startup/fallback variant only -- the per-request reasoner reads the
+    # variant from ``chat_sessions.llm_model`` (D3), so this is no longer the
+    # per-request source. The four values are 1:1 with the routing table
+    # (``ml.agent.llm_routing.VARIANTS``) and the DB CHECK constraint.
+    llm_variant_default: Literal["gemini", "qwen-api", "qwen-onprem", "gemma"] = "gemini"
     vertex_ai_location: str = "us-central1"
-    gemini_model: str = "gemini-3.1-pro"
+    # Reasoner model for the ``gemini`` LLM variant (single source of truth read
+    # by ``ChatService._reasoner_model``). US-052: ``gemini-3.5-flash`` is a
+    # CONSCIOUS DEVIATION from the original AC (``gemini-2.5-pro``) decided by
+    # Arthur for cost/latency of the copilot; the legacy ``gemini-3.1-pro``
+    # hardcode (never read by the service) is dropped.
+    gemini_model: str = "gemini-3.5-flash"
     vllm_qwen35_url: str = ""
     vllm_api_key: str = ""
     # Ollama OpenAI-compatible endpoint for the local Gemma variant (US-049).
     ollama_base_url: str = ""
+    # US-054 routing table env vars (backend-agnostic). Each names WHERE a
+    # variant's OpenAI-compatible host lives, so moving a model H100 -> L4 -> a
+    # hosted API is an env edit, zero code (AC-4). Safe empty dev defaults: an
+    # unset variant degrades to ``gemini`` at request time (the resolver logs
+    # ``llm_route_env_missing``). ``qwen-onprem`` reuses ``vllm_qwen35_url`` /
+    # ``vllm_api_key``; ``gemma`` falls back to ``ollama_base_url`` when
+    # ``gemma_api_url`` is empty.
+    # ``qwen-api``: hosted OpenAI-compatible Qwen (Together / Fireworks / OpenRouter).
+    qwen_api_url: str = ""
+    qwen_api_key: str = ""
+    qwen_api_model: str = ""
+    # ``gemma``: Google AI Studio or on-prem Ollama serving Gemma 4.
+    gemma_api_url: str = ""
+    gemma_api_key: str = ""
+    gemma_model: str = ""
     # Gemini / google-genai credentials (read by the SDK via the environment;
     # declared here so ``extra="forbid"`` accepts them in ``.env.local``).
     gemini_api_key: str = ""
@@ -112,11 +145,21 @@ class Settings(BaseSettings):
     # Observability
     prometheus_pushgateway: str = ""
     sentry_dsn: str = ""
+    # US-065: gate the Prometheus export of the per-turn chat metrics
+    # (``chat_turn_metrics``). Off by default so structlog is always emitted but
+    # the exporter is only touched when an operator opts in; the export degrades
+    # to a no-op when ``prometheus-client`` is absent (honest degradation).
+    chat_metrics_prometheus_enabled: bool = False
 
     # JWT / security
     jwt_secret: str = _JWT_PLACEHOLDER
     jwt_algorithm: str = "HS256"
     cors_allowed_origins: str = "http://localhost:3000"
+    # SSRF allowlist for the COG ``url`` tile param (US-055): comma-separated
+    # http(s) hosts the tiler may fetch server-side. ``gs://`` is gated separately
+    # by ``gcs_data_bucket``; local/``file://`` COGs are always allowed. Empty in
+    # prod = no arbitrary remote http(s) COGs.
+    tile_url_allowed_hosts: str = "localhost,127.0.0.1"
     rate_limit_chat_per_min: int = 10
     rate_limit_llm_switch_per_min: int = 5
 
@@ -158,6 +201,11 @@ class Settings(BaseSettings):
                 raise ValueError(
                     f"DATABASE_URL is required when env={self.env!r} "
                     "(do not use the development default in cloud)."
+                )
+            if self.app_database_url == _DEV_APP_DATABASE_URL:
+                raise ValueError(
+                    f"APP_DATABASE_URL is required when env={self.env!r} "
+                    "(do not ship the dev agrosat_app password to cloud)."
                 )
             if self.redis_url == _DEV_REDIS_URL and not self.upstash_redis_rest_url:
                 raise ValueError(

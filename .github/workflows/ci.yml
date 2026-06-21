@@ -14,10 +14,16 @@ permissions:
   contents: read
 
 env:
-  POETRY_VERSION: "1.8.4"
+  # Bumped to match the repo manifests: pyproject.toml declares
+  # ``requires-poetry = ">=2.0"`` (Poetry 1.8.4 rejected it with "The fields
+  # ... are required in package mode" + "requires-poetry was unexpected") and
+  # frontend/package.json pins ``packageManager: pnpm@10.24.0`` / ``engines.pnpm
+  # >=10`` (pnpm 9 failed with ERR_PNPM_UNSUPPORTED_ENGINE). 2.2.1 / 10.24.0 are
+  # the versions verified working locally.
+  POETRY_VERSION: "2.2.1"
   PYTHON_VERSION: "3.12"
   NODE_VERSION: "20"
-  PNPM_VERSION: "9"
+  PNPM_VERSION: "10.24.0"
   TERRAFORM_VERSION: "1.9.8"
 
 jobs:
@@ -140,6 +146,18 @@ jobs:
           curl -fsSL -o /tmp/dbmate https://github.com/amacneil/dbmate/releases/latest/download/dbmate-linux-amd64
           chmod +x /tmp/dbmate
           sudo mv /tmp/dbmate /usr/local/bin/dbmate
+
+      # The official postgis/postgis image ships PostGIS but NOT pgvector, while
+      # the initial migration does ``CREATE EXTENSION vector`` (pgvector). Install
+      # the extension into the running service container from the PostgreSQL APT
+      # repo (already configured in the postgres-based image) so the migration
+      # succeeds without swapping to an experimental bundled image. The container
+      # is resolved by its image since GitHub assigns it a generated name.
+      - name: Install pgvector into the Postgres service
+        run: |
+          cid=$(docker ps --filter "ancestor=postgis/postgis:15-3.4" --format '{{.ID}}')
+          if [ -z "$cid" ]; then echo "postgres service container not found"; exit 1; fi
+          docker exec "$cid" bash -c "apt-get update && apt-get install -y postgresql-15-pgvector"
 
       - name: Run migrations
         env:

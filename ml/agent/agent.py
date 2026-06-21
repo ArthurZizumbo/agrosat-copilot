@@ -69,9 +69,11 @@ logger = structlog.get_logger(__name__)
 
 __all__ = ["MAX_TURNS", "Agent", "create_agent"]
 
-#: Default reasoner model. Gemini 2.5 Pro on Vertex AI / the GenAI API; swapped
-#: per request via ``/llm/switch`` without touching the factory (AC-5).
-DEFAULT_MODEL: str = "gemini-2.5-pro"
+#: Default reasoner model. Gemini 3.5 Flash on Vertex AI / the GenAI API (US-052
+#: conscious deviation from ``gemini-2.5-pro`` for cost/latency); swapped per
+#: request via ``/llm/switch`` without touching the factory (AC-5). The chat
+#: service always passes the model explicitly, so this is the bare-call default.
+DEFAULT_MODEL: str = "gemini-3.5-flash"
 
 #: Hard cap on backend round-trips per ``stream_response`` call. Guards against a
 #: model that keeps requesting tools forever. Each turn is one ``generate`` call;
@@ -234,6 +236,7 @@ class Agent:
             The events produced across the turns (tool calls/results, text
             deltas, and the terminal done/error event).
         """
+        usage: dict[str, int] | None = None
         for turn in range(MAX_TURNS):
             text_parts: list[str] = []
             tool_calls: list[_ToolCall] = []
@@ -248,6 +251,12 @@ class Agent:
                     text_parts.append(text)
                 if call is not None:
                     tool_calls.append(call)
+                # Carry the provider's token accounting forward when a chunk
+                # reports it (FinOps, US-065). Only the last turn's usage reaches
+                # ``DoneEvent``; ``None`` stays ``None`` (never synthesised).
+                chunk_usage = getattr(chunk, "usage", None)
+                if chunk_usage is not None:
+                    usage = chunk_usage
 
             # Stream any text the model emitted this turn *before* deciding what
             # to do with it. Gemini and Qwen frequently interleave reasoning text
@@ -264,7 +273,7 @@ class Agent:
                     session_id=str(session_id),
                     turns=turn + 1,
                 )
-                yield DoneEvent()
+                yield DoneEvent(usage=usage)
                 return
 
             # Record the model's turn (its reasoning text plus the function calls)

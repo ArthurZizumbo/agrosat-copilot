@@ -69,6 +69,9 @@
     "tool_running": "running",
     "tool_ok": "done",
     "tool_failed": "failed",
+    "tool_input": "Input",
+    "tool_output": "Output",
+    "tool_details": "View details for tool {tool}",
     "citations": "Citations",
     "parcel": "Parcel",
     "input_label": "Message to the copilot",
@@ -95,7 +98,10 @@
     "area": "Area",
     "source": "Source",
     "legend": "Crop legend",
-    "coords": "Coordinates"
+    "coords": "Coordinates",
+    "selected_parcel": "Selected parcel",
+    "parcel_in_chat": "Ask the chat about this parcel",
+    "clear_selection": "Clear selection"
   },
   "llm": {
     "gemini": "Gemini 2.5 Pro (cloud)",

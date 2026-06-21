@@ -35,6 +35,9 @@ import json
 from collections.abc import AsyncIterator
 from uuid import UUID
 
+import pytest
+import structlog
+
 import backend.app.services.chat_service as chat_mod
 from backend.app.services.chat_service import ChatMessage, ChatRequest, ChatService
 from ml.agent.events import (
@@ -64,6 +67,54 @@ class _SettingsStub:
     """Minimal settings stub so ``ChatService`` never reads the real .env.local."""
 
     rag_enabled = False
+    llm_variant_default = "gemini"
+    gemini_model = "gemini-3.5-flash"
+
+
+class _FakeConn:
+    """asyncpg connection double for ``ChatService._resolve_variant`` (US-054).
+
+    Supports the exact contract that ``_resolve_variant`` exercises:
+    ``conn.transaction()`` (async context manager), ``conn.execute`` (the
+    ``set_config`` RLS prime) and ``conn.fetchrow`` (the ``SELECT llm_model``
+    row). ``fetchrow`` returns ``{"llm_model": variant}`` so the service reads
+    the persisted variant; ``variant=None`` mimics a missing row so the service
+    degrades to its ``gemini`` fallback.
+    """
+
+    def __init__(self, variant: str | None) -> None:
+        self._variant = variant
+
+    def transaction(self):
+        conn = self
+
+        class _Tx:
+            async def __aenter__(self_inner):
+                return conn
+
+            async def __aexit__(self_inner, *exc):
+                return False
+
+        return _Tx()
+
+    async def execute(self, *args, **kwargs) -> str:
+        return "SET"
+
+    async def fetchrow(self, *args, **kwargs):
+        return None if self._variant is None else {"llm_model": self._variant}
+
+
+class _FakePool:
+    """asyncpg pool double: ``acquire``/``release`` hand out a :class:`_FakeConn`."""
+
+    def __init__(self, variant: str | None = None) -> None:
+        self._variant = variant
+
+    async def acquire(self) -> _FakeConn:
+        return _FakeConn(self._variant)
+
+    async def release(self, conn: _FakeConn) -> None:
+        return None
 
 
 class _FakePerceiver:
@@ -92,19 +143,29 @@ class _RaisingPerceiver:
         raise RuntimeError("classifier exploded")
 
 
+class _StubBackend:
+    """Backend double exposing only ``model`` (read for ``chat_model_resolved``)."""
+
+    def __init__(self, model: str = "gemini-3.5-flash") -> None:
+        self.model = model
+
+
 class _StubAgent:
     """Reasoner double: yields a scripted :data:`AgentEvent` stream (no network).
 
     Records the ``messages`` history and ``session_id`` it was driven with so the
     grounding-injection and multi-tenancy assertions can inspect them. The default
     script (``text_delta`` then ``done``) mimics a plain answer; tests that need a
-    tool round-trip or an error pass an explicit ``events`` list.
+    tool round-trip or an error pass an explicit ``events`` list. It carries a
+    :class:`_StubBackend` so the service resolves a concrete ``model`` for the
+    ``chat_model_resolved`` / ``chat_turn_metrics`` FinOps logs (US-065).
     """
 
     last_messages: list[dict] | None = None
     last_session_id: UUID | None = None
 
     def __init__(self, events: list[AgentEvent] | None = None) -> None:
+        self.backend = _StubBackend()
         self._events: list[AgentEvent] = (
             events
             if events is not None
@@ -121,6 +182,26 @@ class _StubAgent:
             yield event
 
 
+class _RaisingAgent:
+    """Reasoner double whose ``stream_response`` raises mid-stream.
+
+    Models a backend that surfaces a failure as an exception (rather than the
+    documented terminal :class:`ErrorEvent`): used to pin the service boundary
+    -- the perceiver observation is emitted first and only then does the reasoner
+    error surface.
+    """
+
+    def __init__(self, events: list[AgentEvent] | None = None) -> None:
+        self._events = events or []
+
+    async def stream_response(
+        self, messages: list[dict], session_id: UUID, ctx
+    ) -> AsyncIterator[AgentEvent]:
+        for event in self._events:
+            yield event
+        raise RuntimeError("backend connection reset")
+
+
 def _service(monkeypatch, perceiver_cls, agent_events=None) -> ChatService:
     """Build a ``ChatService`` with the pool, perceiver and reasoner mocked out.
 
@@ -130,14 +211,14 @@ def _service(monkeypatch, perceiver_cls, agent_events=None) -> ChatService:
     """
 
     async def _fake_get_pool():
-        return object()  # never used: the perceiver is mocked
+        return _FakePool()  # _resolve_variant reads llm_model -> None -> gemini fallback
 
     monkeypatch.setattr(chat_mod, "get_pool", _fake_get_pool)
     monkeypatch.setattr(chat_mod, "PerceiverLayer", perceiver_cls)
     _StubAgent.last_messages = None
     _StubAgent.last_session_id = None
 
-    def _stub_factory(model: str, *, settings) -> _StubAgent:
+    def _stub_factory(variant: str, *, settings) -> _StubAgent:
         return _StubAgent(events=agent_events)
 
     return ChatService(
@@ -161,6 +242,20 @@ async def _collect(service: ChatService, request: ChatRequest) -> list[tuple[str
     """Drain the SSE async generator into parsed ``(event, data)`` tuples."""
     frames = [frame async for frame in service.stream(request.messages, _SESSION, request=request)]
     return _parse_frames(frames)
+
+
+# ---------------------------------------------------------------------------
+# AC-2: default reasoner model is gemini-3.5-flash (deviation from the original
+# AC's gemini-2.5-pro, decided by Arthur for cost/latency).
+# ---------------------------------------------------------------------------
+# NOTE (US-054): the former ``test_default_reasoner_model_is_gemini_flash`` /
+# ``test_reasoner_model_reads_gemini_model_setting`` /
+# ``test_default_model_passed_to_agent_factory`` /
+# ``test_qwen_variant_passes_vllm_model_to_factory`` cases asserted the old
+# ``_reasoner_model()`` + ``(model)`` factory contract, both removed by the D3
+# change (the variant is now read per-request from ``chat_sessions.llm_model``).
+# Their replacements live in ``tests/integration/test_chat_uses_session_model.py``
+# (the factory now receives the persisted *variant*, with a gemini fallback).
 
 
 # ---------------------------------------------------------------------------
@@ -200,8 +295,9 @@ async def test_perceiver_observation_payload_is_real_text(monkeypatch) -> None:
     # (The block header reads "sin logits", so the bare word is legitimate.)
     for forbidden in ("tensor(", "array(", "ndarray", "dtype", "predict_proba"):
         assert forbidden not in block
-    # The terminal frame is the agent's ``done`` (no extra payload fields).
-    assert events["done"] == {}
+    # The terminal frame is the agent's ``done``; the only payload field is the
+    # optional token ``usage`` (US-065), ``None`` when the provider reported none.
+    assert events["done"] == {"usage": None}
 
 
 async def test_no_subject_completes_without_observation(monkeypatch) -> None:
@@ -304,6 +400,43 @@ async def test_perceiver_block_injected_as_grounding_turn(monkeypatch) -> None:
     assert _StubAgent.last_session_id == _SESSION
 
 
+async def test_locale_injects_language_instruction_as_leading_turn(monkeypatch) -> None:
+    """US-057: ``locale`` prepends a language-instruction ``system`` turn.
+
+    A request with ``locale='it'`` and no subject (no perceiver grounding) must
+    lead the reasoner history with the Italian language instruction so the frozen
+    reasoner answers in the user's UI language.
+    """
+    service = _service(monkeypatch, _FakePerceiver)
+    request = ChatRequest(
+        messages=[ChatMessage(role="user", content="ciao")],
+        session_id=_SESSION,
+        locale="it",
+    )
+
+    await _collect(service, request)
+
+    messages = _StubAgent.last_messages
+    assert messages is not None
+    assert messages[0] == {"role": "system", "content": "Rispondi sempre in italiano."}
+    assert messages[-1] == {"role": "user", "content": "ciao"}
+
+
+async def test_no_locale_has_no_language_instruction(monkeypatch) -> None:
+    """Without ``locale`` no language-instruction turn is injected (agent default)."""
+    service = _service(monkeypatch, _FakePerceiver)
+    request = ChatRequest(
+        messages=[ChatMessage(role="user", content="hola")],
+        session_id=_SESSION,
+    )
+
+    await _collect(service, request)
+
+    messages = _StubAgent.last_messages
+    assert messages is not None
+    assert all("sempre" not in m["content"] and "siempre" not in m["content"] for m in messages)
+
+
 async def test_no_subject_history_has_no_grounding_turn(monkeypatch) -> None:
     """Without a subject the agent history is the bare user messages (no system)."""
     service = _service(monkeypatch, _FakePerceiver)
@@ -331,3 +464,108 @@ async def test_agent_error_event_forwarded_as_terminal_frame(monkeypatch) -> Non
 
     assert names == ["perceiver_observation", "error"]
     assert dict(events)["error"] == {"message": "backend 503"}
+
+
+async def test_reasoner_raise_surfaces_after_observation(monkeypatch) -> None:
+    """If the reasoner *raises* (not emits ``ErrorEvent``) the error propagates.
+
+    The production agent (:meth:`~ml.agent.agent.Agent.stream_response`) never
+    raises -- it converts any backend or tool failure into a terminal
+    ``ErrorEvent`` (covered by
+    :func:`test_agent_error_event_forwarded_as_terminal_frame`). This test pins
+    the service contract for a misbehaving reasoner that *does* raise: the
+    perceiver observation is still emitted first, then the exception surfaces out
+    of the generator (the service does not silently swallow reasoner failures).
+    """
+
+    def _raising_factory(variant: str, *, settings) -> _RaisingAgent:
+        return _RaisingAgent()
+
+    async def _fake_get_pool():
+        return _FakePool()
+
+    monkeypatch.setattr(chat_mod, "get_pool", _fake_get_pool)
+    monkeypatch.setattr(chat_mod, "PerceiverLayer", _FakePerceiver)
+    service = ChatService(
+        settings=_SettingsStub(),  # type: ignore[arg-type]
+        agent_factory=_raising_factory,
+    )
+    request = ChatRequest(session_id=_SESSION, parcel_id=11)
+
+    emitted: list[tuple[str, dict]] = []
+    with pytest.raises(RuntimeError, match="backend connection reset"):
+        async for frame in service.stream(request.messages, _SESSION, request=request):
+            emitted.extend(_parse_frames([frame]))
+
+    # The perceiver frame was flushed to the client before the reasoner blew up.
+    assert [name for name, _ in emitted] == ["perceiver_observation"]
+
+
+# ---------------------------------------------------------------------------
+# US-065: per-turn chat observability (chat_turn_metrics) via a synthetic flow
+# ---------------------------------------------------------------------------
+async def test_chat_turn_metrics_multi_step_with_tokens(monkeypatch) -> None:
+    """A synthetic tool round-trip emits ``chat_turn_metrics`` (multi_step).
+
+    The stub agent emits ``tool_call`` + ``tool_result`` + ``text_delta`` +
+    ``done`` (with provider ``usage``), so the service must classify the turn as
+    ``multi_step``, count the single tool call, surface the token total and the
+    active variant/model, and report whether the latency SLO was met -- all in a
+    single ``chat_turn_metrics`` line. No network, no DB (US-065 synthetic flow).
+    """
+    agent_events: list[AgentEvent] = [
+        ToolCallEvent(name="list_parcels", arguments={"session_id": str(_SESSION)}),
+        ToolResultEvent(name="list_parcels", result={"count": 2}, ok=True),
+        TextDeltaEvent(text="Tienes 2 parcelas."),
+        DoneEvent(usage={"prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 120}),
+    ]
+    service = _service(monkeypatch, _FakePerceiver, agent_events=agent_events)
+    request = ChatRequest(
+        messages=[ChatMessage(role="user", content="lista mis parcelas")],
+        session_id=_SESSION,
+        parcel_id=11,
+    )
+
+    with structlog.testing.capture_logs() as logs:
+        await _collect(service, request)
+
+    entries = [e for e in logs if e["event"] == "chat_turn_metrics"]
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry["turn_type"] == "multi_step"
+    assert entry["tool_calls"] == 1
+    assert entry["tokens_total"] == 120
+    assert entry["tokens_prompt"] == 100
+    assert entry["variant"] == "gemini"
+    assert entry["model"] == "gemini-3.5-flash"
+    assert entry["slo_target_ms"] == 15000.0
+    assert isinstance(entry["slo_met"], bool)
+    assert entry["session_id"] == str(_SESSION)
+
+
+async def test_chat_turn_metrics_simple_without_tokens(monkeypatch) -> None:
+    """A plain answer (no tools, no usage) emits a ``simple`` turn with None tokens.
+
+    The default stub script is ``text_delta`` + ``done`` (no ``usage``): the
+    service classifies the turn as ``simple`` (3 s SLO) and reports the token
+    fields as ``None`` -- never synthesised when the provider does not report
+    usage (US-065 honest-degradation rule).
+    """
+    service = _service(monkeypatch, _FakePerceiver)
+    request = ChatRequest(
+        messages=[ChatMessage(role="user", content="hola")],
+        session_id=_SESSION,
+    )
+
+    with structlog.testing.capture_logs() as logs:
+        await _collect(service, request)
+
+    entries = [e for e in logs if e["event"] == "chat_turn_metrics"]
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry["turn_type"] == "simple"
+    assert entry["tool_calls"] == 0
+    assert entry["slo_target_ms"] == 3000.0
+    assert entry["tokens_total"] is None
+    assert entry["tokens_prompt"] is None
+    assert entry["tokens_completion"] is None

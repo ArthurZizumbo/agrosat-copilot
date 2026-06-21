@@ -132,6 +132,44 @@ describe("chatStore reducer (team SSE contract)", () => {
     expect(store.toolCalls[0]?.summary).toBe("no embedding");
   });
 
+  it("stores the raw tool_result payload on the tracked call (tool card)", () => {
+    // US-057 fe/C: the collapsible tool card renders `call.result`, so the
+    // reducer must keep the raw output mapping (not just the summary).
+    const store = useChatStore();
+    store.startUserTurn("stats");
+    store.applyEvent({ type: "tool_call", name: "get_aoi_stats", arguments: { year: 2019 } });
+    store.applyEvent({
+      type: "tool_result",
+      name: "get_aoi_stats",
+      ok: true,
+      result: { area_ha: 42.0, dominant_crop: "Olive grove", n_parcels: 7 },
+    });
+
+    const call = store.toolCalls[0];
+    expect(call?.status).toBe("ok");
+    // Raw input + output are both retained for the expandable card.
+    expect(call?.args).toEqual({ year: 2019 });
+    expect(call?.result).toEqual({
+      area_ha: 42.0,
+      dominant_crop: "Olive grove",
+      n_parcels: 7,
+    });
+  });
+
+  it("failTransport sets the error status and fails any running tool", () => {
+    // US-057 D3: a fatal transport failure surfaces an error and never leaves a
+    // tool stuck "running".
+    const store = useChatStore();
+    store.startUserTurn("trigger");
+    store.applyEvent({ type: "tool_call", name: "list_parcels", arguments: {} });
+    store.failTransport("stream_interrupted");
+
+    expect(store.status).toBe("error");
+    expect(store.errorMessage).toBe("stream_interrupted");
+    expect(store.toolCalls[0]?.status).toBe("failed");
+    expect(store.activeAssistantId).toBeNull();
+  });
+
   it("builds backend history from the message transcript", () => {
     const store = useChatStore();
     store.startUserTurn("hello");

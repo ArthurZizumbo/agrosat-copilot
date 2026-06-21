@@ -1,0 +1,92 @@
+{
+  "__comment": "AgroSatCopilot - panel de observabilidad de chat (US-065). Importar en Grafana con un datasource Prometheus. Las metricas las publica backend/app/utils/chat_metrics.py cuando settings.chat_metrics_prometheus_enabled=true; el exporter /metrics lo aporta US-059 (backend/app/middleware/metrics.py).",
+  "title": "AgroSatCopilot - Observabilidad de chat",
+  "uid": "agrosat-chat-observability",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "tags": ["agrosat", "chat", "finops", "us-065"],
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "30s",
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "label": "Datasource"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Latencia chat p95 por tipo de turno (s)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "p95 de la latencia end-to-end de cada turno de /chat, separada en simple (SLO 3 s) y multi_step (SLO 15 s).",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 15 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "histogram_quantile(0.95, sum(rate(chat_turn_duration_seconds_bucket[5m])) by (le, turn_type))",
+          "legendFormat": "p95 {{turn_type}}"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "histogram_quantile(0.50, sum(rate(chat_turn_duration_seconds_bucket[5m])) by (le, turn_type))",
+          "legendFormat": "p50 {{turn_type}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Tool-calls por minuto (modelo / variante)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Tool-calls invocados por turno, agrupados por modelo y variante (insumo FinOps).",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "sum(rate(chat_tool_calls_total[5m])) by (model, variant)",
+          "legendFormat": "{{variant}} / {{model}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Tokens por minuto (modelo / variante) - FinOps",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Tokens consumidos por el reasoner por modelo y variante. Solo cuando el proveedor reporta usage (Gemini lo entrega; vLLM/Qwen requiere include_usage).",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "sum(rate(chat_tokens_total[5m])) by (model, variant)",
+          "legendFormat": "{{variant}} / {{model}}"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+outs:
+- md5: d066fc1af03bb865484e18d219c5b4fc.dir
+  size: 4504386595
+  nfiles: 706736
+  hash: md5
+  path: eurocropsml

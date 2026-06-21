@@ -13,3 +13,9 @@
 # Versionado en DVC desde US-019/US-022-c (tag `feature-selection-parcels-v1`,
 # MD5 4f49f4f2d22013d7ccad787727119bac). DVC autostage genera
 # `test_fixtures/.gitignore` propio.
+
+# Subset Sen4AgriNet Catalonia (31TCG 2019/2020) + Francia (31TCJ 2019), 40
+# patches netCDF reales (~943 MB) bajados en la VM H100 F: para el transfer
+# FR->Catalonia de US-075. Versionado en DVC (`data/sen4agrinet.dvc`,
+# MD5 e292ab8cfbfb05ecc9ab5310e01dd79e.dir); los `.nc` NUNCA al repo Git.
+/sen4agrinet

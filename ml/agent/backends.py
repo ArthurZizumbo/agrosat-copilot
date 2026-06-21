@@ -26,7 +26,7 @@ import json
 import os
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -48,8 +48,10 @@ __all__ = [
     "make_backend",
 ]
 
-#: Default Gemini reasoner model when the caller does not pin one.
-_DEFAULT_GEMINI_MODEL: str = "gemini-2.5-pro"
+#: Default Gemini reasoner model when the caller does not pin one (US-052:
+#: ``gemini-3.5-flash``, conscious deviation from ``gemini-2.5-pro`` for
+#: cost/latency).
+_DEFAULT_GEMINI_MODEL: str = "gemini-3.5-flash"
 
 #: Default Qwen model id served by vLLM (OpenAI-compatible). The on-prem serving
 #: of US-048 publishes the model under this name; overridable via settings.
@@ -167,10 +169,19 @@ class BackendChunk:
     Attributes:
         text: Incremental text delta, or ``None`` when this chunk carries none.
         function_call: A requested call, or ``None`` when this chunk carries none.
+        usage: Provider token accounting for the response, when the backend
+            exposes it (``prompt_tokens`` / ``completion_tokens`` /
+            ``total_tokens``). Populated only on the chunk that carries the
+            provider's usage report (Gemini attaches it to the response;
+            OpenAI-compatible streams only when ``include_usage`` is set), and
+            left ``None`` everywhere else. The agent forwards the last non-``None``
+            value onto the terminal :class:`~ml.agent.events.DoneEvent` for the
+            FinOps observability of US-065; it is never synthesised.
     """
 
     text: str | None = None
     function_call: BackendFunctionCall | None = None
+    usage: dict[str, int] | None = None
 
 
 class LLMBackend(ABC):
@@ -302,29 +313,73 @@ class GeminiBackend(LLMBackend):
         # a second full model call (double cost/latency) and could sample a
         # different completion than the one inspected for tool calls (B-4).
         response = await self._generate(client, contents, config)
+        # Real token accounting for FinOps (US-065): Gemini reports it on the
+        # full (non-streaming) response via ``usage_metadata``. Surfaced once, on
+        # the LAST chunk of the turn, so the agent can forward it onto the
+        # terminal ``DoneEvent`` without ever inventing counts.
+        usage = self._usage_from_response(response)
         calls = list(getattr(response, "function_calls", None) or [])
         if calls:
             signatures = self._part_thought_signatures(response)
-            for idx, call in enumerate(calls):
-                if getattr(call, "name", None):
-                    # Pair this call with the thought_signature of its part, in
-                    # emission order. The signature lives on the PART, not on the
-                    # FunctionCall, so ``response.function_calls`` alone loses it.
-                    sig = signatures[idx] if idx < len(signatures) else None
-                    yield BackendChunk(
-                        function_call=BackendFunctionCall(
-                            name=call.name,
-                            args=dict(getattr(call, "args", None) or {}),
-                            id=getattr(call, "id", None),
-                            thought_signature=sig,
-                        )
-                    )
+            named_calls = [call for call in calls if getattr(call, "name", None)]
+            for idx, call in enumerate(named_calls):
+                # Pair this call with the thought_signature of its part, in
+                # emission order. The signature lives on the PART, not on the
+                # FunctionCall, so ``response.function_calls`` alone loses it.
+                sig = signatures[idx] if idx < len(signatures) else None
+                yield BackendChunk(
+                    function_call=BackendFunctionCall(
+                        name=call.name,
+                        args=dict(getattr(call, "args", None) or {}),
+                        id=getattr(call, "id", None),
+                        thought_signature=sig,
+                    ),
+                    # Attach usage only to the last chunk of the turn.
+                    usage=usage if call is named_calls[-1] else None,
+                )
             return
         # No tool calls: re-emit the text of the response already obtained. This
         # trades token-by-token streaming for a single model call; the text the
         # caller sees is exactly the one inspected for tool calls.
-        for chunk in self._chunks_from_response(response):
+        chunks = self._chunks_from_response(response)
+        for idx, chunk in enumerate(chunks):
+            # Attach usage to the final text chunk so the turn reports it once.
+            if usage is not None and idx == len(chunks) - 1:
+                chunk = replace(chunk, usage=usage)
             yield chunk
+
+    @staticmethod
+    def _usage_from_response(response: Any) -> dict[str, int] | None:
+        """Read Gemini's ``usage_metadata`` into the neutral usage mapping.
+
+        Gemini reports token accounting on the response's ``usage_metadata``
+        (``prompt_token_count`` / ``candidates_token_count`` /
+        ``total_token_count``). This normalises it to the project's neutral
+        ``prompt_tokens`` / ``completion_tokens`` / ``total_tokens`` keys so the
+        FinOps consumer is provider-agnostic.
+
+        Args:
+            response: The provider response object.
+
+        Returns:
+            The usage mapping, or ``None`` when the response carries no
+            ``usage_metadata`` (e.g. flat test doubles): the caller then reports
+            ``None`` rather than inventing token counts.
+        """
+        meta = getattr(response, "usage_metadata", None)
+        if meta is None:
+            return None
+        prompt = getattr(meta, "prompt_token_count", None)
+        completion = getattr(meta, "candidates_token_count", None)
+        total = getattr(meta, "total_token_count", None)
+        usage: dict[str, int] = {}
+        if prompt is not None:
+            usage["prompt_tokens"] = int(prompt)
+        if completion is not None:
+            usage["completion_tokens"] = int(completion)
+        if total is not None:
+            usage["total_tokens"] = int(total)
+        return usage or None
 
     @staticmethod
     def _part_thought_signatures(response: Any) -> list[bytes | None]:

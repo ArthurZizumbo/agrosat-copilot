@@ -10,12 +10,21 @@ Events:
    dedicated ``perceiver_observation`` SSE event BEFORE the reasoner speaks. The
    same text block is injected into the reasoner's message history as a grounding
    turn so the model reasons over what the perceiver "saw" (never over logits).
-2. **Reasoner (US-047)** — it builds the real :class:`~ml.agent.agent.Agent` via
-   :func:`~ml.agent.agent.create_agent` (backend selected from
-   ``settings.llm_variant_default``: ``gemini`` -> Gemini, ``qwen35`` -> vLLM
-   Qwen), runs its manual function-calling loop, and forwards every
-   :data:`~ml.agent.events.AgentEvent` it yields (``tool_call``, ``tool_result``,
-   ``text_delta``, ``done``, ``error``) as an SSE frame.
+2. **Reasoner (US-047 / US-054)** — it reads the session's persisted LLM variant
+   from ``chat_sessions.llm_model`` (per-request, RLS-scoped), resolves it through
+   the backend-agnostic routing table (:mod:`ml.agent.llm_routing`) and builds the
+   matching :class:`~ml.agent.backends.LLMBackend` (``gemini`` -> Gemini,
+   ``qwen-api`` / ``qwen-onprem`` -> OpenAI-compatible vLLM, ``gemma`` -> Ollama),
+   wires it into a real :class:`~ml.agent.agent.Agent`, runs its manual
+   function-calling loop, and forwards every :data:`~ml.agent.events.AgentEvent`
+   it yields (``tool_call``, ``tool_result``, ``text_delta``, ``done``,
+   ``error``) as an SSE frame.
+
+   The variant is read PER REQUEST (in :meth:`ChatService.stream`, not
+   ``__init__``) because the active model depends on the request's
+   ``session_id``: a ``/llm/switch`` on that session must take effect on the next
+   ``/chat`` (US-054 AC-2). ``settings.llm_variant_default`` is kept only as the
+   startup/fallback variant when the row carries no value or an unknown one.
 
 Event order emitted by :meth:`ChatService.stream`:
 
@@ -42,67 +51,99 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import AsyncIterator, Callable, Sequence
-from typing import TYPE_CHECKING, Any
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
 import structlog
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.app.core.config import Settings, get_settings
-from ml.agent.agent import create_agent
+from backend.app.core.db import get_pool
+from backend.app.utils.chat_metrics import ChatMetricsAccumulator, emit_chat_turn_metrics
 from ml.agent.context import ToolContext
-from ml.agent.db import get_pool
+from ml.agent.llm_routing import DEFAULT_VARIANT, VARIANTS, make_backend_for_variant
 from ml.agent.perceiver import PerceiverLayer, PerceiverObservation
 from ml.agent.schemas import GeoJSONGeometry
 
 if TYPE_CHECKING:
+    import asyncpg
+
     from ml.agent.agent import Agent
 
 logger = structlog.get_logger(__name__)
 
-__all__ = ["AgentFactory", "ChatMessage", "ChatRequest", "ChatService"]
+__all__ = ["AgentFactory", "ChatMessage", "ChatRequest", "ChatService", "PoolFactory"]
+
+#: Reasoner language instruction per UI locale (US-057). Injected as a leading
+#: ``system`` turn so the frozen reasoner answers in the user's language without
+#: changing the analyst system prompt.
+_LOCALE_INSTRUCTION: dict[str, str] = {
+    "it": "Rispondi sempre in italiano.",
+    "es": "Responde siempre en español.",
+    "en": "Always answer in English.",
+}
 
 #: Default campaign year for an AOI observation (matches the perceiver default).
 _DEFAULT_YEAR: int = 2019
 
-#: Maps the persisted ``llm_variant_default`` value to the concrete reasoner
-#: model name understood by :func:`~ml.agent.agent.create_agent` (which routes
-#: ``gemini-*`` to the Gemini backend and ``qwen*`` to the vLLM backend). Kept
-#: here so the HTTP layer never hardcodes a model string.
-_VARIANT_TO_MODEL: dict[str, str] = {
-    "gemini": "gemini-2.5-pro",
-    "qwen35": "qwen35",
-}
+#: Read the persisted reasoner variant for a session (US-054 AC-2). Run on the
+#: RLS-scoped pool connection (``app.current_session`` primed), so it only ever
+#: returns the caller's own row.
+_SELECT_VARIANT_SQL = "SELECT llm_model FROM chat_sessions WHERE id = $1"
 
-#: Fallback model when ``llm_variant_default`` carries an unmapped value (the
-#: setting is a CHECK-constrained ``Literal``, so this is defensive only).
-_DEFAULT_MODEL: str = "gemini-2.5-pro"
-
-#: Signature of the injectable reasoner factory: it receives the resolved model
-#: name and the typed ``settings`` keyword and returns a ready-to-stream
-#: :class:`Agent`. The default adapter delegates to
-#: :func:`~ml.agent.agent.create_agent` (forwarding ``settings`` by keyword so it
-#: is never mistaken for the positional ``tools`` argument); tests pass a stub so
-#: the stream runs without the real ``google-genai`` client or any network call.
+#: Signature of the injectable reasoner factory: it receives the resolved LLM
+#: VARIANT tag (``gemini`` / ``qwen-api`` / ``qwen-onprem`` / ``gemma``) and the
+#: typed ``settings`` keyword and returns a ready-to-stream :class:`Agent`. The
+#: default adapter (:func:`_default_agent_factory`) resolves the variant through
+#: the backend-agnostic routing table (:mod:`ml.agent.llm_routing`) and wires the
+#: matching backend into the agent; tests pass a stub so the stream runs without
+#: the real ``google-genai`` client or any network call, and assert the backend
+#: type selected per variant (US-054 AC-2).
 AgentFactory = Callable[..., "Agent"]
 
+#: Signature of the injectable pool factory: an awaitable returning the shared
+#: asyncpg pool the :class:`ToolContext` runs the tools against. The default is
+#: :func:`backend.app.core.db.get_pool` (the ``app_database_url`` pool, role
+#: ``agrosat_app`` WITHOUT ``BYPASSRLS``) so the per-session ``SET LOCAL
+#: app.current_session`` emitted by the tools actually enforces the US-051 RLS
+#: policies (B2). Using the ``ml.agent.db`` superuser pool would silently bypass
+#: RLS. Tests inject a fake so the stream runs without a real database.
+PoolFactory = Callable[[], "Awaitable[asyncpg.Pool]"]
 
-def _default_agent_factory(model: str, *, settings: Settings) -> Agent:
-    """Build the production reasoner for ``(model, settings)``.
 
-    Thin adapter over :func:`~ml.agent.agent.create_agent` that pins the call to
-    keyword ``settings`` (``create_agent``'s second positional parameter is
-    ``tools``), keeping the :data:`AgentFactory` contract unambiguous.
+def _default_agent_factory(variant: str, *, settings: Settings) -> Agent:
+    """Build the production reasoner for a persisted LLM ``variant``.
+
+    Resolves the variant through the backend-agnostic routing table
+    (:func:`~ml.agent.llm_routing.make_backend_for_variant`, US-054 AC-4: host is
+    env-driven, zero code to swap H100 -> L4 -> hosted API) and wires the
+    resulting :class:`~ml.agent.backends.LLMBackend` into an
+    :class:`~ml.agent.agent.Agent` with the default tool set and analyst prompt.
+
+    The agent is assembled here (rather than via
+    :func:`~ml.agent.agent.create_agent`, which selects the backend by
+    model-name prefix and so cannot tell ``qwen-api`` from ``qwen-onprem`` apart)
+    so the backend is selected PER VARIANT and never by heuristic.
 
     Args:
-        model: Resolved reasoner model name.
-        settings: Typed application settings forwarded to the backend.
+        variant: The persisted LLM variant tag (one of
+            :data:`~ml.agent.llm_routing.VARIANTS`).
+        settings: Typed application settings forwarded to the backend resolver.
 
     Returns:
         A ready-to-stream :class:`~ml.agent.agent.Agent`.
     """
-    return create_agent(model=model, settings=settings)
+    from ml.agent.agent import Agent
+    from ml.agent.prompts import ANALYST_SYSTEM_PROMPT
+    from ml.agent.tools import get_sync_tools
+
+    backend = make_backend_for_variant(variant, settings)
+    return Agent(
+        backend=backend,
+        tools=get_sync_tools(),
+        instruction=ANALYST_SYSTEM_PROMPT,
+    )
 
 
 class ChatMessage(BaseModel):
@@ -144,6 +185,10 @@ class ChatRequest(BaseModel):
     parcel_id: int | None = None
     aoi: GeoJSONGeometry | None = None
     year: int = _DEFAULT_YEAR
+    #: Active UI locale (US-057). Conditions the reasoner's answer language so a
+    #: trilingual frontend gets replies in the user's language. ``None`` -> the
+    #: agent answers in its default (Spanish, per the analyst system prompt).
+    locale: Literal["it", "es", "en"] | None = None
 
 
 def _sse_event(event: str, data: dict[str, Any]) -> str:
@@ -175,32 +220,86 @@ class ChatService:
         settings: Settings | None = None,
         *,
         agent_factory: AgentFactory | None = None,
+        pool_factory: PoolFactory | None = None,
     ) -> None:
-        """Initialise the service with typed settings and an injectable reasoner.
+        """Initialise the service with typed settings and injectable boundaries.
 
         Args:
             settings: Application settings; defaults to the cached singleton via
                 :func:`~backend.app.core.config.get_settings`. Always injected
                 rather than read from ``os.environ`` (backend convention).
-            agent_factory: Callable building the reasoner from ``(model, *,
-                settings)``; defaults to :func:`_default_agent_factory` (a thin
-                adapter over :func:`~ml.agent.agent.create_agent`). Tests pass a
-                stub so the stream runs without the real ``google-genai`` client
-                or any network call.
+            agent_factory: Callable building the reasoner from ``(variant, *,
+                settings)``; defaults to :func:`_default_agent_factory` (which
+                resolves the variant through :mod:`ml.agent.llm_routing` and wires
+                the matching backend into the agent). Tests pass a stub so the
+                stream runs without the real ``google-genai`` client or any
+                network call, and assert the backend type per variant (AC-2).
+            pool_factory: Awaitable returning the asyncpg pool the tools run
+                against; defaults to :func:`backend.app.core.db.get_pool` (the
+                ``app_database_url`` pool, role ``agrosat_app`` NOBYPASSRLS) so
+                the US-051 RLS policies enforce on the ``/chat`` tools (B2).
+                Tests inject a fake so the stream runs without a real database.
         """
         self._settings = settings or get_settings()
         self._agent_factory: AgentFactory = agent_factory or _default_agent_factory
+        self._pool_factory: PoolFactory = pool_factory or get_pool
 
-    def _reasoner_model(self) -> str:
-        """Resolve the reasoner model name from the configured LLM variant.
+    def _fallback_variant(self) -> str:
+        """Return the startup/fallback LLM variant from settings.
+
+        US-054 D3: ``settings.llm_variant_default`` is no longer the per-request
+        source (the session row is), only the honest-degradation target when the
+        row carries no value or an unknown one. Guarded against an out-of-range
+        value (defensive: the setting is a CHECK-constrained ``Literal``).
 
         Returns:
-            The concrete model name for :func:`~ml.agent.agent.create_agent`
-            (e.g. ``"gemini-2.5-pro"`` for the ``gemini`` variant, ``"qwen35"``
-            for the on-prem vLLM variant).
+            A valid variant tag (one of :data:`~ml.agent.llm_routing.VARIANTS`),
+            defaulting to :data:`~ml.agent.llm_routing.DEFAULT_VARIANT`.
         """
-        variant = getattr(self._settings, "llm_variant_default", "gemini")
-        return _VARIANT_TO_MODEL.get(variant, _DEFAULT_MODEL)
+        variant = str(getattr(self._settings, "llm_variant_default", DEFAULT_VARIANT))
+        return variant if variant in VARIANTS else DEFAULT_VARIANT
+
+    async def _resolve_variant(self, ctx: ToolContext, session_id: UUID) -> str:
+        """Read the session's persisted LLM variant (US-054 AC-2).
+
+        Runs ``SELECT llm_model FROM chat_sessions WHERE id = $1`` on a
+        connection from the shared pool with the per-session RLS hook primed
+        (``app.current_session`` = ``session_id``, ``SET LOCAL`` semantics), so it
+        only ever reads the caller's own row. A missing row, a ``NULL`` value or
+        an unknown variant degrades honestly to :meth:`_fallback_variant`
+        (``gemini`` by default) with a ``logger.warning``.
+
+        Args:
+            ctx: The shared, session-scoped tool execution context (its ``pool``
+                is the ``agrosat_app`` NOBYPASSRLS pool, so RLS enforces).
+            session_id: Tenant session whose persisted variant is read.
+
+        Returns:
+            The active variant tag for this request (one of
+            :data:`~ml.agent.llm_routing.VARIANTS`).
+        """
+        conn = await ctx.pool.acquire()
+        try:
+            async with conn.transaction():
+                await conn.execute(
+                    "SELECT set_config('app.current_session', $1, true)",
+                    str(session_id),
+                )
+                row = await conn.fetchrow(_SELECT_VARIANT_SQL, session_id)
+        finally:
+            await ctx.pool.release(conn)
+
+        value = row["llm_model"] if row is not None else None
+        if value in VARIANTS:
+            return str(value)
+        fallback = self._fallback_variant()
+        logger.warning(
+            "chat_variant_fallback",
+            session_id=str(session_id),
+            persisted=value,
+            fallback=fallback,
+        )
+        return fallback
 
     async def _build_context(self, session_id: UUID) -> ToolContext:
         """Build the :class:`ToolContext` shared by the perceiver and the tools.
@@ -208,11 +307,16 @@ class ChatService:
         Args:
             session_id: Tenant session driving every downstream DB read.
 
+        The pool comes from :attr:`_pool_factory` (by default the
+        ``app_database_url`` pool of :func:`backend.app.core.db.get_pool`, role
+        ``agrosat_app`` NOBYPASSRLS), so the per-session ``SET LOCAL`` the tools
+        emit isolates them under the US-051 RLS policies (B2).
+
         Returns:
             A :class:`ToolContext` with the shared asyncpg pool, settings and
             session id (no deferred executor in this MVP).
         """
-        pool = await get_pool()
+        pool = await self._pool_factory()
         return ToolContext(
             pool=pool,
             settings=self._settings,
@@ -244,6 +348,7 @@ class ChatService:
     def _agent_messages(
         messages: Sequence[ChatMessage],
         observation: PerceiverObservation | None,
+        locale: Literal["it", "es", "en"] | None = None,
     ) -> list[dict[str, str]]:
         """Build the reasoner's message history, grounded by the perceiver.
 
@@ -251,18 +356,24 @@ class ChatService:
         rendering is injected as a leading grounding turn so the reasoner reasons
         over the structured TEXT the agent "saw" (Be My Eyes), never over raw
         logits. The agent maps any non ``user``/``model`` role into the ``user``
-        role, so a ``system`` grounding turn reaches the model as context.
+        role, so a ``system`` grounding turn reaches the model as context. When a
+        ``locale`` is supplied (US-057) a language-instruction ``system`` turn is
+        prepended so the reasoner answers in the user's UI language.
 
         Args:
             messages: The validated conversation history.
             observation: The perceiver observation to ground the reasoner with,
                 or ``None`` when there is no subject to observe.
+            locale: Active UI locale (``it``/``es``/``en``) or ``None`` for the
+                agent's default answer language.
 
         Returns:
             A list of ``{"role", "content"}`` dicts for
             :meth:`~ml.agent.agent.Agent.stream_response`.
         """
         history: list[dict[str, str]] = []
+        if locale is not None:
+            history.append({"role": "system", "content": _LOCALE_INSTRUCTION[locale]})
         if observation is not None:
             history.append({"role": "system", "content": observation.to_prompt_block()})
         history.extend({"role": m.role, "content": m.content} for m in messages)
@@ -325,7 +436,9 @@ class ChatService:
                 },
             )
 
-        async for frame in self._stream_reasoner(messages, observation, session_id, ctx):
+        async for frame in self._stream_reasoner(
+            messages, observation, session_id, ctx, locale=request.locale, start=start
+        ):
             yield frame
 
         logger.info(
@@ -341,6 +454,9 @@ class ChatService:
         observation: PerceiverObservation | None,
         session_id: UUID,
         ctx: ToolContext,
+        *,
+        locale: Literal["it", "es", "en"] | None = None,
+        start: float,
     ) -> AsyncIterator[str]:
         """Run the reasoner loop and forward its events as SSE frames.
 
@@ -352,19 +468,58 @@ class ChatService:
         fields. The agent already turns its own failures into a terminal
         ``error`` event, so the stream always ends with ``done`` or ``error``.
 
+        Observability (US-065): the reasoner events are observed in flight to
+        build a per-turn :class:`~backend.app.utils.chat_metrics.ChatMetricsAccumulator`
+        -- one increment per ``tool_call``, one ``usage`` capture on the terminal
+        ``done`` -- and a single ``chat_turn_metrics`` line is emitted once the
+        stream ends, scored against the latency SLO using the END-TO-END timer
+        owned by :meth:`stream` (``start``), so there is a single source of truth
+        for the turn latency.
+
         Args:
             messages: The conversation history.
             observation: The perceiver grounding observation, if any.
             session_id: Effective tenant session.
             ctx: Shared, session-scoped tool execution context.
+            locale: Active UI locale conditioning the answer language, if any.
+            start: The ``time.perf_counter`` mark taken by :meth:`stream` at the
+                turn's start, reused so the SLO latency is not double-measured.
 
         Yields:
             SSE frames for each reasoner event.
         """
-        agent = self._agent_factory(self._reasoner_model(), settings=self._settings)
-        agent_messages = self._agent_messages(messages, observation)
+        resolve_start = time.perf_counter()
+        variant = await self._resolve_variant(ctx, session_id)
+        agent = self._agent_factory(variant, settings=self._settings)
+        # ``model`` is the concrete reasoner id behind the variant (surfaced by the
+        # backend for logging); ``latency_ms`` here is the per-request resolution
+        # cost (DB read + backend build), the FinOps US-065 input (AC-5).
+        model = getattr(getattr(agent, "backend", None), "model", None)
+        logger.info(
+            "chat_model_resolved",
+            session_id=str(session_id),
+            variant=variant,
+            model=model,
+            latency_ms=round((time.perf_counter() - resolve_start) * 1000.0, 2),
+        )
+        agent_messages = self._agent_messages(messages, observation, locale)
 
+        metrics = ChatMetricsAccumulator(variant=variant, model=model)
         async for event in agent.stream_response(agent_messages, session_id, ctx):
             payload = event.model_dump(mode="json")
             event_name = payload.pop("type")
+            # Observe the FinOps/SLO signal without altering the forwarded frame:
+            # count tool calls, capture provider token usage off the terminal
+            # ``done`` (``None`` when the provider reports none -- never invented).
+            if event_name == "tool_call":
+                metrics = metrics.observe_tool_call()
+            elif event_name == "done":
+                metrics = metrics.observe_usage(payload.get("usage"))
             yield _sse_event(event_name, payload)
+
+        duration_ms = round((time.perf_counter() - start) * 1000.0, 2)
+        emit_chat_turn_metrics(
+            metrics.finalise(duration_ms),
+            session_id=str(session_id),
+            settings=self._settings,
+        )

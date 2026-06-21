@@ -69,6 +69,9 @@
     "tool_running": "in corso",
     "tool_ok": "completato",
     "tool_failed": "fallito",
+    "tool_input": "Input",
+    "tool_output": "Output",
+    "tool_details": "Mostra i dettagli dello strumento {tool}",
     "citations": "Citazioni",
     "parcel": "Particella",
     "input_label": "Messaggio per il copilota",
@@ -95,7 +98,10 @@
     "area": "Area",
     "source": "Fonte",
     "legend": "Legenda colture",
-    "coords": "Coordinate"
+    "coords": "Coordinate",
+    "selected_parcel": "Particella selezionata",
+    "parcel_in_chat": "Chiedi alla chat di questa particella",
+    "clear_selection": "Rimuovi selezione"
   },
   "llm": {
     "gemini": "Gemini 2.5 Pro (cloud)",

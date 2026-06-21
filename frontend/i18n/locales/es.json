@@ -69,6 +69,9 @@
     "tool_running": "en curso",
     "tool_ok": "completado",
     "tool_failed": "fallido",
+    "tool_input": "Entrada",
+    "tool_output": "Salida",
+    "tool_details": "Ver detalle de la herramienta {tool}",
     "citations": "Citas",
     "parcel": "Parcela",
     "input_label": "Mensaje para el copiloto",
@@ -95,7 +98,10 @@
     "area": "Área",
     "source": "Fuente",
     "legend": "Leyenda de cultivos",
-    "coords": "Coordenadas"
+    "coords": "Coordenadas",
+    "selected_parcel": "Parcela seleccionada",
+    "parcel_in_chat": "Pregunta al chat sobre esta parcela",
+    "clear_selection": "Quitar selección"
   },
   "llm": {
     "gemini": "Gemini 2.5 Pro (nube)",

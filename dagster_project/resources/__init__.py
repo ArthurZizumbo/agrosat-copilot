@@ -12,10 +12,13 @@ from dagster_project.resources.mlflow import (
     farslip_mlflow_resource,
     get_mlflow_tracking_uri,
 )
+from dagster_project.resources.notification import DriftNotifier, build_drift_notifier
 
 __all__ = [
     "FARSLIP_EXPERIMENT",
     "FARSLIP_RUN_NAME",
+    "DriftNotifier",
+    "build_drift_notifier",
     "build_mlflow_resource",
     "farslip_mlflow_resource",
     "get_mlflow_tracking_uri",

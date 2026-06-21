@@ -9,12 +9,15 @@ returning its async SSE generator as a ``StreamingResponse``. All business logic
 
 from __future__ import annotations
 
+from typing import Annotated
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 
+from backend.app.api.deps import verify_chat_session
+from backend.app.core.rate_limit import CHAT_RATE_LIMIT, limiter, session_id_key
 from backend.app.services.chat_service import ChatRequest, ChatService
 
 logger = structlog.get_logger(__name__)
@@ -68,28 +71,48 @@ def _resolve_session_id(header_value: str | None, body_value: UUID | None) -> UU
 
 
 @router.post("/chat")
+@limiter.limit(CHAT_RATE_LIMIT, key_func=session_id_key)
 async def chat(
-    request: ChatRequest,
+    request: Request,
+    body: ChatRequest,
+    _session: Annotated[UUID, Depends(verify_chat_session)],
     x_session_id: str | None = Header(default=None, alias="X-Session-ID"),
 ) -> StreamingResponse:
-    """Stream the chat response as Server-Sent Events.
+    """Stream the chat response as Server-Sent Events (rate-limited, guarded).
 
-    Resolves the session id (header over body), then streams the service's SSE
-    generator. The stream emits a real ``perceiver_observation`` event before
-    the (US-047-pending) final answer and a terminal ``done`` event.
+    Two cross-cutting controls run before any business logic (router stays thin
+    -- SoC):
+
+    1. ``@limiter.limit`` enforces **10 requests / minute per session** (key =
+       ``X-Session-ID``). The 11th request in the window returns ``429`` before
+       the stream opens.
+    2. ``Depends(verify_chat_session)`` authorises the session under RLS: a
+       missing/malformed header is ``400`` and an unknown/foreign session is
+       ``403``.
+
+    Once both pass, it resolves the session id (header over body) and streams the
+    service's SSE generator. The stream emits a real ``perceiver_observation``
+    event before the reasoner's answer and a terminal ``done``/``error`` event.
 
     Args:
-        request: Validated chat request (history + parcel/AOI subject).
+        request: The raw request (required by slowapi to evaluate the limit and
+            by FastAPI to host the SSE response).
+        body: Validated chat request (history + parcel/AOI subject). Named
+            ``body`` because slowapi reserves ``request`` for the
+            :class:`~fastapi.Request`.
+        _session: Authorised tenant session injected by
+            :func:`~backend.app.api.deps.verify_chat_session` (guard side effect;
+            value unused here, the router re-resolves it from header/body).
         x_session_id: Optional ``X-Session-ID`` header (preferred source).
 
     Returns:
         A ``StreamingResponse`` of ``text/event-stream`` frames.
     """
-    session_id = _resolve_session_id(x_session_id, request.session_id)
+    session_id = _resolve_session_id(x_session_id, body.session_id)
     logger.info("chat_request_received", session_id=str(session_id))
 
     service = ChatService()
-    generator = service.stream(request.messages, session_id, request=request)
+    generator = service.stream(body.messages, session_id, request=body)
     return StreamingResponse(
         generator,
         media_type=_SSE_MEDIA_TYPE,

@@ -1,0 +1,68 @@
+# Reglas de alerta Prometheus para AgroSatCopilot (US-059).
+#
+# Formato: Prometheus alerting rules (compatible con Alertmanager y con la
+# importacion de reglas de Grafana). Cubren los tres umbrales del AC del plan
+# v8: latencia p99 > 3 s, error rate > 5% y GPU OOM.
+#
+# Las queries de HTTP usan las metricas REALES que exporta el middleware
+# backend/app/middleware/metrics.py (http_request_duration_seconds,
+# http_requests_total). Las queries de GPU asumen dcgm-exporter scrapeando la
+# H100/L4; sin scrape activo en este entorno (ver docs/blockers/epic10-notas.md).
+#
+# El wiring a un canal real (email / PagerDuty / Cloud Monitoring) requiere un
+# Alertmanager o una alert policy de Cloud Monitoring desplegada -> blocker
+# documentado, no bloquea la US. Equivalente Cloud Monitoring abajo.
+
+groups:
+  - name: agrosat-api
+    rules:
+      - alert: HighP99Latency
+        expr: histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket[5m]))) > 3
+        for: 5m
+        labels:
+          severity: warning
+          service: agrosat-api
+        annotations:
+          summary: "Latencia p99 de la API por encima de 3 s"
+          description: "El percentil 99 de http_request_duration_seconds supera 3 s durante 5 min."
+
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m]))
+            / clamp_min(sum(rate(http_requests_total[5m])), 1) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          service: agrosat-api
+        annotations:
+          summary: "Error rate 5xx de la API por encima del 5%"
+          description: "Mas del 5% de las respuestas son 5xx durante 5 min."
+
+  - name: agrosat-worker-ml
+    rules:
+      - alert: GpuOutOfMemory
+        expr: |
+          DCGM_FI_DEV_FB_USED
+            / clamp_min(DCGM_FI_DEV_FB_USED + DCGM_FI_DEV_FB_FREE, 1) > 0.95
+        for: 2m
+        labels:
+          severity: critical
+          service: agrosat-worker-ml
+        annotations:
+          summary: "GPU cerca de OOM (VRAM usada > 95%)"
+          description: "La VRAM usada del worker (H100/L4) supera el 95%; riesgo de OOM en inferencia/serving."
+
+# -----------------------------------------------------------------------------
+# Equivalente Cloud Monitoring (cuando no se usa Alertmanager)
+# -----------------------------------------------------------------------------
+# En GCP el wiring realista es una alert policy de Cloud Monitoring sobre las
+# mismas senales, exportadas via push gateway o el sidecar de Managed Service
+# for Prometheus (Cloud Run scale-to-zero no es scrapeable por pull estable):
+#
+#   - HighP99Latency  -> condicion MQL sobre la metrica derivada de
+#     http_request_duration_seconds (p99 > 3s, ventana 5m), canal email.
+#   - HighErrorRate   -> ratio de http_requests_total status=5xx / total > 0.05.
+#   - GpuOutOfMemory  -> metrica dcgm de VRAM usada > 95% (requiere agente en la VM).
+#
+# El canal de notificacion (notification channel email del equipo) se crea con
+# Terraform una vez exista el proyecto desplegado; pendiente -> blocker.
