@@ -1,0 +1,17 @@
+\begin{table}
+\caption{Ablacion FarSLIP: barrido de cardinalidad de clases a nivel parcela y separabilidad FarSLIP fiel vs AlphaEarth (silhouette/F1-macro KMeans). Las 3 variantes de banda completas (rgb/nir-rgb/4band-pheno) requieren re-extraccion en H100 (B-070-5). Cifras leidas de reports/farslip/.}
+\label{tab:farslip_band_ablation}
+\begin{tabular}{lrrrr}
+\toprule
+n\_clases & macro-F1 & macro-IoU & bien resueltas & parcelas eval \\
+\midrule
+4 & 0.7025 & 0.5547 & 4 & 1301 \\
+6 & 0.4579 & 0.3120 & 2 & 1843 \\
+8 & 0.4075 & 0.2657 & 3 & 2301 \\
+10 & 0.3589 & 0.2288 & 3 & 2706 \\
+12 & 0.3328 & 0.2071 & 1 & 3200 \\
+farslip\_pheno (fiel v2) & 0.5551 & 0.0120 & - & 567 \\
+alphaearth\_2019 & 0.6446 & 0.0145 & - & 567 \\
+\bottomrule
+\end{tabular}
+\end{table}

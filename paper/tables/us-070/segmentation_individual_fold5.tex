@@ -1,0 +1,16 @@
+\begin{table}
+\caption{Modelos individuales EPIC 5 re-scoreados con el harness unico de US-030 (fold-5, 18 clases contiguas, 128px NEAREST). SegFormer = B0 RGB 3-banda; AnySat sustituye a Swin-UNETR (nunca entrenado). Cifras leidas de model\_comparison\_fold5.csv.}
+\label{tab:segmentation_individual_fold5}
+\begin{tabular}{lrrrrrrr}
+\toprule
+Modelo & mIoU & F1-macro & Pix-acc & Kappa & Bal-acc & Bandas & Resize \\
+\midrule
+tsvit-pheno & 0.6139 & 0.7401 & 0.8637 & 0.8310 & 0.7183 & 10 & no \\
+segformer & 0.2715 & 0.3777 & 0.6395 & 0.5538 & 0.3756 & 3 & si \\
+deeplabv3plus & 0.2540 & 0.3614 & 0.6539 & 0.5676 & 0.3614 & 10 & no \\
+unet & 0.2056 & 0.2847 & 0.6394 & 0.5494 & 0.2972 & 10 & no \\
+anysat & 0.1684 & 0.2240 & 0.6994 & 0.5926 & 0.2288 & 10 & no \\
+utae & 0.1605 & 0.2240 & 0.6010 & 0.5080 & 0.2228 & 10 & no \\
+\bottomrule
+\end{tabular}
+\end{table}

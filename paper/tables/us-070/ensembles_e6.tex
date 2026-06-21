@@ -1,0 +1,28 @@
+\begin{table}
+\caption{Ensambles EPIC 6: 4 estrategias de rubrica (US-040), incrementales E-a/E-b (US-041/042) y grid FarSLIP (US-043). Campeon: Stacking-5 (+FarSLIP). Cifras leidas de reports/ensemble/metrics/.}
+\label{tab:ensembles_e6}
+\begin{tabular}{lrrr}
+\toprule
+Estrategia / fuente & F1-macro & Accuracy & Nota \\
+\midrule
+E3 Stacking (parcela) (elegido) & 0.7470 & 0.8490 & US-040 \\
+E4 Blending (parcela) & 0.7414 & 0.8618 & US-040 \\
+TSViT-pheno (individual) & 0.6253 & NaN & US-040 \\
+E1 Voting (pixel) & 0.6225 & 0.8090 & US-040 \\
+E2 Bagging (parcela) & 0.5864 & 0.7816 & US-040 \\
+TSViT-pheno-fullm (individual) & 0.6764 & NaN & mejor segmentador individual (baseline E-a) \\
+Stacking US-040 (E3) & 0.7470 & 0.8490 & mejor ensamble de US-040 (3 miembros densos+tabular sin Far... \\
+E-a fusion dual-head (alpha=0.05) & 0.2694 & 0.5873 & gain -0.407 vs TSViT: fusion ingenua 4-vs-18 clases DANA \\
+E-b stacking E-a + AlphaEarth & 0.3395 & 0.6937 & gain +0.156 vs E-a sola pero lejos del Stacking US-040 \\
+Stacking-5 +FarSLIP (US-043, campeon) & 0.7486 & 0.8495 & nuevo campeon: FarSLIP via stacking (ft-18 + zero-shot) +0.... \\
+Stacking-3 | tsvit-pheno (campeon US-040) & 0.7470 & 0.8490 & delta 0.0000 \\
+Stacking-5 (+FarSLIP) | tsvit-pheno (campeon US-040) & 0.7486 & 0.8495 & delta 0.0016 \\
+Blending-3 | tsvit-pheno (campeon US-040) & 0.7436 & 0.8629 & delta 0.0000 \\
+Blending-5 (+FarSLIP) | tsvit-pheno (campeon US-040) & 0.7319 & 0.8594 & delta -0.0117 \\
+Stacking-3 | tsvit-pheno-fullm (mejor individual) & 0.6359 & 0.7877 & delta 0.0000 \\
+Stacking-5 (+FarSLIP) | tsvit-pheno-fullm (mejor individual) & 0.6477 & 0.7935 & delta 0.0118 \\
+Blending-3 | tsvit-pheno-fullm (mejor individual) & 0.5651 & 0.7697 & delta 0.0000 \\
+Blending-5 (+FarSLIP) | tsvit-pheno-fullm (mejor individual) & 0.5866 & 0.7864 & delta 0.0215 \\
+\bottomrule
+\end{tabular}
+\end{table}

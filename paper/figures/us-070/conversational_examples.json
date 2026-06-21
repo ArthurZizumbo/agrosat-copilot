@@ -1,0 +1,17 @@
+{
+  "note_it": "pendiente AgroMind-IT US-068",
+  "examples": [
+    {
+      "benchmark": "AgroMind",
+      "lang": "es/en",
+      "task": "",
+      "prediction": "Para identificar las coordenadas rectangulares que encierran toda la tierra cultivada en la imagen:\n\n1. **Análisis de la imagen**: \n   - La mitad izquierda de la imagen (aproximadamente hasta $x \\approx 0.5$) corresponde a una zona residencial/rural con viviendas, caminos y patios.\n   - En la mitad derecha, se observa una infraestructura de transporte (vías o carretera de doble carril) que corre d"
+    },
+    {
+      "benchmark": "AgroMind",
+      "lang": "es/en",
+      "task": "",
+      "prediction": "Razonemos paso a paso:\n1. Al observar la imagen satelital, podemos identificar una gran parcela agrícola (tierra de cultivo de color marrón/oliva claro) en la parte superior.\n2. Esta zona cultivada comienza horizontalmente aproximadamente desde $x = 0.22$ hasta el borde derecho ($x = 1.0$).\n3. Verticalmente, se extiende desde el límite superior ($y = 0.0$) hasta aproximadamente $y = 0.40$.\n4. Al e"
+    }
+  ]
+}
