@@ -45,13 +45,14 @@ const mapContainer = ref<HTMLDivElement | null>(null);
 // that the next POST /chat sends as `ChatRequest.parcel_id` (via useChat).
 // useMap stays agnostic of the chat store (testable via this callback); the
 // map-store<->chat-store coupling is decided here, in the component.
-const { initMap, destroyMap, flyToDemoAoi, locateParcel, drawRect } = useMap({
-  onParcelSelect: (parcelId, props) => {
-    const cropClass = typeof props.crop_class === "string" ? props.crop_class : null;
-    mapStore.setSelectedParcel({ parcel_id: parcelId, crop_class: cropClass });
-    chatStore.setActiveParcelId(parcelId);
-  },
-});
+const { initMap, destroyMap, flyToDemoAoi, locateParcel, drawRect, detecting } =
+  useMap({
+    onParcelSelect: (parcelId, props) => {
+      const cropClass = typeof props.crop_class === "string" ? props.crop_class : null;
+      mapStore.setSelectedParcel({ parcel_id: parcelId, crop_class: cropClass });
+      chatStore.setActiveParcelId(parcelId);
+    },
+  });
 
 defineExpose({ flyToDemoAoi, locateParcel });
 
@@ -89,6 +90,20 @@ onBeforeUnmount(() => {
     <!-- Top-center: draw hint -->
     <div class="pointer-events-none absolute left-1/2 top-3 z-10 -translate-x-1/2">
       <MapDrawToolbar />
+    </div>
+
+    <!-- Detecting overlay: the trained model is classifying the drawn AOI -->
+    <div
+      v-if="detecting"
+      class="pointer-events-none absolute left-1/2 top-1/2 z-20 flex -translate-x-1/2 -translate-y-1/2 items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)]/95 px-4 py-2 text-sm font-medium text-[var(--color-fg)] shadow-[var(--shadow-panel)] backdrop-blur"
+      role="status"
+    >
+      <UIcon
+        name="i-lucide-loader-circle"
+        class="size-4 animate-spin text-agro-700 dark:text-agro-400"
+        aria-hidden="true"
+      />
+      {{ t("map.detecting") }}
     </div>
 
     <!-- Top-left: legend -->

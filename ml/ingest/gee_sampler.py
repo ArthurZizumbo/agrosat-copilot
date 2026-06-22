@@ -348,6 +348,109 @@ def sample_alphaearth_roi(
     return df
 
 
+def sample_alphaearth_aoi_mean(
+    roi: Any, year: int, scale: int = 10
+) -> list[float] | None:
+    """Mean 64-dim AlphaEarth embedding over an ROI/year (single ``reduceRegion``).
+
+    Unlike :func:`sample_alphaearth_roi` (per-pixel sampling into a DataFrame),
+    this returns a single 64-dim vector: the spatial mean of the annual embedding
+    over ``roi``, in ``A00..A63`` order (identical to the ``dim_00..dim_63`` order
+    the tabular classifiers were trained on). Used for on-demand classification of
+    a freshly drawn AOI that has no persisted parcel embedding.
+
+    Args:
+        roi: ``ee.Geometry`` delimiting the AOI.
+        year: Year (2017-2025) selecting the annual image.
+        scale: Resolution in meters (AlphaEarth native = 10).
+
+    Returns:
+        A list of 64 floats, or ``None`` if EE is unavailable, no annual image
+        covers the ROI, or any band reduces to null (ROI outside coverage).
+    """
+    if ee is None:
+        return None
+    band_names = _alphaearth_band_names()
+    try:
+        image = (
+            ee.ImageCollection(ALPHAEARTH_COLLECTION)
+            .filterBounds(roi)
+            .filterDate(f"{year}-01-01", f"{year + 1}-01-01")
+            .mosaic()
+            .select(band_names)
+        )
+        stats = image.reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=roi,
+            scale=scale,
+            maxPixels=int(1e9),
+            bestEffort=True,
+        ).getInfo()
+    except Exception:  # noqa: BLE001 - EE optional; caller treats None as failure
+        return None
+    if not stats:
+        return None
+    values = [stats.get(band) for band in band_names]
+    if any(v is None for v in values):
+        return None
+    return [float(v) for v in values]
+
+
+def sample_alphaearth_cells(
+    cells: list[tuple[float, float, float, float]], year: int, scale: int = 10
+) -> list[list[float] | None]:
+    """Mean AlphaEarth embedding for each cell of a grid, in ONE ``reduceRegions``.
+
+    On-demand crop-map path: given cell bounding boxes (EPSG:4326
+    ``(minx, miny, maxx, maxy)``) tiling an AOI, returns the spatial-mean 64-dim
+    embedding per cell, in ``A00..A63`` order (the ``dim_00..dim_63`` order the
+    tabular classifier expects). A single GEE ``reduceRegions`` over a
+    ``FeatureCollection`` of the cells keeps it to one network round-trip
+    regardless of cell count.
+
+    Args:
+        cells: Cell bounding boxes in EPSG:4326 (``(minx, miny, maxx, maxy)``).
+        year: Year (2017-2025) selecting the annual image.
+        scale: Resolution in meters (AlphaEarth native = 10).
+
+    Returns:
+        A list aligned with ``cells``: each entry is the 64-float embedding, or
+        ``None`` when the cell has no AlphaEarth data (outside coverage / cloud).
+    """
+    if ee is None or not cells:
+        return [None] * len(cells)
+    band_names = _alphaearth_band_names()
+    try:
+        image = (
+            ee.ImageCollection(ALPHAEARTH_COLLECTION)
+            .filterDate(f"{year}-01-01", f"{year + 1}-01-01")
+            .mosaic()
+            .select(band_names)
+        )
+        features = [
+            ee.Feature(ee.Geometry.Rectangle([c[0], c[1], c[2], c[3]]), {"cidx": i})
+            for i, c in enumerate(cells)
+        ]
+        reduced = image.reduceRegions(
+            collection=ee.FeatureCollection(features),
+            reducer=ee.Reducer.mean(),
+            scale=scale,
+        ).getInfo()
+    except Exception:  # noqa: BLE001 - EE optional; caller treats None as failure
+        return [None] * len(cells)
+
+    out: list[list[float] | None] = [None] * len(cells)
+    for feature in reduced.get("features", []):
+        props = feature.get("properties", {})
+        idx = props.get("cidx")
+        if idx is None:
+            continue
+        values = [props.get(band) for band in band_names]
+        if all(v is not None for v in values):
+            out[int(idx)] = [float(v) for v in values]
+    return out
+
+
 def sample_alphaearth_at_coords(
     coords: pl.DataFrame,
     year: int,

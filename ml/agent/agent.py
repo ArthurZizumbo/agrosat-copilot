@@ -86,6 +86,11 @@ MAX_TURNS: int = 8
 #: left untouched.
 _SESSION_ID_FIELD: str = "session_id"
 
+#: Tool-input field holding the AOI polygon. When the request carried a real
+#: drawn AOI, the agent overrides the model's reconstructed value here so spatial
+#: tools use the exact outline the user drew (see ``_execute_tool``).
+_AOI_FIELD: str = "aoi"
+
 
 @dataclass
 class _ToolCall:
@@ -344,6 +349,19 @@ class Agent:
         raw_args = dict(call.args)
         if _SESSION_ID_FIELD in spec.input_model.model_fields:
             raw_args[_SESSION_ID_FIELD] = session_id
+
+        # Override a reconstructed AOI with the polygon the user actually drew.
+        # The reasoner rebuilds the ``aoi`` argument from the conversation, which
+        # can drift from the outline (wrong/over-simplified coordinates) and make
+        # spatial tools miss the parcels under it. When the request carried a real
+        # AOI and the model already chose to scope this call spatially (``aoi`` in
+        # its arguments), we replace its reconstruction with the genuine polygon.
+        if (
+            _AOI_FIELD in spec.input_model.model_fields
+            and ctx.request_aoi is not None
+            and raw_args.get(_AOI_FIELD) is not None
+        ):
+            raw_args[_AOI_FIELD] = ctx.request_aoi.model_dump()
 
         try:
             inp = spec.input_model.model_validate(raw_args)

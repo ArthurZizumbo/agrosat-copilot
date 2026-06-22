@@ -7,6 +7,7 @@
 import { storeToRefs } from "pinia";
 import { useChatStore } from "~/stores/chat";
 import { useMapStore } from "~/stores/map";
+import { useChats } from "~/composables/useChats";
 import type { LlmVariant } from "~/types/agent";
 import { demoFindings } from "~/utils/demoPreview";
 
@@ -18,11 +19,20 @@ const emit = defineEmits<{
 const { t } = useI18n();
 const store = useChatStore();
 const mapStore = useMapStore();
-const { messages, perceiverNotes, toolCalls, findings, status, llmVariant } =
+const { messages, toolCalls, findings, status, llmVariant } =
   storeToRefs(store);
 const { previewActive } = storeToRefs(mapStore);
 
 const { sendMessage, switchLlm, dispose } = useChat();
+const { ensureReady, startAutosave } = useChats();
+
+// Close the session-creation gap + restore the active chat's transcript: ensure
+// a browser owner + a valid current chat (with its backend row) exist, then
+// start persisting the transcript as it changes. Client-only (localStorage).
+onMounted(async () => {
+  await ensureReady();
+  startAutosave();
+});
 
 const isBusy = computed(
   () => status.value === "dispatching" || status.value === "streaming",
@@ -41,7 +51,7 @@ const wsStatus = computed(() => {
 
 const transcript = ref<HTMLElement | null>(null);
 watch(
-  [messages, toolCalls, perceiverNotes],
+  [messages, toolCalls],
   async () => {
     await nextTick();
     if (transcript.value) transcript.value.scrollTop = transcript.value.scrollHeight;
@@ -86,9 +96,16 @@ onBeforeUnmount(() => {
           :aria-label="t(wsStatus.key)"
           role="status"
         />
-        <h2 class="truncate text-sm font-semibold text-[var(--color-fg)]">
-          {{ t("chat.assistant_title") }}
-        </h2>
+        <!-- Chat switcher (client-only: the list is hydrated from localStorage).
+             Falls back to the static title during SSR / before mount. -->
+        <ClientOnly>
+          <ChatList />
+          <template #fallback>
+            <h2 class="truncate text-sm font-semibold text-[var(--color-fg)]">
+              {{ t("chat.assistant_title") }}
+            </h2>
+          </template>
+        </ClientOnly>
       </div>
       <div class="flex items-center gap-1.5">
         <!-- APORTE PENDIENTE: the team `/chat` ignores a per-request llm_variant
@@ -152,29 +169,13 @@ onBeforeUnmount(() => {
       </div>
 
       <template v-else>
+        <!-- Each assistant turn renders its own ReasoningCard (thinking ->
+             observation) above the reply, inside ChatMessageBubble. -->
         <ChatMessageBubble
           v-for="msg in messages"
           :key="msg.id"
           :message="msg"
         />
-
-        <!-- What the agent "saw" (perceiver observation, Be My Eyes) -->
-        <section
-          v-for="note in perceiverNotes"
-          :key="note.id"
-          class="rounded-[var(--radius-md)] border border-agro-600/30 bg-agro-50 p-3 dark:bg-agro-900/20"
-          :aria-label="t('chat.observation')"
-        >
-          <p
-            class="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-agro-700 dark:text-agro-400"
-          >
-            <UIcon name="i-lucide-eye" class="size-3.5" aria-hidden="true" />
-            {{ t("chat.observation") }}
-          </p>
-          <p class="whitespace-pre-wrap text-xs leading-relaxed text-[var(--color-fg)]">
-            {{ note.text }}
-          </p>
-        </section>
 
         <ChatToolActivity :calls="toolCalls" />
 
@@ -194,19 +195,6 @@ onBeforeUnmount(() => {
             @locate="emit('locate', $event)"
           />
         </div>
-
-        <!-- Thinking skeleton -->
-        <div v-if="isBusy && perceiverNotes.length === 0" class="space-y-2" aria-hidden="true">
-          <div class="h-3 w-2/3 animate-pulse rounded bg-[var(--color-surface-2)]" />
-          <div class="h-3 w-1/2 animate-pulse rounded bg-[var(--color-surface-2)]" />
-        </div>
-        <p
-          v-if="isBusy"
-          class="flex items-center gap-1.5 text-xs italic text-[var(--color-muted-fg)]"
-        >
-          <UIcon name="i-lucide-loader-circle" class="size-3.5 animate-spin" aria-hidden="true" />
-          {{ t("chat.thinking") }}
-        </p>
 
         <!-- Error -->
         <p

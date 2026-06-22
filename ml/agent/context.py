@@ -17,6 +17,7 @@ from uuid import UUID
 import asyncpg
 
 from backend.app.core.config import Settings
+from ml.agent.schemas import GeoJSONGeometry
 
 __all__ = ["DeferHook", "ToolContext"]
 
@@ -40,9 +41,15 @@ class ToolContext:
             when a heavy/async backend is available; ``None`` means no deferred
             executor is wired, in which case deferred tools return a controlled
             ``NotConfigured`` result instead of crashing.
+        request_aoi: The AOI polygon the user actually drew on this request, if
+            any. The agent loop injects it into any tool whose call already
+            carries an ``aoi`` argument, so geo tools operate on the EXACT drawn
+            polygon instead of the one the reasoner reconstructs (which can drift
+            from what the user outlined). ``None`` when the request had no AOI.
     """
 
     pool: asyncpg.Pool
     settings: Settings
     session_id: UUID
     defer: DeferHook | None = None
+    request_aoi: GeoJSONGeometry | None = None

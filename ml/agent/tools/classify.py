@@ -561,6 +561,11 @@ async def _fetch_parcel_embedding(
         row = await conn.fetchrow(query, *args)
 
     if row is None or row["alphaearth_embedding"] is None:
+        # No persisted parcel embedding. For a drawn AOI, sample AlphaEarth live
+        # from Earth Engine (on-demand) so a brand-new zone is still classifiable
+        # instead of falling straight to the needs_gee_sampling sentinel.
+        if aoi is not None:
+            return await _sample_aoi_embedding_via_gee(aoi, year)
         return None
 
     raw = row["alphaearth_embedding"]
@@ -578,6 +583,82 @@ async def _fetch_parcel_embedding(
             got=int(embedding.size),
         )
         return None
+    return embedding
+
+
+#: Guard so Earth Engine is initialised at most once per process (ADC-based).
+_EE_INITIALISED: bool = False
+
+#: Process cache of on-demand AOI embeddings, keyed by ``(year, AOI geometry)``,
+#: so repeated chat turns about the SAME drawn zone reuse the Earth Engine sample
+#: instead of re-paying the multi-second round-trip every turn. Bounded FIFO; only
+#: successful samples are cached (a failure stays retryable next turn).
+_AOI_EMBED_CACHE: dict[str, np.ndarray] = {}
+_AOI_EMBED_CACHE_MAX: int = 64
+
+
+def _aoi_cache_key(aoi: GeoJSONGeometry, year: int) -> str:
+    """Stable cache key for an AOI + campaign year (geometry-exact)."""
+    geom = json.dumps({"type": aoi.type, "coordinates": aoi.coordinates}, sort_keys=True)
+    return f"{year}:{geom}"
+
+
+async def _sample_aoi_embedding_via_gee(
+    aoi: GeoJSONGeometry, year: int
+) -> np.ndarray | None:
+    """Sample a brand-new AOI's AlphaEarth embedding live from Earth Engine.
+
+    On-demand path for an AOI with no persisted parcel embedding: initialises EE
+    once via ADC (project from ``settings.gee_project_id``), reduces the annual
+    AlphaEarth image to its mean 64-dim vector over the drawn polygon (in the
+    ``dim_00..dim_63`` order the classifier expects), and returns it. Any failure
+    (EE not configured, ROI outside coverage, network) returns ``None`` so the
+    caller falls back to the controlled ``needs_gee_sampling`` result -- never a
+    hallucinated class. The blocking EE call runs in a worker thread so the chat
+    event loop is never stalled.
+
+    Args:
+        aoi: Drawn AOI polygon to sample.
+        year: Campaign year of the annual AlphaEarth embedding.
+
+    Returns:
+        A ``(64,)`` ``float64`` embedding, or ``None`` on any failure.
+    """
+    import asyncio
+
+    cache_key = _aoi_cache_key(aoi, year)
+    cached = _AOI_EMBED_CACHE.get(cache_key)
+    if cached is not None:
+        logger.info("gee_aoi_sampling_cache_hit", year=year)
+        return cached
+
+    def _blocking() -> list[float] | None:
+        global _EE_INITIALISED
+        import ee
+
+        from backend.app.core.config import get_settings
+        from ml.ingest.gee_sampler import init_ee, sample_alphaearth_aoi_mean
+
+        if not _EE_INITIALISED:
+            init_ee(project=get_settings().gee_project_id or None)
+            _EE_INITIALISED = True
+        geom = ee.Geometry({"type": aoi.type, "coordinates": aoi.coordinates})
+        return sample_alphaearth_aoi_mean(geom, year)
+
+    try:
+        values = await asyncio.to_thread(_blocking)
+    except Exception as exc:  # noqa: BLE001 - EE optional; never crash a chat turn
+        logger.warning("gee_aoi_sampling_failed", error=str(exc))
+        return None
+    if values is None:
+        return None
+    embedding = np.asarray(values, dtype=np.float64)
+    if embedding.size != _EMBED_DIM:
+        return None
+    if len(_AOI_EMBED_CACHE) >= _AOI_EMBED_CACHE_MAX:
+        _AOI_EMBED_CACHE.pop(next(iter(_AOI_EMBED_CACHE)))
+    _AOI_EMBED_CACHE[cache_key] = embedding
+    logger.info("gee_aoi_sampling_ok", year=year)
     return embedding
 
 

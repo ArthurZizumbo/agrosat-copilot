@@ -47,9 +47,9 @@ describe("chatStore reducer (team SSE contract)", () => {
 
     for (const event of sequence) store.applyEvent(event);
 
-    // Perceiver observation captured ("what the agent saw").
-    expect(store.perceiverNotes).toHaveLength(1);
-    expect(store.perceiverNotes[0]?.text).toContain("Tuscany");
+    // Perceiver observation captured on the assistant turn ("what the agent
+    // saw"), so the ReasoningCard can render above the reply.
+    expect(store.lastAssistant?.reasoning).toContain("Tuscany");
 
     // Tool call resolved (correlated by name, no call_id on the wire).
     expect(store.toolCalls).toHaveLength(1);
@@ -74,6 +74,31 @@ describe("chatStore reducer (team SSE contract)", () => {
     // Terminal state.
     expect(store.status).toBe("idle");
     expect(store.activeAssistantId).toBeNull();
+  });
+
+  it("attaches the perceiver reasoning to the assistant turn before the reply", () => {
+    // The ReasoningCard renders above the answer, so `reasoning` must land on
+    // the assistant turn BEFORE any `text_delta` arrives.
+    const store = useChatStore();
+    store.startUserTurn("trigger");
+
+    store.applyEvent({
+      type: "perceiver_observation",
+      prompt_block: "AOI over Tuscany: dominant vineyard, high vigour.",
+      observation: { dominant_crop: "Vineyard" },
+    });
+
+    // Reasoning is set while the reply text is still empty.
+    expect(store.lastAssistant?.reasoning).toContain("Tuscany");
+    expect(store.lastAssistant?.text).toBe("");
+
+    store.applyEvent({ type: "text_delta", text: "Done." });
+    store.applyEvent({ type: "done" });
+
+    // Same single assistant turn carries both reasoning and reply.
+    expect(store.messages.filter((m) => m.role === "assistant")).toHaveLength(1);
+    expect(store.lastAssistant?.reasoning).toContain("Tuscany");
+    expect(store.lastAssistant?.text).toBe("Done.");
   });
 
   it("summarises an AoiStats tool_result without findings", () => {

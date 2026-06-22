@@ -32,7 +32,19 @@ from slowapi.errors import RateLimitExceeded
 from titiler.core.errors import DEFAULT_STATUS_CODES, add_exception_handlers
 
 # isort: on
-from backend.app.api import aois, chat, health, llm, metrics, stac, tiles, timeseries
+from backend.app.api import (
+    aois,
+    chat,
+    detect,
+    health,
+    llm,
+    metrics,
+    parcels,
+    sessions,
+    stac,
+    tiles,
+    timeseries,
+)
 from backend.app.core.config import get_settings
 from backend.app.core.logging import configure_logging
 from backend.app.core.rate_limit import limiter
@@ -99,10 +111,21 @@ def create_app() -> FastAPI:
     app.include_router(chat.router)
     # US-054 hot-swap of the per-session reasoner variant (session-scoped, RLS).
     app.include_router(llm.router)
+    # Chat-session lifecycle (create/delete the chat_sessions row). Closes the
+    # session-creation gap: every session-scoped router below requires this row
+    # to exist; this is the only endpoint allowed to create it (RLS WITH CHECK
+    # authorises the INSERT of id = X-Session-ID, so it cannot use verify_session).
+    app.include_router(sessions.router)
     # US-053 geospatial data endpoints (all session-scoped via RLS).
     app.include_router(aois.router)
     app.include_router(timeseries.router)
     app.include_router(stac.router)
+    # Bbox-clipped GeoJSON of persisted parcels for the frontend "parcel
+    # universe" map layer (session-scoped via RLS, decoupled from /chat).
+    app.include_router(parcels.router)
+    # On-demand crop map: classify a grid over a drawn AOI and return the model's
+    # detected crop polygons (GeoJSON). Model output for the zone, not a catalogue.
+    app.include_router(detect.router)
     # US-055 tiling -- two surfaces, one render path:
     #   /cog  -> the full TiTiler ``TilerFactory`` (literal AC endpoint
     #            ``/cog/tiles/{tileMatrixSetId}/{z}/{x}/{y}.png?url&expression&

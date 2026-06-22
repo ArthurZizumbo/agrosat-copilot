@@ -28,6 +28,9 @@ __all__ = [
     "AoiFeature",
     "AoiFeatureCollection",
     "AoiProperties",
+    "ParcelFeature",
+    "ParcelFeatureCollection",
+    "ParcelProperties",
     "StacItemCollection",
     "StacSearchQuery",
     "TimeSeriesResponse",
@@ -127,6 +130,61 @@ class AoiFeatureCollection(BaseModel):
 
     type: Literal["FeatureCollection"] = "FeatureCollection"
     features: list[AoiFeature]
+
+
+# ---------------------------------------------------------------------------
+# /parcels -- GeoJSON FeatureCollection of persisted parcels (bbox-clipped)
+# ---------------------------------------------------------------------------
+class ParcelProperties(BaseModel):
+    """``properties`` block of a parcel GeoJSON Feature.
+
+    The primary key is exposed as ``parcel_id`` (not ``id``) so the frontend can
+    distinguish a parcel from any other feature it draws on the same map layer.
+
+    Attributes:
+        parcel_id: Primary key in the ``parcels`` table (``parcels.id``).
+        crop_class: Predicted crop class label, if any.
+        confidence: Model confidence for ``crop_class`` in ``[0, 1]``, if any.
+        area_ha: Parcel area in hectares, if persisted.
+    """
+
+    model_config = _FORBID
+
+    parcel_id: int
+    crop_class: str | None = None
+    confidence: float | None = None
+    area_ha: float | None = None
+
+
+class ParcelFeature(BaseModel):
+    """A persisted parcel rendered as a GeoJSON ``Feature``.
+
+    Attributes:
+        type: Always ``"Feature"``.
+        geometry: Polygon GeoJSON produced by ``ST_AsGeoJSON``.
+        properties: Non-geometry attributes (id, crop class, confidence, area).
+    """
+
+    model_config = _FORBID
+
+    type: Literal["Feature"] = "Feature"
+    geometry: dict
+    properties: ParcelProperties
+
+
+class ParcelFeatureCollection(BaseModel):
+    """A GeoJSON ``FeatureCollection`` wrapping the session's parcels.
+
+    Attributes:
+        type: Always ``"FeatureCollection"``.
+        features: Parcels visible to the calling session (RLS-filtered),
+            clipped to the requested bounding box and year.
+    """
+
+    model_config = _FORBID
+
+    type: Literal["FeatureCollection"] = "FeatureCollection"
+    features: list[ParcelFeature]
 
 
 # ---------------------------------------------------------------------------

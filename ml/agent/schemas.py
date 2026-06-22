@@ -19,7 +19,7 @@ from datetime import date
 from typing import ClassVar, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 __all__ = [
     "AddAoiInput",
@@ -48,6 +48,28 @@ __all__ = [
 # ``strict`` rejects implicit type coercion (e.g. str -> int); ``extra="forbid"``
 # rejects unknown keys hallucinated by the LLM. Shared by every contract below.
 _STRICT_CONFIG = ConfigDict(strict=True, extra="forbid")
+
+#: GeoJSON nesting depth (list levels down to a numeric position) per geometry
+#: type, used to repair under-nested coordinate arrays the reasoner sometimes
+#: emits (e.g. a Polygon's single ring without the outer ring wrapper).
+_GEOJSON_DEPTH: dict[str, int] = {
+    "Point": 1,
+    "MultiPoint": 2,
+    "LineString": 2,
+    "MultiLineString": 3,
+    "Polygon": 3,
+    "MultiPolygon": 4,
+}
+
+
+def _geojson_coord_depth(coords: object) -> int:
+    """Count the list-nesting levels of ``coords`` down to a numeric position."""
+    depth = 0
+    cur: object = coords
+    while isinstance(cur, list) and cur and isinstance(cur[0], list):
+        depth += 1
+        cur = cur[0]
+    return depth + 1 if isinstance(cur, list) else depth
 
 
 # ---------------------------------------------------------------------------
@@ -100,6 +122,30 @@ class GeoJSONGeometry(BaseModel):
         if not value:
             raise ValueError("coordinates must not be empty")
         return value
+
+    @model_validator(mode="before")
+    @classmethod
+    def _repair_nesting(cls, data: object) -> object:
+        """Wrap an under-nested coordinate array to the depth the ``type`` needs.
+
+        The reasoner occasionally emits a Polygon's ring directly
+        (``[[lon,lat],...]``, depth 2) instead of the GeoJSON ``[[[lon,lat],...]]``
+        (depth 3); ``ST_GeomFromGeoJSON`` then rejects it ("coordinates are not
+        sufficiently nested"). We add the missing outer level(s) so the geometry
+        is valid. Correctly-nested input is left untouched.
+        """
+        if not isinstance(data, dict):
+            return data
+        gtype = data.get("type")
+        coords = data.get("coordinates")
+        expected = _GEOJSON_DEPTH.get(gtype) if isinstance(gtype, str) else None
+        if expected is None or not isinstance(coords, list) or not coords:
+            return data
+        actual = _geojson_coord_depth(coords)
+        while actual < expected:
+            coords = [coords]
+            actual += 1
+        return {**data, "coordinates": coords}
 
 
 class BBox(BaseModel):

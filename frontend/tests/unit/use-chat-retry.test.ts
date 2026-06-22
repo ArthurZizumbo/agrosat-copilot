@@ -154,7 +154,7 @@ describe("useChat transport (real SSE frames + retry)", () => {
     expect(body.messages[0]).toEqual({ role: "user", content: "How is my parcel?" });
 
     // The real reducer folded every frame.
-    expect(store.perceiverNotes[0]?.text).toContain("Tuscany");
+    expect(store.lastAssistant?.reasoning).toContain("Tuscany");
     expect(store.toolCalls[0]).toMatchObject({ tool: "list_parcels", status: "ok" });
     expect(store.findings).toHaveLength(1);
     expect(store.lastAssistant?.text).toBe("The AOI has 1 parcel: a meadow.");

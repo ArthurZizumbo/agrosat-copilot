@@ -25,6 +25,7 @@ import { storeToRefs } from "pinia";
 import type {
   Map as MlMap,
   GeoJSONSource,
+  LngLatLike,
   MapGeoJSONFeature,
   MapMouseEvent,
 } from "maplibre-gl";
@@ -43,6 +44,15 @@ const FINDINGS_HL = "findings-highlight";
 const AOI_SOURCE = "active-aoi";
 const AOI_FILL = "active-aoi-fill";
 const AOI_LINE = "active-aoi-line";
+
+// On-demand DETECTIONS layer: the crop polygons the trained model finds in the
+// drawn AOI (POST /detect). This is the product's real output -- model detection
+// for the zone -- and sits ABOVE everything so it is the focus after a draw.
+const DETECTIONS_SOURCE = "detections";
+const DETECTIONS_FILL = "detections-fill";
+const DETECTIONS_LINE = "detections-line";
+// Campaign year for the on-demand crop detection (AlphaEarth annual coverage).
+const DETECT_YEAR = 2019;
 
 export interface UseMapOptions {
   /**
@@ -66,6 +76,8 @@ export interface UseMapHandle {
   /** Screen-space rubber-band rect while drawing; null when idle. The
    *  visual lives in MapCanvas, which reads this ref. */
   drawRect: Ref<{ x: number; y: number; w: number; h: number } | null>;
+  /** True while the on-demand crop detection runs for the drawn AOI. */
+  detecting: Ref<boolean>;
 }
 
 export function useMap(opts: UseMapOptions = {}): UseMapHandle {
@@ -74,10 +86,13 @@ export function useMap(opts: UseMapOptions = {}): UseMapHandle {
   const { findings } = storeToRefs(chatStore);
   const { basemap, drawMode, parcelsVisible, activeAoi } = storeToRefs(mapStore);
   const { selectDrawnAoi, rectToPolygon } = useAoi();
+  const { apiUrl, ensureSession } = useSession();
   const { t } = useI18n();
 
   const isReady = ref(false);
   const drawRect = ref<{ x: number; y: number; w: number; h: number } | null>(null);
+  // True while POST /detect runs for the drawn AOI (UI shows a "detecting" hint).
+  const detecting = ref(false);
 
   let map: MlMap | null = null;
   let maplibre: typeof import("maplibre-gl") | null = null;
@@ -155,6 +170,44 @@ export function useMap(opts: UseMapOptions = {}): UseMapHandle {
     if (source) source.setData(aoiFeatureCollection(activeAoi.value?.geometry ?? null));
   }
 
+  // --- On-demand crop detection (POST /detect) ----------------------------
+  function setDetectionsData(fc: GeoJSON.FeatureCollection) {
+    if (!map) return;
+    const source = map.getSource(DETECTIONS_SOURCE) as GeoJSONSource | undefined;
+    if (source) source.setData(fc);
+  }
+
+  /** Run the trained model over the drawn AOI and paint the detected crop
+   *  polygons. The model's output for the zone -- not a pre-loaded catalogue. */
+  async function runDetection(geometry: AoiPolygon) {
+    if (!map || !isReady.value || !import.meta.client) return;
+    detecting.value = true;
+    setDetectionsData({ type: "FeatureCollection", features: [] });
+    try {
+      const res = await fetch(apiUrl("/detect"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "X-Session-ID": ensureSession(),
+        },
+        body: JSON.stringify({ aoi: geometry, year: DETECT_YEAR }),
+      });
+      if (!res.ok) return;
+      const fc = (await res.json()) as GeoJSON.FeatureCollection;
+      for (const feat of fc.features) {
+        const p = (feat.properties ?? {}) as Record<string, unknown>;
+        p.color = colorForCrop(typeof p.crop_class === "string" ? p.crop_class : null);
+        feat.properties = p;
+      }
+      setDetectionsData(fc);
+    } catch {
+      // Network / GEE failure: leave the layer empty, never crash the map.
+    } finally {
+      detecting.value = false;
+    }
+  }
+
   function addOverlayLayers() {
     if (!map) return;
     map.addSource(FINDINGS_SOURCE, {
@@ -197,39 +250,74 @@ export function useMap(opts: UseMapOptions = {}): UseMapHandle {
       source: AOI_SOURCE,
       paint: { "line-color": "#d97706", "line-width": 2, "line-dasharray": [2, 1.5] },
     });
+
+    // Detections LAST so the model's crop polygons sit on top of everything.
+    map.addSource(DETECTIONS_SOURCE, {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] },
+    });
+    map.addLayer({
+      id: DETECTIONS_FILL,
+      type: "fill",
+      source: DETECTIONS_SOURCE,
+      paint: { "fill-color": ["get", "color"], "fill-opacity": 0.55 },
+    });
+    map.addLayer({
+      id: DETECTIONS_LINE,
+      type: "line",
+      source: DETECTIONS_SOURCE,
+      paint: { "line-color": ["get", "color"], "line-width": 1.2 },
+    });
+  }
+
+  /** Build + show the crop popup. Shared by the chat findings and the model's
+   *  detected crop polygons (both expose `crop_class`/`confidence` properties). */
+  function openParcelPopup(lngLat: LngLatLike, p: Record<string, unknown>) {
+    if (!map || !popupCtor) return;
+    const conf = p.confidence != null ? `${Math.round(Number(p.confidence) * 100)}%` : "—";
+    const ndvi = p.ndvi_mean != null ? Number(p.ndvi_mean).toFixed(2) : "—";
+    const area = p.area_ha != null ? `${Number(p.area_ha).toFixed(1)} ha` : "—";
+    const html = `
+      <div style="font-size:12px;line-height:1.5;min-width:150px">
+        <strong>${t("chat.parcel")} ${p.parcel_id ?? "—"}</strong><br/>
+        ${t("map.crop")}: ${p.crop_class ?? "—"}<br/>
+        ${t("map.confidence")}: <span style="font-variant-numeric:tabular-nums">${conf}</span><br/>
+        ${t("map.ndvi")}: <span style="font-variant-numeric:tabular-nums">${ndvi}</span><br/>
+        ${t("map.area")}: <span style="font-variant-numeric:tabular-nums">${area}</span><br/>
+        <em>${t("map.source")}: ${p.source ?? "—"}</em>
+      </div>`;
+    new popupCtor({ closeButton: true }).setLngLat(lngLat).setHTML(html).addTo(map);
+  }
+
+  function onParcelLayerClick(e: MapMouseEvent & { features?: MapGeoJSONFeature[] }) {
+    const feature = e.features?.[0];
+    if (!feature) return;
+    const p = (feature.properties ?? {}) as Record<string, unknown>;
+    openParcelPopup(e.lngLat, p);
+    // Cross-store link is decided by the caller (MapCanvas wires onParcelSelect to
+    // map-store highlight + chat-store activeParcelId). parcel_id is REAL.
+    const parcelId = p.parcel_id != null ? Number(p.parcel_id) : null;
+    if (parcelId != null && Number.isFinite(parcelId)) {
+      opts.onParcelSelect?.(parcelId, p);
+    }
   }
 
   function wireParcelInteractions() {
     if (!map) return;
-    map.on("click", FINDINGS_FILL, (e) => {
-      const feature = e.features?.[0] as MapGeoJSONFeature | undefined;
-      if (!feature || !map || !popupCtor) return;
-      const p = feature.properties ?? {};
-      const conf = p.confidence != null ? `${Math.round(Number(p.confidence) * 100)}%` : "—";
-      const ndvi = p.ndvi_mean != null ? Number(p.ndvi_mean).toFixed(2) : "—";
-      const area = p.area_ha != null ? `${Number(p.area_ha).toFixed(1)} ha` : "—";
-      const html = `
-        <div style="font-size:12px;line-height:1.5;min-width:150px">
-          <strong>${t("chat.parcel")} ${p.parcel_id ?? "—"}</strong><br/>
-          ${t("map.crop")}: ${p.crop_class ?? "—"}<br/>
-          ${t("map.confidence")}: <span style="font-variant-numeric:tabular-nums">${conf}</span><br/>
-          ${t("map.ndvi")}: <span style="font-variant-numeric:tabular-nums">${ndvi}</span><br/>
-          ${t("map.area")}: <span style="font-variant-numeric:tabular-nums">${area}</span><br/>
-          <em>${t("map.source")}: ${p.source ?? "—"}</em>
-        </div>`;
-      new popupCtor({ closeButton: true }).setLngLat(e.lngLat).setHTML(html).addTo(map);
+    // Click + pointer cursor on the chat findings AND the model's detected crops.
+    for (const layer of [FINDINGS_FILL, DETECTIONS_FILL]) {
+      map.on("click", layer, onParcelLayerClick);
+      map.on("mouseenter", layer, () => {
+        if (map && !drawMode.value) map.getCanvas().style.cursor = "pointer";
+      });
+      map.on("mouseleave", layer, () => {
+        if (map && !drawMode.value) map.getCanvas().style.cursor = "";
+      });
+    }
 
-      // Cross-store link is decided by the caller (MapCanvas wires onParcelSelect
-      // to map-store highlight + chat-store activeParcelId). parcel_id is REAL.
-      const parcelId = p.parcel_id != null ? Number(p.parcel_id) : null;
-      if (parcelId != null && Number.isFinite(parcelId)) {
-        opts.onParcelSelect?.(parcelId, p as Record<string, unknown>);
-      }
-    });
-
+    // Findings-only hover highlight (chat results).
     map.on("mousemove", FINDINGS_FILL, (e) => {
       if (!map || drawMode.value) return;
-      map.getCanvas().style.cursor = "pointer";
       const id = e.features?.[0]?.properties?.parcel_id;
       if (id != null && id !== hovered) {
         hovered = id;
@@ -238,7 +326,6 @@ export function useMap(opts: UseMapOptions = {}): UseMapHandle {
     });
     map.on("mouseleave", FINDINGS_FILL, () => {
       if (!map || drawMode.value) return;
-      map.getCanvas().style.cursor = "";
       hovered = null;
       map.setFilter(FINDINGS_HL, ["==", ["get", "parcel_id"], -1]);
     });
@@ -247,9 +334,7 @@ export function useMap(opts: UseMapOptions = {}): UseMapHandle {
       mapStore.setCursorCoords({ lng: e.lngLat.lng, lat: e.lngLat.lat });
     });
 
-    // Track the visible extent (US-058 AC "bbox visible"); kept for future
-    // spatial scoping. getBounds().toArray() -> [[w,s],[e,n]]; flatten to
-    // [minLng, minLat, maxLng, maxLat].
+    // Track the visible extent (kept for future spatial scoping).
     map.on("moveend", () => {
       if (!map) return;
       const [[w, s], [e, n]] = map.getBounds().toArray();
@@ -292,6 +377,8 @@ export function useMap(opts: UseMapOptions = {}): UseMapHandle {
     // selectDrawnAoi is synchronous (no /aois persistence): the polygon lives in
     // the map store and is sent inline as `aoi` on the next POST /chat.
     selectDrawnAoi(polygon, t("aoi.drawn_label"));
+    // Run the trained model over the drawn zone and paint its detected crops.
+    void runDetection(polygon);
   }
 
   function onKeydown(ev: KeyboardEvent) {
@@ -390,7 +477,13 @@ export function useMap(opts: UseMapOptions = {}): UseMapHandle {
       watch(parcelsVisible, (v) => {
         if (!map || !isReady.value) return;
         const vis = v ? "visible" : "none";
-        for (const id of [FINDINGS_FILL, FINDINGS_LINE, FINDINGS_HL]) {
+        for (const id of [
+          DETECTIONS_FILL,
+          DETECTIONS_LINE,
+          FINDINGS_FILL,
+          FINDINGS_LINE,
+          FINDINGS_HL,
+        ]) {
           if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", vis);
         }
       }),
@@ -418,5 +511,13 @@ export function useMap(opts: UseMapOptions = {}): UseMapHandle {
     maplibre = null;
   }
 
-  return { initMap, destroyMap, flyToDemoAoi, locateParcel, isReady, drawRect };
+  return {
+    initMap,
+    destroyMap,
+    flyToDemoAoi,
+    locateParcel,
+    isReady,
+    drawRect,
+    detecting,
+  };
 }

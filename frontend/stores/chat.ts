@@ -4,11 +4,13 @@
 // The reducer (`applyEvent`) is pure with respect to the store state: feeding a
 // sequence of events produces a deterministic state, which is what the unit
 // test asserts. The composable `useChat` owns the transport (POST + fetch SSE)
-// and calls these actions; ChatDock/MapCanvas consume `findings`, `toolCalls`,
-// `perceiverNotes` and `messages`.
+// and calls these actions; ChatDock/MapCanvas consume `findings`, `toolCalls`
+// and `messages`.
 //
 // Event mapping (team contract — see types/agent.ts):
-//   perceiver_observation -> a `PerceiverNote` ("what the agent saw")
+//   perceiver_observation -> assistant turn `reasoning` ("what the agent saw"),
+//                            attached to the turn BEFORE the answer streams so
+//                            the ReasoningCard renders above the reply
 //   tool_call             -> a running `TrackedToolCall` (id synthesised)
 //   tool_result           -> resolves the matching call + parses `result` into
 //                            FindingCards (ParcelList) or a summary
@@ -23,12 +25,7 @@ import type {
   LlmVariant,
   ToolResultEvent,
 } from "~/types/agent";
-import type {
-  ChatMessage,
-  ChatStatus,
-  PerceiverNote,
-  TrackedToolCall,
-} from "~/types/chat";
+import type { ChatMessage, ChatStatus, TrackedToolCall } from "~/types/chat";
 
 let messageSeq = 0;
 
@@ -124,8 +121,6 @@ function parseToolResult(event: ToolResultEvent): {
 
 interface ChatState {
   messages: ChatMessage[];
-  /** What the perceiver "saw" before reasoning (Be My Eyes). */
-  perceiverNotes: PerceiverNote[];
   toolCalls: TrackedToolCall[];
   findings: Finding[];
   /** Display-only; the backend ignores per-request variant (server config). */
@@ -145,7 +140,6 @@ interface ChatState {
 export const useChatStore = defineStore("chat", {
   state: (): ChatState => ({
     messages: [],
-    perceiverNotes: [],
     toolCalls: [],
     findings: [],
     llmVariant: "gemini",
@@ -185,7 +179,11 @@ export const useChatStore = defineStore("chat", {
       this.activeParcelId = parcelId;
     },
 
-    /** Append the user's turn and prepare the per-turn state. */
+    /** Append the user's turn and prepare the per-turn state.
+     *
+     * A pending (empty) assistant turn is created up front so the ReasoningCard
+     * renders the "thinking" state above the future reply right away, even
+     * before the first `perceiver_observation` / `text_delta` event arrives. */
     startUserTurn(text: string) {
       this.messages.push({
         id: nextMessageId("user"),
@@ -193,12 +191,12 @@ export const useChatStore = defineStore("chat", {
         text,
         createdAt: Date.now(),
       });
-      this.perceiverNotes = [];
       this.toolCalls = [];
       this.findings = [];
       this.activeAssistantId = null;
       this.errorMessage = null;
       this.status = "dispatching";
+      this.ensureAssistantTurn();
     },
 
     markStreaming() {
@@ -227,8 +225,11 @@ export const useChatStore = defineStore("chat", {
           this.markStreaming();
           const text = event.text ?? event.prompt_block ?? "";
           if (text.trim().length > 0) {
-            this.toolSeq += 1;
-            this.perceiverNotes.push({ id: `note-${this.toolSeq}`, text });
+            // Attach the grounding to the assistant turn BEFORE the reply
+            // streams, so the ReasoningCard shows above the answer.
+            const id = this.ensureAssistantTurn();
+            const msg = this.messages.find((m) => m.id === id);
+            if (msg) msg.reasoning = text;
           }
           break;
         }
@@ -310,7 +311,23 @@ export const useChatStore = defineStore("chat", {
 
     reset() {
       this.messages = [];
-      this.perceiverNotes = [];
+      this.toolCalls = [];
+      this.findings = [];
+      this.status = "idle";
+      this.activeAssistantId = null;
+      this.errorMessage = null;
+      this.activeParcelId = null;
+    },
+
+    /**
+     * Replace the visible transcript with another chat's messages (chat switch).
+     * Transient per-turn state is reset so a half-streamed turn or a running tool
+     * from the previous chat never leaks across the switch. Transcripts are owned
+     * per-chat by `useChats` (a localStorage map), which is why `messages` is no
+     * longer in this store's `persist.pick`.
+     */
+    loadTranscript(messages: ChatMessage[]) {
+      this.messages = [...messages];
       this.toolCalls = [];
       this.findings = [];
       this.status = "idle";
@@ -348,16 +365,15 @@ export const useChatStore = defineStore("chat", {
     },
   },
 
-  // Persist only durable conversation state. Transient per-turn state
-  // (toolCalls, perceiverNotes, findings, status, activeAssistantId,
-  // errorMessage, toolSeq) is intentionally excluded: rehydrating a "running"
-  // tool or a half-streamed turn would be incorrect. `session_id` is NOT
-  // duplicated here — it already persists via the `agrosat-session-id` cookie
-  // in useSession. SSR-safe: `localStorage()` is a no-op on the server, so the
-  // store hydrates from localStorage on the client only (transcript wrapped in
-  // <ClientOnly> in ChatDock to avoid a hydration mismatch).
+  // Persist only the durable, chat-AGNOSTIC preference here. The transcript
+  // (`messages`) is NOT persisted by the store anymore: with multiple chats per
+  // browser it is owned per-chat by `useChats` (a localStorage map keyed by chat
+  // id), so the store always reflects the CURRENT chat only. Transient per-turn
+  // state (toolCalls, findings, status, activeAssistantId, errorMessage, toolSeq)
+  // stays excluded too: rehydrating a "running" tool or half-streamed turn would
+  // be wrong. SSR-safe: `localStorage()` is a no-op on the server.
   persist: {
     storage: piniaPluginPersistedstate.localStorage(),
-    pick: ["messages", "llmVariant"],
+    pick: ["llmVariant"],
   },
 });

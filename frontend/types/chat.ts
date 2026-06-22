@@ -11,6 +11,10 @@ export interface ChatMessage {
   text: string;
   /** Citations attached to a final assistant answer. */
   citations?: Citation[];
+  /** Perceiver grounding for an assistant turn ("what the agent saw",
+   *  Be My Eyes). Set from `perceiver_observation` BEFORE the answer streams,
+   *  so the reasoning card can render above the reply. */
+  reasoning?: string;
   /** Epoch ms when the turn was created (client clock). */
   createdAt: number;
 }
@@ -30,13 +34,6 @@ export interface TrackedToolCall {
   /** Raw tool output payload (from `tool_result.result`), shown in the
    * collapsible tool card. `undefined` while the call is still running. */
   result?: Record<string, unknown>;
-}
-
-/** What the perceiver "saw" before the reasoner spoke (Be My Eyes). */
-export interface PerceiverNote {
-  id: string;
-  /** Rendered grounding text (from `text` or `prompt_block`). */
-  text: string;
 }
 
 /** Lifecycle of the current turn. */

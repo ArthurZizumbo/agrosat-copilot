@@ -87,6 +87,20 @@ _LOCALE_INSTRUCTION: dict[str, str] = {
 #: Default campaign year for an AOI observation (matches the perceiver default).
 _DEFAULT_YEAR: int = 2019
 
+#: Injected as a leading grounding turn when the request carries a drawn AOI, so
+#: the reasoner knows an area + year are ALREADY provided and never asks the user
+#: to draw a zone or to specify the year (a recurring failure when the perceiver
+#: observation alone did not make the reasoner treat the AOI as actionable).
+_AOI_CONTEXT_HINT: str = (
+    "Contexto operativo: el usuario YA dibujo un area de interes (AOI) en el mapa y "
+    "la campania es el anio {year}. La observacion del perceiver de arriba corresponde "
+    "a ESA AOI. Para preguntas sobre 'esta zona', 'esta area', 'aqui' o equivalentes, "
+    "responde usando esa observacion y, si necesitas mas, llama las herramientas "
+    "espaciales (get_aoi_stats, list_parcels, classify_new_parcel) sobre esa MISMA AOI "
+    "con ese anio. NUNCA le pidas al usuario que dibuje un area ni que indique el anio: "
+    "ya los tienes."
+)
+
 #: Read the persisted reasoner variant for a session (US-054 AC-2). Run on the
 #: RLS-scoped pool connection (``app.current_session`` primed), so it only ever
 #: returns the caller's own row.
@@ -349,6 +363,7 @@ class ChatService:
         messages: Sequence[ChatMessage],
         observation: PerceiverObservation | None,
         locale: Literal["it", "es", "en"] | None = None,
+        aoi_hint: str | None = None,
     ) -> list[dict[str, str]]:
         """Build the reasoner's message history, grounded by the perceiver.
 
@@ -376,6 +391,8 @@ class ChatService:
             history.append({"role": "system", "content": _LOCALE_INSTRUCTION[locale]})
         if observation is not None:
             history.append({"role": "system", "content": observation.to_prompt_block()})
+        if aoi_hint is not None:
+            history.append({"role": "system", "content": aoi_hint})
         history.extend({"role": m.role, "content": m.content} for m in messages)
         return history
 
@@ -409,6 +426,9 @@ class ChatService:
         )
 
         ctx = await self._build_context(session_id)
+        # Carry the genuine drawn AOI so the agent can override any polygon the
+        # reasoner reconstructs for a spatial tool call (see Agent._execute_tool).
+        ctx.request_aoi = request.aoi
 
         try:
             observation = await self._observe(request, ctx)
@@ -436,8 +456,18 @@ class ChatService:
                 },
             )
 
+        # When the request carries a drawn AOI, tell the reasoner it already has
+        # the area + year so it never asks the user to draw a zone or pick a year.
+        aoi_hint = _AOI_CONTEXT_HINT.format(year=request.year) if request.aoi is not None else None
+
         async for frame in self._stream_reasoner(
-            messages, observation, session_id, ctx, locale=request.locale, start=start
+            messages,
+            observation,
+            session_id,
+            ctx,
+            locale=request.locale,
+            aoi_hint=aoi_hint,
+            start=start,
         ):
             yield frame
 
@@ -456,6 +486,7 @@ class ChatService:
         ctx: ToolContext,
         *,
         locale: Literal["it", "es", "en"] | None = None,
+        aoi_hint: str | None = None,
         start: float,
     ) -> AsyncIterator[str]:
         """Run the reasoner loop and forward its events as SSE frames.
@@ -502,7 +533,7 @@ class ChatService:
             model=model,
             latency_ms=round((time.perf_counter() - resolve_start) * 1000.0, 2),
         )
-        agent_messages = self._agent_messages(messages, observation, locale)
+        agent_messages = self._agent_messages(messages, observation, locale, aoi_hint)
 
         metrics = ChatMetricsAccumulator(variant=variant, model=model)
         async for event in agent.stream_response(agent_messages, session_id, ctx):

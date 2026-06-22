@@ -9,10 +9,12 @@
 
 import { computed } from "vue";
 import { renderMarkdown } from "~/utils/markdown";
+import { useChatStore } from "~/stores/chat";
 import type { ChatMessage } from "~/types/chat";
 
 const props = defineProps<{ message: ChatMessage }>();
 const { t } = useI18n();
+const store = useChatStore();
 
 const isAssistant = computed(() => props.message.role === "assistant");
 
@@ -20,6 +22,38 @@ const isAssistant = computed(() => props.message.role === "assistant");
 // (isomorphic-dompurify), so it does not break SSR hydration.
 const renderedHtml = computed(() =>
   isAssistant.value ? renderMarkdown(props.message.text) : "",
+);
+
+// Assistant turn still "thinking": it must be the turn CURRENTLY being streamed
+// (the store's active assistant id) AND carry no reply text yet. Keying on the
+// active id -- not merely on an empty body -- is what stops the spinner: `done`
+// and `error` both clear `activeAssistantId`, so a turn that settled without a
+// final answer (e.g. the reasoner exhausted its tool budget) no longer spins
+// forever. Once any text streams, it is also no longer pending.
+const isPending = computed(
+  () =>
+    isAssistant.value &&
+    props.message.text.length === 0 &&
+    store.activeAssistantId === props.message.id,
+);
+
+// The ReasoningCard renders above the reply when the turn has grounding OR is
+// still pending (so the "thinking" placeholder appears immediately).
+const showReasoning = computed(
+  () =>
+    isAssistant.value &&
+    ((props.message.reasoning?.trim().length ?? 0) > 0 || isPending.value),
+);
+
+// The reply bubble only appears once there is text or citations to show.
+const hasCitations = computed(
+  () => (props.message.citations?.length ?? 0) > 0,
+);
+const showBubble = computed(
+  () =>
+    !isAssistant.value ||
+    props.message.text.length > 0 ||
+    hasCitations.value,
 );
 </script>
 
@@ -36,7 +70,19 @@ const renderedHtml = computed(() =>
       />
       {{ message.role === "user" ? t("chat.you") : t("chat.assistant") }}
     </span>
+
+    <!-- Reasoning card: shown ABOVE the reply for the assistant turn. Carries
+         the "thinking" placeholder while pending and the perceiver observation
+         ("what the agent saw") once it lands. -->
+    <ChatReasoningCard
+      v-if="showReasoning"
+      class="max-w-[90%]"
+      :reasoning="message.reasoning"
+      :pending="isPending"
+    />
+
     <div
+      v-if="showBubble"
       class="max-w-[90%] rounded-[var(--radius-lg)] px-3 py-2 text-sm"
       :class="
         message.role === 'user'
