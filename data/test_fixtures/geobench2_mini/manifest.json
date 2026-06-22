@@ -1,0 +1,51 @@
+{
+  "_comment": "FIXTURE de FORMA para tests de ml/eval/paper_bench.py (US-069). NO es GEO-Bench-2 real: son 3 tasks agricolas minimas con la ESTRUCTURA del manifest (id/name/modality/label_space/split/items) para validar el contrato del loader y los evaluadores con backend mockeado. Cero dato cientifico real. El subset real se descarga via el loader oficial geobench y se versiona con DVC (ver docs/blockers/epic11-notas.md).",
+  "dataset": "geobench2-mini-fixture",
+  "tasks": [
+    {
+      "id": "m-crop-type",
+      "name": "Crop type classification (fixture)",
+      "modality": "classification",
+      "split": "test",
+      "label_space": ["maize", "wheat", "soybean", "rice"],
+      "items": [
+        {"item_id": "ct-001", "image_path": "", "gold_label": "maize"},
+        {"item_id": "ct-002", "image_path": "", "gold_label": "wheat"},
+        {"item_id": "ct-003", "image_path": "", "gold_label": "soybean"},
+        {"item_id": "ct-004", "image_path": "", "gold_label": "rice"},
+        {"item_id": "ct-005", "image_path": "", "gold_label": "maize"},
+        {"item_id": "ct-006", "image_path": "", "gold_label": "wheat"}
+      ]
+    },
+    {
+      "id": "m-land-cover",
+      "name": "Agricultural land cover (fixture)",
+      "modality": "classification",
+      "split": "test",
+      "label_space": ["cropland", "pasture", "orchard", "fallow"],
+      "items": [
+        {"item_id": "lc-001", "image_path": "", "gold_label": "cropland"},
+        {"item_id": "lc-002", "image_path": "", "gold_label": "pasture"},
+        {"item_id": "lc-003", "image_path": "", "gold_label": "orchard"},
+        {"item_id": "lc-004", "image_path": "", "gold_label": "fallow"},
+        {"item_id": "lc-005", "image_path": "", "gold_label": "cropland"},
+        {"item_id": "lc-006", "image_path": "", "gold_label": "pasture"}
+      ]
+    },
+    {
+      "id": "m-eurocrops",
+      "name": "EuroCrops parcel class (fixture)",
+      "modality": "classification",
+      "split": "test",
+      "label_space": ["vineyard", "olive", "cereals", "vegetables"],
+      "items": [
+        {"item_id": "ec-001", "image_path": "", "gold_label": "vineyard"},
+        {"item_id": "ec-002", "image_path": "", "gold_label": "olive"},
+        {"item_id": "ec-003", "image_path": "", "gold_label": "cereals"},
+        {"item_id": "ec-004", "image_path": "", "gold_label": "vegetables"},
+        {"item_id": "ec-005", "image_path": "", "gold_label": "vineyard"},
+        {"item_id": "ec-006", "image_path": "", "gold_label": "cereals"}
+      ]
+    }
+  ]
+}
