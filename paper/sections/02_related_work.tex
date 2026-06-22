@@ -1,0 +1,60 @@
+% Related Work --- NEW section (the Avance7 executive summary has none).
+% Every citation is anchored to its concrete use in the project; we make
+% no claims about papers beyond how they are used here.
+\section{Related Work}
+\label{sec:related}
+
+\subsection{Foundation models for Earth observation}
+AlphaEarth Foundations~\cite{brown2025alphaearth} provides global,
+analysis-ready annual embeddings, distributed on Google Earth Engine as
+the asset \texttt{SATELLITE\_EMBEDDING/V1/ANNUAL} (data version~1.1,
+64-dimensional, CC-BY-4.0). We use these embeddings directly as tabular
+features rather than training a foundation model of our own. DINOv3 in
+its satellite variant~\cite{oquab2023dinov3} contributes
+self-supervised frozen features. AnySat~\cite{astruc2024anysat} is a
+multi-resolution EO model that we evaluate as a segmentation backbone.
+For fine-grained, language-aligned understanding,
+FarSLIP~\cite{li2025farslip} adapts CLIP to remote sensing and supplies
+the contrastive vision-language branch used here. Recent work on the
+spatial transferability of these embeddings reports that performance
+degrades across regions and that few-shot adaptation is
+necessary~\cite{harvesting2026alphaearth}; our transfer experiments
+corroborate this.
+
+\subsection{Segmentation of satellite image time series}
+Temporal attention models established the state of the art on
+parcel-level crop mapping over image time series. U-TAE introduced a
+lightweight temporal self-attention encoder for
+SITS~\cite{garnot2021utae}, and the PASTIS / PASTIS-R benchmark
+formalised panoptic and semantic evaluation with spatially disjoint
+folds~\cite{garnot2021pastis}. TSViT~\cite{tarasiou2023tsvit} factorises
+attention along the temporal and spatial axes and is the strongest
+backbone in our study; we extend it with a phenological branch
+(TSViT-pheno) inspired by phenology-aware
+transformers~\cite{wen2025phenology}. As spatial-only baselines we
+include U-Net~\cite{ronneberger2015unet},
+DeepLabv3+~\cite{chen2018deeplabv3plus}, and
+SegFormer~\cite{xie2021segformer} (B0, RGB three-band variant). We note
+that, in contrast to earlier project plans, no volumetric Swin-UNETR
+model was trained; AnySat~\cite{astruc2024anysat} occupies the
+foundation-model slot in our comparison.
+
+\subsection{Vision-language models for agriculture}
+Multimodal benchmarks such as AgroMind~\cite{ruan2025agromind} probe
+agricultural remote-sensing understanding through question answering.
+AgroMind is evaluation-only (no training split, roughly 28{,}482 QA
+pairs); fine-tuning on it would induce data leakage, so we use it
+strictly for evaluation of the conversational layer. We rely on open
+language models --- Gemma~\cite{team2024gemma} and
+Qwen3~\cite{yang2025qwen3} (both Apache~2.0) --- and on the frontier
+Gemini~2.5~Pro reasoner~\cite{google2025gemini25} for cloud operation.
+
+\subsection{Grounded LLM agents}
+The \emph{Be My Eyes} pattern~\cite{huang2025bemyeyes} decouples
+perception from reasoning: perceivers emit textual observations and a
+frozen reasoner answers, which bounds hallucination because every cited
+figure originates in an auditable tool result. We adopt this pattern
+verbatim: our segmentation and tabular models are the perceivers, and
+the LLM is a frozen reasoner that never classifies pixels. We further
+combine a PostGIS spatial pre-filter with pgvector semantic search
+(Spatial-RAG) to ground responses in real neighbouring parcels.

@@ -1,0 +1,6 @@
+{"item_id": "it-001", "lang": "it", "question": "Quale indice evidenzia la vegetazione sana?", "options": {"A": "NDWI", "B": "NDVI", "C": "NDBI"}, "answer": "B", "image_path": "", "family": "indices"}
+{"item_id": "it-002", "lang": "it", "question": "Il NDWI misura il contenuto d'acqua?", "options": {"A": "Si", "B": "No"}, "answer": "A", "image_path": "", "family": "indices"}
+{"item_id": "it-003", "lang": "it", "question": "Quante bande spettrali ha Sentinel-2?", "options": {}, "answer": "13", "image_path": "", "family": "sensors"}
+{"item_id": "es-001", "lang": "es", "question": "Que indice resalta la vegetacion sana?", "options": {"A": "NDWI", "B": "NDVI", "C": "NDBI"}, "answer": "B", "image_path": "", "family": "indices"}
+{"item_id": "es-002", "lang": "es", "question": "El NDWI mide el contenido de agua?", "options": {"A": "Si", "B": "No"}, "answer": "A", "image_path": "", "family": "indices"}
+{"item_id": "es-003", "lang": "es", "question": "Cuantas bandas espectrales tiene Sentinel-2?", "options": {}, "answer": "13", "image_path": "", "family": "sensors"}

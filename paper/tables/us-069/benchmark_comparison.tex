@@ -1,0 +1,20 @@
+% PLACEHOLDER (US-069, EPIC 11 Paper Track) -- NO poblado todavia.
+%
+% Esta tabla se GENERA con `ml/eval/paper_bench.py::export_latex_table` SOLO tras
+% una corrida real de `run_paper_benchmark` (datos reales, cero placeholders --
+% regla de Arthur). Mientras la ejecucion REAL este bloqueada (Qwen3.5 vLLM en
+% H100 / US-048, GEO-Bench-2 descargado, AgroMind-IT/ES de US-068, presupuesto
+% Gemini), este archivo queda como marcador y NO se incluye con celdas inventadas.
+%
+% Como poblarlo (ver docs/blockers/epic11-notas.md):
+%   poetry run python -m ml.eval.paper_bench \
+%     --variants gemini qwen \
+%     --geobench-root data/geobench2 \
+%     --agromind-path data/agromind/agromind_subset_500.json \
+%     --itses-path data/agromind_itses/agromind_itses_500.jsonl \
+%     --out-latex paper/tables/us-069/benchmark_comparison.tex
+%
+% El comando sobreescribe este archivo con la tabla booktabs real (mean +- std
+% sobre 3 corridas + p-value Wilcoxon pareado Gemini vs Qwen en el caption).
+%
+% \input{paper/tables/us-069/benchmark_comparison.tex}  % en Avance7_equipo17.tex

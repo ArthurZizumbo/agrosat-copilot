@@ -9,7 +9,7 @@
     "generate": "nuxt generate",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
-    "lint": "eslint . --ext .vue,.ts,.tsx",
+    "lint": "eslint .",
     "typecheck": "nuxt typecheck",
     "test": "vitest run",
     "test:e2e": "playwright test",
@@ -29,6 +29,7 @@
     "vue": "^3.5.34"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
     "@iconify-json/lucide": "^1.2.112",
     "@nuxt/test-utils": "^4.0.3",
     "@playwright/test": "^1.60.0",
@@ -39,6 +40,7 @@
     "jsdom": "^29.1.1",
     "tailwindcss": "^4.3.0",
     "typescript": "^6.0.3",
+    "typescript-eslint": "^8.61.1",
     "vitest": "^4.1.6",
     "vue-tsc": "^3.2.8"
   },

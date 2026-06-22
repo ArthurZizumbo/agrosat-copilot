@@ -1,0 +1,116 @@
+% AgroSatCopilot --- paper manuscript (EPIC 11 Paper Track, US-071).
+% Modular structure: this file owns the preamble, title, and \input{}s.
+% Body language: English (international venue). The Spanish course
+% deliverable lives separately in docs/final_doc/Avance7_equipo17.tex.
+%
+% Build: see paper/AGENTS.md. Local: `make paper-pdf`. Docker (no local
+% LaTeX): `make paper-pdf-docker`.
+%
+% Template note: compiled with PRIMEarxiv.sty (arXiv-style) as the
+% autonomous default. Migration to the MDPI Remote Sensing class
+% (mdpi.cls) is a submission step (blocker B-MDPI-TEMPLATE in
+% docs/blockers/epic11-notas.md).
+\documentclass{article}
+
+\usepackage{PRIMEarxiv}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{amsfonts}
+\usepackage{amsmath,amssymb}
+\usepackage{nicefrac}
+\usepackage{microtype}
+\usepackage{fancyhdr}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{multirow}
+\usepackage{tabularx}
+\usepackage{import}
+
+% Figure search paths: paper-local figures plus the reproducible report
+% figures referenced by the deep US-072/US-073 sections.
+\graphicspath{%
+  {figures/}%
+  {../reports/ensemble/figures/us043_farslip/}%
+  {../reports/farslip/figures/}%
+  {../reports/segmentation/figures/}%
+}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    urlcolor=blue,
+    citecolor=blue
+}
+
+\pagestyle{fancy}
+\thispagestyle{empty}
+\rhead{\textit{}}
+\fancyhead[LO]{AgroSatCopilot --- Conversational Crop Mapping, Team 17}
+
+\title{AgroSatCopilot: A Grounded Conversational Copilot for
+Satellite-Based Crop Mapping with a Perceiver/Reasoner Architecture
+\thanks{\textit{\underline{Suggested citation}}: \textbf{\'Avila,
+Bocanegra, Zizumbo. AgroSatCopilot: A Grounded Conversational Copilot
+for Satellite-Based Crop Mapping. MNA Integrator Project, Tec de
+Monterrey, 2026.}}
+}
+
+\author{
+  Carlos Isaac \'Avila Guti\'errez \\
+  MNA --- Integrator Project \\
+  Tec de Monterrey \\
+  \texttt{A01796035@tec.mx} \\
+  \And
+  Carlos Aaron Bocanegra Buitr\'on \\
+  MNA --- Integrator Project \\
+  Tec de Monterrey \\
+  \texttt{A01796345@tec.mx} \\
+  \And
+  Arthur Jafed Zizumbo Velasco \\
+  MNA --- Integrator Project \\
+  Tec de Monterrey \\
+  \texttt{A01796363@tec.mx} \\
+}
+
+\begin{document}
+\maketitle
+
+\input{sections/00_abstract}
+\input{sections/01_introduction}
+\input{sections/02_related_work}
+\input{sections/03_method}
+\input{sections/04_experiments}
+\input{sections/05_results}
+
+% Deep modular studies contributed by sibling US in EPIC 11.
+% US-072 (FarSLIP) uses \input paths relative to sections/, so it is pulled
+% in with \subimport (import package) to keep its ../tables/ paths valid.
+% US-073 (multi-region) uses paths relative to the manuscript root and is
+% pulled in with a plain \input.
+\subimport{sections/}{method_farslip}
+\input{sections/experiments_multiregion}
+% Alias: US-072 forward-references sec:farslip_transfer; the transfer study
+% it points to is the US-073 multi-region section (sec:multiregion).
+\label{sec:farslip_transfer}
+
+\input{sections/06_discussion}
+\input{sections/07_conclusion}
+
+\section*{Acknowledgments}
+The authors thank Dr.\ Gerardo Jes\'us Camacho Gonz\'alez
+(gjcamacho@tec.mx) for his academic guidance as project sponsor, and the
+AgroSatCopilot team for their collective contributions to the shared
+repository.
+
+\bibliographystyle{plain}
+\bibliography{bib/refs}
+
+\input{sections/08_appendix}
+
+\end{document}

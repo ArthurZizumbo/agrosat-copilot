@@ -1,0 +1,72 @@
+% Experiments --- setup, datasets, metrics, harness. Numbers live in
+% Results; this section fixes the protocol. The LLM-benchmark table is a
+% honest placeholder pending US-069 (H100 eval), per the data-real rule.
+\section{Experimental Setup}
+\label{sec:experiments}
+
+\subsection{Datasets}
+\paragraph{PASTIS-R}~\cite{garnot2021pastis} is the primary benchmark:
+2{,}433 multi-temporal Sentinel-2 patches ($128\times128$ px), 18 crop
+classes, metropolitan France, with five spatially disjoint folds.
+Unless stated otherwise, segmentation models are evaluated on a
+held-out fold and ensemble combiners on out-of-fold predictions.
+
+\paragraph{Sen4AgriNet (Catalonia)}~\cite{sykas2022sen4agrinet}
+(CC-BY-SA-4.0) is used for the France$\rightarrow$Catalonia transfer
+study. A Catalonia subset is versioned with DVC
+(\texttt{data/sen4agrinet.dvc}).
+
+\paragraph{EuroCropsML}~\cite{reuss2025eurocropsml} (CC-BY-SA-4.0)
+supports the few-shot $k$-shot curve; the raw subset is versioned with
+DVC (\texttt{data/transfer/eurocropsml.dvc}).
+
+\paragraph{AgroMind}~\cite{ruan2025agromind} is used only to evaluate
+the conversational layer. It has no training split (about 28{,}482 QA
+pairs); fine-tuning on it would induce leakage, so it is strictly an
+evaluation set.
+
+\subsection{Metrics}
+Segmentation is reported with mean intersection over union (mIoU) and
+macro-averaged F1 at the parcel level; we also report pixel accuracy
+where relevant. Macro averaging is the primary objective because it
+penalises errors on rare and common crops equally, matching the
+business objective. Ensemble combiners are compared by out-of-fold
+macro F1 and accuracy.
+
+\subsection{Evaluation harness and reproducibility}
+All segmentation runs are scored by a shared evaluation harness
+(\texttt{ml/eval/}) that enforces spatially disjoint folds and aborts on
+geographic overlap between training and evaluation sets. A label-remap
+module (\texttt{ml/eval/class\_remap.py}) projects predictions onto the
+harmonised macro label space for cross-region comparison. Every figure
+reported in Section~\ref{sec:results} is anchored to a versioned
+artefact (JSON/CSV/registry) in the repository, recorded in
+\texttt{\% src:} comments in the source; datasets and weights are
+tracked with DVC and runs with MLflow.
+
+\subsection{Conversational-layer benchmark protocol}
+\label{sec:experiments-llm}
+The conversational layer is evaluated on AgroMind with an
+LLM-as-judge protocol comparing the frozen Gemini~2.5~Pro reasoner
+against the on-premises Qwen multimodal reasoner served via vLLM. The
+quantitative benchmark table is produced by a separate evaluation run
+on the H100 GPU (US-069) and is intentionally left as a structured
+placeholder here; numbers are not fabricated.
+Table~\ref{tab:llm-bench} fixes the column structure.
+
+\begin{table}[htbp]
+\caption{Conversational-layer benchmark (structure only; numbers
+pending the H100 evaluation, US-069).}
+\label{tab:llm-bench}
+\centering
+\begin{tabular}{lccc}
+\toprule
+\textbf{Reasoner (frozen)} & \textbf{Accuracy} & \textbf{Grounding}
+  & \textbf{LLM-judge} \\
+\midrule
+Gemini~2.5~Pro (cloud)      & --- & --- & --- \\
+Qwen3.5-35B-A3B (on-prem)   & --- & --- & --- \\
+\bottomrule
+\end{tabular}
+% src: pending US-069 (H100 eval) -- do not fill with synthetic numbers.
+\end{table}

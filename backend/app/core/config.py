@@ -119,6 +119,10 @@ class Settings(BaseSettings):
     # declared here so ``extra="forbid"`` accepts them in ``.env.local``).
     gemini_api_key: str = ""
     google_genai_use_vertexai: str = ""
+    # Zenodo deposition token for the AgroMind-IT/ES benchmark upload (US-068,
+    # EPIC 11 Paper Track). Only the metadata builder runs locally; the actual
+    # upload (blocker B3) reads this token. Empty by default (sponsor-provided).
+    zenodo_token: str = ""
     google_cloud_project: str = ""
     google_cloud_location: str = ""
     agrosat_llm_provider: str = ""

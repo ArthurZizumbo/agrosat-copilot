@@ -1,0 +1,18 @@
+\begin{table}[t]
+\centering
+\caption{EuroCropsML transnational few-shot transfer curve (XGBoost recipe on the parcel Sentinel-2 series, HCAT macro label-space, 8 classes). F1-macro mean $\pm$ std over 3 seeds per k-shot. France is NOT in EuroCropsML; the protocol is LV[+PT] $\rightarrow$ EE (Reuter et al. 2025, Table II), not France $\rightarrow$ Estonia. The no-pre-train column quantifies how source pre-training closes the gap at low k. Source: \texttt{data/transfer/eurocropsml\_fewshot\_results.parquet}. EuroCropsML (Reuter et al. 2025, CC-BY-SA-4.0).}
+\label{tab:eurocropsml_kshot}
+\begin{tabular}{rccc}
+\toprule
+$k$ & LV+PT $\rightarrow$ EE (pre-train) & LV $\rightarrow$ EE (pre-train) & LV $\rightarrow$ EE (no pre-train) \\
+\midrule
+1 & $0.315 \pm 0.005$ & $0.321 \pm 0.003$ & $0.015 \pm 0.015$ \\
+5 & $0.321 \pm 0.008$ & $0.349 \pm 0.022$ & $0.198 \pm 0.020$ \\
+10 & $0.338 \pm 0.004$ & $0.354 \pm 0.020$ & $0.230 \pm 0.005$ \\
+20 & $0.350 \pm 0.006$ & $0.382 \pm 0.015$ & $0.273 \pm 0.017$ \\
+100 & $0.380 \pm 0.006$ & $0.444 \pm 0.006$ & $0.380 \pm 0.013$ \\
+200 & $0.406 \pm 0.007$ & $0.464 \pm 0.001$ & $0.426 \pm 0.010$ \\
+500 & $0.420 \pm 0.007$ & $0.482 \pm 0.012$ & $0.472 \pm 0.008$ \\
+\bottomrule
+\end{tabular}
+\end{table}

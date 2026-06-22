@@ -348,7 +348,7 @@ _vm_scratch/
 # .local.md marca cualquier doc que NO debe versionarse.
 *.local.md
 
-# ── LaTeX (auxiliares de compilacion pdflatex, ver `make docs-pdf`) ───────────
+# ── LaTeX (auxiliares de compilacion pdflatex, ver `make docs-pdf` / `make paper-pdf`) ─
 # Los .pdf ya estan ignorados arriba; aqui van los byproducts regenerables.
 *.aux
 *.out
@@ -358,6 +358,8 @@ _vm_scratch/
 *.fls
 *.fdb_latexmk
 *.synctex.gz
+*.bbl
+*.blg
 
 # ── Misc ──────────────────────────────────────────────────────────────────────
 *.bak
@@ -380,6 +382,14 @@ data/transfer/eurocropsml/
 !data/transfer/eurocropsml/*.dvc
 data/transfer/eurocropsml/*.zip
 data/transfer/eurocropsml/*.part
+
+# ── US-068 AgroMind-IT/ES: seed Gemini + split publicado (datos, NO al repo) ──
+# Solo van a Git el README, el fixture minimo y el .zenodo.json; el seed crudo y
+# el benchmark de 500 pares se materializan tras generacion + revision humana.
+data/benchmark/agromind_it_es/seed.jsonl
+data/benchmark/agromind_it_es/agromind_it_es_500.jsonl
+!data/benchmark/agromind_it_es/seed.fixture.jsonl
+!data/benchmark/agromind_it_es/README.md
 data/transfer/eurocropsml/_feature_cache/
 # La curva de resultados (ligera) SI va al Git directo, pese al *.parquet global.
 !data/transfer/eurocropsml_fewshot_results.parquet

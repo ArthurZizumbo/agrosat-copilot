@@ -1,0 +1,73 @@
+% Introduction --- derived from the Avance7 "Problem Statement" and EDA
+% findings, reorganized as a paper introduction with an explicit thesis
+% and contributions.
+\section{Introduction}
+\label{sec:intro}
+
+Efficient agricultural management requires precise knowledge of what is
+grown, where, and in what quantity. Traditional methods based on
+physical field inspection are expensive, slow, and difficult to scale
+across large territories. Sentinel-2 imagery provides continuous,
+freely available coverage, yet turning it into reliable crop maps is a
+hard machine-learning problem for three structural reasons.
+
+\paragraph{Severe class imbalance.}
+Of the 18 crop classes in PASTIS-R~\cite{garnot2021pastis}, meadow
+accounts for up to 30\% of all parcels, while agronomically valuable
+classes such as rapeseed, sorghum, and orchard are minority classes
+(below 1\%). A model that ignores rare classes has little commercial
+value, so macro-averaged metrics are the right objective.
+
+\paragraph{Intra-class spectral ambiguity.}
+Crops such as soft winter wheat and winter barley are virtually
+indistinguishable in a single RGB image. Discrimination requires
+exploiting the \emph{temporal dynamics} of the spectral signature
+across the year --- greenup onset, NDVI peak, harvest date --- which
+motivates time-series architectures over single-image
+classifiers~\cite{tarasiou2023tsvit,garnot2021utae}.
+
+\paragraph{Production constraints.}
+A deployable system must produce parcel-level predictions (not only
+pixel-level), be explainable to non-technical users, and operate with
+inference latencies compatible with an interactive interface.
+
+\paragraph{Thesis.}
+We argue that crop-area quantification is best served by a
+\emph{perceiver/reasoner} architecture. A perception stack of
+specialised models --- temporal transformers, tabular classifiers over
+AlphaEarth annual embeddings~\cite{brown2025alphaearth}, and a
+contrastive vision-language branch~\cite{li2025farslip} --- produces
+auditable, plain-text observations per parcel. A \emph{frozen} frontier
+LLM then reasons over those observations and communicates with the
+user, following the \emph{Be My Eyes}
+pattern~\cite{huang2025bemyeyes}. The language layer is a
+communication, explanation, and tool-orchestration component --- not a
+pixel classifier --- which keeps every cited figure traceable to a
+deterministic tool result and preserves the option of on-premises
+operation for data sovereignty.
+
+\paragraph{Contributions.}
+\begin{enumerate}[leftmargin=*]
+    \item A comparative study of dense segmentation architectures on
+    PASTIS-R, identifying TSViT-pheno~\cite{tarasiou2023tsvit} as the
+    best individual model (mIoU 0.6253, macro F1 0.7500 on the
+    held-out fold), and heterogeneous ensembles that improve the
+    out-of-fold macro F1 over any single member
+    (Section~\ref{sec:results}).
+    \item A grounded conversational layer built on the \emph{Be My
+    Eyes} pattern with a dual frozen reasoner (Gemini~2.5~Pro cloud /
+    Qwen3.5-35B-A3B on-premises) and a closed geospatial toolset with
+    Spatial-RAG (Section~\ref{sec:method}).
+    \item An honest study of spatial transferability from France to
+    Catalonia (Sen4AgriNet~\cite{sykas2022sen4agrinet}) and a few-shot
+    $k$-shot curve on EuroCropsML~\cite{reuss2025eurocropsml},
+    showing that zero-shot transfer fails and that few-shot adaptation
+    is required, in line with reported
+    limits~\cite{harvesting2026alphaearth}
+    (Section~\ref{sec:results}).
+\end{enumerate}
+
+The working dataset is PASTIS-R (metropolitan France), with 2{,}433
+multi-temporal Sentinel-2 patches of $128\times128$ pixels, real
+farmer-validated labels, 18 crops, and spatially disjoint folds that
+prevent information leakage between training and evaluation.

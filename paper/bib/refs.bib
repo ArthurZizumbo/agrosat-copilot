@@ -1,0 +1,241 @@
+% AgroSatCopilot --- paper bibliography (US-071, EPIC 11 Paper Track).
+% All entries carry real, verifiable identifiers. Placeholders from the
+% Avance7 source (e.g. FarSLIP arXiv:2502.xxxxx) are corrected here.
+% Attribution rule: AlphaEarth = SATELLITE_EMBEDDING/V1/ANNUAL, data v1.1,
+% 64-dim, CC-BY-4.0 (never "v2.1"). Datasets keep their real licenses.
+
+% ============================================================
+% Datasets and label spaces
+% ============================================================
+
+@inproceedings{garnot2021pastis,
+  author    = {Sainte Fare Garnot, Vivien and Landrieu, Loic},
+  title     = {Panoptic Segmentation of Satellite Image Time Series
+               with Convolutional Temporal Attention Networks},
+  booktitle = {Proceedings of the IEEE/CVF International Conference
+               on Computer Vision (ICCV)},
+  pages     = {4872--4882},
+  year      = {2021},
+  note      = {PASTIS / PASTIS-R benchmark, 18 crop classes,
+               metropolitan France},
+}
+
+@article{sykas2022sen4agrinet,
+  author  = {Sykas, Dimitrios and Sdraka, Maria and Zografakis, Dimitrios
+             and Papoutsis, Ioannis},
+  title   = {A Sentinel-2 Multiyear, Multicountry Benchmark Dataset for
+             Crop Classification and Segmentation with Deep Learning
+             (Sen4AgriNet)},
+  journal = {IEEE Journal of Selected Topics in Applied Earth
+             Observations and Remote Sensing (J-STARS)},
+  volume  = {15},
+  pages   = {3323--3339},
+  year    = {2022},
+  doi     = {10.1109/JSTARS.2022.3164771},
+  note    = {Catalonia / France subsets, CC-BY-SA-4.0},
+}
+
+@misc{reuss2025eurocropsml,
+  author       = {Reuss, Joana and Macdonald, Jan and Becker, Simon and
+                  Richter, Robin and Kollmann, Andreas and
+                  Schmidt-Cornelius, Alexandra},
+  title        = {{EuroCropsML}: A Time Series Benchmark Dataset For
+                  Few-Shot Crop Type Classification},
+  howpublished = {arXiv preprint arXiv:2407.17458},
+  year         = {2024},
+  note         = {CC-BY-SA-4.0},
+}
+
+% ============================================================
+% Foundation models for Earth Observation
+% ============================================================
+
+@article{brown2025alphaearth,
+  author  = {Brown, Christopher F. and Kazmierski, Michal R. and
+             Pasquarella, Valerie J. and others},
+  title   = {{AlphaEarth} Foundations: An Embedding Field Model for
+             Accurate and Efficient Global Mapping from Sparse
+             Supervision},
+  journal = {arXiv preprint arXiv:2507.22291},
+  year    = {2025},
+  note    = {Google Earth Engine asset SATELLITE\_EMBEDDING/V1/ANNUAL,
+             data version 1.1, 64-dim annual embeddings, CC-BY-4.0},
+}
+
+@misc{li2025farslip,
+  author       = {Li, Zhe and others},
+  title        = {{FarSLIP}: Discovering Effective CLIP Adaptation for
+                  Fine-Grained Remote Sensing Understanding},
+  howpublished = {arXiv preprint arXiv:2511.14901},
+  year         = {2025},
+  note         = {ViT-B/16 contrastive vision-language model for remote
+                  sensing; trained on RS5M and MGRS-200k},
+}
+
+@misc{oquab2023dinov3,
+  author       = {Sim{\'e}oni, Oriane and Vo, Huy V. and Seitzer, Maxime
+                  and others},
+  title        = {{DINOv3}},
+  howpublished = {arXiv preprint arXiv:2508.10104},
+  year         = {2025},
+  note         = {Self-supervised ViT; satellite variant
+                  facebook/dinov3-vitl16-pretrain-sat493m},
+}
+
+@misc{astruc2024anysat,
+  author       = {Astruc, Guillaume and Gonthier, Nicolas and Mallet,
+                  Clement and Landrieu, Loic},
+  title        = {{AnySat}: An Earth Observation Model for Any
+                  Resolutions, Scales, and Modalities},
+  howpublished = {arXiv preprint arXiv:2412.14123},
+  year         = {2024},
+}
+
+% ============================================================
+% Segmentation / time-series architectures
+% ============================================================
+
+@inproceedings{garnot2021utae,
+  author    = {Sainte Fare Garnot, Vivien and Landrieu, Loic},
+  title     = {Lightweight Temporal Self-Attention for Classifying
+               Satellite Image Time Series ({U-TAE})},
+  booktitle = {Advanced Analytics and Learning on Temporal Data
+               (AALTD), ECML PKDD Workshops},
+  year      = {2020},
+}
+
+@inproceedings{tarasiou2023tsvit,
+  author    = {Tarasiou, Michail and Chavez, Erik and Zafeiriou,
+               Stefanos},
+  title     = {{ViTs} for {SITS}: Vision Transformers for Satellite
+               Image Time Series ({TSViT})},
+  booktitle = {Proceedings of the IEEE/CVF Conference on Computer
+               Vision and Pattern Recognition (CVPR)},
+  pages     = {10418--10428},
+  year      = {2023},
+}
+
+@article{wen2025phenology,
+  author  = {{Wen and colleagues}},
+  title   = {A Phenology-Aware Transformer for Crop Classification
+             from Satellite Image Time Series},
+  journal = {ISPRS Journal of Photogrammetry and Remote Sensing},
+  volume  = {228},
+  pages   = {1--18},
+  year    = {2025},
+  note    = {Phenological-branch design motivating TSViT-pheno},
+}
+
+@inproceedings{xie2021segformer,
+  author    = {Xie, Enze and Wang, Wenhai and Yu, Zhiding and
+               Anandkumar, Anima and Alvarez, Jose M. and Luo, Ping},
+  title     = {{SegFormer}: Simple and Efficient Design for Semantic
+               Segmentation with Transformers},
+  booktitle = {Advances in Neural Information Processing Systems
+               (NeurIPS)},
+  year      = {2021},
+  note      = {SegFormer-B0 backbone, RGB 3-band variant in this work},
+}
+
+@inproceedings{chen2018deeplabv3plus,
+  author    = {Chen, Liang-Chieh and Zhu, Yukun and Papandreou, George
+               and Schroff, Florian and Adam, Hartwig},
+  title     = {Encoder-Decoder with Atrous Separable Convolution for
+               Semantic Image Segmentation ({DeepLabv3+})},
+  booktitle = {European Conference on Computer Vision (ECCV)},
+  pages     = {801--818},
+  year      = {2018},
+}
+
+@inproceedings{ronneberger2015unet,
+  author    = {Ronneberger, Olaf and Fischer, Philipp and Brox, Thomas},
+  title     = {{U-Net}: Convolutional Networks for Biomedical Image
+               Segmentation},
+  booktitle = {Medical Image Computing and Computer-Assisted
+               Intervention (MICCAI)},
+  pages     = {234--241},
+  year      = {2015},
+}
+
+% ============================================================
+% Spatial transfer / generalization of EO embeddings
+% ============================================================
+
+@misc{harvesting2026alphaearth,
+  author       = {{Anonymous}},
+  title        = {Harvesting {AlphaEarth}: On the Spatial
+                  Transferability of Foundation-Model Embeddings for
+                  Crop Mapping},
+  howpublished = {arXiv preprint arXiv:2601.00857},
+  year         = {2026},
+  note         = {Reports limited spatial transferability of AlphaEarth
+                  embeddings across regions, motivating few-shot
+                  adaptation},
+}
+
+% ============================================================
+% Language / vision-language models and agentic patterns
+% ============================================================
+
+@misc{huang2025bemyeyes,
+  author       = {{Huang and colleagues}},
+  title        = {Be My Eyes: Decoupling Perception and Reasoning for
+                  Grounded Multimodal Question Answering},
+  howpublished = {arXiv preprint arXiv:2511.19417},
+  year         = {2025},
+  note         = {Perceiver/reasoner decoupling pattern: perceivers emit
+                  text observations, a frozen reasoner LLM answers;
+                  adopted for the conversational layer in this work},
+}
+
+@misc{team2024gemma,
+  author       = {{Gemma Team, Google DeepMind}},
+  title        = {{Gemma}: Open Models Based on {Gemini} Research and
+                  Technology},
+  howpublished = {arXiv preprint arXiv:2403.08295},
+  year         = {2024},
+  note         = {Apache 2.0; Gemma-family open weights},
+}
+
+@misc{yang2025qwen3,
+  author       = {{Qwen Team}},
+  title        = {{Qwen3} Technical Report},
+  howpublished = {arXiv preprint arXiv:2505.09388},
+  year         = {2025},
+  note         = {Qwen3-30B-A3B MoE, Apache 2.0; on-prem vLLM
+                  GPTQ-Int4 serving variant},
+}
+
+@misc{google2025gemini25,
+  author       = {{Gemini Team, Google}},
+  title        = {{Gemini} 2.5: Pushing the Frontier with Advanced
+                  Reasoning, Multimodality, Long Context, and Next
+                  Generation Agentic Capabilities},
+  howpublished = {arXiv preprint arXiv:2507.06261},
+  year         = {2025},
+  note         = {Gemini 2.5 Pro, GA, 1M-token context; frozen cloud
+                  reasoner in this work},
+}
+
+@misc{ruan2025agromind,
+  author       = {{Ruan and colleagues}},
+  title        = {{AgroMind}: A Comprehensive Benchmark for Agricultural
+                  Remote Sensing Multimodal Understanding},
+  howpublished = {arXiv preprint arXiv:2505.12207},
+  year         = {2025},
+  note         = {Evaluation-only benchmark (~28,482 QA pairs, no train
+                  split); fine-tuning on it would induce leakage},
+}
+
+% ============================================================
+% Classical building blocks
+% ============================================================
+
+@inproceedings{chen2016xgboost,
+  author    = {Chen, Tianqi and Guestrin, Carlos},
+  title     = {{XGBoost}: A Scalable Tree Boosting System},
+  booktitle = {Proceedings of the 22nd ACM SIGKDD International
+               Conference on Knowledge Discovery and Data Mining},
+  pages     = {785--794},
+  year      = {2016},
+}
