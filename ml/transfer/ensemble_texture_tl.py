@@ -126,6 +126,7 @@ class _RegionTexture:
 def _load_region_texture(
     region: str, *, sh_client: object, windows: list[tuple[str, str]],
     max_parcels: int, size: int, max_cloud: float, seed: int,
+    stratify_keep: set[str] | None = None, per_class: int | None = None,
 ) -> _RegionTexture:
     """Download real-texture series for a region's parcels and pair with AlphaEarth.
 
@@ -158,7 +159,16 @@ def _load_region_texture(
     )
     counts = df.group_by("leaf").len().filter(pl.col("len") >= _MIN_LEAF_SUPPORT)
     df = df.filter(pl.col("leaf").is_in(counts["leaf"].to_list()))
-    if df.height > max_parcels:
+    if stratify_keep is not None and per_class is not None:
+        # Representative per-class draw (rare leaves not starved). Restricts to the
+        # label-space and caps each leaf at ``per_class``.
+        from ml.transfer.finetune_baltico import stratified_parcel_sample
+
+        picked = stratified_parcel_sample(
+            df["leaf"].to_list(), keep=stratify_keep, per_class=per_class, seed=seed
+        )
+        df = df[picked]
+    elif df.height > max_parcels:
         df = df.sample(n=max_parcels, seed=seed, shuffle=True)
 
     lons = df["lon"].to_list()

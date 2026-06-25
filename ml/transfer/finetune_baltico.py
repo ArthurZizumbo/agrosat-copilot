@@ -59,6 +59,7 @@ __all__ = [
     "build_baltic_label_space",
     "build_finetune_model",
     "run_finetune",
+    "stratified_parcel_sample",
     "warm_start_head",
 ]
 
@@ -147,7 +148,46 @@ class FineTuneConfig:
     weight_decay: float = 1e-4
     batch_size: int = 16
     max_parcels_per_region: int = 1500
+    #: When set, use a per-class (stratified) sample of this many parcels per leaf
+    #: instead of a global random draw -- the representative sample the EDA calls
+    #: for (rare leaves like ``winter_barley`` / ``rye`` are not starved).
+    per_class: int | None = None
     seed: int = 42
+
+
+def stratified_parcel_sample(
+    leaves: list[str],
+    *,
+    keep: set[str],
+    per_class: int,
+    seed: int,
+) -> list[int]:
+    """Return row indices for a per-class (stratified) parcel sample.
+
+    Samples up to ``per_class`` parcels for EACH leaf in ``keep`` (capped at the
+    available support), so rare leaves (e.g. ``winter_barley``, ``rye``) are not
+    starved by a global random draw that favours the abundant ones. This is the
+    representative sample the EDA calls for.
+
+    Args:
+        leaves: Per-parcel leaf labels (row-aligned with the source frame).
+        keep: The label-space to restrict to.
+        per_class: Target parcels per leaf (capped at its support).
+        seed: RNG seed.
+
+    Returns:
+        Sorted list of selected row indices.
+    """
+    rng = np.random.default_rng(seed)
+    by_leaf: dict[str, list[int]] = {}
+    for i, leaf in enumerate(leaves):
+        if leaf in keep:
+            by_leaf.setdefault(leaf, []).append(i)
+    picked: list[int] = []
+    for idxs in by_leaf.values():
+        take = min(per_class, len(idxs))
+        picked.extend(rng.choice(idxs, size=take, replace=False).tolist())
+    return sorted(picked)
 
 
 def build_baltic_label_space(
@@ -367,6 +407,8 @@ def run_finetune(
             region, sh_client=sh_client, windows=windows,
             max_parcels=config.max_parcels_per_region,
             size=128, max_cloud=25.0, seed=config.seed,
+            stratify_keep=keep if config.per_class else None,
+            per_class=config.per_class,
         )
         mask = np.array([leaf in keep for leaf in reg.leaf], dtype=bool)
         patches = [p for p, m in zip(reg.patches, mask, strict=True) if m]
@@ -473,6 +515,27 @@ def run_finetune(
     coarse_true = [_coarse(t) for t in true_leaves]
     coarse_pred = [_coarse(p) for p in pred_leaves]
     coarse_f1 = float(f1_score(coarse_true, coarse_pred, average="macro"))
+
+    from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+
+    fine_acc = float(accuracy_score(true_leaves, pred_leaves))
+    coarse_acc = float(accuracy_score(coarse_true, coarse_pred))
+    labels_sorted = sorted(set(true_leaves))
+    prec, rec, f1pc, sup = precision_recall_fscore_support(
+        true_leaves, pred_leaves, labels=labels_sorted, average=None, zero_division=0
+    )
+    per_class = [
+        {
+            "leaf": leaf,
+            "is_new": leaf in label_space.new,
+            "precision": round(float(prec[i]), 4),
+            "recall": round(float(rec[i]), 4),
+            "f1": round(float(f1pc[i]), 4),
+            "support": int(sup[i]),
+            "coarse": _coarse(leaf),
+        }
+        for i, leaf in enumerate(labels_sorted)
+    ]
     summary = {
         "model_kind": config.model_kind,
         "source": source,
@@ -484,6 +547,18 @@ def run_finetune(
         "n_new": len(label_space.new),
         "fine_macro_f1": round(fine_f1, 4),
         "coarse_macro_f1": round(coarse_f1, 4),
+        "fine_accuracy": round(fine_acc, 4),
+        "coarse_accuracy": round(coarse_acc, 4),
+        "per_class": per_class,
+        # Raw predictions so a notebook can rebuild the confusion matrix / examples
+        # without re-running the GPU forward.
+        "y_true_leaf": true_leaves,
+        "y_pred_leaf": pred_leaves,
+        "conserved_leaves": list(label_space.conserved),
+        "new_leaves": list(label_space.new),
     }
-    logger.info("finetune_done", **summary)
+    logger.info(
+        "finetune_done",
+        **{k: v for k, v in summary.items() if not isinstance(v, list)},
+    )
     return summary
