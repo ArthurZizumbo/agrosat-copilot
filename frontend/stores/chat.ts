@@ -354,8 +354,8 @@ export const useChatStore = defineStore("chat", {
   // tool or a half-streamed turn would be incorrect. `session_id` is NOT
   // duplicated here — it already persists via the `agrosat-session-id` cookie
   // in useSession. SSR-safe: `localStorage()` is a no-op on the server, so the
-  // store hydrates from localStorage on the client only (transcript wrapped in
-  // <ClientOnly> in ChatDock to avoid a hydration mismatch).
+  // persisted state never reaches the server render and the store hydrates from
+  // localStorage on the client only -- that is what avoids a hydration mismatch.
   persist: {
     storage: piniaPluginPersistedstate.localStorage(),
     pick: ["messages", "llmVariant"],
