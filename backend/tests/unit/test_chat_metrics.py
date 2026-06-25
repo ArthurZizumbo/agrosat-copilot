@@ -87,9 +87,7 @@ def test_accumulator_is_immutable() -> None:
 def test_usage_captured_into_token_fields() -> None:
     """Provider usage is surfaced verbatim into the three token fields."""
     acc = ChatMetricsAccumulator(variant="gemini", model="gemini-3.5-flash")
-    acc = acc.observe_usage(
-        {"prompt_tokens": 120, "completion_tokens": 45, "total_tokens": 165}
-    )
+    acc = acc.observe_usage({"prompt_tokens": 120, "completion_tokens": 45, "total_tokens": 165})
     metrics = acc.finalise(900.0)
 
     assert metrics.tokens_prompt == 120
