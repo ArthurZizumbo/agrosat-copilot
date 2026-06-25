@@ -53,6 +53,17 @@ _ALPHAEARTH_COLS: tuple[str, ...] = tuple(f"dim_{i:02d}" for i in range(64))
 _MIN_LEAF_SUPPORT: int = 10
 _RANDOM_STATE: int = 42
 
+#: On-disk cache of downloaded Sentinel Hub patches, keyed by region + coordinate.
+#: A SH request is paid quota; caching every downloaded parcel means a re-run never
+#: re-pays for a parcel it already fetched. Lives OUTSIDE the DVC-tracked data dirs
+#: (heavy, derived) -- gitignored.
+_PATCH_CACHE_DIR: Path = _TRANSFER_DIR / "_sh_patch_cache"
+
+
+def _coord_key(lon: float, lat: float) -> str:
+    """Stable filename key for a parcel centroid (6 decimals ~ 0.1 m precision)."""
+    return f"{lon:.6f}_{lat:.6f}"
+
 
 @dataclass
 class TextureTLResult:
@@ -176,23 +187,61 @@ def _load_region_texture(
     leaves = df["leaf"].to_list()
     annual_mat = df.select(_ALPHAEARTH_COLS).to_numpy().astype(np.float64)
 
-    # One ORBIT request per parcel (whole season multi-temporal), downloaded
-    # concurrently. date_from/date_to span the season; the per-pixel SCL mask +
-    # max_cloud keep only coherent frames.
+    # One ORBIT request per parcel (whole season multi-temporal). EVERY downloaded
+    # patch is CACHED to disk keyed by (region, lon, lat, size) so a parcel is
+    # NEVER re-downloaded across runs -- a Sentinel Hub request is paid quota, and
+    # re-fetching the same parcel wastes it. On a re-run only the parcels still
+    # missing from the cache hit the network.
     coords = list(zip(lons, lats, strict=True))
     date_from, date_to = windows[0][0], windows[-1][1]
-    stacks = sh_client.parcel_series_batch(  # type: ignore[attr-defined]
-        coords, date_from=date_from, date_to=date_to,
-        size=size, max_cloud=max_cloud, max_workers=2,
+    cache_dir = _PATCH_CACHE_DIR / f"{region}_s{size}_c{int(max_cloud)}"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    cached: dict[int, np.ndarray | None] = {}
+    to_fetch: list[int] = []
+    for i, (lon, lat) in enumerate(coords):
+        cpath = cache_dir / f"{_coord_key(lon, lat)}.npz"
+        if cpath.is_file():
+            try:
+                cached[i] = np.load(cpath)["stack"]
+            except Exception:  # noqa: BLE001 -- corrupt cache entry re-fetched
+                to_fetch.append(i)
+        else:
+            to_fetch.append(i)
+    logger.info(
+        "texture_cache_status", region=region,
+        n_cached=len(cached), n_to_fetch=len(to_fetch), n_total=len(coords),
     )
+
+    if to_fetch:
+        fetch_coords = [coords[i] for i in to_fetch]
+        fetched = sh_client.parcel_series_batch(  # type: ignore[attr-defined]
+            fetch_coords, date_from=date_from, date_to=date_to,
+            size=size, max_cloud=max_cloud, max_workers=2,
+        )
+        for j, i in enumerate(to_fetch):
+            stack = fetched[j]
+            cpath = cache_dir / f"{_coord_key(coords[i][0], coords[i][1])}.npz"
+            if stack is not None:
+                # Cache the raw stack BEFORE the timestep fit, so the cache is
+                # reusable regardless of n_timesteps; persisted immediately so a
+                # crash mid-batch keeps every parcel already paid for.
+                np.savez_compressed(cpath, stack=stack)
+                cached[i] = stack
+            else:
+                # Persist an empty marker so a cloud-failed parcel is not re-tried
+                # every run (it would just fail again and waste the request).
+                np.savez_compressed(cpath, stack=np.zeros((0,), dtype=np.float32))
+                cached[i] = None
 
     annual_rows: list[np.ndarray] = []
     patch_rows: list[np.ndarray] = []
     leaf_rows: list[str] = []
     n_downloaded = 0
     n_dropped = 0
-    for i, stack in enumerate(stacks):
-        if stack is None:
+    for i in range(len(coords)):
+        stack = cached.get(i)
+        if stack is None or stack.size == 0:
             n_dropped += 1
             continue
         patch_rows.append(fit_patch_to_timesteps(stack))
@@ -201,7 +250,9 @@ def _load_region_texture(
         n_downloaded += 1
 
     logger.info(
-        "texture_region_loaded", region=region, n_downloaded=n_downloaded, n_dropped=n_dropped
+        "texture_region_loaded", region=region,
+        n_downloaded=n_downloaded, n_dropped=n_dropped,
+        n_from_cache=len(coords) - len(to_fetch),
     )
     return _RegionTexture(
         annual=np.asarray(annual_rows, dtype=np.float64),
