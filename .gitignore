@@ -391,6 +391,8 @@ data/benchmark/agromind_it_es/agromind_it_es_500.jsonl
 !data/benchmark/agromind_it_es/seed.fixture.jsonl
 !data/benchmark/agromind_it_es/README.md
 data/transfer/eurocropsml/_feature_cache/
+# Cache de features temporales (pesado, derivado de los npz) fuera del dir DVC.
+data/transfer/_temporal_cache/
 # La curva de resultados (ligera) SI va al Git directo, pese al *.parquet global.
 !data/transfer/eurocropsml_fewshot_results.parquet
 

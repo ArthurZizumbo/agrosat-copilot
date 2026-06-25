@@ -112,17 +112,35 @@ BENCHMARKS: tuple[str, ...] = ("GEO-Bench-2", "AgroMind", "AgroMind-IT/ES")
 DEFAULT_GEOBENCH_ROOT: Path = Path("data/geobench2")
 
 #: Default path of the AgroMind-IT/ES bilingual JSONL (US-068). Absent until
-#: US-068 (native human review) delivers it -> the cell is marked pending.
+#: US-068 (native human review) delivers it -> the cell is marked pending. The
+#: real delivered seed lives at ``data/benchmark/agromind_it_es/seed.jsonl`` and is
+#: passed via ``--itses-path``.
 DEFAULT_ITSES_PATH: Path = Path("data/agromind_itses/agromind_itses_500.jsonl")
 
-#: The two paper reasoner variants (AC literal): Gemini 2.5-pro (cloud, GA, 1M
-#: ctx) and Qwen3.5-35B-A3B (on-prem vLLM, GPTQ-Int4, single-GPU). ``multimodal``
-#: gates whether a variant may consume the GEO-Bench-2 / AgroMind tiles; the
-#: on-prem text Qwen is text-only and skips image-only items (reported, never
-#: papered over). Gemma 4 26B base-only is OUT of the headline pair (its LoRA is
-#: OUT, ADR-009) and can be added via the CLI from ``agent_bench.DEFAULT_VARIANTS``.
+#: Default base folder for the AgroMind-IT/ES Sentinel-2 tiles. The US-068 seed
+#: references images by bare filename (``classification_0000.png``) that live in
+#: ``data/s2_italia``, NOT under the AgroMind image root, so the IT/ES evaluator
+#: resolves against this root independently of :data:`DEFAULT_IMAGE_ROOT`.
+DEFAULT_ITSES_IMAGE_ROOT: Path = Path("data/s2_italia")
+
+#: The two paper reasoner variants: the cloud Gemini reasoner and Qwen3.5-35B-A3B
+#: (on-prem vLLM, GPTQ-Int4, single-GPU). ``multimodal`` gates whether a variant
+#: may consume the GEO-Bench-2 / AgroMind tiles; the on-prem text Qwen is
+#: text-only and skips image-only items (reported, never papered over). Gemma 4
+#: 26B base-only is OUT of the headline pair (its LoRA is OUT, ADR-009) and can be
+#: added via the CLI from ``agent_bench.DEFAULT_VARIANTS``.
+#:
+#: BENCHMARK MODEL CHOICE (US-069, documented deviation): the manuscript prose
+#: cites Gemini **2.5-pro** (GA, 1M ctx) as the cloud reasoner, but the eval
+#: BENCHMARK is run with **gemini-2.5-flash**. Flash is much faster and returns
+#: far fewer ``504 DEADLINE_EXCEEDED`` on multimodal (image) items -- 2.5-pro over
+#: images repeatedly deadlined and stalled the run (it spent ~$0 because the very
+#: first multimodal call 504'd). The reported column is therefore flash; this is
+#: stated in the LaTeX caption so the table never implies the pro model produced
+#: the numbers. The pro model can still be forced via
+#: ``--variants`` + a custom ReasonerVariant if a pro re-run is wanted later.
 PAPER_VARIANTS: tuple[ReasonerVariant, ...] = (
-    ReasonerVariant(name="gemini", model="gemini-2.5-pro", multimodal=True),
+    ReasonerVariant(name="gemini", model="gemini-2.5-flash", multimodal=True),
     ReasonerVariant(name="qwen", model="qwen35", multimodal=False),
 )
 
@@ -151,6 +169,10 @@ _MIN_GEOBENCH_N: int = 5
 #: entry yields a NaN cost (reported as n/a), never a fabricated number.
 _TOKEN_PRICE_USD_PER_M: dict[str, tuple[float, float]] = {
     "gemini-2.5-pro": (1.25, 10.0),
+    # Gemini 2.5-flash public pricing ($0.30 in / $2.50 out per M tokens). This is
+    # the model the US-069 benchmark actually runs (see PAPER_VARIANTS), so its
+    # cost column is real rather than NaN.
+    "gemini-2.5-flash": (0.30, 2.50),
 }
 
 #: Amortised H100 GPU-hour cost (USD) for the on-prem Qwen per-query estimate.
@@ -415,8 +437,22 @@ def load_agromind_itses(path: Path = DEFAULT_ITSES_PATH) -> list[AgroMindItEsIte
     items: list[AgroMindItEsItem] = []
     for rec in _read_jsonl(Path(path)):
         options = {str(k): str(v) for k, v in (rec.get("options") or {}).items()}
-        image_path = str(rec.get("image_path") or "").strip()
+        # The US-068 seed (seed.jsonl) carries the image as a bare filename under
+        # the ``image`` key (e.g. ``classification_0000.png``, resolved against
+        # data/s2_italia) and a ``category`` field rather than ``family``; older
+        # fixtures used ``image_path``/``family``. Accept BOTH so the real seed is
+        # not silently loaded as text-only (which made Qwen skip all 500 items and
+        # Gemini answer blind -- the bug behind the empty IT/ES column).
+        image_path = str(rec.get("image_path") or rec.get("image") or "").strip()
         has_option_image = any(_is_image_value(v) for v in options.values())
+        # Honour an explicit ``is_multimodal`` flag when the record sets one;
+        # otherwise infer it from the presence of an image (base or option).
+        raw_multimodal = rec.get("is_multimodal")
+        is_multimodal = (
+            bool(raw_multimodal)
+            if raw_multimodal is not None
+            else (bool(image_path) or has_option_image)
+        )
         items.append(
             AgroMindItEsItem(
                 item_id=str(rec.get("item_id") or ""),
@@ -425,8 +461,8 @@ def load_agromind_itses(path: Path = DEFAULT_ITSES_PATH) -> list[AgroMindItEsIte
                 options=options,
                 answer=str(rec.get("answer") or "").strip(),
                 image_path=image_path,
-                family=str(rec.get("family") or ""),
-                is_multimodal=bool(image_path) or has_option_image,
+                family=str(rec.get("family") or rec.get("category") or ""),
+                is_multimodal=is_multimodal,
             )
         )
     logger.info(
@@ -712,10 +748,11 @@ async def eval_geobench2(
 
         start = time.perf_counter()
         try:
-            answer = await asyncio.wait_for(
-                _run_backend_text(resolved_backend, item.question, image_parts),
-                timeout=_ITEM_TIMEOUT_S,
-            )
+            # ``_run_backend_text`` (shared with agent_bench) applies a per-attempt
+            # timeout and retries transient 504/503/429 errors with backoff
+            # (US-069); wrapping it in an outer ``wait_for`` would truncate the
+            # retry chain, so the per-item ``try`` alone guards the call.
+            answer = await _run_backend_text(resolved_backend, item.question, image_parts)
         except Exception as exc:  # noqa: BLE001 - one item must not crash the run
             logger.warning(
                 "geobench2_item_failed", variant=variant.name, item=item.item_id, error=str(exc)
@@ -782,7 +819,7 @@ async def eval_agromind_itses(
     backend: LLMBackend | None = None,
     judge: HallucinationJudge | None = None,
     seed: int = 0,
-    image_root: Path = DEFAULT_IMAGE_ROOT,
+    image_root: Path = DEFAULT_ITSES_IMAGE_ROOT,
     trace_sink: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, float | int]:
     """Evaluate one variant on AgroMind-IT/ES (bilingual QA, eval-only).
@@ -832,10 +869,10 @@ async def eval_agromind_itses(
         prompt = _build_itses_prompt(item)
         start = time.perf_counter()
         try:
-            answer = await asyncio.wait_for(
-                _run_backend_text(resolved_backend, prompt, image_parts),
-                timeout=_ITEM_TIMEOUT_S,
-            )
+            # Per-attempt timeout + transient-error retry (504/503/429) live inside
+            # ``_run_backend_text`` (US-069); no outer ``wait_for`` so the retry
+            # chain is not truncated.
+            answer = await _run_backend_text(resolved_backend, prompt, image_parts)
         except Exception as exc:  # noqa: BLE001 - one item must not crash the run
             logger.warning(
                 "itses_item_failed", variant=variant.name, item=item.item_id, error=str(exc)
@@ -1005,6 +1042,7 @@ def _run_one(
     seed: int,
     image_root: Path,
     geobench_root: Path,
+    itses_image_root: Path,
 ) -> dict[str, float | int]:
     """Run a single (benchmark, variant, seed) and return its raw metric mapping.
 
@@ -1017,8 +1055,11 @@ def _run_one(
         backend: Injected backend for the variant (``None`` -> built lazily).
         judge: Injectable hallucination judge.
         seed: The seed tag.
-        image_root: Base folder for AgroMind / IT-ES images.
+        image_root: Base folder for AgroMind images.
         geobench_root: Base folder for GEO-Bench-2 tiles.
+        itses_image_root: Base folder for AgroMind-IT/ES tiles (``data/s2_italia``;
+            distinct from the AgroMind image root because the US-068 seed
+            references bare filenames there).
 
     Returns:
         The raw metric mapping returned by the per-benchmark evaluator.
@@ -1038,7 +1079,8 @@ def _run_one(
         )
     return asyncio.run(
         eval_agromind_itses(
-            variant, itses_items, backend=backend, judge=judge, seed=seed, image_root=image_root
+            variant, itses_items, backend=backend, judge=judge, seed=seed,
+            image_root=itses_image_root,
         )
     )
 
@@ -1068,8 +1110,10 @@ def run_paper_benchmark(
     agromind_path: Path = DEFAULT_AGROMIND_PATH,
     itses_path: Path = DEFAULT_ITSES_PATH,
     image_root: Path = DEFAULT_IMAGE_ROOT,
+    itses_image_root: Path = DEFAULT_ITSES_IMAGE_ROOT,
     geobench_tasks: Sequence[str] | None = None,
     max_per_task: int = 0,
+    max_items: int = 0,
     backends: dict[str, LLMBackend] | None = None,
     judge: HallucinationJudge | None = None,
     checkpoint_path: Path | None = None,
@@ -1097,9 +1141,13 @@ def run_paper_benchmark(
         geobench_root: GEO-Bench-2 subset root (holds ``manifest.json``).
         agromind_path: AgroMind subset JSON path.
         itses_path: AgroMind-IT/ES JSONL path (US-068).
+        itses_image_root: Base folder for AgroMind-IT/ES tiles (``data/s2_italia``).
         image_root: Base folder for AgroMind / IT-ES images.
         geobench_tasks: Optional GEO-Bench-2 task allow-list (>= 3 agricultural).
         max_per_task: Cap items per GEO-Bench-2 task (``0`` = all).
+        max_items: Cap the AgroMind / IT-ES item count for a bounded REAL subset
+            run (``0`` = full corpus). The reported metrics stay real (computed
+            over the first ``max_items`` items; ``n_evaluated`` reflects the cap).
         backends: Optional ``{variant_name: backend}`` injection map.
         judge: Optional hallucination judge (NaN when absent).
         checkpoint_path: Optional JSON checkpoint (persisted per variant).
@@ -1121,6 +1169,22 @@ def run_paper_benchmark(
         load_agromind_subset(agromind_path) if Path(agromind_path).exists() else []
     )
     itses_items = load_agromind_itses(itses_path)
+
+    # Optional REAL subset cap (US-069): when running all 3 seeds end-to-end the
+    # full 500+500 multimodal corpus is multi-hour on the cloud reasoner. Capping
+    # the AgroMind / IT-ES item lists keeps every reported number REAL (it is just
+    # computed over the first ``max_items`` items, ``n_evaluated`` reflects it) and
+    # lets the 3-seed error bars finish. ``0`` = no cap (full corpus). GEO-Bench-2
+    # has its own ``max_per_task`` and is unaffected.
+    if max_items and max_items > 0:
+        agromind_items = list(agromind_items)[:max_items]
+        itses_items = list(itses_items)[:max_items]
+        logger.info(
+            "paper_bench_item_cap_applied",
+            max_items=max_items,
+            n_agromind=len(agromind_items),
+            n_itses=len(itses_items),
+        )
 
     available: dict[str, bool] = {
         "GEO-Bench-2": _benchmark_available("GEO-Bench-2", geobench_items),
@@ -1163,6 +1227,7 @@ def run_paper_benchmark(
                     seed=seed,
                     image_root=image_root,
                     geobench_root=geobench_root,
+                    itses_image_root=itses_image_root,
                 )
                 if seed == seeds[0]:
                     paired_seed0[variant.name][benchmark] = {
@@ -1364,7 +1429,9 @@ def export_latex_table(out: dict[str, Any], path: Path) -> Path:
     )
     caption = (
         "Comparativa multi-benchmark de los dos reasoners frozen del copiloto "
-        "(patron Be My Eyes, arXiv:2511.19417): Gemini 2.5-pro (nube, GA, 1M ctx) "
+        "(patron Be My Eyes, arXiv:2511.19417): Gemini 2.5-flash (nube; variante "
+        "ejecutada en el benchmark por rapidez y menor tasa de 504 en items "
+        "multimodales -- el manuscrito cita 2.5-pro como reasoner de produccion) "
         "y Qwen3.5-35B-A3B (on-prem vLLM, GPTQ-Int4, single-GPU). Embeddings de "
         "AlphaEarth Foundations (SATELLITE\\_EMBEDDING/V1/ANNUAL, data v1.1, "
         "64-dim, CC-BY-4.0). AgroMind y AgroMind-IT/ES son eval-only (sin "
@@ -1512,7 +1579,11 @@ def _resolve_variants(names: Sequence[str] | None) -> list[ReasonerVariant]:
         return list(PAPER_VARIANTS)
     from ml.eval.agent_bench import DEFAULT_VARIANTS
 
-    registry = {v.name: v for v in (*PAPER_VARIANTS, *DEFAULT_VARIANTS)}
+    # PAPER_VARIANTS take precedence over agent_bench.DEFAULT_VARIANTS: the paper
+    # pair pins gemini-2.5-pro (US-069 AC), while DEFAULT_VARIANTS carries a
+    # different default model for the same "gemini" tag. DEFAULT_VARIANTS only
+    # fills tags the paper pair does not define (e.g. "gemma-base").
+    registry = {v.name: v for v in (*DEFAULT_VARIANTS, *PAPER_VARIANTS)}
     resolved: list[ReasonerVariant] = []
     for name in names:
         variant = registry.get(name)
@@ -1561,12 +1632,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Ruta al JSONL de AgroMind-IT/ES (US-068).",
     )
     parser.add_argument(
+        "--itses-image-root", type=Path, default=DEFAULT_ITSES_IMAGE_ROOT,
+        help="Carpeta base de los tiles de AgroMind-IT/ES (por defecto data/s2_italia).",
+    )
+    parser.add_argument(
         "--geobench-tasks", nargs="+", default=None,
         help="Allow-list de tasks agricolas de GEO-Bench-2 (>=3).",
     )
     parser.add_argument(
         "--max-per-task", type=int, default=0,
         help="Limite de items por task de GEO-Bench-2 (0 = todos).",
+    )
+    parser.add_argument(
+        "--max-items", type=int, default=0,
+        help=(
+            "Limite de items de AgroMind / AgroMind-IT/ES para una corrida subset "
+            "REAL acotada (0 = corpus completo). Las metricas siguen siendo reales "
+            "(calculadas sobre los primeros N items; n_evaluated lo refleja)."
+        ),
     )
     parser.add_argument(
         "--out-latex", type=Path,
@@ -1590,8 +1673,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         geobench_root=args.geobench_root,
         agromind_path=args.agromind_path,
         itses_path=args.itses_path,
+        itses_image_root=args.itses_image_root,
         geobench_tasks=args.geobench_tasks,
         max_per_task=args.max_per_task,
+        max_items=args.max_items,
         checkpoint_path=args.checkpoint,
         resume=args.resume,
         log_mlflow=not args.no_mlflow,

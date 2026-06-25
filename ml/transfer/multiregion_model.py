@@ -73,6 +73,7 @@ __all__ = [
     "HarmonizedDataset",
     "MultiRegionResult",
     "build_harmonized_dataset",
+    "evaluate_per_class_delta",
     "run_multiregion_experiment",
     "train_multiregion_model",
 ]
@@ -147,6 +148,7 @@ class MultiRegionResult:
     pastis_only_per_class: pl.DataFrame
     pastis_only_threshold_counts: pl.DataFrame
     rescued_classes: pl.DataFrame
+    paired_delta: pl.DataFrame
     mexico_demo: pl.DataFrame
     summary: dict[str, object] = field(default_factory=dict)
 
@@ -510,6 +512,136 @@ def _train_pastis_only(seed: int, *, cap: int | None = None) -> pl.DataFrame:
 
 
 # --------------------------------------------------------------------------- #
+# Honest paired per-class F1 delta (the metric the 0.85 binary count hid)
+# --------------------------------------------------------------------------- #
+def evaluate_per_class_delta(
+    ds: HarmonizedDataset, *, seed: int = _RANDOM_STATE
+) -> pl.DataFrame:
+    """Per-leaf F1 DELTA of multi-region vs PASTIS-only on the SAME test set.
+
+    This is the corrected, honest metric. The headline experiment counted how
+    many leaves clear F1>=0.85 (a binary gate) and how many leaves are *exclusive*
+    to the multi-region label space; that count reported 0 rescued classes and
+    hid large per-class F1 gains (e.g. ``potatoes`` +0.64, ``winter_rapeseed_rape``
+    +0.14). The hiding happened for two reasons: (a) a +0.45 lift that lands at
+    F1=0.65 never crosses the 0.85 gate, so the binary count is blind to it; and
+    (b) the PASTIS-only baseline evaluated rare French crops (``potatoes`` support
+    ~9) on a different, tiny test slice than the multi-region model (support ~570),
+    so the two F1s were never measured on the same parcels.
+
+    This function fixes both. It trains TWO leaf classifiers on the SAME
+    per-region held-out split (so the data budget is matched: the PASTIS-only
+    model simply lacks the Estonia/Latvia rows it never had, not a down-sampled
+    PASTIS) and scores BOTH on the IDENTICAL fine-leaf held-out test parcels:
+
+      - **multi-region** trained on PASTIS + EuroCropsML (``has_fine`` rows);
+      - **PASTIS-only** trained on the PASTIS subset of the same train split.
+
+    For a leaf the PASTIS-only model never saw (e.g. ``apples``, ``oats``), its
+    F1 on that leaf's test parcels is 0 by construction -- the honest cost of NOT
+    pooling regions, not a measurement artifact -- so those leaves are flagged
+    ``shared=False`` and reported in a separate panel rather than summed into the
+    shared-leaf rescue.
+
+    Args:
+        ds: the harmonized multi-region dataset.
+        seed: RNG seed for the per-region split and the boosters.
+
+    Returns:
+        One row per evaluated leaf with columns ``leaf``, ``f1_pastis``,
+        ``f1_multi``, ``delta_f1``, ``support_test``, ``shared`` (leaf exists in
+        the PASTIS train space) and ``top_test_region`` (region contributing the
+        most TEST parcels to that leaf -- i.e. where the lift is measured).
+    """
+    fine = ds.has_fine
+    feats = ds.features[fine]
+    leaf = ds.leaf[fine]
+    region = ds.region[fine]
+
+    is_train, is_test = _region_stratified_split(
+        region, leaf, test_fraction=_TEST_FRACTION, seed=seed
+    )
+
+    # Multi-region booster over the full fine-leaf vocabulary.
+    classes = np.array(sorted(set(leaf.tolist())))
+    class_to_id = {c: i for i, c in enumerate(classes)}
+    y = np.array([class_to_id[c] for c in leaf], dtype=np.int64)
+    model_multi = _fit_leaf_xgb(feats[is_train], y[is_train], seed)
+
+    # PASTIS-only booster: SAME split, PASTIS train rows only (matched budget).
+    pastis_train = is_train & (region == "PASTIS_FR")
+    pastis_classes = np.array(sorted(set(leaf[pastis_train].tolist())))
+    p_to_id = {c: i for i, c in enumerate(pastis_classes)}
+    y_p = np.array([p_to_id[c] for c in leaf[pastis_train]], dtype=np.int64)
+    model_pastis = _fit_leaf_xgb(feats[pastis_train], y_p, seed)
+
+    # Score BOTH on the identical held-out test parcels.
+    test_feats = feats[is_test]
+    test_leaf = leaf[is_test]
+    test_region = region[is_test]
+    pred_multi = classes[model_multi.predict(test_feats)]  # type: ignore[attr-defined]
+    pred_pastis = pastis_classes[model_pastis.predict(test_feats)]  # type: ignore[attr-defined]
+
+    all_leaves = sorted(set(test_leaf.tolist()))
+    label_to_id = {c: i for i, c in enumerate(all_leaves)}
+    y_true = np.array([label_to_id[c] for c in test_leaf])
+
+    def _f1_per_leaf(pred_names: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        y_pred = np.array([label_to_id.get(c, -1) for c in pred_names])
+        _p, _r, f1, sup = precision_recall_fscore_support(
+            y_true, y_pred, labels=np.arange(len(all_leaves)),
+            average=None, zero_division=0,
+        )
+        return f1, sup.astype(int)
+
+    f1_multi, support = _f1_per_leaf(pred_multi)
+    f1_pastis, _ = _f1_per_leaf(pred_pastis)
+    pastis_leaf_set = set(pastis_classes.tolist())
+
+    rows = []
+    for i, name in enumerate(all_leaves):
+        mask = test_leaf == name
+        uregs, ucounts = np.unique(test_region[mask], return_counts=True)
+        top_region = str(uregs[int(np.argmax(ucounts))]) if uregs.size else "?"
+        rows.append(
+            {
+                "leaf": name,
+                "f1_pastis": float(f1_pastis[i]),
+                "f1_multi": float(f1_multi[i]),
+                "delta_f1": float(f1_multi[i] - f1_pastis[i]),
+                "support_test": int(support[i]),
+                "shared": name in pastis_leaf_set,
+                "top_test_region": top_region,
+            }
+        )
+    out = pl.DataFrame(rows).sort("delta_f1", descending=True)
+    n_imp = out.filter((pl.col("delta_f1") > 1e-9) & pl.col("shared")).height
+    n_wor = out.filter((pl.col("delta_f1") < -1e-9) & pl.col("shared")).height
+    logger.info(
+        "per_class_delta_evaluated",
+        n_leaves=out.height,
+        n_shared_improve=n_imp,
+        n_shared_worsen=n_wor,
+        net_shared_delta=float(
+            out.filter(pl.col("shared")).get_column("delta_f1").sum()
+        ),
+    )
+    return out
+
+
+def _fit_leaf_xgb(feats: np.ndarray, y: np.ndarray, seed: int) -> object:
+    """Fit the champion XGBoost leaf classifier (CPU, deterministic)."""
+    params = dict(_XGB_BASE_PARAMS)
+    params["random_state"] = seed
+    # Force CPU so the per-class delta is bit-reproducible across machines and
+    # to avoid the cuda/cpu inplace-predict device-mismatch fallback warning.
+    params["device"] = "cpu"
+    model = build_estimator("xgb", params)
+    model.fit(feats, y)
+    return model
+
+
+# --------------------------------------------------------------------------- #
 # Metrics (measurement A)
 # --------------------------------------------------------------------------- #
 def _per_class_table(
@@ -650,6 +782,13 @@ def run_multiregion_experiment(*, seed: int = _RANDOM_STATE) -> MultiRegionResul
         .sort("f1", descending=True)
     )
 
+    # ---- Honest paired per-class F1 delta (the metric the 0.85 count hid) -----
+    paired = evaluate_per_class_delta(ds, seed=seed)
+    shared = paired.filter(pl.col("shared"))
+    new_tax = paired.filter(~pl.col("shared"))
+    shared_improved = shared.filter(pl.col("delta_f1") > 1e-9)
+    shared_worsened = shared.filter(pl.col("delta_f1") < -1e-9)
+
     mexico = _mexico_demo(model, classes)
 
     macro_f1 = float(f1_score(y_true_macro[valid], y_pred_macro[valid], average="macro"))
@@ -671,6 +810,25 @@ def run_multiregion_experiment(*, seed: int = _RANDOM_STATE) -> MultiRegionResul
         "n_rescued_classes_085": int(rescued.filter(~pl.col("in_pastis")).height),
         "macro_f1_macro_multiregion": macro_f1,
         "leaf_f1_macro_multiregion_fine": float(leaf_f1_mean),
+        # ---- Honest paired per-class delta (multi-region vs PASTIS, same test) -
+        "paired_n_shared_leaves": int(shared.height),
+        "paired_n_shared_improved": int(shared_improved.height),
+        "paired_n_shared_worsened": int(shared_worsened.height),
+        "paired_shared_gain_sum": float(shared_improved.get_column("delta_f1").sum()),
+        "paired_shared_loss_sum": float(shared_worsened.get_column("delta_f1").sum()),
+        "paired_net_shared_delta": float(shared.get_column("delta_f1").sum()),
+        "paired_shared_mean_f1_pastis": float(shared.get_column("f1_pastis").mean()),
+        "paired_shared_mean_f1_multi": float(shared.get_column("f1_multi").mean()),
+        "paired_n_new_taxonomy_leaves": int(new_tax.height),
+        "paired_n_new_taxonomy_f1_over_050": int(
+            new_tax.filter(pl.col("f1_multi") >= 0.50).height
+        ),
+        "paired_top_rescue": (
+            shared.sort("delta_f1", descending=True)
+            .head(3)
+            .select(["leaf", "delta_f1"])
+            .to_dicts()
+        ),
     }
     logger.info(
         "multiregion_experiment_done",
@@ -693,6 +851,7 @@ def run_multiregion_experiment(*, seed: int = _RANDOM_STATE) -> MultiRegionResul
         pastis_only_per_class=pastis_only,
         pastis_only_threshold_counts=thr_pastis,
         rescued_classes=rescued,
+        paired_delta=paired,
         mexico_demo=mexico,
         summary=summary,
     )
@@ -745,6 +904,7 @@ def _save_outputs(result: MultiRegionResult, out_dir: Path) -> None:
         out_dir / "pastis_only_threshold_counts.parquet"
     )
     result.rescued_classes.write_parquet(out_dir / "multiregion_rescued_classes.parquet")
+    result.paired_delta.write_parquet(out_dir / "multiregion_paired_delta.parquet")
     if result.mexico_demo.height:
         result.mexico_demo.write_parquet(out_dir / "multiregion_mexico_demo.parquet")
     (out_dir / "multiregion_summary.json").write_text(
@@ -858,6 +1018,38 @@ def make_figures(result: MultiRegionResult, fig_dir: Path) -> list[Path]:
     fig.savefig(p3, dpi=130)
     plt.close(fig)
     written.append(p3)
+
+    # --- Figure 4: HONEST paired per-class F1 delta (the rescue the 0.85 hid) - #
+    # Diverging bars: multi-region minus PASTIS-only on the SAME held-out test
+    # parcels. Shared leaves only (apples-to-apples); green = rescued, red = lost.
+    pd_shared = result.paired_delta.filter(pl.col("shared")).sort("delta_f1")
+    if pd_shared.height:
+        names4 = pd_shared["leaf"].to_list()
+        deltas4 = pd_shared["delta_f1"].to_list()
+        colors4 = ["#2ca02c" if d > 0 else "#d62728" for d in deltas4]
+        fig, ax = plt.subplots(figsize=(8.5, 6.5))
+        yy = np.arange(len(names4))
+        ax.barh(yy, deltas4, color=colors4)
+        ax.set_yticks(yy)
+        ax.set_yticklabels(names4, fontsize=8)
+        ax.axvline(0.0, color="black", linewidth=1)
+        for i, d in enumerate(deltas4):
+            ax.text(
+                d + (0.01 if d >= 0 else -0.01), i, f"{d:+.3f}",
+                fontsize=7, va="center", ha="left" if d >= 0 else "right",
+            )
+        ax.set_xlabel("Delta F1 = multi-region - solo-PASTIS (mismo test, mismo presupuesto)")
+        ax.set_title(
+            "Rescate REAL por clase que el conteo binario 0.85 ocultaba\n"
+            "(verde mejora, rojo empeora; hojas compartidas)"
+        )
+        ax.set_xlim(min(min(deltas4) - 0.08, -0.1), max(deltas4) + 0.1)
+        ax.grid(True, axis="x", alpha=0.3)
+        fig.tight_layout()
+        p4 = fig_dir / "multiregion_paired_delta.png"
+        fig.savefig(p4, dpi=130)
+        plt.close(fig)
+        written.append(p4)
 
     logger.info("multiregion_figures_written", n=len(written), fig_dir=str(fig_dir))
     return written

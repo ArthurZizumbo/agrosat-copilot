@@ -118,6 +118,65 @@ GEO_PASS_THRESHOLD: float = 0.35
 #: forever (US-049 hardening). Generous on purpose for slow on-prem multimodal.
 _ITEM_TIMEOUT_S: float = 200.0
 
+#: Number of attempts for a single model call before giving up (US-069 fix). A
+#: multimodal Gemini call over images intermittently returns ``504
+#: DEADLINE_EXCEEDED`` / ``503 UNAVAILABLE``; a single 504 must NOT abandon the
+#: item (the previous run stalled on item 182's 504 with ~$0 spent). The call is
+#: retried with exponential backoff on transient errors only; a permanent error
+#: (bad request, auth) fails fast on the first attempt.
+_CALL_MAX_ATTEMPTS: int = 3
+
+#: Base backoff seconds between retries; attempt ``i`` (0-indexed) sleeps
+#: ``_CALL_BACKOFF_BASE_S * 2**i`` -> 2s, 4s, 8s ... so transient server-side
+#: pressure is given time to clear before the next attempt.
+_CALL_BACKOFF_BASE_S: float = 2.0
+
+#: Substrings (case-insensitive) that mark a model-call error as TRANSIENT and
+#: therefore worth retrying. Covers Gemini ``504 DEADLINE_EXCEEDED`` /
+#: ``503 UNAVAILABLE`` / ``500 INTERNAL`` / ``429 RESOURCE_EXHAUSTED`` and the
+#: socket-level timeouts (``asyncio.TimeoutError`` is matched by type below). A
+#: 4xx that is none of these (e.g. ``400 INVALID_ARGUMENT``, ``401``) is permanent
+#: and is NOT retried -- it would just waste three attempts and money.
+_TRANSIENT_ERROR_MARKERS: tuple[str, ...] = (
+    "deadline_exceeded",
+    "deadline exceeded",
+    "504",
+    "503",
+    "unavailable",
+    "500 internal",
+    "internalservererror",
+    "429",
+    "resource_exhausted",
+    "resource exhausted",
+    "rate limit",
+    "timeout",
+    "timed out",
+    "connection reset",
+    "connection aborted",
+    "temporarily unavailable",
+)
+
+
+def _is_transient_error(exc: BaseException) -> bool:
+    """Return whether a model-call exception is worth retrying.
+
+    Treats ``asyncio.TimeoutError`` (the per-attempt timeout) and any error whose
+    string carries one of :data:`_TRANSIENT_ERROR_MARKERS` (Gemini
+    ``504 DEADLINE_EXCEEDED``, ``503``, ``429`` ...) as transient. A permanent
+    error (``400``/``401``/schema) returns ``False`` so it fails fast instead of
+    burning three attempts.
+
+    Args:
+        exc: The exception raised by the backend call.
+
+    Returns:
+        ``True`` when the call should be retried, ``False`` for a permanent error.
+    """
+    if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
+        return True
+    message = str(exc).lower()
+    return any(marker in message for marker in _TRANSIENT_ERROR_MARKERS)
+
 #: How often to emit a per-item progress log so a long phase is observable
 #: instead of a silent black box (US-049 hardening).
 _PROGRESS_EVERY: int = 20
@@ -853,22 +912,88 @@ def _build_contents(prompt: str, image_parts: Sequence[Any]) -> list[Any]:
     return [types.Content(role="user", parts=parts)]
 
 
-async def _run_backend_text(backend: LLMBackend, prompt: str, image_parts: Sequence[Any]) -> str:
-    """Drive a backend for one non-streaming text answer (no tools).
+async def _run_backend_text(
+    backend: LLMBackend,
+    prompt: str,
+    image_parts: Sequence[Any],
+    *,
+    max_attempts: int = _CALL_MAX_ATTEMPTS,
+    per_attempt_timeout_s: float = _ITEM_TIMEOUT_S,
+) -> str:
+    """Drive a backend for one non-streaming text answer (no tools), with retry.
 
     Consumes the backend's chunk stream and concatenates the text deltas. Tool
     calls are not requested here (the benchmark asks for a direct answer), so any
     function-call chunk is ignored.
 
+    Hardening (US-069): each attempt is bounded by ``per_attempt_timeout_s`` and a
+    TRANSIENT failure (Gemini ``504 DEADLINE_EXCEEDED`` / ``503`` / ``429`` or a
+    socket/per-attempt timeout, classified by :func:`_is_transient_error`) is
+    retried up to ``max_attempts`` with exponential backoff
+    (:data:`_CALL_BACKOFF_BASE_S` x ``2**i`` -> 2s, 4s, 8s). A PERMANENT error
+    (``400``/``401``/schema) is re-raised immediately so it fails fast. When every
+    attempt is exhausted the last transient exception is re-raised so the caller's
+    per-item ``except`` records the item as ``""`` (one item never crashes the
+    run) -- but a single 504 no longer abandons the item, which is the bug that
+    cost the previous run ~$0 of Gemini spend.
+
     Args:
         backend: The injected or constructed :class:`LLMBackend`.
         prompt: The user prompt.
         image_parts: Image parts to attach (empty for text-only).
+        max_attempts: Maximum attempts before giving up on a transient error.
+        per_attempt_timeout_s: Wall-clock timeout for each individual attempt.
 
     Returns:
         The concatenated answer text (stripped).
+
+    Raises:
+        Exception: The last exception when all attempts fail, or a permanent
+            (non-transient) error on the attempt it occurred.
     """
     contents = _build_contents(prompt, image_parts)
+    last_exc: BaseException | None = None
+    for attempt in range(max_attempts):
+        try:
+            return await asyncio.wait_for(
+                _consume_text_stream(backend, contents),
+                timeout=per_attempt_timeout_s,
+            )
+        except Exception as exc:
+            last_exc = exc
+            transient = _is_transient_error(exc)
+            is_last = attempt == max_attempts - 1
+            if not transient or is_last:
+                if transient and is_last:
+                    logger.warning(
+                        "backend_call_retries_exhausted",
+                        attempts=max_attempts,
+                        error=str(exc),
+                    )
+                raise
+            backoff = _CALL_BACKOFF_BASE_S * (2.0**attempt)
+            logger.warning(
+                "backend_call_retrying",
+                attempt=attempt + 1,
+                max_attempts=max_attempts,
+                backoff_s=backoff,
+                error=str(exc),
+            )
+            await asyncio.sleep(backoff)
+    # Unreachable (the loop either returns or raises) but keeps mypy happy.
+    raise last_exc if last_exc is not None else RuntimeError("backend call failed")
+
+
+async def _consume_text_stream(backend: LLMBackend, contents: list[Any]) -> str:
+    """Consume a backend's chunk stream into one stripped text answer.
+
+    Args:
+        backend: The backend to drive (no tools advertised).
+        contents: The ``google.genai`` contents built for this prompt.
+
+    Returns:
+        The concatenated, stripped text of the streamed response.
+    """
     buffer: list[str] = []
     async for chunk in backend.generate_stream(contents=contents, tools=[], system_instruction=""):
         text = getattr(chunk, "text", None)
@@ -970,10 +1095,10 @@ async def eval_agromind(
         prompt = _build_agromind_prompt(item, with_images=bool(image_parts))
         errored = False
         try:
-            answer = await asyncio.wait_for(
-                _run_backend_text(resolved_backend, prompt, image_parts),
-                timeout=_ITEM_TIMEOUT_S,
-            )
+            # ``_run_backend_text`` bounds each attempt by ``_ITEM_TIMEOUT_S`` and
+            # retries transient 504/503/429 errors internally (US-069), so no outer
+            # ``wait_for`` is needed -- wrapping it would cut the retry chain short.
+            answer = await _run_backend_text(resolved_backend, prompt, image_parts)
         except Exception as exc:  # noqa: BLE001 - one item must not crash the run
             logger.warning(
                 "agromind_item_failed",
@@ -1230,10 +1355,10 @@ async def eval_geoanalyst(
         prompt = _build_geo_prompt(task)
         errored = False
         try:
-            answer = await asyncio.wait_for(
-                _run_backend_text(resolved_backend, prompt, []),
-                timeout=_ITEM_TIMEOUT_S,
-            )
+            # Per-attempt timeout + transient-error retry live inside
+            # ``_run_backend_text`` (US-069); no outer ``wait_for`` (it would abort
+            # the retry chain).
+            answer = await _run_backend_text(resolved_backend, prompt, [])
         except Exception as exc:  # noqa: BLE001 - one task must not crash the run
             logger.warning(
                 "geoanalyst_task_failed",

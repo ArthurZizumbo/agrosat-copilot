@@ -1,0 +1,87 @@
+{
+  "results": {
+    "gemini": {
+      "GEO-Bench-2": {
+        "status": "pending"
+      },
+      "AgroMind": {
+        "f1_squad": {
+          "mean": 0.0,
+          "std": 0.0
+        },
+        "hallucination": {
+          "mean": NaN,
+          "std": NaN
+        },
+        "n_evaluated": {
+          "mean": 500.0,
+          "std": 0.0
+        },
+        "exact_match": {
+          "mean": 0.0,
+          "std": 0.0
+        },
+        "n_skipped": {
+          "mean": 0.0,
+          "std": 0.0
+        },
+        "bertscore": {
+          "mean": 0.24906048922613264,
+          "std": 0.0
+        },
+        "status": "ok",
+        "cost_per_query_usd": {
+          "mean": NaN,
+          "std": NaN
+        }
+      },
+      "AgroMind-IT/ES": {
+        "f1_squad": {
+          "mean": 0.0,
+          "std": 0.0
+        },
+        "latency_p50_ms": {
+          "mean": 0.1640999980736524,
+          "std": 0.0
+        },
+        "hallucination": {
+          "mean": NaN,
+          "std": NaN
+        },
+        "n_evaluated": {
+          "mean": 500.0,
+          "std": 0.0
+        },
+        "exact_match": {
+          "mean": 0.0,
+          "std": 0.0
+        },
+        "n_skipped": {
+          "mean": 0.0,
+          "std": 0.0
+        },
+        "exact_match_es": {
+          "mean": 0.0,
+          "std": 0.0
+        },
+        "latency_p95_ms": {
+          "mean": 0.3211850002116989,
+          "std": 0.0
+        },
+        "bertscore": {
+          "mean": 0.084894180691801,
+          "std": 0.0
+        },
+        "exact_match_it": {
+          "mean": 0.0,
+          "std": 0.0
+        },
+        "status": "ok",
+        "cost_per_query_usd": {
+          "mean": NaN,
+          "std": NaN
+        }
+      }
+    }
+  }
+}
