@@ -138,7 +138,10 @@ def _load_hcat_name_map() -> dict[int, str]:
     return {int(c): str(n) for c, n in zip(h["HCAT3_code"], h["HCAT3_name"], strict=True)}
 
 
-def _load_region_parcels(region: str, *, max_parcels: int, seed: int) -> _RegionParcels:
+def _load_region_parcels(
+    region: str, *, max_parcels: int, seed: int,
+    stratify_keep: set[str] | None = None, per_class: int | None = None,
+) -> _RegionParcels:
     """Load a region's AlphaEarth + raw S2 series + leaf, bridging series to patches.
 
     Reads the EuroCropsML AlphaEarth parquet (64-dim + ``npz_name`` + ``hcat_code``),
@@ -147,10 +150,19 @@ def _load_region_parcels(region: str, *, max_parcels: int, seed: int) -> _Region
     a dense ``(n_timesteps, 10, P, P)`` patch. Parcels whose npz is missing/corrupt
     are dropped and counted.
 
+    This is the LOCAL-npz source (no Sentinel Hub, no paid quota): the per-parcel
+    series ships with EuroCropsML, so the dense members can be fed real data for
+    free. The patch is pixel-tiled (no spatial texture) -- but for the
+    VOCABULARY-correction experiment that is fine: the texture run already showed
+    the bottleneck is the label space, not the texture.
+
     Args:
         region: EuroCropsML region key (e.g. ``"estonia"``).
-        max_parcels: Parcel cap applied before the npz pass.
-        seed: Sampling seed for the cap.
+        max_parcels: Parcel cap applied before the npz pass (global random draw).
+        seed: Sampling seed.
+        stratify_keep: When set with ``per_class``, take a per-class (stratified)
+            sample restricted to this label-space instead of the global random cap.
+        per_class: Parcels per leaf for the stratified sample.
 
     Returns:
         A :class:`_RegionParcels`.
@@ -174,7 +186,14 @@ def _load_region_parcels(region: str, *, max_parcels: int, seed: int) -> _Region
     )
     counts = df.group_by("leaf").len().filter(pl.col("len") >= _MIN_LEAF_SUPPORT)
     df = df.filter(pl.col("leaf").is_in(counts["leaf"].to_list()))
-    if df.height > max_parcels:
+    if stratify_keep is not None and per_class is not None:
+        from ml.transfer.finetune_baltico import stratified_parcel_sample
+
+        picked = stratified_parcel_sample(
+            df["leaf"].to_list(), keep=stratify_keep, per_class=per_class, seed=seed
+        )
+        df = df[picked]
+    elif df.height > max_parcels:
         df = df.sample(n=max_parcels, seed=seed, shuffle=True)
 
     npz_names = df["npz_name"].to_list()

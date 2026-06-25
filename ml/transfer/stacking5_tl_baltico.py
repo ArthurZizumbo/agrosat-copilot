@@ -67,6 +67,10 @@ class Stacking5TLConfig:
     dense_members: tuple[str, ...] = ("utae", "tsvit-pheno-fullm")
     include_xgb: bool = True
     include_farslip: bool = True
+    #: Data source. When True, use the LOCAL EuroCropsML npz series (no Sentinel
+    #: Hub, no paid quota; pixel-tiled patches). When False, download real-texture
+    #: SH patches (cached). The vocabulary-correction experiment uses local npz.
+    use_local_npz: bool = True
     warmup_epochs: int = 2
     finetune_epochs: int = 8
     batch_size: int = 16
@@ -114,7 +118,6 @@ def run_stacking5_tl(
     from sklearn.linear_model import LogisticRegression
     from sklearn.metrics import accuracy_score, f1_score
 
-    from ml.transfer.ensemble_texture_tl import _load_region_texture, build_season_windows
     from ml.transfer.finetune_baltico import (
         FINE_TO_COARSE,
         build_baltic_label_space,
@@ -122,12 +125,25 @@ def run_stacking5_tl(
 
     label_space = build_baltic_label_space()
     keep = set(label_space.leaves)
-    windows = build_season_windows(2021)
 
-    # --- 1. Download the stratified Baltic parcels ONCE (shared by all members). --
+    # --- 1. Load the stratified Baltic parcels ONCE (shared by all members). ------
+    # Local npz (free, pixel-tiled) for the vocabulary experiment; SH (paid, real
+    # texture, cached) otherwise. Both yield ``annual + patches + leaf`` per parcel.
     def _load(region: str) -> object:
+        if config.use_local_npz:
+            from ml.transfer.ensemble_full_tl import _load_region_parcels
+
+            return _load_region_parcels(
+                region, max_parcels=10_000, seed=config.seed,
+                stratify_keep=keep, per_class=config.per_class,
+            )
+        from ml.transfer.ensemble_texture_tl import (
+            _load_region_texture,
+            build_season_windows,
+        )
+
         return _load_region_texture(
-            region, sh_client=sh_client, windows=windows,
+            region, sh_client=sh_client, windows=build_season_windows(2021),
             max_parcels=10_000, size=128, max_cloud=25.0, seed=config.seed,
             stratify_keep=keep, per_class=config.per_class,
         )
