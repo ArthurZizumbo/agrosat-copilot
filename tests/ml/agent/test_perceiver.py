@@ -96,14 +96,6 @@ async def test_observe_builds_text_observation(monkeypatch, make_ctx) -> None:
     monkeypatch.setattr(
         classify_mod, "_load_classifier", lambda: _FakeClassifier(proba, class_names)
     )
-    # The champion (Stacking-5) is unavailable in this unit (no OOF artifacts):
-    # force the clean degradation to the ``xgb-alphaearth`` member so the test
-    # exercises the tabular posterior path. ``_load_stacking_five`` raising
-    # FileNotFoundError is exactly the "DVC not pulled" degradation contract.
-    def _no_stacking() -> object:
-        raise FileNotFoundError("Stacking-5 OOF not available in this unit test")
-
-    monkeypatch.setattr(classify_mod, "_load_stacking_five", _no_stacking)
     monkeypatch.setattr(
         "ml.features.phenology_description.generate_phenology_description",
         lambda *a, **k: pytest.fail("perceiver must not call the LLM descriptor here"),
@@ -119,22 +111,9 @@ async def test_observe_builds_text_observation(monkeypatch, make_ctx) -> None:
     # Non-empty structured phenology text grounded in the real SOG landmark.
     assert obs.phenology_text
     assert "dia 95" in obs.phenology_text
-    # Posterior restricted to the nine well-resolved france-9 classes (the
-    # agent+app directive), renormalized to sum to ~1. The argmax mass (id 3,
-    # "Winter barley") is a france-9 class so it survives the restriction.
-    assert len(obs.class_probabilities) == 9
+    # Full posterior surfaced from the classifier (18 classes, sums to ~1).
+    assert len(obs.class_probabilities) == 18
     assert sum(obs.class_probabilities.values()) == pytest.approx(1.0, abs=1e-6)
-    assert set(obs.class_probabilities) <= {
-        "Meadow",
-        "Soft winter wheat",
-        "Corn",
-        "Winter barley",
-        "Winter rapeseed",
-        "Sunflower",
-        "Grapevine",
-        "Beet",
-        "Soybeans",
-    }
 
 
 async def test_to_prompt_block_is_text_without_logits(monkeypatch, make_ctx) -> None:
@@ -250,11 +229,7 @@ async def test_observe_aoi_uses_classifier_posterior(monkeypatch, make_ctx) -> N
     async def _fake_fetch_embedding(ctx, year, aoi=None):
         return np.linspace(0.0, 1.0, 64, dtype=np.float64)
 
-    async def _no_canonical(ctx, aoi):
-        return None  # AOI resolves to no fold-5 parcel -> degrade to xgb cleanly
-
     monkeypatch.setattr(classify_mod, "_fetch_parcel_embedding", _fake_fetch_embedding)
-    monkeypatch.setattr(classify_mod, "_resolve_canonical_parcel_id", _no_canonical)
     monkeypatch.setattr(
         classify_mod, "_load_classifier", lambda: _FakeClassifier(proba, class_names)
     )
@@ -263,26 +238,12 @@ async def test_observe_aoi_uses_classifier_posterior(monkeypatch, make_ctx) -> N
         perceiver_mod.GeoJSONGeometry(**_POLYGON), year=2019
     )
 
-    # ``observe_aoi`` now serves the champion restricted to france-9 (use_stacking
-    # ON); here the parcel is not in the OOF universe so it degrades to the
-    # ``xgb-alphaearth`` member, then restricts to the nine resolved classes.
     assert obs.parcel_id == -1
-    assert obs.crop_class == "Grapevine"  # id 7 is france-9; argmax after restrict
-    # Confidence is the renormalized mass over the nine france-9 classes (>= the
-    # raw 0.66 since the dropped classes' mass is removed).
-    assert obs.confidence >= float(proba[7])
-    assert len(obs.class_probabilities) == 9
-    assert set(obs.class_probabilities) <= {
-        "Meadow",
-        "Soft winter wheat",
-        "Corn",
-        "Winter barley",
-        "Winter rapeseed",
-        "Sunflower",
-        "Grapevine",
-        "Beet",
-        "Soybeans",
-    }
+    assert obs.crop_class == "maize"
+    assert obs.confidence == pytest.approx(float(proba[7]))
+    # Vigor derived from the top probability (0.66 -> moderate per _vigor_from_peak).
+    assert obs.vigor == "moderate"
+    assert len(obs.class_probabilities) == 18
 
 
 def test_perceiver_observation_is_strict_extra_forbid() -> None:
