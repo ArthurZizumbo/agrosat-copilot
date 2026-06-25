@@ -117,6 +117,10 @@ def _orbit_evalscript(n_frames: int) -> str:
 
 _TOKEN_REFRESH_MARGIN_S: float = 30.0
 
+#: Base backoff (seconds) for the Process API 429 retry; attempt i waits
+#: ``base * 2**i`` -> 1, 2, 4, 8 s.
+_RETRY_BACKOFF_BASE_S: float = 1.0
+
 
 @dataclass(frozen=True)
 class SHCrop:
@@ -190,6 +194,48 @@ class SentinelHubClient:
             now + float(payload.get("expires_in", 600.0)) - _TOKEN_REFRESH_MARGIN_S
         )
         return self._access_token
+
+    def _post_process_with_retry(
+        self, payload: dict[str, Any], *, max_attempts: int = 5
+    ) -> httpx.Response | None:
+        """POST to the Process API, retrying on ``429`` with exponential backoff.
+
+        The Process API enforces a per-second request quota; under fan-out a
+        ``429 RATE_LIMIT_EXCEEDED`` is expected and transient. This retries it
+        (honouring a ``Retry-After`` header when present, else exponential
+        backoff), so a rate-limited request is not silently lost -- which would
+        bias the experiment by dropping parcels.
+
+        Args:
+            payload: The Process API request body.
+            max_attempts: Maximum attempts before giving up.
+
+        Returns:
+            The successful :class:`httpx.Response`, or ``None`` when every attempt
+            was rate-limited / failed.
+        """
+        import time as _time
+
+        for attempt in range(max_attempts):
+            token = self._ensure_token()
+            response = self._http.post(
+                _PROCESS_URL,
+                headers={"Authorization": f"Bearer {token}"},
+                json=payload,
+            )
+            if response.status_code == 200:
+                return response
+            if response.status_code == 429 and attempt < max_attempts - 1:
+                retry_after = response.headers.get("Retry-After")
+                wait = float(retry_after) if retry_after else _RETRY_BACKOFF_BASE_S * (2**attempt)
+                logger.info("sh_rate_limited_retry", attempt=attempt + 1, wait_s=round(wait, 1))
+                _time.sleep(wait)
+                continue
+            logger.warning(
+                "sh_process_failed", status=response.status_code, body=response.text[:160]
+            )
+            return None
+        return None
 
     def crop(
         self,
@@ -351,7 +397,6 @@ class SentinelHubClient:
             dropping empty frames), or ``None`` when fewer than two frames carry
             data.
         """
-        token = self._ensure_token()
         bbox = (
             lon - half_side_deg, lat - half_side_deg,
             lon + half_side_deg, lat + half_side_deg,
@@ -383,11 +428,8 @@ class SentinelHubClient:
             },
             "evalscript": _orbit_evalscript(n_frames),
         }
-        response = self._http.post(
-            _PROCESS_URL, headers={"Authorization": f"Bearer {token}"}, json=payload
-        )
-        if response.status_code != 200:
-            logger.warning("sh_orbit_failed", status=response.status_code, body=response.text[:200])
+        response = self._post_process_with_retry(payload)
+        if response is None:
             return None
         flat = _decode_tiff(response.content)  # (n_frames*10, H, W)
         if flat is None or flat.shape[0] != n_frames * nb:
@@ -410,7 +452,7 @@ class SentinelHubClient:
         size: int = 128,
         half_side_deg: float = 0.0008,
         max_cloud: float = 25.0,
-        max_workers: int = 8,
+        max_workers: int = 3,
     ) -> list[np.ndarray | None]:
         """Download many parcels' ORBIT stacks concurrently (thread pool).
 
