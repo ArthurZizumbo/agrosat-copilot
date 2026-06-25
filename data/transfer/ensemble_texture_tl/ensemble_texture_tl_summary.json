@@ -1,0 +1,70 @@
+{
+  "source": "latvia",
+  "target": "estonia",
+  "n_source_parcels": 17,
+  "n_target_parcels": 18,
+  "n_source_dropped": 0,
+  "n_target_dropped": 0,
+  "n_shared_leaves": 6,
+  "dense_members": [
+    "tsvit-pheno-fullm",
+    "utae"
+  ],
+  "crop_size": 128,
+  "baseline_dim": 64,
+  "ensemble_dim": 102,
+  "ks": [
+    1,
+    5,
+    10
+  ],
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "curve": [
+    {
+      "feature_set": "baseline",
+      "k": 1,
+      "f1_mean": 0.027533333333333337,
+      "f1_std": 0.014189276075810055
+    },
+    {
+      "feature_set": "ensemble",
+      "k": 1,
+      "f1_mean": 0.027533333333333337,
+      "f1_std": 0.014189276075810055
+    },
+    {
+      "feature_set": "baseline",
+      "k": 5,
+      "f1_mean": 0.3385,
+      "f1_std": 0.01400071426749364
+    },
+    {
+      "feature_set": "ensemble",
+      "k": 5,
+      "f1_mean": 0.3472,
+      "f1_std": 0.007919595949289331
+    },
+    {
+      "feature_set": "baseline",
+      "k": 10,
+      "f1_mean": 0.3385,
+      "f1_std": 0.01400071426749364
+    },
+    {
+      "feature_set": "ensemble",
+      "k": 10,
+      "f1_mean": 0.3472,
+      "f1_std": 0.007919595949289331
+    }
+  ],
+  "delta_ensemble_minus_baseline_by_k": {
+    "1": 0.0,
+    "5": 0.0087,
+    "10": 0.0087
+  },
+  "note": "Dense members fed REAL Sentinel Hub crops (texture), not a tiled pixel; compare these deltas against ensemble_full_tl (pixel-tiled)."
+}
