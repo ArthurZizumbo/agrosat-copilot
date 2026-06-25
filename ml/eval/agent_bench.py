@@ -688,8 +688,13 @@ def _build_mc_prompt(item: AgroMindItem, *, with_images: bool) -> str:
     lines = [
         "Eres un evaluador experto en agricultura satelital. Responde la pregunta "
         f"de opcion multiple eligiendo UNA sola letra ({letters_clause}).",
-        "Razona brevemente paso a paso y termina con una linea exactamente con el "
-        "formato 'Respuesta: <letra>'.",
+        "La pregunta puede estar en ingles; tu respuesta final debe ser UNICAMENTE "
+        "la letra de la opcion correcta, sin prosa, explicaciones ni el texto de la "
+        "opcion.",
+        "Razona brevemente paso a paso y termina SIEMPRE con una linea final con "
+        "exactamente el formato 'Respuesta: <letra>' (por ejemplo 'Respuesta: A'). "
+        "Es OBLIGATORIO cerrar con esa linea aunque la pregunta este en ingles; no "
+        "respondas solo con prosa.",
         "",
         "Ejemplo:",
         "Pregunta: Que indice resalta la vegetacion sana?",
@@ -715,7 +720,8 @@ def _build_mc_prompt(item: AgroMindItem, *, with_images: bool) -> str:
     lines.extend(
         [
             "",
-            "Razona paso a paso de forma breve y termina con 'Respuesta: <letra>'.",
+            "Razona paso a paso de forma breve y termina OBLIGATORIAMENTE con la "
+            f"linea 'Respuesta: <letra>' usando solo una de estas letras: {letters_clause}.",
         ]
     )
     return "\n".join(lines)
@@ -861,6 +867,55 @@ def _extract_final_answer(answer: str) -> str:
     if not matches:
         return answer.strip()
     return answer[matches[-1].end() :].strip()
+
+
+def _resolve_choice_to_letter(
+    final_answer: str, options: dict[str, str]
+) -> str:
+    """Resolve a multiple-choice prediction back to its option letter.
+
+    Defense-in-depth for the AgroMind multiple-choice contract: the prompt asks
+    the model to end with ``Respuesta: <letra>`` (only the letter), but a frozen
+    reasoner sometimes answers with the option *text* instead of its letter (e.g.
+    gold ``"A"`` whose option A is ``"maize field"`` and the model replies ``"It
+    is a maize field"``). When the extracted answer carries no recoverable letter
+    (:func:`ml.eval.agent_metrics._extract_choice_letter` returns ``None``) this
+    maps the answer text to a letter by matching the option *values*: an exact
+    normalised match wins, else the longest option value that appears as a
+    substring of the answer wins. The original ``final_answer`` is returned
+    unchanged when no option text matches, so the downstream letter parser keeps
+    today's behaviour and open (no-option) items are untouched.
+
+    Args:
+        final_answer: The extracted final answer (after the ``Respuesta:`` marker).
+        options: The item's ``{letter: value}`` option map (empty for open items).
+
+    Returns:
+        The matched option letter when the answer text maps to exactly one option
+        value; otherwise the original ``final_answer`` unchanged.
+    """
+    if not options or not final_answer:
+        return final_answer
+    valid_letters = frozenset(options)
+    # If a choice letter is already recoverable, the existing parser handles it.
+    if agent_metrics._extract_choice_letter(final_answer, valid_letters) is not None:
+        return final_answer
+    norm_answer = agent_metrics._normalize_text(final_answer)
+    if not norm_answer:
+        return final_answer
+    norm_to_letter: dict[str, str] = {}
+    for letter, value in options.items():
+        if _is_image_path(value):
+            continue
+        norm_value = agent_metrics._normalize_text(value)
+        if norm_value:
+            norm_to_letter[norm_value] = letter
+    if norm_answer in norm_to_letter:
+        return norm_to_letter[norm_answer]
+    for norm_value, letter in sorted(norm_to_letter.items(), key=lambda kv: -len(kv[0])):
+        if norm_value in norm_answer:
+            return letter
+    return final_answer
 
 
 def _resolve_image(rel_path: str, image_root: Path) -> Path | None:
@@ -1114,6 +1169,12 @@ async def eval_agromind(
         # Falls back to the full answer when no marker is present (un-marked
         # responses keep today's behaviour).
         final_answer = _extract_final_answer(answer)
+        # Defense-in-depth for the multiple-choice contract: when the reasoner
+        # answers with the option TEXT instead of its letter (no recoverable
+        # letter), resolve the text back to the option letter so the exact-match
+        # still scores. This is a no-op for open items and for answers that
+        # already carry a letter, so it never alters today's behaviour there.
+        final_answer = _resolve_choice_to_letter(final_answer, item.options)
         # Constrain the letter parser to the labels that actually exist for the
         # item (B-5): open items (no options) score via the text fallback, and a
         # choice item with options E-J scores its real letter, not a capped A-D.

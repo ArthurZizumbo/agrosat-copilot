@@ -29,6 +29,7 @@ from ml.agent.schemas import (
     TileUrl,
 )
 from ml.agent.tools.tiles import run as tiles_run
+from ml.ingest.cdse_client import CDSEScene
 
 from .conftest import SESSION_A, FakeConn, FakeRecord, fake_session_scoped_conn
 
@@ -90,6 +91,105 @@ async def test_search_stac_happy_path_returns_real_features(monkeypatch, make_ct
     request = json.loads(request_arg)
     assert request["bbox"] == [-3.7, 40.0, -3.6, 40.1]
     assert request["filter"]["args"][1] == 20.0
+
+
+class _CdseSettings:
+    """Settings stub with CDSE credentials populated (no live call is made)."""
+
+    cdse_client_id = "fake-client-id"
+    cdse_client_secret = "fake-client-secret"
+    cdse_token_url = "https://identity.example/token"
+
+
+def _ctx_with_cdse(make_ctx):
+    """Build a ToolContext whose settings carry (fake) CDSE credentials."""
+    ctx = make_ctx()
+    ctx.settings = _CdseSettings()  # type: ignore[assignment]
+    return ctx
+
+
+async def test_search_stac_uses_cdse_when_credentials_present(monkeypatch, make_ctx) -> None:
+    """With CDSE configured, real CDSE scenes are mapped to STAC items."""
+    captured: dict = {}
+
+    def _fake_search_s2(self, bbox, datetime_range, *, cloud_cover_max=10.0, **kwargs):
+        captured["bbox"] = bbox
+        captured["datetime_range"] = datetime_range
+        captured["cloud_cover_max"] = cloud_cover_max
+        return [
+            CDSEScene(
+                scene_id="S2B_MSIL2A_20210601T101559_T32TPP",
+                datetime="2021-06-01T10:15:59.000Z",
+                cloud_cover=3.2,
+                bbox=(10.0, 43.0, 10.5, 43.5),
+            ),
+            CDSEScene(
+                scene_id="S2A_MSIL2A_20210527T101031_T32TPP",
+                datetime="2021-05-27T10:10:31.000Z",
+                cloud_cover=7.8,
+                bbox=(10.0, 43.0, 10.5, 43.5),
+            ),
+        ]
+
+    # Mock the network boundary only: search_s2 never hits CDSE.
+    monkeypatch.setattr("ml.ingest.cdse_client.CDSEClient.search_s2", _fake_search_s2)
+
+    out = await stac_mod.run(
+        SearchStacInput(bbox=_BBOX, datetime_range="2021-05-01/2021-09-30", cloud_cover_max=10.0),
+        _ctx_with_cdse(make_ctx),
+    )
+
+    assert isinstance(out, SceneList)
+    assert out.count == 2
+    # CDSEScene -> STAC item mapping preserves the citable fields.
+    first = out.scenes[0]
+    assert first["id"] == "S2B_MSIL2A_20210601T101559_T32TPP"
+    assert first["properties"]["datetime"] == "2021-06-01T10:15:59.000Z"
+    assert first["properties"]["eo:cloud_cover"] == 3.2
+    assert first["bbox"] == [10.0, 43.0, 10.5, 43.5]
+    assert first["source"] == "cdse"
+    # The tool forwarded the input bbox / window / cloud bound to CDSE.
+    assert captured["bbox"] == (-3.7, 40.0, -3.6, 40.1)
+    assert captured["datetime_range"] == "2021-05-01/2021-09-30"
+    assert captured["cloud_cover_max"] == 10.0
+
+
+async def test_search_stac_cdse_empty_catalogue(monkeypatch, make_ctx) -> None:
+    """An empty CDSE catalogue yields an empty SceneList (no fabrication)."""
+    monkeypatch.setattr(
+        "ml.ingest.cdse_client.CDSEClient.search_s2",
+        lambda self, bbox, datetime_range, **kwargs: [],
+    )
+
+    out = await stac_mod.run(
+        SearchStacInput(bbox=_BBOX, datetime_range="2021-05-01/2021-09-30"),
+        _ctx_with_cdse(make_ctx),
+    )
+
+    assert out.scenes == []
+    assert out.count == 0
+
+
+async def test_search_stac_degrades_to_pgstac_without_credentials(monkeypatch, make_ctx) -> None:
+    """Empty CDSE credentials degrade cleanly to pgstac (no crash, no CDSE call)."""
+    # CDSE must never be touched when credentials are absent.
+    def _boom(self, *args, **kwargs):
+        raise AssertionError("CDSE must not be called without credentials")
+
+    monkeypatch.setattr("ml.ingest.cdse_client.CDSEClient.search_s2", _boom)
+    # pgstac returns a FeatureCollection (the preserved fallback path).
+    collection = {"type": "FeatureCollection", "features": [{"id": "PGSTAC_1"}]}
+    conn = FakeConn(fetchval_value=json.dumps(collection))
+    monkeypatch.setattr(stac_mod, "session_scoped_conn", fake_session_scoped_conn(conn))
+
+    # The default make_ctx settings stub has empty CDSE credentials.
+    out = await stac_mod.run(
+        SearchStacInput(bbox=_BBOX, datetime_range="2019-01-01/2019-12-31"), make_ctx()
+    )
+
+    assert isinstance(out, SceneList)
+    assert out.count == 1
+    assert out.scenes[0]["id"] == "PGSTAC_1"
 
 
 # ---------------------------------------------------------------------------
