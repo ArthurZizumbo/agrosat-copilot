@@ -1,11 +1,11 @@
 {
   "source": "latvia",
   "target": "estonia",
-  "n_source_parcels": 17,
-  "n_target_parcels": 18,
+  "n_source_parcels": 270,
+  "n_target_parcels": 236,
   "n_source_dropped": 0,
   "n_target_dropped": 0,
-  "n_shared_leaves": 6,
+  "n_shared_leaves": 14,
   "dense_members": [
     "tsvit-pheno-fullm",
     "utae"
@@ -16,7 +16,9 @@
   "ks": [
     1,
     5,
-    10
+    10,
+    20,
+    50
   ],
   "seeds": [
     0,
@@ -27,44 +29,70 @@
     {
       "feature_set": "baseline",
       "k": 1,
-      "f1_mean": 0.027533333333333337,
-      "f1_std": 0.014189276075810055
+      "f1_mean": 0.019033333333333333,
+      "f1_std": 0.016481167704045997
     },
     {
       "feature_set": "ensemble",
       "k": 1,
-      "f1_mean": 0.027533333333333337,
-      "f1_std": 0.014189276075810055
+      "f1_mean": 0.0164,
+      "f1_std": 0.014030205510492945
     },
     {
       "feature_set": "baseline",
       "k": 5,
-      "f1_mean": 0.3385,
-      "f1_std": 0.01400071426749364
+      "f1_mean": 0.2164,
+      "f1_std": 0.012657803916951786
     },
     {
       "feature_set": "ensemble",
       "k": 5,
-      "f1_mean": 0.3472,
-      "f1_std": 0.007919595949289331
+      "f1_mean": 0.21030000000000001,
+      "f1_std": 0.03012451935992784
     },
     {
       "feature_set": "baseline",
       "k": 10,
-      "f1_mean": 0.3385,
-      "f1_std": 0.01400071426749364
+      "f1_mean": 0.2184,
+      "f1_std": 0.009675742865537506
     },
     {
       "feature_set": "ensemble",
       "k": 10,
-      "f1_mean": 0.3472,
-      "f1_std": 0.007919595949289331
+      "f1_mean": 0.22203333333333333,
+      "f1_std": 0.013429403891792396
+    },
+    {
+      "feature_set": "baseline",
+      "k": 20,
+      "f1_mean": 0.2559666666666667,
+      "f1_std": 0.017930483044865865
+    },
+    {
+      "feature_set": "ensemble",
+      "k": 20,
+      "f1_mean": 0.2442333333333333,
+      "f1_std": 0.009695474316516031
+    },
+    {
+      "feature_set": "baseline",
+      "k": 50,
+      "f1_mean": 0.25843333333333335,
+      "f1_std": 0.002369716344956831
+    },
+    {
+      "feature_set": "ensemble",
+      "k": 50,
+      "f1_mean": 0.22606666666666667,
+      "f1_std": 0.001901461426260224
     }
   ],
   "delta_ensemble_minus_baseline_by_k": {
-    "1": 0.0,
-    "5": 0.0087,
-    "10": 0.0087
+    "1": -0.0026,
+    "5": -0.0061,
+    "10": 0.0036,
+    "20": -0.0117,
+    "50": -0.0324
   },
   "note": "Dense members fed REAL Sentinel Hub crops (texture), not a tiled pixel; compare these deltas against ensemble_full_tl (pixel-tiled)."
 }
