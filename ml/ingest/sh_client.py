@@ -121,6 +121,29 @@ _TOKEN_REFRESH_MARGIN_S: float = 30.0
 #: ``base * 2**i`` -> 1, 2, 4, 8 s.
 _RETRY_BACKOFF_BASE_S: float = 1.0
 
+#: Cap on the honoured ``Retry-After`` (seconds). SH may ask for ~200s; with
+#: concurrent workers that stalls the run, so we cap and rely on the per-minute
+#: budget recovering while a few workers trickle through.
+_RETRY_MAX_WAIT_S: float = 20.0
+
+
+def _jitter(spread: float = 5.0) -> float:
+    """Return a small per-call jitter (seconds) to de-synchronise workers.
+
+    Derived from the sub-second fraction of the monotonic clock (no RNG), so two
+    workers hitting a 429 in the same instant wait slightly different amounts and
+    stop retrying in lockstep.
+
+    Args:
+        spread: Maximum jitter in seconds.
+
+    Returns:
+        A value in ``[0, spread)``.
+    """
+    import time as _t
+
+    return (_t.monotonic() % 1.0) * spread
+
 
 @dataclass(frozen=True)
 class SHCrop:
@@ -226,8 +249,14 @@ class SentinelHubClient:
             if response.status_code == 200:
                 return response
             if response.status_code == 429 and attempt < max_attempts - 1:
+                # SH returns a per-minute rate-limit ``Retry-After`` (often ~200s).
+                # Respecting the full value with concurrent workers makes them all
+                # sleep in lockstep and the run stalls. Cap the wait and add a
+                # per-worker jitter so requests de-synchronise and trickle through
+                # under the rate budget instead of hammering it in bursts.
                 retry_after = response.headers.get("Retry-After")
-                wait = float(retry_after) if retry_after else _RETRY_BACKOFF_BASE_S * (2**attempt)
+                raw = float(retry_after) if retry_after else _RETRY_BACKOFF_BASE_S * (2**attempt)
+                wait = min(raw, _RETRY_MAX_WAIT_S) + _jitter()
                 logger.info("sh_rate_limited_retry", attempt=attempt + 1, wait_s=round(wait, 1))
                 _time.sleep(wait)
                 continue
@@ -452,7 +481,7 @@ class SentinelHubClient:
         size: int = 128,
         half_side_deg: float = 0.0008,
         max_cloud: float = 25.0,
-        max_workers: int = 3,
+        max_workers: int = 2,
     ) -> list[np.ndarray | None]:
         """Download many parcels' ORBIT stacks concurrently (thread pool).
 

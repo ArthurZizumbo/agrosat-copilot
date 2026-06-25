@@ -173,7 +173,7 @@ def _load_region_texture(
     date_from, date_to = windows[0][0], windows[-1][1]
     stacks = sh_client.parcel_series_batch(  # type: ignore[attr-defined]
         coords, date_from=date_from, date_to=date_to,
-        size=size, max_cloud=max_cloud, max_workers=8,
+        size=size, max_cloud=max_cloud, max_workers=2,
     )
 
     annual_rows: list[np.ndarray] = []
