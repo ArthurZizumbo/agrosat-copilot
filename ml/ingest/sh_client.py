@@ -68,6 +68,53 @@ _EVALSCRIPT: str = (
     + "];}"
 )
 
+def _orbit_evalscript(n_frames: int) -> str:
+    """Build a multi-temporal evalscript that returns ``n_frames`` x 10 bands.
+
+    Uses ``mosaicking: "ORBIT"`` so ``evaluatePixel`` receives one sample per
+    acquisition. It emits the most-recent ``n_frames`` orbits (newest first),
+    each as the 10 PASTIS bands, concatenated into a single ``n_frames * 10``-band
+    output. When fewer than ``n_frames`` orbits exist the missing frames are
+    zero-filled (the caller drops all-zero frames). This collapses a whole season
+    into ONE Process API request per parcel instead of one request per window.
+
+    Per-PIXEL cloud masking (coherence): besides the scene-level
+    ``maxCloudCoverage`` filter, each pixel is zeroed when the Scene
+    Classification Layer (SCL) marks it cloud/shadow/cirrus/snow (SCL in
+    {3 shadow, 8 cloud-medium, 9 cloud-high, 10 cirrus, 11 snow}). This keeps the
+    temporal stack physically coherent -- a cloudy pixel injects spurious
+    reflectance that corrupts the phenology signal the dense models read.
+
+    Args:
+        n_frames: Number of temporal frames to emit.
+
+    Returns:
+        The evalscript source string.
+    """
+    bands_in = ",".join(f'"{b}"' for b in PASTIS_BANDS)
+    nb = len(PASTIS_BANDS)
+    total = n_frames * nb
+    # For each frame f and band b: 0 when the frame is absent OR the pixel is
+    # cloud/shadow/cirrus/snow per SCL; otherwise the reflectance value.
+    out_terms: list[str] = []
+    for f in range(n_frames):
+        clear = (
+            f"(n>{f}"
+            f"&&samples[{f}].SCL!=3&&samples[{f}].SCL!=8&&samples[{f}].SCL!=9"
+            f"&&samples[{f}].SCL!=10&&samples[{f}].SCL!=11)"
+        )
+        for b in PASTIS_BANDS:
+            out_terms.append(f"({clear}?samples[{f}].{b}:0)")
+    return (
+        "//VERSION=3\n"
+        f"function setup(){{return {{input:[{{bands:[{bands_in},\"SCL\"]}}],"
+        f"output:{{bands:{total},sampleType:\"FLOAT32\"}},mosaicking:\"ORBIT\"}};}}\n"
+        "function evaluatePixel(samples){var n=samples.length;return ["
+        + ",".join(out_terms)
+        + "];}"
+    )
+
+
 _TOKEN_REFRESH_MARGIN_S: float = 30.0
 
 
@@ -260,6 +307,148 @@ class SentinelHubClient:
             logger.info("sh_parcel_series_insufficient", n_frames=len(frames))
             return None
         return np.stack(frames, axis=0).astype(np.float32)
+
+    def parcel_series_orbit(
+        self,
+        lon: float,
+        lat: float,
+        *,
+        date_from: str,
+        date_to: str,
+        n_frames: int = 12,
+        size: int = 128,
+        half_side_deg: float = 0.0008,
+        max_cloud: float = 25.0,
+    ) -> np.ndarray | None:
+        """Build a parcel's temporal stack in ONE request (mosaicking=ORBIT).
+
+        ``max_cloud`` defaults to 25 (keep scenes that are >= 75% cloud-free).
+        This is the scene-level gate; on top of it the evalscript masks each
+        cloudy/shadow/cirrus PIXEL via SCL, so a 25% scene still yields a coherent
+        stack (the cloudy pixels are zeroed, not used). The looser scene gate keeps
+        MORE usable frames in cloudy regions like the Baltic while the per-pixel
+        SCL mask preserves coherence. ``n_frames`` candidates + dropping empty
+        frames absorb the rest.
+
+        Pulls the most-recent ``n_frames`` cloud-filtered acquisitions of the
+        season in a single Process API call (10 bands x ``n_frames`` frames in one
+        multi-band GeoTIFF), then reshapes to ``(T, 10, size, size)`` and drops
+        all-zero frames (missing orbits). This is ~``len(windows)``x cheaper than
+        :meth:`parcel_series` (one request instead of one per window).
+
+        Args:
+            lon: Parcel centroid longitude.
+            lat: Parcel centroid latitude.
+            date_from: Season start ISO date.
+            date_to: Season end ISO date.
+            n_frames: Max temporal frames to request.
+            size: Patch side in pixels.
+            half_side_deg: Half the bbox side in degrees.
+            max_cloud: Maximum scene cloud cover.
+
+        Returns:
+            A ``(T, 10, size, size)`` float32 stack (``T <= n_frames`` after
+            dropping empty frames), or ``None`` when fewer than two frames carry
+            data.
+        """
+        token = self._ensure_token()
+        bbox = (
+            lon - half_side_deg, lat - half_side_deg,
+            lon + half_side_deg, lat + half_side_deg,
+        )
+        nb = len(PASTIS_BANDS)
+        payload = {
+            "input": {
+                "bounds": {
+                    "bbox": list(bbox),
+                    "properties": {"crs": "http://www.opengis.net/def/crs/EPSG/0/4326"},
+                },
+                "data": [
+                    {
+                        "type": "sentinel-2-l2a",
+                        "dataFilter": {
+                            "timeRange": {
+                                "from": f"{date_from}T00:00:00Z",
+                                "to": f"{date_to}T23:59:59Z",
+                            },
+                            "maxCloudCoverage": max_cloud,
+                        },
+                    }
+                ],
+            },
+            "output": {
+                "width": size,
+                "height": size,
+                "responses": [{"identifier": "default", "format": {"type": "image/tiff"}}],
+            },
+            "evalscript": _orbit_evalscript(n_frames),
+        }
+        response = self._http.post(
+            _PROCESS_URL, headers={"Authorization": f"Bearer {token}"}, json=payload
+        )
+        if response.status_code != 200:
+            logger.warning("sh_orbit_failed", status=response.status_code, body=response.text[:200])
+            return None
+        flat = _decode_tiff(response.content)  # (n_frames*10, H, W)
+        if flat is None or flat.shape[0] != n_frames * nb:
+            logger.info("sh_orbit_unexpected_bands", got=None if flat is None else flat.shape)
+            return None
+        stack = flat.reshape(n_frames, nb, flat.shape[1], flat.shape[2])
+        keep = [f for f in range(n_frames) if np.abs(stack[f]).sum() > 0.0]
+        if len(keep) < 2:
+            logger.info("sh_orbit_insufficient", n_frames=len(keep))
+            return None
+        return stack[keep].astype(np.float32)
+
+    def parcel_series_batch(
+        self,
+        coords: list[tuple[float, float]],
+        *,
+        date_from: str,
+        date_to: str,
+        n_frames: int = 12,
+        size: int = 128,
+        half_side_deg: float = 0.0008,
+        max_cloud: float = 25.0,
+        max_workers: int = 8,
+    ) -> list[np.ndarray | None]:
+        """Download many parcels' ORBIT stacks concurrently (thread pool).
+
+        Each parcel is one :meth:`parcel_series_orbit` call; the pool runs
+        ``max_workers`` of them at a time. A single token is fetched up front so
+        the workers share it (the Process API is the bottleneck, not auth).
+
+        Args:
+            coords: Parcel centroids ``[(lon, lat), ...]``.
+            date_from: Season start ISO date.
+            date_to: Season end ISO date.
+            n_frames: Max temporal frames per parcel.
+            size: Patch side in pixels.
+            half_side_deg: Half the bbox side in degrees.
+            max_cloud: Maximum scene cloud cover.
+            max_workers: Concurrent Process API requests.
+
+        Returns:
+            A list aligned with ``coords``; each item is the parcel stack or
+            ``None`` when it had insufficient data.
+        """
+        from concurrent.futures import ThreadPoolExecutor
+
+        self._ensure_token()  # warm the shared token before fanning out
+
+        def _one(lonlat: tuple[float, float]) -> np.ndarray | None:
+            lon, lat = lonlat
+            return self.parcel_series_orbit(
+                lon, lat, date_from=date_from, date_to=date_to,
+                n_frames=n_frames, size=size, half_side_deg=half_side_deg,
+                max_cloud=max_cloud,
+            )
+
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            results = list(pool.map(_one, coords))
+        n_ok = sum(1 for r in results if r is not None)
+        logger.info("sh_batch_done", n_total=len(coords), n_ok=n_ok, max_workers=max_workers)
+        return results
 
 
 def _decode_tiff(content: bytes) -> np.ndarray | None:

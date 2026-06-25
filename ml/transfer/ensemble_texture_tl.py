@@ -166,15 +166,22 @@ def _load_region_texture(
     leaves = df["leaf"].to_list()
     annual_mat = df.select(_ALPHAEARTH_COLS).to_numpy().astype(np.float64)
 
+    # One ORBIT request per parcel (whole season multi-temporal), downloaded
+    # concurrently. date_from/date_to span the season; the per-pixel SCL mask +
+    # max_cloud keep only coherent frames.
+    coords = list(zip(lons, lats, strict=True))
+    date_from, date_to = windows[0][0], windows[-1][1]
+    stacks = sh_client.parcel_series_batch(  # type: ignore[attr-defined]
+        coords, date_from=date_from, date_to=date_to,
+        size=size, max_cloud=max_cloud, max_workers=8,
+    )
+
     annual_rows: list[np.ndarray] = []
     patch_rows: list[np.ndarray] = []
     leaf_rows: list[str] = []
     n_downloaded = 0
     n_dropped = 0
-    for i, (lon, lat) in enumerate(zip(lons, lats, strict=True)):
-        stack = sh_client.parcel_series(  # type: ignore[attr-defined]
-            lon, lat, windows=windows, size=size, max_cloud=max_cloud
-        )
+    for i, stack in enumerate(stacks):
         if stack is None:
             n_dropped += 1
             continue
@@ -182,13 +189,6 @@ def _load_region_texture(
         annual_rows.append(annual_mat[i])
         leaf_rows.append(leaves[i])
         n_downloaded += 1
-        if n_downloaded % 10 == 0:
-            logger.info(
-                "texture_region_progress",
-                region=region,
-                downloaded=n_downloaded,
-                dropped=n_dropped,
-            )
 
     logger.info(
         "texture_region_loaded", region=region, n_downloaded=n_downloaded, n_dropped=n_dropped
