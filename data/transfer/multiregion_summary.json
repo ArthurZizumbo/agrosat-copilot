@@ -1,0 +1,32 @@
+{
+  "n_parcels_total": 30489,
+  "n_fine_parcels": 17516,
+  "n_leaf_classes_fine": 30,
+  "n_macro_classes": 12,
+  "split": {
+    "n_train": 12260,
+    "n_test": 5256,
+    "n_leaf_classes": 30,
+    "train_per_region": {
+      "EUROCROPS_ES": 4127,
+      "EUROCROPS_LA": 4001,
+      "PASTIS_FR": 4132
+    },
+    "test_per_region": {
+      "EUROCROPS_ES": 1769,
+      "EUROCROPS_LA": 1715,
+      "PASTIS_FR": 1772
+    }
+  },
+  "multi_region_over_070": 7,
+  "multi_region_over_080": 2,
+  "multi_region_over_085": 2,
+  "pastis_capped_over_070": 6,
+  "pastis_capped_over_080": 3,
+  "pastis_capped_over_085": 2,
+  "pastis_full_over_070": 10,
+  "pastis_full_over_085": 2,
+  "n_rescued_classes_085": 0,
+  "macro_f1_macro_multiregion": 0.5480724025822292,
+  "leaf_f1_macro_multiregion_fine": 0.4558801457522606
+}
