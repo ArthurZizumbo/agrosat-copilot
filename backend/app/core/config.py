@@ -76,6 +76,18 @@ class Settings(BaseSettings):
     # Earth Engine / CDSE
     gee_service_account_path: str = ""
     gee_project_id: str = ""
+    # CDSE OAuth2 client-credentials (server-side confidential client, NOT a SPA).
+    # Created at https://shapps.dataspace.copernicus.eu (Sentinel Hub OAuth client).
+    # The secret is shown once at creation -- keep it only in .env.local (gitignored).
+    cdse_client_id: str = ""
+    cdse_client_secret: str = ""
+    # Token endpoint of the CDSE Keycloak realm (verified against the official docs:
+    # eu-cdse/documentation, sh_token_url). Public URL, not a secret.
+    cdse_token_url: str = (
+        "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token"
+    )
+    # Legacy username/password grant (kept for backward compatibility; prefer the
+    # client-credentials pair above for automation).
     cdse_username: str = ""
     cdse_password: str = ""
 
