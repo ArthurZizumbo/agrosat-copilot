@@ -35,6 +35,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--finetune-epochs", type=int, default=8)
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--no-farslip", action="store_true")
+    parser.add_argument(
+        "--sh-texture", action="store_true",
+        help="Use Sentinel Hub textured patches (paid quota) instead of local npz.",
+    )
+    parser.add_argument(
+        "--dense-members", nargs="+", default=["utae"],
+        help="Dense members to fine-tune (utae works at 8px; tsvit needs 128px SH).",
+    )
     parser.add_argument("--device", default="cuda")
     args = parser.parse_args(argv)
 
@@ -42,10 +50,12 @@ def main(argv: list[str] | None = None) -> int:
         source=args.source,
         target=args.target,
         per_class=args.per_class,
+        dense_members=tuple(args.dense_members),
         warmup_epochs=args.warmup_epochs,
         finetune_epochs=args.finetune_epochs,
         batch_size=args.batch_size,
         include_farslip=not args.no_farslip,
+        use_local_npz=not args.sh_texture,
         device=args.device,
     )
     client = sh_client_from_settings(get_settings())
