@@ -60,3 +60,61 @@ evalua 6 items. Ya documentado en el handoff US-049.
 
 **Accion recomendada**: para una eval real de Qwen, ampliar `make_subset` con
 filtro `is_multimodal=False`. No critico para la presentacion.
+
+## B-E7-4 — Gap fenologico de la rama degradada del perceiver, severidad MEDIA
+
+**Que**: el re-cableo al campeon (B-E7-1) sirve el Stacking-5 COMPLETO (con los
+miembros temporales TSViT-pheno y U-TAE, que aportan el descriptor fenologico
+denso) SOLO para parcelas presentes en el OOF de fold-5 de PASTIS-R. Para una
+parcela NUEVA -- un AOI dibujado por el usuario, o una escena Sentinel recien
+descargada -- no existe OOF, y el perceiver degrada limpio a `xgb-alphaearth`,
+que clasifica con el embedding AlphaEarth ANUAL sin ninguna fenologia intra-anual
+(ver `ml/agent/perceiver.py:382`). Es decir: el campeon con fenologia cubre el
+universo evaluable, pero la rama que ve el usuario en produccion para parcelas
+frescas es la SIN fenologia.
+
+**Costo medido de la degradacion (real, mismas 13.481 parcelas fold-5,
+`ml/eval/perceiver_champion_eval.py` / `reports/agent_bench/perceiver_champion_eval.json`)**:
+es el espejo del +11pp del re-cableo. La rama degradada `xgb-anual` rinde
+accuracy 0.831 / macro-F1 0.687 frente a 0.941 / 0.901 del campeon-OOF, es decir
+una perdida de **-11.05 pp de accuracy y -21.4 pp de macro-F1** cuando una parcela
+cae a la rama sin fenologia. Sobre estas parcelas son 1.490 que el campeon
+corrige y la rama anual no.
+
+**Causa raiz (de diseno, no bug)**: TSViT-pheno y U-TAE necesitan la SERIE
+Sentinel-2 multi-fecha como insumo. PASTIS-R la traia (de ahi el OOF cacheado);
+EuroCropsML tambien la trae (.npz por parcela). Pero los datasets/transfers que
+SOLO usaron el embedding anual (multi-region original, WorldCereal tropical,
+demo Mexico) y cualquier AOI nuevo NO tienen esa serie, asi que los modelos
+temporales no pueden correr y el campeon pierde su fenologia.
+
+**Camino para cerrarlo (insumo: la cuenta Sentinel/CDSE, ya funcional)**:
+1. La serie S2 de una parcela nueva se descarga con `ml/ingest/cdse_client.py`
+   (`CDSEClient.search_s2`, OData, probado real Toscana <10% nubes) ahora que
+   `search_stac` ya esta conectado a CDSE (commit 60c73e7).
+2. Con esa serie, los features temporales (`ml/transfer/temporal_features.py`,
+   99-dim: stats por banda/indice + fenologia NDVI + FFT) se pueden computar
+   inline y alimentar el clasificador, o correr TSViT/U-TAE offline via worker
+   Pub/Sub (la regla de `ml/agent/AGENTS.md` prohibe inferencia pesada inline en
+   la tool).
+3. Evidencia de que el insumo temporal SI rescata fenologia: la fusion
+   anual+temporal sobre EuroCropsML (mismas parcelas, mismo split espacial)
+   sube las clases fenologicas (winter-vs-spring) -- ver
+   `data/transfer/temporal_vs_annual/` y `docs/transfer/modelo-multiregion.md`.
+
+**Capa barata complementaria (descriptor fenologico TEXTUAL con Gemini Flash)**:
+independiente del numero del clasificador, el reasoner puede recibir un descriptor
+fenologico en lenguaje natural por parcela (p. ej. "emergencia tardia, pico de
+verdor en julio, senescencia rapida") generado con Gemini 2.5 Flash (barato, sin
+GPU) a partir de las metricas de la curva NDVI ya calculadas en
+`temporal_features._ndvi_phenology` (peak_doy, sog_doy, early/late green-up, AUC).
+Esto NO sustituye a TSViT/U-TAE (que dan la PREDICCION); enriquece el bloque de
+texto que el perceiver pasa al reasoner. Es la ruta de menor costo para que el
+agente "hable" de fenologia incluso cuando la prediccion viene de la rama anual.
+
+**Accion recomendada**: (1) exponer el descriptor fenologico textual NDVI en el
+perceiver para parcelas con serie S2 (barato, alto valor narrativo); (2) wirear el
+worker temporal CDSE->features->clasificador para que parcelas nuevas no caigan a
+la rama -21pp; (3) medir end-to-end sobre un AOI real con serie descargada de
+CDSE. Severidad MEDIA: no bloquea la demo (parcelas del catalogo usan campeon),
+pero es el limite honesto a documentar en paper/presentacion.
