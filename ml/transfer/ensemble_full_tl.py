@@ -141,6 +141,7 @@ def _load_hcat_name_map() -> dict[int, str]:
 def _load_region_parcels(
     region: str, *, max_parcels: int, seed: int,
     stratify_keep: set[str] | None = None, per_class: int | None = None,
+    patch_side: int = _PATCH_SIDE,
 ) -> _RegionParcels:
     """Load a region's AlphaEarth + raw S2 series + leaf, bridging series to patches.
 
@@ -219,7 +220,7 @@ def _load_region_parcels(
         if data.ndim != 2 or data.shape[0] < 2:
             n_missing += 1
             continue
-        patch_rows.append(parcel_series_to_patch(data, dates))
+        patch_rows.append(parcel_series_to_patch(data, dates, patch_side=patch_side))
         annual_rows.append(annual_mat[i])
         leaf_rows.append(leaves[i])
 
@@ -260,7 +261,9 @@ def _subsample_time(series: np.ndarray, dates: np.ndarray, n: int) -> tuple[np.n
     return np.concatenate([series, pad], axis=0), np.concatenate([dates, pad_d], axis=0)
 
 
-def parcel_series_to_patch(series: np.ndarray, dates: np.ndarray) -> np.ndarray:
+def parcel_series_to_patch(
+    series: np.ndarray, dates: np.ndarray, *, patch_side: int = _PATCH_SIDE
+) -> np.ndarray:
     """Bridge a per-parcel ``(T, 13)`` series to a dense patch ``(T, 10, P, P)``.
 
     Maps the 13 EuroCropsML bands to the 10 PASTIS bands by name, scales DN to
@@ -270,6 +273,9 @@ def parcel_series_to_patch(series: np.ndarray, dates: np.ndarray) -> np.ndarray:
     Args:
         series: EuroCropsML parcel series ``(T, 13)`` in raw DN.
         dates: ``datetime64`` acquisition dates ``(T,)``.
+        patch_side: Spatial side ``P`` of the tiled patch. Default 8 (cheap, for
+            U-TAE which is grid-agnostic); pass 128 for TSViT-fullm, whose trained
+            ``spatial_pos_embedding`` expects a ``128/patch_size`` token grid.
 
     Returns:
         A ``(n_timesteps, 10, P, P)`` float32 reflectance patch.
@@ -278,7 +284,7 @@ def parcel_series_to_patch(series: np.ndarray, dates: np.ndarray) -> np.ndarray:
     refl = s_n.astype(np.float32) / _DN_SCALE
     sel = refl[:, list(EUROCROPS_TO_PASTIS_BAND_INDEX)]  # (T, 10)
     patch = np.broadcast_to(
-        sel[:, :, None, None], (sel.shape[0], sel.shape[1], _PATCH_SIDE, _PATCH_SIDE)
+        sel[:, :, None, None], (sel.shape[0], sel.shape[1], patch_side, patch_side)
     )
     return np.ascontiguousarray(patch, dtype=np.float32)
 

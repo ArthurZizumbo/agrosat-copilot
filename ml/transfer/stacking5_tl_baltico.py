@@ -129,6 +129,10 @@ def run_stacking5_tl(
     # --- 1. Load the stratified Baltic parcels ONCE (shared by all members). ------
     # Local npz (free, pixel-tiled) for the vocabulary experiment; SH (paid, real
     # texture, cached) otherwise. Both yield ``annual + patches + leaf`` per parcel.
+    # TSViT-fullm needs a 128px patch grid; U-TAE is grid-agnostic, so when TSViT
+    # is a member every patch is built at 128px (shared across members).
+    patch_side = 128 if "tsvit-pheno-fullm" in config.dense_members else 8
+
     def _load(region: str) -> object:
         if config.use_local_npz:
             from ml.transfer.ensemble_full_tl import _load_region_parcels
@@ -136,6 +140,7 @@ def run_stacking5_tl(
             return _load_region_parcels(
                 region, max_parcels=10_000, seed=config.seed,
                 stratify_keep=keep, per_class=config.per_class,
+                patch_side=patch_side,
             )
         from ml.transfer.ensemble_texture_tl import (
             _load_region_texture,
@@ -384,3 +389,95 @@ def _farslip_posteriors(
     raise NotImplementedError(
         "FarSLIP member pending: requires the CLS-prototype scorer + Gemini captions."
     )
+
+
+# ----------------------------------------------------------------------------
+# Combination-layer swap: weighted / simple vote on the SAME member posteriors.
+# Mirrors the PASTIS WeightedVotingEnsemble experiment (engram #337/#340) in the
+# transfer setting -- the members all emit a posterior over the SAME 18 Baltic
+# leaves, so a convex soft-vote is well defined. The weighted vote learns N
+# convex weights on the SOURCE (the meta-LogReg's train split) by direct F1-macro
+# maximization and applies them to the TARGET, exactly the protocol of the meta.
+# ----------------------------------------------------------------------------
+
+
+def _simplex(raw: np.ndarray) -> np.ndarray:
+    """Map free logits to the convex simplex (softmax, ``w_i >= 0``, ``sum == 1``)."""
+    z = raw - raw.max()
+    e = np.exp(z)
+    return e / e.sum()
+
+
+def _learn_vote_weights(
+    post_src_stack: np.ndarray, y_src: np.ndarray, *, seed: int,
+    n_restarts: int = 6, max_iter: int = 400,
+) -> np.ndarray:
+    """Learn convex weights maximizing source F1-macro of the weighted vote.
+
+    Direct Nelder-Mead over the simplex logits, multi-started from each member
+    corner and the centroid (the F1 surface is non-convex / piecewise-constant).
+    Learned on the SOURCE posteriors so the head-to-head with the meta-LogReg is
+    apples-to-apples (both fit on source, evaluate on target).
+
+    Args:
+        post_src_stack: Member tensor ``(M, n_src, K)`` of source posteriors.
+        y_src: Source labels ``(n_src,)``.
+        seed: Deterministic seed (unused by Nelder-Mead but kept for parity).
+        n_restarts: Minimum number of restarts.
+        max_iter: Max Nelder-Mead iterations per restart.
+
+    Returns:
+        Convex weights ``(M,)`` with the best source F1-macro found.
+    """
+    from scipy.optimize import minimize
+    from sklearn.metrics import f1_score
+
+    n_members = post_src_stack.shape[0]
+
+    def neg_f1(raw: np.ndarray) -> float:
+        w = _simplex(raw)
+        preds = np.tensordot(w, post_src_stack, axes=(0, 0)).argmax(axis=1)
+        return -float(f1_score(y_src, preds, average="macro"))
+
+    starts: list[np.ndarray] = []
+    for i in range(n_members):
+        corner = np.full(n_members, 0.05, dtype=np.float64)
+        corner[i] = 1.0
+        starts.append(corner)
+    starts.append(np.full(n_members, 1.0 / n_members, dtype=np.float64))
+    for r in range(max(0, n_restarts - len(starts))):
+        jitter = np.full(n_members, 1.0 / n_members, dtype=np.float64)
+        jitter[r % n_members] += 0.3
+        starts.append(jitter)
+
+    best_raw, best_neg = None, np.inf
+    for x0 in starts:
+        res = minimize(
+            neg_f1, x0, method="Nelder-Mead",
+            options={"maxiter": max_iter, "xatol": 1e-4, "fatol": 1e-4},
+        )
+        if float(res.fun) < best_neg:
+            best_neg = float(res.fun)
+            best_raw = np.asarray(res.x, dtype=np.float64)
+    assert best_raw is not None
+    return _simplex(best_raw)
+
+
+def _fc_metrics(
+    true_leaves: list[str], pred_leaves: list[str],
+    fine_to_coarse: dict[str, str], leaf_to_pastis: dict[str, str],
+) -> dict[str, float]:
+    """Fine + collapsed-to-coarse macro-F1 / accuracy for one combiner's preds."""
+    from sklearn.metrics import accuracy_score, f1_score
+
+    def coarse(leaf: str) -> str:
+        return fine_to_coarse.get(leaf, leaf_to_pastis.get(leaf, leaf))
+
+    ct = [coarse(t) for t in true_leaves]
+    cp = [coarse(p) for p in pred_leaves]
+    return {
+        "fine_macro_f1": round(float(f1_score(true_leaves, pred_leaves, average="macro")), 4),
+        "fine_accuracy": round(float(accuracy_score(true_leaves, pred_leaves)), 4),
+        "coarse_macro_f1": round(float(f1_score(ct, cp, average="macro")), 4),
+        "coarse_accuracy": round(float(accuracy_score(ct, cp)), 4),
+    }
