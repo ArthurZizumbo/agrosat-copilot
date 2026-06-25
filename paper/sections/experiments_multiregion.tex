@@ -3,7 +3,10 @@
 % Prose in English (the manuscript is EN). Every number is rendered from the real
 % EPIC 12 artefacts by scripts/build_us073_transfer_figures.py; nothing is hand-typed.
 % Tables : paper/tables/us-073-transfer/{sen4agrinet_domain_gap,eurocropsml_kshot}.tex
-% Figures: paper/figures/us-073-transfer/{kshot_curve,mexico_phenology}.{png,svg}
+% Figures: paper/figures/us-073-transfer/{kshot_curve,mexico_phenology,worldcereal_tropical_transfer}.{png,svg}
+%          paper/figures/us-075/sen4agrinet_per_class_iou_f1.png
+%          paper/figures/us-076/eurocropsml_per_class_f1_vs_k.png
+%          ../docs/us-planning/figures/eurocropsml_alphaearth_vs_s2_fewshot.png
 % Required packages in the host preamble: booktabs, graphicx, amsmath, hyperref, url.
 
 \section{Multi-Region Transfer: Train in France, Extend Elsewhere}
@@ -148,8 +151,97 @@ EuroCropsML splits.
   on the Estonian query set versus $k$ shots per class, mean over three seeds with std
   error bars. Source pre-training dominates at low $k$ and all curves converge as local
   supervision grows: the gap is closed by few-shot data, not by zero-shot transfer.
-  EuroCropsML (Reuter et al. 2025, CC-BY-SA-4.0).}
+  EuroCropsML (Reuss et al. 2024, CC-BY-SA-4.0).}
   \label{fig:eurocropsml_kshot}
+\end{figure}
+
+\subsection{Does the Foundation Model Help? AlphaEarth vs.\ Raw Sentinel-2}
+\label{sec:multiregion:fm-vs-s2}
+
+The previous curve is built from raw per-parcel Sentinel-2 series because EuroCropsML
+ships no embedding. A natural and decisive question is whether the AlphaEarth foundation
+model --- the same 64-dimensional annual embedding that underpins the rest of this work
+--- actually \emph{closes the transnational domain gap with fewer local labels} than raw
+spectral bands. To answer it we re-ran the identical LV$\rightarrow$EE few-shot protocol
+(XGBoost \texttt{multi:softprob}, three seeds, nine macro-classes) on two feature spaces:
+the parcel's own Sentinel-2 series, and the AlphaEarth zonal embedding pulled for the same
+$42{,}473$ EuroCropsML parcels through Google Earth
+Engine~(\texttt{SATELLITE\_EMBEDDING/V1/ANNUAL}, v1.1).
+
+Figure~\ref{fig:eurocropsml_ae_vs_s2} reports the head-to-head. \textbf{AlphaEarth wins at
+every $k$.} The advantage is largest exactly where it matters --- in the low-label regime:
+$\Delta$F1-macro~$=+0.111$ at $k{=}1$ ($0.432$ vs.\ $0.321$) and $+0.087$ at $k{=}5$
+($0.436$ vs.\ $0.349$), shrinking to $+0.014$--$0.035$ once hundreds of local shots are
+available and both spaces have enough supervision to saturate near $0.53$ at $k{=}2000$.
+In other words, \emph{the foundation model closes the same domain gap with roughly an order
+of magnitude fewer local labels} than raw bands: a single shot per class on AlphaEarth
+already matches what raw Sentinel-2 needs $\sim$20 shots to reach. This is the most
+positive transfer result of the section and it is the empirical counterpart to the few-shot
+budget warned about in ``Harvesting AlphaEarth''~\cite{harvesting2026alphaearth}: the FM
+does not deliver zero-shot magic, but it makes the unavoidable few-shot budget dramatically
+cheaper. All numbers are rendered from
+\texttt{data/transfer/eurocropsml\_alphaearth\_vs\_s2\_delta.parquet}.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.9\linewidth]{../docs/us-planning/figures/eurocropsml_alphaearth_vs_s2_fewshot.png}
+  \caption{AlphaEarth foundation-model embedding vs.\ raw Sentinel-2 on the EuroCropsML
+  LV$\rightarrow$EE transnational few-shot task (F1-macro vs.\ $k$, mean over three seeds).
+  AlphaEarth dominates at every $k$, with the largest margin in the low-label regime
+  ($+0.111$ at $k{=}1$, $+0.087$ at $k{=}5$), converging as both spaces saturate near
+  $0.53$ at $k{=}2000$: the foundation model closes the domain gap with roughly an order of
+  magnitude fewer local labels. Embeddings for the $42{,}473$ parcels pulled via Google
+  Earth Engine (\texttt{SATELLITE\_EMBEDDING/V1/ANNUAL} v1.1,
+  CC-BY-4.0)~\cite{brown2025alphaearth}; EuroCropsML labels (Reuss et al.\ 2024,
+  CC-BY-SA-4.0)~\cite{reuss2025eurocropsml}.}
+  \label{fig:eurocropsml_ae_vs_s2}
+\end{figure}
+
+\subsection{Per-Class Anatomy: Cardinality Dominates Fragility}
+\label{sec:multiregion:perclass}
+
+Macro-averaged scores hide which crops transfer and which collapse. Opening the confusion
+matrix per class, on both real paths, exposes a single dominant factor:
+\textbf{per-class cardinality, not the abstract domain shift, governs transfer fragility}.
+On the EuroCropsML LV$\rightarrow$EE tabular path
+(Figure~\ref{fig:eurocropsml_perclass}, left), \texttt{grassland} is already
+\emph{saturated} at F1~$\approx0.90$ from $k{=}10$ --- the dominant Baltic land cover has no
+gap to close --- and \texttt{cereals} ($0.82\rightarrow0.84$) and
+\texttt{oilseed\_industrial} ($0.76\rightarrow0.81$) transfer almost for free. By contrast
+\texttt{potato} ($0.35\rightarrow0.50$) and \texttt{legumes\_fodder} ($0.03\rightarrow0.29$)
+have a real gap that closes only with hundreds of local labels, while
+\texttt{sugar\_beet} ($\sim$16 test parcels), \texttt{orchard} ($\sim$52) and
+\texttt{vegetables} ($\sim$66) never clear F1~$0.3$ even at $k{=}500$: their minute support
+leaves the feature space too sparse for the $k$-shot to fill. The same signature appears in
+the dense Sen4AgriNet path
+(Figure~\ref{fig:sen4agrinet_perclass}, right): few-shot \texttt{cereals} recovers
+completely (IoU~$0.923$, F1~$0.960$), \texttt{vineyard} shows the textbook
+high-precision/low-recall pattern (precision~$0.955$ but recall~$0.151$ --- its signature is
+reliable but ten patches do not cover it), and \texttt{oilseed\_industrial} ($2067$~px) and
+\texttt{potato} ($164$~px) fail outright (IoU~$0.000$) even after finetuning. We also
+measured per-class \emph{negative} transfer: pre-training on neighbouring Latvia helps
+shared-phenology crops at $k{=}10$ (\texttt{cereals} $+0.343$, \texttt{oilseed}~$+0.302$,
+\texttt{grassland}~$+0.285$) but \emph{hurts} \texttt{legumes\_fodder} ($-0.144$) and
+\texttt{vegetables} ($-0.064$), so ``pre-train on the neighbour'' is a per-crop, not a
+global, decision. The full tables live in
+\texttt{docs/transfer/analisis-clases-transfer.md}.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.49\linewidth]{figures/us-076/eurocropsml_per_class_f1_vs_k.png}
+  \hfill
+  \includegraphics[width=0.49\linewidth]{figures/us-075/sen4agrinet_per_class_iou_f1.png}
+  \caption{Per-class transfer anatomy. \emph{Left:} EuroCropsML LV$\rightarrow$EE F1 per
+  macro-class versus $k$ --- robust crops (grassland, cereals, oilseed) saturate with few or
+  zero local labels, while low-cardinality crops (sugar\_beet, orchard, vegetables) stay
+  below F1~$0.3$ regardless of $k$. \emph{Right:} Sen4AgriNet France$\rightarrow$Catalonia
+  zero-shot vs.\ few-shot IoU/F1 per macro-class --- cereals recovers fully, vineyard is
+  high-precision/low-recall, and minority classes (oilseed, potato) stay at $0$. In both
+  paths the worst classes are the lowest-cardinality ones: support, not the domain shift in
+  the abstract, drives fragility. EuroCropsML (CC-BY-SA-4.0)~\cite{reuss2025eurocropsml};
+  Sen4AgriNet (CC-BY-SA-4.0)~\cite{sykas2022sen4agrinet}.}
+  \label{fig:eurocropsml_perclass}
+  \label{fig:sen4agrinet_perclass}
 \end{figure}
 
 \subsection{Qualitative Zero-Shot Demonstration: Mexico}
@@ -181,33 +273,160 @@ contains modified Copernicus Sentinel data.
   \label{fig:mexico_phenology}
 \end{figure}
 
-\subsection{Future / Scale: Tropical Crops}
-\label{sec:multiregion:future}
+\subsection{Out of Europe: Tropical Transfer with WorldCereal (Brazil and India)}
+\label{sec:multiregion:tropical}
 
-The recipe scales, in principle, to tropical agriculture (rice, soybean, sugarcane,
-cotton) through WorldCereal RDM and the Harmonized Global Crops dataset. We declare this
-\textbf{explicitly out of scope and future} for the present manuscript: it was not
-demonstrated within this work's window, and we make no metric claim about it. The license
-attributions are nonetheless pre-registered (WorldCereal RDM, CC-BY per collection;
-Harmonized Global Crops, CC-BY-SA-4.0) so that the legal compliance of any future ingestion
-is already resolved.
+We tested whether the recipe survives a jump to the tropics, where phenology, calendar and
+the crop catalogue itself differ from Europe. Using the ESA WorldCereal
+reference~\cite{vantricht2023worldcereal} (GEE asset
+\texttt{ESA/WorldCereal/2021/MODELS/v100}, CC-BY-4.0) we pulled AlphaEarth embeddings via
+GEE for two tropical regions --- the Brazilian Cerrado and Karnataka, India --- and ran two
+experiments: a \emph{zero-shot} Europe$\rightarrow$Brazil transfer using the European
+classifier directly, and the same few-shot protocol as elsewhere.
+
+The zero-shot result is unambiguous and negative: the European decision boundary
+\textbf{does not translate}. Maize, the only class shared with the PASTIS-18 nomenclature,
+collapses to F1~$=0.0095$ on Brazil --- effectively zero. The remaining tropical classes
+(soybean, generic cropland, non-crop) have no European counterpart at all, so they cannot be
+predicted by construction; there is no mapping that turns a French head into a Cerrado head.
+This is the strongest tropical statement of the limited-transferability
+caveat~\cite{harvesting2026alphaearth}.
+
+Few-shot recovers strongly (Figure~\ref{fig:worldcereal_tropical}). With only $k{=}20$
+shots per class, Brazil reaches F1-macro~$=0.626$, about $90\%$ of the in-domain ceiling
+($0.724$), and keeps climbing to $0.711$ at $k{=}200$; India is harder but follows the same
+shape ($0.495$ at $k{=}20$, $0.656$ at $k{=}200$). The lesson is consistent with the European
+paths: a frozen global embedding plus a few dozen local labels per class transfers far better
+than a transplanted boundary, but \emph{the local labels are mandatory}. Crucially, the
+tropical crop classes do \textbf{not} map onto the European PASTIS-18 leaf space --- only
+maize overlaps --- so a truly global copilot needs locally labelled few-shot data in every
+climatic zone, not merely more European regions. Numbers are rendered from
+\texttt{data/transfer/worldcereal\_fewshot\_results.parquet} and
+\texttt{worldcereal\_fewshot\_india.parquet}.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.9\linewidth]{figures/us-073-transfer/worldcereal_tropical_transfer.png}
+  \caption{Tropical transfer with WorldCereal AlphaEarth embeddings. Zero-shot
+  Europe$\rightarrow$Brazil fails (maize F1~$=0.0095$; the European decision boundary does
+  not translate), while few-shot recovers the bulk of the in-domain performance: Brazilian
+  Cerrado reaches F1-macro~$0.626$ at $k{=}20$ ($\sim$90\% of the in-domain ceiling $0.724$)
+  and $0.711$ at $k{=}200$; Karnataka, India follows the same shape ($0.495$ at $k{=}20$).
+  Tropical crop classes do not map onto the European PASTIS-18 leaf space (only maize
+  overlaps), so global coverage requires local few-shot supervision per climatic zone, not
+  more European regions. AlphaEarth embeddings pulled via Google Earth Engine
+  (\texttt{SATELLITE\_EMBEDDING/V1/ANNUAL} v1.1,
+  CC-BY-4.0)~\cite{brown2025alphaearth}; reference labels ESA WorldCereal
+  (\texttt{ESA/WorldCereal/2021/MODELS/v100}, CC-BY-4.0)~\cite{vantricht2023worldcereal}.}
+  \label{fig:worldcereal_tropical}
+\end{figure}
+
+\subsection{A Single Multi-Region Classifier: An Honest Negative Result}
+\label{sec:multiregion:multiregionmodel}
+
+The preceding paths each adapt to one target. A more ambitious idea --- which we tested and
+report here in full, including its failure modes --- is to train \emph{one} classifier over
+the AlphaEarth embedding pooling \emph{all} regions at once (PASTIS France, EuroCropsML
+Estonia and Latvia, Sen4AgriNet Catalonia and France, WorldCereal Brazil and India). The
+hypothesis, due to a team member, is appealing: a crop class that is \emph{weak} in one
+region for lack of samples might be \emph{strong} in another that abounds in it, so pooling
+should yield a finer, richer taxonomy than any single dataset --- for instance
+\texttt{spring\_barley} where PASTIS only says ``cereal''. We present the result honestly:
+\textbf{the idea works partially --- it genuinely enlarges the taxonomy --- but it does not
+rescue any class above a production-quality threshold, and that negative finding is itself
+the contribution.} The full study is in \texttt{docs/transfer/modelo-multiregion.md}.
+
+\paragraph{What works: the taxonomy really grows ($18\rightarrow30$ leaves).}
+Harmonising every region to a shared HCAT space, the learnable fine-leaf vocabulary expands
+from the $18$ PASTIS leaves to \textbf{30 distinct HCAT leaves}, \emph{with no invented
+mappings}: the extra $12$ leaves are contributed by EuroCropsML and are exactly the
+distinctions PASTIS collapses --- \texttt{spring\_barley} vs.\ \texttt{winter\_barley},
+\texttt{oats}, \texttt{rye}, \texttt{spring}/\texttt{summer\_rapeseed}, \texttt{apples},
+\texttt{clover}, \texttt{alfalfa\_lucerne}. Because all regions live in the same
+64-dimensional AlphaEarth space, the union is representationally valid even though the label
+spaces differ. The fine head is trained only on the $17{,}516$ parcels that carry a real
+fine leaf (PASTIS $+$ EuroCropsML); macro-only regions (Sen4AgriNet, WorldCereal) are held
+for the collapsed-macro evaluation and never inject a pseudo-coarse class that would
+cannibalise the fine leaves.
+
+\paragraph{What does not work: zero classes rescued.}
+We deliberately avoid reporting an $N$-class macro-F1 (which falls mechanically as $N$
+grows) and instead count how many individual leaf classes cross an F1 threshold, against the
+PASTIS-only baseline (Table~\ref{tab:multiregion_threshold}). The multi-region model puts
+$7$ leaves over F1~$0.70$ and $2$ over $0.85$; PASTIS-only at the same data budget puts
+$6$/$2$, and the full-data PASTIS reference puts $10$/$2$. Defining a \emph{rescued} class as
+a leaf that crosses F1~$0.85$ in multi-region and does \emph{not} exist as a learnable class
+in the PASTIS-only space, the result is \textbf{0 rescued classes at threshold 0.85}: the two
+classes that do cross ($\texttt{winter\_rapeseed\_rape}$, F1~$0.948$; \texttt{vineyard},
+F1~$0.905$) were already in PASTIS. The best genuinely new EuroCropsML-only leaf is
+\texttt{apples} at F1~$0.686$, then \texttt{spring\_rapeseed} at $0.719$; the
+\texttt{spring}/\texttt{winter\_barley} split the model attempts but does not resolve
+($0.432$/$0.393$). Adding $12$ fine leaves did not add $12$ good classes.
+
+\begin{table}[t]
+  \centering
+  \caption{Leaf classes crossing an F1 threshold: the multi-region pooled model vs.\ the
+  PASTIS-only baseline. The multi-region taxonomy is wider (30 vs.\ 18 leaves) and does not
+  degrade the coarse reading, but it rescues \emph{no} class above the production threshold
+  of 0.85 --- the two leaves it places there were already learnable in PASTIS. Numbers from
+  \texttt{data/transfer/multiregion\_summary.json}.}
+  \label{tab:multiregion_threshold}
+  \begin{tabular}{lcccc}
+    \toprule
+    Model & Total leaves & F1$\ge0.70$ & F1$\ge0.80$ & F1$\ge0.85$ \\
+    \midrule
+    Multi-region (pooled)            & 30 & \textbf{7} & 2 & 2 \\
+    PASTIS-only (capped, same budget) & 18 & 6 & 3 & 2 \\
+    PASTIS-only (full, reference)     & 18 & 10 & 4 & 2 \\
+    \midrule
+    \multicolumn{4}{l}{\emph{Rescued classes ($\ge0.85$, EuroCropsML-exclusive)}} & \textbf{0} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\paragraph{The real bottleneck: phenological separability, not regions.}
+Importantly, the coarse level does \emph{not} degrade: collapsing each fine prediction to its
+HCAT macro, the multi-region model scores F1-macro~$=0.658$ on the ten European macro-classes,
+on par with the project's mono-region tabular baseline ($0.6535$), despite predicting $30$
+leaves instead of $18$. (Including the two tropical macros it cannot predict ---
+\texttt{non\_crop} and \texttt{other\_cropland}, both F1~$0.0$ for lack of a leaf that
+collapses to them --- the all-class macro-F1 is $0.548$.) The diagnosis is the central
+finding: \textbf{the bottleneck is phenological separability, not the number of regions.}
+Most new EuroCropsML leaves (oats, rye, clover, alfalfa, spring wheat, fine vegetables) sit at
+F1~$0.06$--$0.44$ because they are \emph{intrinsically hard to separate in an annual
+embedding}: telling spring barley from winter barley, or oats from wheat, needs the
+intra-annual phenology that a single 64-dimensional annual vector averages away. Pooling more
+\emph{regions} does not help a class that no region can separate at this temporal resolution;
+the indicated next step is multi-date intra-annual temporal features over the cereal/legume
+leaves, not more regions. The model remains useful as a richer \emph{macro} vocabulary and a
+fine-grained hypothesis generator (the Mexico qualitative demo confidently, and wrongly, maps
+tropical orchards to \texttt{grassland}, with no tropical-orchard class to offer), but not yet
+as a production fine classifier. We report this so the limit is on record, not hidden.
 
 \subsection{Caveat: Limited Spatial Transferability}
 \label{sec:multiregion:caveat}
 
-Both real paths corroborate the central caveat of ``Harvesting
+Every real path corroborates the central caveat of ``Harvesting
 AlphaEarth''~\cite{harvesting2026alphaearth}: frozen global embeddings transfer poorly
-across distant agronomic regions without local adaptation. The dense France~$\rightarrow$~Catalonia zero-shot
-mIoU of~$0.0000$ is the strongest possible empirical statement of this gap, and the
-EuroCropsML curve quantifies the few-shot budget needed to bridge it. We therefore do
-\emph{not} claim that zero-shot works outside France, nor that the LLM layer ``beats''
-Gemini at classification (its role is communication, explanation and on-premise data
-sovereignty via Qwen3.5-35B-A3B~\cite{yang2025qwen3} served with vLLM GPTQ-Int4 on a
-single GPU), nor any
-$\geq$0.80 F1 in Mexico. The deliverable of this section is the \emph{measured}
-$\Delta$mIoU and the few-shot curve -- honest evidence of how the copilot becomes a
-multi-region expert.
+across distant agronomic regions without local adaptation. The dense
+France~$\rightarrow$~Catalonia zero-shot mIoU of~$0.0000$ and the tropical
+Europe~$\rightarrow$~Brazil zero-shot maize F1 of~$0.0095$ are the strongest possible
+empirical statements of this gap, while the EuroCropsML and WorldCereal few-shot curves
+quantify the budget needed to bridge it --- and the AlphaEarth-vs-Sentinel-2 comparison
+shows the foundation model pays that budget down by roughly an order of magnitude in local
+labels ($+0.111$ F1 at $k{=}1$). The honest counterweight is the pooled multi-region
+classifier: it widens the taxonomy ($18\rightarrow30$ leaves) without degrading the coarse
+reading, yet rescues $0$ classes above F1~$0.85$, because the true bottleneck is
+phenological separability in an annual embedding, not the number of regions. We therefore do
+\emph{not} claim that zero-shot works outside France, that pooling regions rescues new fine
+classes, that the LLM layer ``beats'' Gemini at classification (its role is communication,
+explanation and on-premise data sovereignty via Qwen3.5-35B-A3B~\cite{yang2025qwen3} served
+with vLLM GPTQ-Int4 on a single GPU), nor any $\geq$0.80 F1 in Mexico or the tropics. The
+deliverables of this section are the \emph{measured} $\Delta$mIoU, the few-shot curves, the
+FM-vs-raw advantage and the negative pooled-model finding --- honest evidence of how, and how
+far, the copilot becomes a multi-region expert.
 
 % Share-alike note: figures and reports that combine derivatives of Sen4AgriNet,
-% EuroCropsML and Harmonized Global Crops inherit the CC-BY-SA-4.0 clause and must be
-% redistributed under a compatible license (see docs/licenses/DATA_LICENSE.md).
+% EuroCropsML and WorldCereal inherit the CC-BY(-SA)-4.0 clauses and must be redistributed
+% under a compatible license (see docs/licenses/DATA_LICENSE.md). WorldCereal is CC-BY-4.0;
+% Sen4AgriNet and EuroCropsML are CC-BY-SA-4.0.
