@@ -284,7 +284,7 @@ def test_diagnose_fit_empty_curve_raises() -> None:
         val_scores_std=np.array([], dtype=np.float64),
         scoring="accuracy",
     )
-    with pytest.raises(ValueError, match="no tiene puntos"):
+    with pytest.raises(ValueError, match="no points to diagnose"):
         diagnose_fit(empty)
 
 
@@ -344,14 +344,14 @@ def test_materialize_cv_splits_returns_index_tuples() -> None:
 
 def test_materialize_cv_splits_empty_raises() -> None:
     """Una secuencia de splits vacia lanza ``ValueError``."""
-    with pytest.raises(ValueError, match="vacio"):
+    with pytest.raises(ValueError, match="empty"):
         _materialize_cv_splits([])
 
 
 def test_materialize_cv_splits_empty_fold_raises() -> None:
     """Un fold sin muestras de train o test lanza ``ValueError``."""
     bad = [(np.array([], dtype=np.int64), np.array([1, 2], dtype=np.int64))]
-    with pytest.raises(ValueError, match="no tiene muestras"):
+    with pytest.raises(ValueError, match="has no samples"):
         _materialize_cv_splits(bad)
 
 
@@ -587,7 +587,7 @@ def test_fetch_loss_history_raises_when_no_train_loss(
 
     monkeypatch.setattr(mlflow, "set_tracking_uri", lambda uri: None)
 
-    with pytest.raises(RuntimeError, match="no expone metricas"):
+    with pytest.raises(RuntimeError, match="does not expose"):
         learning_curves.fetch_loss_history_from_mlflow(
             run_id="empty-run",
             model_kind="inceptiontime",
@@ -634,7 +634,7 @@ def test_plot_loss_history_raises_when_empty() -> None:
         val_loss_std=np.array([], dtype=np.float64),
         n_folds=0,
     )
-    with pytest.raises(ValueError, match="vacio"):
+    with pytest.raises(ValueError, match="empty"):
         plot_loss_history_from_mlflow(history)
 
 

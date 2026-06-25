@@ -110,7 +110,7 @@ def test_plot_ablation_bars_filters_nan_values_one_model():
 
 
 def test_plot_ablation_bars_empty_raises():
-    with pytest.raises(ValueError, match="vacio"):
+    with pytest.raises(ValueError, match="empty"):
         plot_ablation_bars([])
 
 
@@ -150,7 +150,7 @@ def test_plot_model_comparison_bars_above_below_baseline_color_split():
 
 
 def test_plot_model_comparison_bars_empty_raises():
-    with pytest.raises(ValueError, match="vacio"):
+    with pytest.raises(ValueError, match="empty"):
         plot_model_comparison_bars({})
 
 
@@ -204,7 +204,7 @@ def test_plot_per_class_f1_renders_with_class_names():
 
 
 def test_plot_per_class_f1_empty_arrays_raise():
-    with pytest.raises(ValueError, match="vacios"):
+    with pytest.raises(ValueError, match="empty"):
         plot_per_class_f1(np.array([], dtype=int), np.array([], dtype=int))
 
 

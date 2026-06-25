@@ -174,8 +174,11 @@ def test_fill_missing_parcels_uniform_requires_prob_columns() -> None:
 def test_five_member_set_is_three_plus_two_farslip() -> None:
     """The 5-member contract is the 3 legacy members plus the 2 FarSLIP members."""
     assert _FARSLIP_MEMBERS == ("farslip-ft18", "farslip-zeroshot")
+    # The base TSViT member is ``tsvit-pheno-fullm`` (0.6764 macro-F1, the best
+    # TSViT the sponsor selected), NOT the older ``tsvit-pheno`` (0.6253). See
+    # ``scripts/run_us043_farslip_ensembles.py`` _BASE_MEMBERS_3.
     assert _BASE_MEMBERS_5 == (
-        "tsvit-pheno",
+        "tsvit-pheno-fullm",
         "utae",
         "xgb-alphaearth",
         "farslip-ft18",
