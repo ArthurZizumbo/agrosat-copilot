@@ -304,3 +304,36 @@ scaffolding.
   cifra del cierre formal de E6 que no este en disco queda marcada "pendiente de
   cierre E6" en la card; no se fabrica.
 - **Decision:** sin claim de Gemma; cifras solo desde artefactos. No bloquea.
+
+---
+
+## Validacion 2026-06-25 (pasada de cierre US-059..067)
+
+Cierre documental: generados los 9 us-resolved + 9 manual-test (antes inexistentes)
+y actualizados los 9 handoffs a ready-to-close (US-065 ready-to-close con WARN).
+Evidencia verificada contra entregables reales en disco; cifras cruzadas entre
+docs (finops/costo-beneficio/model cards <-> CSVs reales).
+
+### B-E10-V1. US-065 quedo WARN (deuda funcional + dependencias externas)
+- **tokens Qwen None en streaming**: el conteo de tokens del usage no llega en
+  streaming Qwen sin `include_usage` en la peticion (Gemini si lo entrega). Deuda
+  funcional real, no bloqueante para la presentacion.
+- **MLflow :5010 no verificado en vivo** (server Docker caido en la VM en la
+  sesion previa) y panel sin scrape: dependencias de infra externa no ejecutadas.
+- Entrega completa y 13 tests unitarios verdes; el WARN refleja lo no verificable
+  en sesion, no un fallo del entregable.
+
+### B-E10-V2. Fallo intermitente de aislamiento de tests Prometheus (no reproducible aislado)
+- Un subagente observo `Duplicated timeseries` en tests de integracion de `/chat`
+  al correr ciertas combinaciones de suites juntas (registro Prometheus global de
+  US-059 re-registrado). VERIFICADO esta sesion: `test_chat_endpoint.py` solo =
+  12 passed; + `test_metrics_middleware.py` = 17 passed. NO reproducible de forma
+  simple. Es flakiness de aislamiento de tests (registro global), NO un bug de
+  produccion (el middleware funciona; los 5 tests de metrics pasan).
+- **Accion recomendada**: usar un `CollectorRegistry` dedicado por test o
+  `prometheus_client` fixture con reset entre suites. No bloqueante; deuda de
+  higiene de tests.
+
+### B-E10-V3. mypy metrics.py (de US-059) YA RESUELTO en EPIC 8
+- El error `no-any-return` de `app/api/metrics.py` se corrigio en la rama de
+  validacion (variable tipada explicita). Ver docs/blockers/epic8-notas.md B-E8-1.
