@@ -10,17 +10,19 @@ text-only (AC-2 of US-046).
 What the perceiver wraps
 ------------------------
 Conceptually the perceiver is the wrapper over the phenology-aware crop models
-(TSViT-pheno / FarSLIP-pheno / AlphaEarth+XGBoost). In practice the only *direct,
-inline, per-parcel* inference available without a raster is the tabular
-``xgb-alphaearth`` member (the same model behind ``classify_new_parcel``) plus the
-real phenology descriptor behind ``explain_prediction``. The dense temporal models
-(TSViT-pheno, FarSLIP-pheno) require a Sentinel-2 raster cube and must run out of
-band (OOF materialisation / Pub/Sub worker), so they are NOT invoked here -- doing
-so inline would violate the ``ml/agent/AGENTS.md`` rule against heavy GPU inference
-inside a tool. The perceiver therefore composes:
+(TSViT-pheno / FarSLIP-pheno / AlphaEarth+XGBoost). It serves the **Stacking-5
+champion** (the EPIC 6 / US-043 winner: the logreg meta over the five members'
+cached fold-5 OOF) whenever the parcel is materialized in that OOF universe,
+restricted to the nine well-resolved ``france-9`` classes (the agent+app
+directive: the champion only ever resolves over the best-resolved classes). The
+dense temporal members (TSViT-pheno, FarSLIP-pheno) are NOT re-run inline -- the
+Stacking-5 meta consumes their pre-materialised OOF, so no raster/GPU inference
+happens inside the tool (honouring the ``ml/agent/AGENTS.md`` rule). When the OOF
+artifacts are unavailable or the parcel is fresh, it degrades CLEANLY to the
+tabular ``xgb-alphaearth`` member. The perceiver therefore composes:
 
-* the posterior over the 18 PASTIS semantic classes from the cached
-  XGBoost-AlphaEarth classifier (reused from :mod:`ml.agent.tools.classify`), and
+* the champion-first posterior over the ``france-9`` classes (Stacking-5 meta,
+  degrading to XGBoost-AlphaEarth; reused from :mod:`ml.agent.tools.classify`), and
 * the phenology / vigor / natural-language description from the real Wen et al.
   (2025) descriptor (reused from :mod:`ml.agent.tools.explain`).
 
@@ -173,7 +175,9 @@ class PerceiverLayer:
             self._ctx,
         )
         class_probabilities = await self._class_posterior(
-            crop_class=explanation.crop_class, year=_DEFAULT_YEAR
+            parcel_id=parcel_id,
+            crop_class=explanation.crop_class,
+            year=_DEFAULT_YEAR,
         )
 
         observation = self._observation_from_explanation(
@@ -223,7 +227,10 @@ class PerceiverLayer:
 
         result = await classify.run(
             ClassifyParcelInput(
-                session_id=self._ctx.session_id, aoi=aoi, year=year
+                session_id=self._ctx.session_id,
+                aoi=aoi,
+                year=year,
+                use_stacking=True,
             ),
             self._ctx,
         )
@@ -239,38 +246,83 @@ class PerceiverLayer:
         return observation
 
     async def _class_posterior(
-        self, *, crop_class: str, year: int
+        self, *, parcel_id: int, crop_class: str, year: int
     ) -> dict[str, float]:
-        """Compute the full class posterior for the session's parcel embedding.
+        """Compute the class posterior for the session's parcel, champion-first.
 
-        Reuses the cached XGBoost-AlphaEarth classifier and the session-scoped
-        embedding fetch from :mod:`ml.agent.tools.classify`. When the session has
-        no persisted embedding for ``year``, falls back to a degenerate posterior
-        that places all mass on the (stored) ``crop_class`` so the observation
-        still carries a coherent distribution without inventing alternatives.
+        Serves the Stacking-5 champion posterior (the EPIC 6 / US-043 winner)
+        restricted to the well-resolved ``france-9`` label-space, matching the
+        agent+app directive that the champion only ever resolves over the nine
+        best-resolved classes. The parcel's integer id is bridged to the cached
+        fold-5 OOF canonical key (the same lossless cast :mod:`ml.agent.tools.compare`
+        uses); when the parcel is in that OOF universe the Stacking-5 logreg meta
+        scores it. The path degrades CLEANLY -- never raises -- to the
+        ``xgb-alphaearth`` member when the OOF artifacts are unavailable or the
+        parcel is not materialized, and to a degenerate posterior on ``crop_class``
+        when the session has no persisted embedding for ``year``.
 
         Args:
+            parcel_id: Stored parcel id, bridged to the OOF canonical key to look
+                up the Stacking-5 meta-feature row.
             crop_class: Crop class of the stored prediction, used for the fallback
                 degenerate posterior.
             year: Campaign year of the AlphaEarth annual embedding.
 
         Returns:
-            A ``{class_name: probability}`` posterior summing to ~1.
+            A ``{class_name: probability}`` posterior restricted to ``france-9``
+            and summing to ~1; or ``{crop_class: 1.0}`` when no embedding exists.
         """
-        embedding = await classify._fetch_parcel_embedding(self._ctx, year)
-        if embedding is None:
-            logger.info(
-                "perceiver_posterior_fallback",
-                session_id=str(self._ctx.session_id),
-                reason="no persisted AlphaEarth embedding for the session/year",
-            )
-            return {crop_class: 1.0}
+        import polars as pl
 
-        classifier = classify._load_classifier()
-        proba = classifier.predict_proba_18(embedding)
+        from ml.eval.class_remap import get_label_space, restrict_posterior
+        from ml.utils.parcel_id import canonical_parcel_id
+
+        label_space = get_label_space("france-9")
+
+        # Champion-first: try the Stacking-5 meta over the parcel's fold-5 OOF row.
+        try:
+            stacking = classify._load_stacking_five()
+            canonical_id = str(
+                canonical_parcel_id(
+                    pl.DataFrame({"canonical_parcel_id": [parcel_id]}),
+                    col="canonical_parcel_id",
+                )["canonical_parcel_id"][0]
+            )
+            proba = stacking.posterior_for_parcel(canonical_id)
+        except (FileNotFoundError, ValueError) as exc:
+            logger.warning(
+                "perceiver_stacking_unavailable",
+                session_id=str(self._ctx.session_id),
+                reason="fold-5 OOF / PASTIS-R ground truth not available",
+                error=str(exc),
+            )
+            proba = None
+
+        member = "stacking-5"
+        if proba is None:
+            member = "xgb-alphaearth"
+            embedding = await classify._fetch_parcel_embedding(self._ctx, year)
+            if embedding is None:
+                logger.info(
+                    "perceiver_posterior_fallback",
+                    session_id=str(self._ctx.session_id),
+                    reason="no persisted AlphaEarth embedding for the session/year",
+                )
+                return {crop_class: 1.0}
+            proba = classify._load_classifier().predict_proba_18(embedding)
+
+        # Restrict to the nine well-resolved france-9 classes and rename (the
+        # champion only ever resolves over them, per the agent+app directive).
+        restricted = restrict_posterior(proba, label_space)
+        logger.info(
+            "perceiver_posterior_built",
+            session_id=str(self._ctx.session_id),
+            member=member,
+            n_classes=len(restricted),
+        )
         return {
-            classifier.class_names.get(idx, str(idx)): float(proba[idx])
-            for idx in range(proba.shape[0])
+            label_space.class_names.get(cid, str(cid)): float(p)
+            for cid, p in restricted.items()
         }
 
     @staticmethod
