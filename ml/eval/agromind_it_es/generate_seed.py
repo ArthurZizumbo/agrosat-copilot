@@ -381,6 +381,13 @@ class SeedGenerator:
         response = client.models.generate_content(model=self.model, contents=contents)
         raw_text = getattr(response, "text", "") or ""
         parsed = _parse_qa_json(raw_text)
+        # Record the real, deterministic image path that was grounded into Gemini
+        # (``image_part`` is built from ``{family}_{index:04d}.png``). The model
+        # never echoes the image back, so reading ``parsed["_image"]`` always
+        # yielded ``None`` and silently downgraded the pair to text-only -- the
+        # exact failure that made the AgroMind subset text-only in US-049. Anchor
+        # it to the source PNG so ``is_multimodal`` stays True for the VLM eval.
+        image_ref = f"{family.value}_{index:04d}.png" if image_part is not None else None
         return QAItem(
             item_id=f"{language}-{family.value}-{index:04d}",
             category=family,
@@ -388,7 +395,7 @@ class SeedGenerator:
             question=str(parsed.get("question", "")),
             options={str(k): str(v) for k, v in (parsed.get("options") or {}).items()},
             answer=str(parsed.get("answer", "")),
-            image=parsed.get("_image"),
+            image=image_ref,
             is_multimodal=image_part is not None,
             reviewed=False,
             reviewer=None,
