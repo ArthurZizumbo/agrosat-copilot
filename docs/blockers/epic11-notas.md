@@ -318,13 +318,18 @@ Figuras/tablas AUTONOMAS ya en disco: `benchmark_barplot_fold5`,
 `fm_comparison`, T2 `segmentation_individual_fold5`, T3 `ensembles_e6`, T4
 `llm_benchmark`, T5 `tool_ablation`, Tx `farslip_band_ablation`.
 
-### B-070-1 -- F2 Mapas AOI Italia (requiere auth GEE)
-- **Que falta**: render geoespacial de AOIs reales de Italia sobre AlphaEarth
-  (`SATELLITE_EMBEDDING/V1/ANNUAL` v1.1) + basemap/tiles. Sin auth GEE ni
-  service-account aqui, y sin AOI GeoJSON de Italia materializado.
-- **Como completar**: autenticar GEE (skill `agrosat-gee-alphaearth`), exportar
-  la AOI a GeoJSON, anadir celda en `paper/notebooks/03_figures_embeddings_fm.ipynb`
-  que la lea y la pinte con `contextily`/`folium`. No se fabrica un mapa sin AOI real.
+### B-070-1 -- F2 Mapas AOI Italia (RESUELTO: GEE auth disponible)
+- **Estado**: HECHO. Con GEE autenticado se materializo la AOI agricola real de
+  Italia (Pianura Padana / valle del Po, lon 10-11E lat 45-45.5N) sobre AlphaEarth
+  `SATELLITE_EMBEDDING/V1/ANNUAL` v1.1 (2000 px reales 2024, cache
+  `data/cache/gee/alphaearth_pianura_padana_2024_2000.parquet`).
+- **Salidas reales**: `data/aoi/italy_aois.geojson` (footprint EPSG:4326 con
+  atribucion CC-BY-4.0), `paper/figures/us-070/aoi_italy.{png,svg}` (mapa estatico:
+  pixeles AlphaEarth como PCA-RGB falso color sobre basemap OSM via `xyzservices`,
+  el mismo proveedor de tiles que usa contextily; contextily no es dependencia del
+  proyecto) y `paper/figures/us-070/aoi_italy.html` (folium interactivo).
+- **Como reproducir**: `python -m scripts.build_us070_italy_aoi`. No se fabrica un
+  mapa sin AOI real: si GEE no devuelve pixeles, aborta con error explicito.
 
 ### B-070-2 -- F4 curvas full-config H100 (requiere job GPU)
 - **Que falta**: curvas TSViT/TSViT-pheno "full-config H100" (target Full-M mIoU
@@ -333,9 +338,13 @@ Figuras/tablas AUTONOMAS ya en disco: `benchmark_barplot_fold5`,
   existente `reports/segmentation/figures/curves_tsvit.png` (fold-4/fold-5). El
   delta full-M esta en `reports/segmentation/metrics/tsvit_pheno_vs_base_fold5.csv`
   (tsvit-base-fullm 0.6789, tsvit-pheno-fullm 0.6756; rama fenologica ~0 en
-  supervisado, valido). No se inventa la curva full-config.
-- **Como completar**: correr el full-M en H100 y exportar la curva real con
-  `ml/eval/avance4_figures.py:curves_from_mlflow`, re-promover.
+  supervisado, valido). No se inventa la curva full-config. **Anadido**: figura
+  `tsvit_full_config_delta.{png,svg}` (`ml/report/paper_figures.py:
+  fig_tsvit_full_config_delta`) que pinta el delta full-M base vs pheno desde ese
+  CSV real (mIoU/F1/pix-acc), con la nota de saturacion supervisada.
+- **Como completar**: la CURVA de entrenamiento full-config H100 (no el delta de
+  metricas) sigue requiriendo el re-run: correr el full-M en H100 y exportar la
+  curva real con `ml/eval/avance4_figures.py:curves_from_mlflow`, re-promover.
 
 ### B-070-3 -- T4/F7-LLM benchmark completo (depende de US-068/US-069 + H100)
 - **Que falta**: columnas AgroMind-IT/ES (US-068, revision nativa) + 3 corridas
@@ -363,10 +372,14 @@ Figuras/tablas AUTONOMAS ya en disco: `benchmark_barplot_fold5`,
 - **Estado (datos reales)**: Fx/Tx se generan con la evidencia real disponible:
   `reports/farslip/metrics/parcel_sweep.csv` (barrido de cardinalidad) y
   `us037_farslip_fiel_vs_alphaearth.csv` (FarSLIP fiel 0.5551 vs AlphaEarth 0.6446).
-  Las 3 variantes de banda completas no estan materializadas.
+  Las 3 variantes de banda completas no estan materializadas. **Anadido**: figura
+  `farslip_band_ablation.{png,svg}` (`ml/report/paper_figures.py:
+  fig_farslip_band_ablation`) que pinta F1-macro (+/- std) y silhouette FarSLIP-fiel
+  vs AlphaEarth desde ese CSV real, anotando las 3 variantes de banda como
+  pendientes en el titulo (nunca fabricadas).
 - **Como completar**: `make farslip-extract-embeddings` por variante en H100,
   escribir metricas a `reports/farslip/metrics/`, extender
-  `build_farslip_band_ablation_table` con esas filas.
+  `build_farslip_band_ablation_table` y `fig_farslip_band_ablation` con esas filas.
 
 ### Nota F1 arquitectura
 - F1 (diagrama de arquitectura) no requiere computo ni dato; se deriva de
@@ -411,28 +424,33 @@ Entregado autonomo en esta sesion (datos REALES de E12, sin hardcode, sin sintet
   60 guayaba (Calvillo), NDVI real GEE; AlphaEarth 64-dim real (`mexico_demo_alphaearth.parquet`).
   Cualitativo, SIN F1/accuracy (regla US-077).
 
-### B-073-1 -- Figura UMAP FR/ES domain-gap (AC tarea 2): panel ES no materializado
-- **Que falta**: el panel UMAP de Catalonia (ES) requiere embeddings AlphaEarth (o
-  features S2) de los parches Sen4AgriNet en un array materializado para proyectar; el
-  panel FR ya existe (`paper/figures/us-011/sec2_umap_francia_pastis.png`).
-- **Decision tomada (honesta)**: en vez de un UMAP ES a medias, la figura del domain-gap
-  denso se sustituyo por la **tabla** `sen4agrinet_domain_gap.tex` (zero 0.0000 -> few
-  0.2468), que es la evidencia cuantitativa exacta del gap. El UMAP FR/ES queda
-  pendiente como figura ilustrativa adicional, no como evidencia (la tabla ya la da).
-- **Como completar**: materializar el embedding AlphaEarth de los ~30 parches ES del
-  subset Sen4AgriNet (DVC `data/sen4agrinet.dvc`) -- requiere GEE auth/ADC (mismo blocker
-  GEE recurrente, MEMORY `vm-h100-dvc-pull-401-no-adc`) -- proyectar FR+ES juntos con
-  `umap-learn` y anadir el panel. Reusar `ml/report/paper_figures.py:fig_umap_*` (US-070).
+### B-073-1 -- Figura UMAP FR/ES domain-gap (RESUELTO: GEE auth + datos ES)
+- **Estado**: HECHO. Con GEE autenticado se materializo el embedding AlphaEarth
+  `SATELLITE_EMBEDDING/V1/ANNUAL` v1.1 (2019) en centroides reales por macro-clase
+  de AMBAS regiones del subset Sen4AgriNet: ES (Catalonia, tile 31TCG, 6165 px,
+  `data/transfer/sen4agrinet_es_alphaearth.parquet`) y FR (PASTIS-R, tile 31TCJ,
+  3510 px, `data/transfer/sen4agrinet_fr_alphaearth.parquet`). Se proyectan FR+ES
+  con UN SOLO UMAP conjunto (`ml/transfer/sen4agrinet_domain_gap.py:
+  compute_joint_umap`), de modo que la separacion FR/ES por macro-clase ES la
+  brecha de dominio.
+- **Salida real**: `paper/figures/us-073/domain_gap_umap.{png,svg}` (2 paneles
+  FR/ES, 5 macro-clases compartidas: cereals, oilseed_industrial, vineyard,
+  legumes_fodder, potato). La tabla `sen4agrinet_domain_gap.tex` (zero 0.0 -> few
+  0.2468) sigue dando la evidencia cuantitativa; el UMAP es la ilustrativa.
+- **Reproducir**: `python -m scripts.build_us073_domain_gap_figures`. Lee los `.nc`
+  HDF5 con `h5py` (EPSG:32631) y reproyecta con `pyproj`; sin GEE no fabrica nada.
 
-### B-073-2 -- Curvas NDVI desfasadas FR vs ES (AC tarea 2, parte del domain-gap)
-- **Que falta**: comparativa fenologica NDVI FR<->ES (siembra/cosecha desfasada por
-  latitud) como segundo panel del domain-gap.
-- **Causa**: necesita las series S2 temporales de AMBAS regiones alineadas por clase;
-  PASTIS FR esta en DVC, las series ES del subset Sen4AgriNet hay que extraerlas.
-- **Como completar**: cargar series S2 del subset Sen4AgriNet (DVC) + PASTIS FR, calcular
-  NDVI medio por macro-clase y fecha con el codigo de fenologia existente
-  (`ml/features/`), plotear el desfase. CPU, sin GPU, pero depende de tener las series ES
-  materializadas (ligado a B-073-1).
+### B-073-2 -- Curvas NDVI desfasadas FR vs ES (RESUELTO: series S2 reales GEE)
+- **Estado**: HECHO. Con GEE se extrajeron las series temporales de NDVI Sentinel-2
+  (QA60 cloud-mask, zonal mean) por macro-clase para FR (31TCJ) y ES (31TCG), 2019,
+  reutilizando el patron de `ml/transfer/mexico_demo.py`
+  (`extract_bbox_ndvi_series`). Cache en `data/cache/gee/sen4_ndvi_{fr,es}_*.parquet`.
+- **Salida real**: `paper/figures/us-073/ndvi_phenology_offset.{png,svg}` (4 macro:
+  cereales, oleaginosas, vinedo, leguminosas; FR vs ES). El desfase es real y
+  agronomico: cereales ES pico ~DOY 106 (mediados de abril, cereal mediterraneo de
+  invierno) vs FR ~DOY 229 (mediados de agosto); ~4 meses de desfase = la brecha
+  fenologica Franco-Iberica. Oleaginosas/leguminosas ES adelantan ~2 meses.
+- **Reproducir**: mismo script que B-073-1 (`build_us073_domain_gap_figures`).
 
 ### B-073-3 -- Re-ejecucion del finetune denso (NO requerido para la seccion)
 - **Que falta**: nada para la seccion. El run vive en H100

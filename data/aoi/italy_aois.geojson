@@ -1,0 +1,56 @@
+{
+  "type": "FeatureCollection",
+  "name": "pianura_padana_po_valley",
+  "crs": {
+    "type": "name",
+    "properties": {
+      "name": "EPSG:4326"
+    }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              10.000122345639427,
+              45.00026900581525
+            ],
+            [
+              10.99940481860038,
+              45.00026900581525
+            ],
+            [
+              10.99940481860038,
+              45.50009209350149
+            ],
+            [
+              10.000122345639427,
+              45.50009209350149
+            ],
+            [
+              10.000122345639427,
+              45.00026900581525
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "aoi": "pianura_padana_po_valley",
+        "region": "Pianura Padana (Po valley), Italy",
+        "year": 2024,
+        "n_pixels": 2000,
+        "source": "GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL (AlphaEarth v1.1)",
+        "license": "CC-BY-4.0",
+        "bbox": [
+          10.000122345639427,
+          45.00026900581525,
+          10.99940481860038,
+          45.50009209350149
+        ]
+      }
+    }
+  ]
+}
