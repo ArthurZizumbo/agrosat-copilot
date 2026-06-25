@@ -561,16 +561,30 @@ class VLLMOpenAIBackend(LLMBackend):
         messages = self._messages_from_contents(contents, system_instruction)
         openai_tools = self._tools_from_declarations(tools)
         client = self._get_client()
+        # ``stream_options={"include_usage": True}`` makes the OpenAI-compatible
+        # endpoint (vLLM) emit a FINAL chunk whose ``choices`` is empty and whose
+        # ``usage`` carries the prompt/completion/total token counts for the whole
+        # response. Without it, streamed responses never report ``usage`` and the
+        # FinOps observability of US-065 logs ``None`` tokens for Qwen (B6). vLLM
+        # honours it like the OpenAI API; the field is ignored by servers that do
+        # not implement it (the usage chunk simply never arrives, same as today).
         stream = await client.chat.completions.create(
             model=self.model,
             messages=messages,
             tools=openai_tools or None,
             stream=True,
+            stream_options={"include_usage": True},
         )
         # vLLM streams tool-call arguments incrementally; accumulate per index and
         # emit the call once the stream completes.
         pending: dict[int, dict[str, Any]] = {}
+        usage: dict[str, int] | None = None
         async for event in stream:
+            # The usage chunk arrives last with empty ``choices``; capture it so
+            # the count is forwarded onto the terminal chunk of this turn.
+            chunk_usage = self._usage_from_stream_event(event)
+            if chunk_usage is not None:
+                usage = chunk_usage
             choices = getattr(event, "choices", None) or []
             for choice in choices:
                 delta = getattr(choice, "delta", None)
@@ -581,8 +595,51 @@ class VLLMOpenAIBackend(LLMBackend):
                     yield BackendChunk(text=text)
                 for tc in getattr(delta, "tool_calls", None) or []:
                     self._accumulate_tool_call(pending, tc)
-        for call in self._finalise_tool_calls(pending):
-            yield BackendChunk(function_call=call)
+        # Surface the real token accounting once, on the LAST chunk of the turn,
+        # so the agent forwards it onto the terminal ``DoneEvent`` (US-065). When
+        # the server did not report usage it stays ``None`` -- never synthesised.
+        calls = self._finalise_tool_calls(pending)
+        if calls:
+            for idx, call in enumerate(calls):
+                yield BackendChunk(
+                    function_call=call,
+                    usage=usage if idx == len(calls) - 1 else None,
+                )
+        elif usage is not None:
+            # No tool calls and no remaining text: emit a usage-only chunk so the
+            # turn still reports the token accounting (text deltas already flushed).
+            yield BackendChunk(usage=usage)
+
+    @staticmethod
+    def _usage_from_stream_event(event: Any) -> dict[str, int] | None:
+        """Read an OpenAI streaming ``usage`` chunk into the neutral mapping.
+
+        With ``stream_options={"include_usage": True}`` the OpenAI-compatible
+        endpoint emits a final chunk carrying ``usage`` with
+        ``prompt_tokens`` / ``completion_tokens`` / ``total_tokens`` (already the
+        project's neutral key names). This reads them defensively so flat test
+        doubles without a ``usage`` attribute report ``None`` (no synthesis).
+
+        Args:
+            event: One item yielded by the streaming completion.
+
+        Returns:
+            The usage mapping, or ``None`` when the event carries no usage.
+        """
+        meta = getattr(event, "usage", None)
+        if meta is None:
+            return None
+        prompt = getattr(meta, "prompt_tokens", None)
+        completion = getattr(meta, "completion_tokens", None)
+        total = getattr(meta, "total_tokens", None)
+        usage: dict[str, int] = {}
+        if prompt is not None:
+            usage["prompt_tokens"] = int(prompt)
+        if completion is not None:
+            usage["completion_tokens"] = int(completion)
+        if total is not None:
+            usage["total_tokens"] = int(total)
+        return usage or None
 
     @staticmethod
     def _messages_from_contents(

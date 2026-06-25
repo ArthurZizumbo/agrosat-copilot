@@ -56,6 +56,18 @@ memoria operativa del proyecto (gotchas MLflow, FinOps, H100).
 > de verdad usada aqui son las **migraciones aplicadas** en `db/migrations/` (verificables con
 > `dbmate status`). El faltante queda anotado en `docs/blockers/epic10-notas.md`.
 
+> **Nota de estado RLS (correccion B16-US063).** Versiones previas del plan (v8 §tabla de stack,
+> `db/CLAUDE.md`) describian la RLS multi-tenant como **"pendiente"** / **"cero RLS"**. Eso esta
+> **DESACTUALIZADO**: la migracion `20260620000418_rls_multi_tenant.sql` (US-051) **YA esta
+> APLICADA**. Estado real verificado: `FORCE ROW LEVEL SECURITY` y politica fail-closed sobre
+> `chat_sessions`/`aois`/`parcels`/`features_parcels`, con rol de aplicacion `agrosat_app`
+> NOSUPERUSER/NOBYPASSRLS. La verificacion se ejecuto en **EPIC 8** con testcontainers contra
+> Postgres real (suite "RLS isolation", 9 tests de aislamiento cross-session pasando; ver
+> `docs/blockers/epic8-notas.md` "Nota de entorno — testcontainers"). Por tanto este documento
+> trata R-ATK-04 y R-EJE-02 como **RLS aplicado** (riesgo residual = la app debe conectar como
+> `agrosat_app`, no superusuario, + deuda de backfill `parcels.session_id` NOT NULL), no como
+> riesgo vivo por RLS faltante.
+
 ---
 
 ## 1. Resumen ejecutivo (top-5 por severidad)

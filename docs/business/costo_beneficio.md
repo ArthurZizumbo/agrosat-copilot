@@ -199,6 +199,10 @@ aritmética visible**, no como dato histórico medido.
 - Datos tabulares fuente (al Git): [`docs/business/data/costos_crisp_ml.csv`](data/costos_crisp_ml.csv) y [`docs/business/data/beneficios_500ha.csv`](data/beneficios_500ha.csv).
 - Export LaTeX para el paper: [`docs/business/costo_beneficio.tex`](costo_beneficio.tex).
 
-> **Nota de entregable Excel:** la generación programática del `.xlsx` queda anotada como bloqueo de
-> entorno en [`docs/blockers/epic10-notas.md`](../blockers/epic10-notas.md); se entregan los `.csv`
-> fuente al Git + las tablas Markdown de este documento + el export `.tex` como respaldo verificable.
+- Entregable Excel: [`docs/business/costo_beneficio.xlsx`](costo_beneficio.xlsx) (3 hojas: procedencia + Costos CRISP-ML + Beneficios 500 ha), generado desde los `.csv` fuente.
+
+> **Nota de entregable Excel (RESUELTO 2026-06-25):** el `.xlsx` **ya está generado**
+> ([`costo_beneficio.xlsx`](costo_beneficio.xlsx)) leyendo directamente los `.csv` fuente versionados
+> (`data/costos_crisp_ml.csv`, `data/beneficios_500ha.csv`) con `openpyxl` 3.1.5; ninguna cifra es
+> sintética. Además se conservan los `.csv` fuente al Git + las tablas Markdown de este documento +
+> el export `.tex` como respaldo verificable (ver [`docs/blockers/epic10-notas.md`](../blockers/epic10-notas.md) B17).

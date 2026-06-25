@@ -59,7 +59,7 @@ fuentes y fechas en §4 y §11); el resto son hechos de arquitectura.
 
 | Factor | GCP (primario) | Azure (H100 sponsor) | AWS (referencia) | IBM Cloud (referencia) |
 |--------|----------------|----------------------|------------------|------------------------|
-| **1. H100 on-demand** (USD/GPU-h, referencia) | ~$9.80-$10.98 (A3, us-central1) | ~$6.98 (NC40ads_H100_v5, East US) | ~$6.88 (p5.48xlarge / 8 GPU, us-east-1) | Disponible (VPC GPU); precio no confirmado a la fecha — ver §11 |
+| **1. H100 on-demand** (USD/GPU-h, referencia) | ~$9.80-$10.98 (A3, us-central1) | ~$6.98 (NC40ads_H100_v5, East US) | ~$6.88 (p5.48xlarge / 8 GPU, us-east-1) | Disponible (VPC GPU `gx3`, H100 NVL); sin precio oficial publicado a la fecha — ver §4.1 y §11 |
 | **1b. H100 spot** (USD/GPU-h, referencia) | ~$3.69 (A3 Spot, us-central1) | ~$2.19-$2.49 (NC40ads Spot) | ~$3.83 (p5 Spot, us-east-1) | No verificado a la fecha — ver §11 |
 | **2. Ecosistema EO** | Google Earth Engine (AlphaEarth `SATELLITE_EMBEDDING/V1/ANNUAL`) | Planetary Computer (STAC + Hub) | Registry of Open Data (Sentinel-2 COG) | Limitado (Sentinel via terceros) |
 | **3. Latencia a Italia** | `europe-west*` (p. ej. `europe-west8` Milan) | `westeurope` (Holanda; proximidad a Italia) | `eu-south-1` (Milan) | `eu-de` (Frankfurt) |
@@ -83,7 +83,7 @@ lista, publicados, con fuente y fecha**; el gasto del proyecto es **cero**.
 | GCP | A3 (`a3-highgpu-8g`), us-central1 | ~$9.80-$10.98 | ~$3.69 | Spheron / gpucost.org · consultado 2026-06-20 (datos a 2026-05-22) |
 | Azure | `Standard_NC40ads_H100_v5`, East US | ~$6.98 (1 H100/VM) | ~$2.19-$2.49 | Vantage / CloudPrice · consultado 2026-06-20 (datos a 2025-10) |
 | AWS | `p5.48xlarge` (8 H100), us-east-1 | ~$6.88/GPU (post-recorte jun-2025) | ~$3.83/GPU | DoiT / Spheron · consultado 2026-06-20 |
-| IBM Cloud | VPC GPU H100 | No confirmado a la fecha | No confirmado a la fecha | Ver blocker §11 |
+| IBM Cloud | VPC GPU `gx3` (H100 NVL) | Sin precio oficial publicado (ver nota IBM abajo) | No verificado a la fecha | Aggregadores · consultado 2026-06-25 (ver §11) |
 
 Notas de lectura:
 
@@ -94,8 +94,14 @@ Notas de lectura:
   on-demand verificados.
 - AWS `p5.48xlarge` es un nodo de 8 H100; tras el recorte de junio 2025 (~44% en P5 on-demand) el
   costo por GPU cae a ~$6.88 on-demand.
-- IBM Cloud ofrece H100 en VPC, pero el precio por GPU-hora no se pudo confirmar contra fuente
-  oficial a la fecha de redaccion; queda anotado en `docs/blockers/epic10-notas.md` (B15) y NO se
+- IBM Cloud ofrece H100 en VPC (perfil acelerado `gx3`, H100 NVL), pero **IBM no publica un precio
+  oficial por GPU-hora** en sus paginas de pricing a la fecha (re-verificado 2026-06-25). Los
+  agregadores que el resto de esta tabla usa (ComputePrices.com, GPUPerHour, Spheron 2026,
+  IntuitionLabs) **omiten IBM Cloud** o declaran explicitamente "pricing details are not widely
+  published, so we omit them here" (IntuitionLabs, dato a 2026-06-20). Una busqueda devolvio un
+  dato secundario sin respaldo oficial verificable de **~$0.99/GPU-h H100 NVL** (clusters de 8x);
+  por la regla de datos reales se anota como **NO confirmado contra fuente oficial** y NO se usa
+  como cifra de la comparativa. Queda registrado en `docs/blockers/epic10-notas.md` (B15) y NO se
   rellena con un numero fabricado.
 
 ### 4.2 Implicacion para AgroSatCopilot
@@ -284,7 +290,15 @@ plan v6 esta superada por ADR-009.
   CloudPrice (`cloudprice.net/vm/Standard_NC40ads_H100_v5`). Datos a 2025-10.
 - AWS `p5.48xlarge`: DoiT Compute (`compute.doit.com/spot/us-east-1/p5.48xlarge`); Spheron Blog
   (`spheron.network/blog/aws-h100-pricing-2026/`).
-- IBM Cloud H100: precio por GPU-hora no confirmado contra fuente oficial a la fecha — ver
+- IBM Cloud H100 (re-investigado, consultado 2026-06-25): **sin precio oficial por GPU-hora
+  publicado**. Fuentes consultadas — ComputePrices.com (`computeprices.com/providers/ibm`, "We're
+  actively tracking prices for IBM Cloud. Check back soon"); GPUPerHour (`gpuperhour.com`, no lista
+  IBM entre sus 28 proveedores); Spheron 2026 (`spheron.network/blog/gpu-cloud-pricing-comparison-2026/`,
+  dato a 2026-05-14, no incluye IBM); IntuitionLabs (`intuitionlabs.ai/articles/h100-rental-prices-cloud-comparison`,
+  dato a 2026-06-20, "IBM Cloud started offering H100 in late 2024 but pricing details are not widely
+  published, so we omit them here"); docs IBM VPC accelerated profiles
+  (`cloud.ibm.com/docs/vpc?topic=vpc-accelerated-profile-family`). Un dato secundario suelto cito
+  ~$0.99/GPU-h (H100 NVL, 8x) **sin respaldo oficial** -> NO confirmado, no se usa. Registrado en
   `docs/blockers/epic10-notas.md` (B15).
 
 > Los precios de lista cambian con frecuencia; verificar contra el calculador de pricing de cada
