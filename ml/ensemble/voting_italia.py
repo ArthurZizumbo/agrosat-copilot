@@ -92,6 +92,12 @@ class ItaliaParcelVotingResult:
         n_parcels: Number of parcels in the aligned vote.
         match_coverage: Fraction of each member's parcels kept after the
             intersection join ``{member: coverage}`` (honest join report).
+        parcel_ids: The aligned ``canonical_parcel_id`` of every voted parcel, in
+            the row order of :attr:`blended_probs`.
+        blended_probs: ``(n_parcels, n_crops)`` final weighted vote per parcel
+            (refit on all parcels) over :attr:`crop_class_ids` -- the input the
+            dense projection (:func:`ml.eval.transfer_italia_eval.
+            project_parcel_vote_to_dense`) re-paints onto the patch grid.
     """
 
     members: tuple[str, ...]
@@ -102,12 +108,27 @@ class ItaliaParcelVotingResult:
     crop_class_ids: tuple[int, ...] = ()
     n_parcels: int = 0
     match_coverage: dict[str, float] = field(default_factory=dict)
+    parcel_ids: list[str] = field(default_factory=list)
+    blended_probs: np.ndarray | None = None
 
     def weight_map(self) -> dict[str, float]:
         """Return ``{member: weight}`` (the interpretable vote, AC2)."""
         return {
             m: round(float(w), 6)
             for m, w in zip(self.members, self.weights, strict=True)
+        }
+
+    def parcel_vote(self) -> dict[str, np.ndarray]:
+        """Return ``{canonical_parcel_id: (n_crops,)}`` the blended vote per parcel.
+
+        The per-parcel distribution the dense projection re-paints onto the patch
+        grid for the fine/coarse dense eval. Empty if the vote was not blended.
+        """
+        if self.blended_probs is None:
+            return {}
+        return {
+            pid: self.blended_probs[i]
+            for i, pid in enumerate(self.parcel_ids)
         }
 
 
@@ -359,6 +380,9 @@ class ItaliaParcelVotingEnsemble:
             )
 
         final_weights = self._learner._learn_weights(probs, labels)
+        # Blend every parcel with the production weights so the dense projection
+        # (US-079 rubric eval) can re-paint the voted distribution onto the grid.
+        blended_probs = self._learner._blend(probs, final_weights)
         oof_f1 = (
             float(np.mean([f["f1_macro"] for f in per_fold])) if per_fold else float("nan")
         )
@@ -382,6 +406,8 @@ class ItaliaParcelVotingEnsemble:
             crop_class_ids=crop_class_ids,
             n_parcels=len(parcel_ids),
             match_coverage=coverage,
+            parcel_ids=list(parcel_ids),
+            blended_probs=blended_probs,
         )
 
 

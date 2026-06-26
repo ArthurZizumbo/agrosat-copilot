@@ -44,6 +44,7 @@ __all__ = [
     "evaluate_dense_predictions",
     "per_class_f1",
     "probs_to_class_map",
+    "project_parcel_vote_to_dense",
     "transfer_delta",
 ]
 
@@ -340,3 +341,78 @@ def probs_to_class_map(probs_by_patch: dict[int, np.ndarray]) -> dict[int, np.nd
         pid: probs.argmax(axis=0).astype(np.int64)
         for pid, probs in probs_by_patch.items()
     }
+
+
+def project_parcel_vote_to_dense(
+    parcel_probs: dict[str, np.ndarray],
+    crop_class_ids: tuple[int, ...],
+    parcel_rasters: dict[int, tuple[np.ndarray, dict[int, str]]],
+    *,
+    num_classes: int,
+    patch_px: int = 128,
+    background_id: int = 0,
+) -> dict[int, np.ndarray]:
+    """Project the per-parcel Voting-3 distribution back onto a dense map.
+
+    The champion votes per PARCEL, but the EPIC 5 rubric (and the fine/coarse
+    hierarchical eval) is a DENSE metric. This re-paints each parcel's voted
+    distribution onto every pixel that belongs to it, using the EuroCrops ParcelID
+    rasters (:func:`ml.transfer.dense_to_parcel_italia.load_eurocrops_parcel_rasters`,
+    keyed by ``canonical_parcel_id``). A pixel with no parcel (background, or a
+    parcel the vote did not score) stays an all-zero column whose ``argmax`` is the
+    background id, so it is dropped by the ``ignore_index=background_id`` dense
+    metric -- exactly the supervised-pixel convention
+    :class:`ml.eval.dense_metrics.DenseConfusionAccumulator` uses.
+
+    The voted distribution lives over the GLOBAL crop-class column space
+    (``crop_class_ids``, background excluded), so column ``i`` is scattered onto
+    the dense channel ``crop_class_ids[i]`` -- the SAME id the masks
+    ``TARGET_<id>.npy`` carry (the Italian label space does not reindex its crop
+    ids).
+
+    Args:
+        parcel_probs: ``{canonical_parcel_id: (n_crops,)}`` the blended Voting-3
+            distribution per parcel over ``crop_class_ids`` (post-softmax).
+        crop_class_ids: The global crop class ids the parcel-prob columns map to,
+            in column order (background excluded).
+        parcel_rasters: ``{patch_id: (parcel_id_map, id_to_canonical)}`` the
+            per-patch EuroCrops ParcelID rasters (int surrogate 1-based, 0 =
+            background) and their surrogate -> ``canonical_parcel_id`` inverse.
+        num_classes: The dense class axis size ``K`` (background channel included,
+            so the projected maps are ``(K, patch_px, patch_px)``).
+        patch_px: Patch side in pixels (default 128 = PASTIS).
+        background_id: The dense background channel id (default 0); its column is
+            left at zero for every pixel.
+
+    Returns:
+        ``{patch_id: (K, patch_px, patch_px)}`` dense post-softmax maps where every
+        pixel carries its parcel's voted distribution (background pixels all-zero).
+    """
+    col_of_channel = np.asarray(crop_class_ids, dtype=np.int64)
+    dense_by_patch: dict[int, np.ndarray] = {}
+    n_painted_parcels = 0
+    for pid, (parcel_map, id_to_canonical) in parcel_rasters.items():
+        dense = np.zeros((num_classes, patch_px, patch_px), dtype=np.float32)
+        flat = dense.reshape(num_classes, -1)
+        flat_parcel = parcel_map.reshape(-1)
+        for surrogate, canonical in id_to_canonical.items():
+            row = parcel_probs.get(canonical)
+            if row is None:
+                continue  # parcel not scored by the vote (e.g. no xgb embedding)
+            sel = flat_parcel == surrogate
+            if not sel.any():
+                continue
+            # Scatter the parcel distribution onto the dense crop channels.
+            for col, channel in enumerate(col_of_channel):
+                if channel == background_id:
+                    continue
+                flat[channel, sel] = float(row[col])
+            n_painted_parcels += 1
+        dense_by_patch[pid] = flat.reshape(num_classes, patch_px, patch_px)
+    logger.info(
+        "parcel_vote_projected_to_dense",
+        n_patches=len(dense_by_patch),
+        n_painted_parcels=n_painted_parcels,
+        num_classes=num_classes,
+    )
+    return dense_by_patch

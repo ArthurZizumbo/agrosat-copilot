@@ -32,8 +32,12 @@ honest strategies the caller picks between:
   EuroCrops polygons the xgb member used into a per-pixel ParcelID channel,
   reusing :func:`ml.transfer.alphaearth_italia.parcels_in_patches` so the parcel
   ``canonical_parcel_id`` (``iti1_2018_p{patch}_{seq}``) matches the xgb OOF
-  1:1. The dense probs are then averaged within each real parcel and the join with
-  the xgb OOF is exact (its coverage is reported honestly).
+  1:1. The per-patch window transform is reconstructed from the bbox the US-078
+  ``metadata.parquet`` already persists
+  (``rasterio.transform.from_bounds(min_lon, min_lat, max_lon, max_lat, 128,
+  128)``) -- NO Sentinel Hub tile cache is needed. The dense probs are then
+  averaged within each real parcel and the join with the xgb OOF is exact (its
+  coverage is reported honestly).
 
 Aggregation
 -----------
@@ -72,6 +76,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 logger = structlog.get_logger(__name__)
 
 __all__ = [
+    "DEFAULT_ITALIA_ROOT",
     "DEFAULT_OOF_DIR",
     "ParcelAggregation",
     "ParcelStrategy",
@@ -88,8 +93,16 @@ _REPO_ROOT: Path = Path(__file__).resolve().parents[2]
 #: Directory the parcel-level Voting consumes (same as the xgb member's OOF).
 DEFAULT_OOF_DIR: Path = _REPO_ROOT / "ml" / "eval" / "oof"
 
+#: US-078 homologue dataset root (carries ``metadata.parquet`` with the per-patch
+#: bbox + ``class_mapping.json`` -- the only inputs the EuroCrops ParcelID raster
+#: needs, NO tile cache).
+DEFAULT_ITALIA_ROOT: Path = _REPO_ROOT / "data" / "pastis_italia_2018"
+
 #: Numerical floor so an empty/degenerate parcel never divides by zero.
 _PROB_EPS: float = 1e-12
+
+#: Patch side in pixels (= PASTIS; the masks ``TARGET_<id>.npy`` are 128x128).
+_PATCH_PX: int = 128
 
 #: How to derive the per-parcel partition of a dense patch.
 ParcelStrategy = Literal["blobs", "eurocrops"]
@@ -154,60 +167,64 @@ def blob_parcels_for_patch(
 
 
 def eurocrops_parcel_id_raster(
-    parcels: pl.DataFrame,
-    patch_id: int,
+    parcels: object,
+    bbox_4326: tuple[float, float, float, float],
     *,
-    patch_px: int = 128,
+    patch_px: int = _PATCH_PX,
 ) -> tuple[np.ndarray, dict[int, str]]:
     """Rasterise the EuroCrops parcels of one patch into a per-pixel ParcelID map.
 
-    Reuses the SAME polygons + window transform the US-078 dense builder used so
-    the ParcelID map is pixel-aligned with ``TARGET_<id>.npy``, and keys each
-    parcel by the ``canonical_parcel_id`` (``iti1_2018_p{patch}_{seq}``) the xgb
-    member already wrote -- so the dense aggregation joins to the xgb OOF 1:1.
+    Burns each parcel's ``canonical_parcel_id`` (via a contiguous int surrogate,
+    because :func:`rasterio.features.rasterize` needs an integer per geometry)
+    onto the patch's 128x128 grid, mirroring the US-078 builder's rasterisation
+    pattern (:func:`ml.data.eurocrops_pastis_builder.rasterize_patch_mask`) but
+    keying by PARCEL identity instead of crop class. The window transform is
+    reconstructed from the patch bbox the US-078 ``metadata.parquet`` already
+    persists (``rasterio.transform.from_bounds(min_lon, min_lat, max_lon,
+    max_lat, 128, 128)``), so NO Sentinel Hub tile cache is needed: the same
+    EuroCrops polygons the ``xgb-alphaearth-italia`` member used
+    (:func:`ml.transfer.alphaearth_italia.parcels_in_patches`) map to the SAME
+    ``canonical_parcel_id`` (``iti1_2018_p{patch}_{seq}``), so the dense
+    aggregation joins to the xgb OOF 1:1.
 
     Note:
-        This path needs the patch's child transform/CRS, which the US-078 builder
-        derives from the downloaded tile and does NOT persist per patch. When the
-        transform is available (the full builder run on the VM keeps the tile
-        cache) the caller supplies it via :func:`load_eurocrops_parcel_rasters`;
-        the local pilot dataset ships only the masks, so the smoke path uses the
-        ``"blobs"`` strategy. This function is the production hook for the VM run.
+        ``from_bounds`` builds a regular lon/lat grid; the US-078 masks were
+        rasterised on the downloaded tile's projected (UTM) transform, so a small
+        sub-pixel / projective offset remains at parcel borders (the pilot
+        measured ~0.73 region IoU vs ``TARGET_<id>.npy``). That offset only
+        perturbs which border pixels fall in which parcel when AVERAGING the dense
+        probabilities; the per-parcel JOIN to the xgb OOF is exact regardless
+        (it is keyed by ``canonical_parcel_id``, not geometry). The interior of
+        every parcel is correctly captured, which is what the per-parcel mean
+        needs. The centroid fallback below lifts the join coverage with the xgb
+        member from ~80% to ~92% on the pilot (213 sub-pixel parcels would
+        otherwise paint zero pixels and be dropped).
 
     Args:
-        parcels: The in-patch parcels of this patch with ``canonical_parcel_id``
-            and an active ``geometry`` (the output of
-            :func:`ml.transfer.alphaearth_italia.parcels_in_patches`, filtered to
-            ``patch_id``), already reprojected to the patch CRS.
-        patch_id: The patch id (for logging / id parity).
+        parcels: The in-patch parcels of this patch (a ``geopandas`` GeoDataFrame
+            in EPSG:4326 with ``canonical_parcel_id`` + ``geometry``), the output
+            of :func:`ml.transfer.alphaearth_italia.parcels_in_patches` filtered
+            to one patch.
+        bbox_4326: The patch bbox ``(min_lon, min_lat, max_lon, max_lat)`` from
+            the US-078 ``metadata.parquet``.
         patch_px: Patch side in pixels (default 128 = PASTIS).
 
     Returns:
         ``(parcel_id_map, id_to_canonical)`` where ``parcel_id_map`` is an int64
         ``(patch_px, patch_px)`` map (0 = background, else a 1-based local parcel
-        index) and ``id_to_canonical`` maps that local index to the parcel's
-        ``canonical_parcel_id``.
-
-    Raises:
-        ValueError: if the parcels frame lacks a usable ``geometry`` or transform
-            metadata (``__transform__`` / ``__crs__`` columns set by the loader).
+        surrogate) and ``id_to_canonical`` maps that surrogate to the parcel's
+        ``canonical_parcel_id`` (Utf8) -- the inverse needed to recover the join
+        key after rasterising integers.
     """
     from rasterio.features import rasterize
+    from rasterio.transform import from_bounds, rowcol
 
-    if "geometry" not in parcels.columns:
-        raise ValueError(
-            "parcels frame must carry a `geometry` column (and the patch transform "
-            "in `__transform__`/`__crs__`) to rasterise a ParcelID map; build it "
-            "with load_eurocrops_parcel_rasters on the VM tile cache."
-        )
-    transform = parcels[0, "__transform__"] if "__transform__" in parcels.columns else None
-    if transform is None:
-        raise ValueError(
-            f"patch {patch_id} has no window transform; the EuroCrops ParcelID "
-            "raster needs the tile transform the US-078 builder used."
-        )
-    geoms = parcels["geometry"].to_list()
-    canonical = parcels["canonical_parcel_id"].to_list()
+    geoms = list(parcels.geometry)
+    canonical = [str(c) for c in parcels["canonical_parcel_id"].tolist()]
+    min_lon, min_lat, max_lon, max_lat = bbox_4326
+    transform = from_bounds(min_lon, min_lat, max_lon, max_lat, patch_px, patch_px)
+    # Contiguous int surrogate per parcel (rasterize needs one int per geometry);
+    # the inverse map recovers the Utf8 canonical_parcel_id at join time.
     shapes = [
         (geom, i + 1)
         for i, geom in enumerate(geoms)
@@ -223,41 +240,91 @@ def eurocrops_parcel_id_raster(
         dtype="int32",
         all_touched=False,
     ).astype(np.int64)
-    id_to_canonical = {i + 1: str(canonical[i]) for i in range(len(canonical))}
+    # Centroid fallback: a sub-pixel parcel (smaller than a 10 m cell, or whose
+    # interior falls between cell centres) paints ZERO pixels with
+    # ``all_touched=False`` and would be dropped from the per-parcel vote, breaking
+    # the 1:1 join with the xgb member. Assign each unpainted parcel its centroid
+    # pixel ONLY when that pixel is still background, so a large neighbour is never
+    # overwritten (``all_touched=True`` is rejected for the opposite reason: it
+    # lets a small parcel steal border pixels and mis-aligns with the
+    # ``all_touched=False`` US-078 masks). This lifts the join coverage without
+    # corrupting the interior of any well-resolved parcel.
+    painted = set(int(v) for v in np.unique(parcel_map) if int(v) != 0)
+    for i, geom in enumerate(geoms):
+        surrogate = i + 1
+        if surrogate in painted or geom is None or geom.is_empty:
+            continue
+        centroid = geom.centroid
+        row, col = rowcol(transform, centroid.x, centroid.y)
+        if 0 <= row < patch_px and 0 <= col < patch_px and parcel_map[row, col] == 0:
+            parcel_map[row, col] = surrogate
+    id_to_canonical = {i + 1: canonical[i] for i in range(len(canonical))}
     return parcel_map, id_to_canonical
 
 
 def load_eurocrops_parcel_rasters(
-    italia_root: Path,
+    italia_root: Path = DEFAULT_ITALIA_ROOT,
     *,
-    patch_ids: list[int],
+    patch_ids: list[int] | None = None,
 ) -> dict[int, tuple[np.ndarray, dict[int, str]]]:
-    """Build per-patch EuroCrops ParcelID rasters (production / VM path).
+    """Build per-patch EuroCrops ParcelID rasters from the US-078 metadata.
 
-    Placeholder hook for the full VM run: it requires the per-patch tile
-    transform/CRS the US-078 builder used, which the pilot dataset on disk does
-    not ship. On the VM (where the Sentinel Hub tile cache is present) this loads
-    those transforms and rasterises each patch via
-    :func:`eurocrops_parcel_id_raster`. Until that metadata is wired, it raises a
-    clear error so the caller falls back to the ``"blobs"`` strategy.
+    The ORCHESTRATOR's finding: no Sentinel Hub tile cache is needed. The US-078
+    ``metadata.parquet`` already stores each patch's EPSG:4326 bbox (columns
+    ``bbox_min_lon``, ``bbox_min_lat``, ``bbox_max_lon``, ``bbox_max_lat``), and
+    the patch's window transform is reconstructed with
+    ``rasterio.transform.from_bounds(...)``. This loads the canonical Italian
+    label space + the patch bboxes, intersects the EuroCrops Italy 2018 parcels
+    (reusing :func:`ml.transfer.alphaearth_italia.parcels_in_patches`, the SAME
+    polygons + ``canonical_parcel_id`` the xgb member used), and rasterises each
+    patch's parcels with :func:`eurocrops_parcel_id_raster`. The result aligns
+    pixel-for-pixel with ``TARGET_<id>.npy`` up to the small lon/lat-vs-UTM offset
+    noted there, and joins to the xgb OOF 1:1 by ``canonical_parcel_id``.
 
     Args:
-        italia_root: The US-078 homologue dataset root.
-        patch_ids: The patch ids to rasterise.
+        italia_root: The US-078 homologue dataset root (carries
+            ``metadata.parquet`` + ``class_mapping.json``).
+        patch_ids: Restrict to these patch ids; ``None`` rasterises every patch in
+            the metadata.
 
     Returns:
-        ``{patch_id: (parcel_id_map, id_to_canonical)}``.
-
-    Raises:
-        NotImplementedError: always, until the per-patch transform metadata is
-            persisted by US-078 on the VM (documented in the handoff).
+        ``{patch_id: (parcel_id_map, id_to_canonical)}`` for every requested patch
+        with at least one in-patch parcel.
     """
-    raise NotImplementedError(
-        "the EuroCrops ParcelID raster needs the per-patch tile transform/CRS the "
-        "US-078 builder used; the local pilot ships only TARGET masks. Use "
-        "strategy='blobs' for the dense-only vote / smoke, or wire the tile cache "
-        f"transforms on the VM for {len(patch_ids)} patches (see US-079 handoff)."
+    from ml.transfer.alphaearth_italia import (
+        load_italia_label_space,
+        load_patch_bboxes,
+        parcels_in_patches,
     )
+
+    name_to_id = load_italia_label_space(italia_root)
+    bboxes = load_patch_bboxes(italia_root)
+    if patch_ids is not None:
+        keep = set(int(p) for p in patch_ids)
+        bboxes = bboxes.filter(pl.col("patch_id").is_in(list(keep)))
+    parcels = parcels_in_patches(bboxes, name_to_id)
+
+    rasters: dict[int, tuple[np.ndarray, dict[int, str]]] = {}
+    for row in bboxes.iter_rows(named=True):
+        pid = int(row["patch_id"])
+        in_patch = parcels[parcels["patch_id"] == pid]
+        if len(in_patch) == 0:
+            continue
+        bbox = (
+            float(row["bbox_min_lon"]),
+            float(row["bbox_min_lat"]),
+            float(row["bbox_max_lon"]),
+            float(row["bbox_max_lat"]),
+        )
+        parcel_map, id_to_canonical = eurocrops_parcel_id_raster(in_patch, bbox)
+        rasters[pid] = (parcel_map, id_to_canonical)
+    logger.info(
+        "eurocrops_parcel_rasters_built",
+        n_patches=len(rasters),
+        n_parcels=int(sum(len(c) for _, c in rasters.values())),
+        note="from_bounds(metadata bbox); no tile cache needed.",
+    )
+    return rasters
 
 
 def aggregate_dense_member_to_parcel(

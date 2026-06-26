@@ -145,6 +145,7 @@ def _aggregate_dense_to_parcel_oof(
     n_timesteps: int,
     label_space: object,
     strategy: str,
+    parcel_rasters: dict[int, tuple[np.ndarray, dict[int, str]]] | None,
 ) -> Path:
     """Aggregate a fine-tuned dense member's softmax dump to a per-parcel OOF.
 
@@ -160,7 +161,9 @@ def _aggregate_dense_to_parcel_oof(
         italia_root: The homologue dataset root.
         n_timesteps: Equispaced dates per patch (to re-load the matching masks).
         label_space: The Italian dense label space.
-        strategy: ``"blobs"`` (self-contained) or ``"eurocrops"`` (joins the xgb).
+        strategy: ``"eurocrops"`` (joins the xgb 1:1) or ``"blobs"`` (self-contained).
+        parcel_rasters: For ``strategy="eurocrops"``, the per-patch EuroCrops
+            ParcelID rasters (``{patch_id: (parcel_id_map, id_to_canonical)}``).
 
     Returns:
         The path of the written per-parcel OOF parquet.
@@ -193,8 +196,82 @@ def _aggregate_dense_to_parcel_oof(
         num_classes=label_space.num_classes,  # type: ignore[attr-defined]
         strategy=strategy,
         background_id=label_space.background_id,  # type: ignore[attr-defined]
+        parcel_rasters=parcel_rasters,
     )
     return write_parcel_oof(aggregation)
+
+
+def _dense_eval_of_parcel_vote(
+    vote_result: object,
+    *,
+    parcel_rasters: dict[int, tuple[np.ndarray, dict[int, str]]] | None,
+    masks: dict[int, np.ndarray],
+    label_space: object,
+) -> dict[str, object]:
+    """Project the per-parcel champion vote onto a dense map and score it.
+
+    The champion votes per PARCEL; the EPIC 5 rubric is a DENSE metric. This
+    re-paints every parcel's blended distribution onto its pixels (via the
+    EuroCrops ParcelID rasters), then runs the SAME fine/coarse hierarchical eval +
+    honest discard curve the dense members use, so the parcel-level winner ALSO
+    reports dense mIoU / F1 for the rubric. Needs the ``eurocrops`` strategy (the
+    ``blobs`` namespace has no ParcelID raster to project onto); with ``blobs`` or
+    no blended vote it returns an empty dict (reported honestly).
+
+    Args:
+        vote_result: The :class:`ml.ensemble.voting_italia.ItaliaParcelVotingResult`.
+        parcel_rasters: The per-patch EuroCrops ParcelID rasters (eurocrops only).
+        masks: ``{patch_id: (H, W)}`` held-out ground-truth class masks.
+        label_space: The Italian dense label space.
+
+    Returns:
+        A dict with ``voting_dense_eval`` (fine/coarse summary), ``voting_dense_
+        per_class``, ``voting_dense_discard_curve`` and ``voting_dense_best_subset_
+        f1_over_0.9``; empty if the projection is unavailable.
+    """
+    from ml.eval.transfer_italia_eval import (
+        best_subset_over_threshold,
+        discard_curve,
+        evaluate_dense_predictions,
+        probs_to_class_map,
+        project_parcel_vote_to_dense,
+    )
+
+    parcel_vote = vote_result.parcel_vote()  # type: ignore[attr-defined]
+    if parcel_rasters is None or not parcel_vote:
+        logger.info(
+            "us079_parcel_vote_dense_skipped",
+            note="dense projection needs the eurocrops ParcelID rasters and a "
+            "blended vote; not available (blobs strategy or empty vote).",
+        )
+        return {}
+
+    dense_probs = project_parcel_vote_to_dense(
+        parcel_vote,
+        vote_result.crop_class_ids,  # type: ignore[attr-defined]
+        parcel_rasters,
+        num_classes=label_space.num_classes,  # type: ignore[attr-defined]
+        background_id=label_space.background_id,  # type: ignore[attr-defined]
+    )
+    vote_preds = probs_to_class_map(dense_probs)
+    ev = evaluate_dense_predictions(
+        "voting-3-parcel-projected", vote_preds, masks, label_space=label_space
+    )
+    curve = discard_curve(ev)
+    best_subset = best_subset_over_threshold(ev, threshold=0.9)
+    logger.info(
+        "us079_parcel_vote_dense_eval",
+        fine_f1=ev.summary()["fine_f1_macro"],
+        fine_miou=ev.summary()["fine_miou"],
+        coarse_f1=ev.summary()["coarse_f1_macro"],
+        best_subset_n=best_subset["n_classes"],
+    )
+    return {
+        "voting_dense_eval": ev.summary(),
+        "voting_dense_per_class": ev.per_class,
+        "voting_dense_discard_curve": curve,
+        "voting_dense_best_subset_f1_over_0.9": best_subset,
+    }
 
 
 def main() -> None:
@@ -219,10 +296,11 @@ def main() -> None:
     )
     parser.add_argument(
         "--parcel-strategy",
-        choices=("blobs", "eurocrops"),
-        default="blobs",
-        help="dense->parcel partition: blobs (self-contained) or eurocrops "
-        "(joins the xgb member; needs the VM tile transforms).",
+        choices=("eurocrops", "blobs"),
+        default="eurocrops",
+        help="dense->parcel partition: eurocrops (default, joins the xgb member "
+        "1:1 via the EuroCrops ParcelID raster reconstructed from the metadata "
+        "bbox -- the champion terna) or blobs (self-contained dense-only vote).",
     )
     parser.add_argument("--force", action="store_true", help="Re-train even if a dump exists.")
     parser.add_argument("--no-mlflow", action="store_true", help="Skip MLflow logging.")
@@ -239,6 +317,15 @@ def main() -> None:
 
     label_space = build_italia_label_space(italia_root=args.italia_root)
 
+    # 0) For the champion terna, build the EuroCrops ParcelID rasters once (from the
+    # metadata bbox via from_bounds; NO tile cache). They drive BOTH the dense->parcel
+    # aggregation and the parcel-vote->dense projection for the rubric eval.
+    parcel_rasters: dict[int, tuple[np.ndarray, dict[int, str]]] | None = None
+    if args.parcel_strategy == "eurocrops":
+        from ml.transfer.dense_to_parcel_italia import load_eurocrops_parcel_rasters
+
+        parcel_rasters = load_eurocrops_parcel_rasters(args.italia_root)
+
     # 1) Fine-tune the DENSE members (the xgb member's OOF is produced upstream).
     member_summaries: dict[str, dict[str, object]] = {}
     for member in _dense_members(args.members):
@@ -253,6 +340,7 @@ def main() -> None:
             n_timesteps=args.n_timesteps,
             label_space=label_space,
             strategy=args.parcel_strategy,
+            parcel_rasters=parcel_rasters,
         )
 
     # 3) Learn the Voting-3 over the THREE per-parcel members (champion replica).
@@ -279,6 +367,15 @@ def main() -> None:
         )
         member_evals[member] = ev.summary()
 
+    # 5) Project the per-parcel CHAMPION vote back onto a dense map so the
+    # parcel-level winner also carries dense fine/coarse metrics (EPIC 5 rubric).
+    vote_dense_eval = _dense_eval_of_parcel_vote(
+        vote_result,
+        parcel_rasters=parcel_rasters,
+        masks=masks,
+        label_space=label_space,
+    )
+
     report = {
         "run": args.run,
         "vote_space": "parcel",
@@ -302,6 +399,7 @@ def main() -> None:
         "voting_crop_class_ids": list(vote_result.crop_class_ids),
         "member_dense_eval": member_evals,
         "member_summaries": member_summaries,
+        **vote_dense_eval,
     }
 
     out_dir = _DEFAULT_CKPT_ROOT / "voting-italia" / args.run
@@ -444,16 +542,21 @@ def _log_mlflow(args: argparse.Namespace, report: dict, report_path: Path) -> No
         # full dense fine/coarse eval. Log whichever shape this report carries.
         if "voting_oof_accuracy" in report and report["voting_oof_accuracy"] is not None:
             mlflow.log_metric("voting_oof_accuracy", float(report["voting_oof_accuracy"]))
-        if "voting_eval" in report:
-            ve = report["voting_eval"]
-            mlflow.log_metric("voting_fine_f1_macro", ve["fine_f1_macro"])
-            mlflow.log_metric("voting_fine_miou", ve["fine_miou"])
-            mlflow.log_metric("voting_coarse_f1_macro", ve["coarse_f1_macro"])
-            mlflow.log_metric("voting_coarse_miou", ve["coarse_miou"])
-        if "best_subset_f1_over_0.9" in report:
-            bs = report["best_subset_f1_over_0.9"]
-            mlflow.log_metric("best_subset_n_classes", bs["n_classes"])
-            mlflow.log_metric("best_subset_macro_f1", bs["macro_f1"])
+        # The pixel vote logs ``voting_eval``; the parcel vote logs the dense eval
+        # of its projection (``voting_dense_eval``). Log whichever is present so the
+        # champion always carries dense fine/coarse metrics for the rubric.
+        dense_eval = report.get("voting_eval") or report.get("voting_dense_eval")
+        if dense_eval:
+            mlflow.log_metric("voting_fine_f1_macro", dense_eval["fine_f1_macro"])
+            mlflow.log_metric("voting_fine_miou", dense_eval["fine_miou"])
+            mlflow.log_metric("voting_coarse_f1_macro", dense_eval["coarse_f1_macro"])
+            mlflow.log_metric("voting_coarse_miou", dense_eval["coarse_miou"])
+        best_subset = report.get("best_subset_f1_over_0.9") or report.get(
+            "voting_dense_best_subset_f1_over_0.9"
+        )
+        if best_subset:
+            mlflow.log_metric("best_subset_n_classes", best_subset["n_classes"])
+            mlflow.log_metric("best_subset_macro_f1", best_subset["macro_f1"])
         for key, value in report.get("transfer_delta", {}).items():
             mlflow.log_metric(key, value)
         mlflow.log_artifact(str(report_path))
