@@ -57,25 +57,37 @@ segundo dataset:
 
 ### Decision del combinador (por que Voting-3 ponderado, no Stacking)
 
-Resultados reales sobre PASTIS fold-5
-(`reports/ensemble/metrics/headline_voting4.csv` y `perclass_voting4.csv`):
+Resultados reales sobre PASTIS fold-5. CLAVE: hay dos formas de evaluar y dan
+resultados OPUESTOS (corroborado el 25-jun):
+
+**(A) Sobre las 18 clases completas** (`headline_voting4.csv`): el Voting iguala
+al Stacking pero con menos pesos.
 
 | Combinador | F1-macro (18 cl.) | Accuracy | F1 spatial-CV | # pesos |
 |------------|-------------------|----------|---------------|---------|
 | Stacking (meta-LogReg) | 0.747 | 0.849 | 0.536 | 54 |
-| **Voting ponderado (3m)** | **0.7444** | **0.863** | **0.558** | **3** |
+| **Voting ponderado (3m)** | 0.7444 | **0.863** | **0.558** | **3** |
 | Voting simple (1/N) | 0.673 | 0.833 | 0.488 | 3 |
 
-El **Voting ponderado** iguala al Stacking en F1 (−0.003) pero **gana en accuracy
-y en F1 spatial-CV (0.558 vs 0.536)** con **18x menos pesos (3 vs 54)**. En
-transfer (pocos datos del dominio nuevo) menos pesos = menos sobreajuste => el
-Voting ponderado es el combinador elegido. Ademas es **mas ligero**.
+**(B) RESTRINGIENDO el modelo a las clases bien resueltas** (`france9_headline.csv`,
+`france10_headline.csv`) -- el escenario de despliegue real: el **Voting-3 GANA
+claramente** y mantiene **F1 > 0.9**.
 
-Sobre las **clases bien resueltas**, el Voting-3 ya supera 0.9 en PASTIS
-(perclass real): Winter rapeseed 0.938, Corn 0.925, Grapevine 0.912, Meadow
-0.913, Beet 0.906. Mantener **F1-macro > 0.9 sobre las ~10 mejores clases** es el
-objetivo de calidad (la "doble taxonomia" del proyecto: catalogo completo + las
-clases bien resueltas).
+| Label-space | Voting-3 | Stacking-5 (campeon) | Voting gana |
+|-------------|----------|----------------------|-------------|
+| **france-9** (9 clases) | **0.9200** | 0.9035 | **+1.65 pts** |
+| **france-10** (10 clases) | **0.9069** | 0.8927 | **+1.42 pts** |
+
+CORROBORADO (Arthur, 25-jun): el Voting-3 gana **cuando se considera el espacio
+restringido de ~10 clases bien resueltas** (modo B "restrict"), no en la curva de
+las 18 (modo A). La razon: con menos clases el meta-LogReg del Stacking (54 pesos)
+sobreajusta mas que el Voting (3 pesos). Como el despliegue real opera sobre las
+clases bien resueltas (la "doble taxonomia" del proyecto), **el Voting-3 es el
+combinador elegido: F1 0.9069 sobre 10 clases, mas ligero (3 pesos), mejor
+generalizacion (spatial-CV 0.558 vs 0.536)**.
+
+OBJETIVO de calidad para US-079: **F1-macro > 0.9 sobre las ~10 mejores clases**
+del homologo italiano (espejo del 0.9069 france-10 del Voting-3 en PASTIS).
 
 ---
 
