@@ -211,7 +211,7 @@ def _load_region_parcels(
             n_missing += 1
             continue
         try:
-            payload = np.load(path, allow_pickle=True)
+            payload = np.load(path)  # allow_pickle=False: data/dates son arrays planos
             data = payload["data"]
             dates = payload["dates"]
         except Exception:  # noqa: BLE001 -- corrupt npz dropped, counted

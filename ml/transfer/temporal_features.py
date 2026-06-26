@@ -466,7 +466,7 @@ def build_aligned_dataset(
             n_missing += 1
             continue
         try:
-            payload = np.load(npz_path, allow_pickle=True)
+            payload = np.load(npz_path)  # allow_pickle=False: data/dates arrays planos
             data = payload["data"]
             dates = payload["dates"]
         except Exception:  # noqa: BLE001 -- corrupt npz is dropped, counted
@@ -578,7 +578,7 @@ def _spatial_split(
         # Greedily add whole blocks (largest first) to the test set until we
         # reach the target test fraction.
         order = block_ids[np.argsort(-block_sizes)]
-        target = int(round(_TEST_FRACTION * n))
+        target = round(_TEST_FRACTION * n)
         is_test = np.zeros(n, dtype=bool)
         held = 0
         for blk in order:
@@ -789,7 +789,10 @@ def make_figure(result: TemporalComparisonResult, fig_path: Path) -> Path:
     fig, ax = plt.subplots(figsize=(10, max(4.0, 0.85 * len(names) + 1.5)))
     ax.barh(y + height, f1_a, height=height, color="#9aa0a6", label="AlphaEarth anual (64-dim)")
     ax.barh(y, f1_t, height=height, color="#1f77b4", label="Temporal S2 (99-dim)")
-    ax.barh(y - height, f1_f, height=height, color="#2ca02c", label="Fusion anual+temporal (163-dim)")
+    ax.barh(
+        y - height, f1_f, height=height, color="#2ca02c",
+        label="Fusion anual+temporal (163-dim)",
+    )
     for i, (a, t, f, d, df, s) in enumerate(
         zip(f1_a, f1_t, f1_f, deltas, deltas_f, sup, strict=True)
     ):

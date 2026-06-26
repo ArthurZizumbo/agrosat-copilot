@@ -156,7 +156,6 @@ def _download_tile(
     """
     import rasterio
 
-    token = client._ensure_token()
     nb = len(PASTIS_BANDS)
     payload = {
         "input": {
@@ -184,15 +183,11 @@ def _download_tile(
         },
         "evalscript": _orbit_evalscript(n_frames),
     }
-    response = client._http.post(
-        "https://sh.dataspace.copernicus.eu/api/v1/process",
-        headers={"Authorization": f"Bearer {token}"},
-        json=payload,
-    )
-    if response.status_code != 200:
-        logger.warning(
-            "tile_download_failed", status=response.status_code, body=response.text[:200]
-        )
+    # Reuse the client's public Process API entry point (token + URL + 429 retry),
+    # instead of touching private members or hardcoding the endpoint.
+    response = client.post_process(payload)
+    if response is None:
+        logger.warning("tile_download_failed", bbox=bbox)
         return None
     memfile = rasterio.io.MemoryFile(response.content)
     ds = memfile.open()

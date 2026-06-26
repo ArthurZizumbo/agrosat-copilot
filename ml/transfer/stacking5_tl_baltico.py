@@ -116,7 +116,7 @@ def run_stacking5_tl(
     """
     import torch
     from sklearn.linear_model import LogisticRegression
-    from sklearn.metrics import accuracy_score, f1_score
+    from sklearn.metrics import f1_score
 
     from ml.transfer.finetune_baltico import (
         FINE_TO_COARSE,
@@ -208,52 +208,82 @@ def run_stacking5_tl(
         except Exception as exc:  # noqa: BLE001 -- FarSLIP is additive; degrade honestly
             logger.warning("stacking5_farslip_skipped", error=str(exc))
 
-    # --- 3. Stack + meta-LogReg (the champion combination layer). ----------------
+    # --- 2d. Persist the member posteriors so any re-combination is GPU-free. -----
+    # The expensive part is producing these posteriors (dense fine-tunes + SH /
+    # npz patches). Persisting them once means a different combination layer (the
+    # weighted vote below, or a future stacking variant) can be re-fit on CPU in
+    # seconds without re-running a single member. Keys are the member order.
     members = list(member_post_src.keys())
+    post_src_stack = np.stack([member_post_src[m] for m in members])  # (M, n_src, K)
+    post_tgt_stack = np.stack([member_post_tgt[m] for m in members])  # (M, n_tgt, K)
+    np.savez_compressed(
+        out_dir / "02_posteriors.npz",
+        members=np.array(members, dtype=object),
+        post_src=post_src_stack, post_tgt=post_tgt_stack,
+        y_src=y_src, y_tgt=y_tgt,
+    )
+    logger.info("stacking5_posteriors_persisted", members=members,
+                shape=list(post_tgt_stack.shape))
+
+    id_to_leaf = {i: leaf for leaf, i in label_space.index.items()}
+    true_leaves = [id_to_leaf[t] for t in y_tgt.tolist()]
+
+    def _leaves(pred_ids: np.ndarray) -> list[str]:
+        return [id_to_leaf[p] for p in pred_ids.tolist()]
+
+    # --- 3a. Meta-LogReg (the CHAMPION combination layer). ------------------------
     meta_src = np.concatenate([member_post_src[m] for m in members], axis=1)
     meta_tgt = np.concatenate([member_post_tgt[m] for m in members], axis=1)
     meta = LogisticRegression(max_iter=2000, class_weight="balanced", random_state=config.seed)
     meta.fit(meta_src, y_src)
-    pred = meta.predict(meta_tgt)
+    meta_leaves = _leaves(meta.predict(meta_tgt))
+    meta_metrics = _fc_metrics(true_leaves, meta_leaves, FINE_TO_COARSE, label_space.leaf_to_pastis)
 
-    id_to_leaf = {i: leaf for leaf, i in label_space.index.items()}
-    true_leaves = [id_to_leaf[t] for t in y_tgt.tolist()]
-    pred_leaves = [id_to_leaf[p] for p in pred.tolist()]
-    fine_f1 = float(f1_score(true_leaves, pred_leaves, average="macro"))
-    fine_acc = float(accuracy_score(true_leaves, pred_leaves))
-
-    def _coarse(leaf: str) -> str:
-        return FINE_TO_COARSE.get(leaf, label_space.leaf_to_pastis.get(leaf, leaf))
-
-    coarse_t = [_coarse(t) for t in true_leaves]
-    coarse_p = [_coarse(p) for p in pred_leaves]
-    coarse_f1 = float(f1_score(coarse_t, coarse_p, average="macro"))
-    coarse_acc = float(accuracy_score(coarse_t, coarse_p))
+    # --- 3b. Combination-layer SWAP: weighted vote + simple vote (engram #340). ---
+    # Same posteriors, different combiner. The weighted vote learns N convex
+    # weights on the SOURCE (like the meta) and applies them to the TARGET; the
+    # simple vote is the fixed 1/N floor. This is the faithful transfer analog of
+    # the PASTIS Voting-3 vs Stacking head-to-head.
+    vote_w = _learn_vote_weights(post_src_stack, y_src, seed=config.seed)
+    wvote_leaves = _leaves(np.tensordot(vote_w, post_tgt_stack, axes=(0, 0)).argmax(axis=1))
+    svote_leaves = _leaves(post_tgt_stack.mean(axis=0).argmax(axis=1))
+    weighted_vote_metrics = _fc_metrics(
+        true_leaves, wvote_leaves, FINE_TO_COARSE, label_space.leaf_to_pastis)
+    simple_vote_metrics = _fc_metrics(
+        true_leaves, svote_leaves, FINE_TO_COARSE, label_space.leaf_to_pastis)
 
     # Per-member solo F1 (how good each member alone is on the target) for context.
-    member_solo = {}
-    for m in members:
-        solo = member_post_tgt[m].argmax(axis=1)
-        member_solo[m] = round(
-            float(f1_score(y_tgt, solo, average="macro")), 4
-        )
+    member_solo = {
+        m: round(float(f1_score(y_tgt, member_post_tgt[m].argmax(axis=1), average="macro")), 4)
+        for m in members
+    }
 
     summary = {
         "source": config.source,
         "target": config.target,
         "members": members,
+        "use_local_npz": config.use_local_npz,
         "n_train": len(p_src),
         "n_test": len(p_tgt),
         "n_classes_fine": n_classes,
         "n_conserved": len(label_space.conserved),
         "n_new": len(label_space.new),
-        "stacking5_fine_macro_f1": round(fine_f1, 4),
-        "stacking5_coarse_macro_f1": round(coarse_f1, 4),
-        "stacking5_fine_accuracy": round(fine_acc, 4),
-        "stacking5_coarse_accuracy": round(coarse_acc, 4),
+        # Headline kept under the historical keys (the meta-LogReg champion).
+        "stacking5_fine_macro_f1": meta_metrics["fine_macro_f1"],
+        "stacking5_coarse_macro_f1": meta_metrics["coarse_macro_f1"],
+        "stacking5_fine_accuracy": meta_metrics["fine_accuracy"],
+        "stacking5_coarse_accuracy": meta_metrics["coarse_accuracy"],
+        # Combination-layer head-to-head on the SAME posteriors.
+        "combiner_comparison": {
+            "meta_logreg": meta_metrics,
+            "weighted_vote": weighted_vote_metrics,
+            "simple_vote": simple_vote_metrics,
+        },
+        "vote_weights": {m: round(float(w), 4) for m, w in zip(members, vote_w, strict=True)},
         "member_solo_fine_f1": member_solo,
         "y_true_leaf": true_leaves,
-        "y_pred_leaf": pred_leaves,
+        "y_pred_leaf": meta_leaves,
+        "y_pred_leaf_weighted_vote": wvote_leaves,
         "conserved_leaves": list(label_space.conserved),
         "new_leaves": list(label_space.new),
     }
@@ -261,6 +291,10 @@ def run_stacking5_tl(
     logger.info(
         "stacking5_tl_done",
         **{k: v for k, v in summary.items() if not isinstance(v, (list, dict))},
+        meta_fine_f1=meta_metrics["fine_macro_f1"],
+        weighted_vote_fine_f1=weighted_vote_metrics["fine_macro_f1"],
+        simple_vote_fine_f1=simple_vote_metrics["fine_macro_f1"],
+        vote_weights=summary["vote_weights"],
         member_solo=member_solo,
     )
     return Stacking5TLResult(summary=summary)

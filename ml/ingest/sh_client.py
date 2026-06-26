@@ -218,10 +218,14 @@ class SentinelHubClient:
         )
         return self._access_token
 
-    def _post_process_with_retry(
+    def post_process(
         self, payload: dict[str, Any], *, max_attempts: int = 5
     ) -> httpx.Response | None:
         """POST to the Process API, retrying on ``429`` with exponential backoff.
+
+        Public entry point so other modules (e.g. :mod:`ml.ingest.sh_path`) reuse
+        the token + URL + retry logic instead of touching private members or
+        hardcoding the endpoint.
 
         The Process API enforces a per-second request quota; under fan-out a
         ``429 RATE_LIMIT_EXCEEDED`` is expected and transient. This retries it
@@ -457,7 +461,7 @@ class SentinelHubClient:
             },
             "evalscript": _orbit_evalscript(n_frames),
         }
-        response = self._post_process_with_retry(payload)
+        response = self.post_process(payload)
         if response is None:
             return None
         flat = _decode_tiff(response.content)  # (n_frames*10, H, W)
