@@ -105,6 +105,14 @@ _S2_SCALE: float = 10000.0
 _PATCH_PX: int = 128
 
 
+#: Default Italian per-class phenology prototypes (US-079 fix B). The TSViT-pheno
+#: semantic branch contrasts Italian pixels against THESE (Mediterranean calendar),
+#: not the Bretagne/PASTIS ones (``build_phenology_italia`` generates it).
+DEFAULT_ITALIA_PROTOTYPES: Path = (
+    _REPO_ROOT / "data" / "features" / "phenology_class_prototypes_italia.parquet"
+)
+
+
 @dataclass
 class DenseFineTuneConfig:
     """Hyperparameters for the Italian dense fine-tune.
@@ -126,6 +134,25 @@ class DenseFineTuneConfig:
             loss and the metrics (the model still has the row, but it is not
             supervised on it).
         seed: RNG seed.
+        scheduler: LR schedule over the fine-tune phase. ``"cosine"`` (default,
+            US-079 fix A) is a linear warmup (~5% of the steps) followed by a
+            cosine decay; ``"none"`` keeps the previous flat AdamW (back-compat).
+        class_weighting: Per-class CE weighting computed from the REAL train-pixel
+            frequencies (US-079 fix A: the Italian classes are heavily imbalanced
+            -- olive/forest dominate, durum/barley are rare). ``"inverse"`` =
+            ``total / (n_classes * count_c)``; ``"sqrt_inverse"`` = its square root
+            (softer); ``"none"`` = unweighted (previous behaviour).
+        pheno_prototypes: Path to the per-class phenology prototypes for the TSViT
+            semantic branch. ``None`` uses :data:`DEFAULT_ITALIA_PROTOTYPES` (the
+            Italian ones); ignored for U-TAE (no semantic branch).
+        lambda_contrast: Weight of the phenology contrastive term added to the CE
+            (TSViT-pheno only). ``0.0`` disables the semantic branch (the
+            mis-calibrated previous behaviour: the branch contributed nothing).
+        val_fraction: Fraction of the TRAIN spatial folds reserved as a held-out
+            VALIDATION split for ``best.pt`` selection (US-079 fix A: the previous
+            ``best.pt`` was chosen by TRAIN mIoU, blind to overfit). The reserved
+            fold is the train fold with the fewest patches above the floor, kept
+            SPATIAL (never a random pixel split).
     """
 
     model_kind: str = "tsvit-pheno"
@@ -139,6 +166,11 @@ class DenseFineTuneConfig:
     min_patches_per_class: int | None = None
     ignore_background: bool = True
     seed: int = 42
+    scheduler: str = "cosine"
+    class_weighting: str = "inverse"
+    pheno_prototypes: Path | None = None
+    lambda_contrast: float = 0.1
+    val_fraction: float = 0.2
 
 
 @dataclass
@@ -489,6 +521,176 @@ def _doy_positions(
     return pos.unsqueeze(0).repeat(batch, 1)
 
 
+def _load_italia_prototypes(
+    prototype_path: Path,
+    *,
+    num_classes: int,
+    device: str,
+) -> torch.Tensor:
+    """Load the Italian per-class prototypes as an index-aligned ``(K, S)`` tensor.
+
+    Builds the projected, L2-normalised prototype matrix the contrastive loss
+    consumes, row ``k`` = the prototype of dense class id ``k`` (US-079 fix B:
+    ITALIAN prototypes, not Bretagne/PASTIS). Reuses
+    :class:`ml.models.pheno_semantic_branch.PhenoSemanticBranch` for the 384 ->
+    ``semantic_dim`` projection (kept at 384, matching the TSViT visual branch),
+    but feeds it the id-aligned matrix so the row order matches the dense labels.
+
+    Args:
+        prototype_path: The Italian prototypes parquet.
+        num_classes: The dense head size ``K`` (= ``label_space.num_classes``).
+        device: Torch device for the returned tensor.
+
+    Returns:
+        A detached ``(K, semantic_dim)`` float tensor of L2-normalised prototypes,
+        on ``device``. Rows of absent class ids (background, unseen classes) are
+        zero and are never indexed (the loss only scores valid in-range pixels).
+
+    Raises:
+        FileNotFoundError: if the prototype parquet is absent (run
+            ``scripts/build_phenology_italia.py`` first).
+    """
+    import torch
+    import torch.nn.functional as F
+
+    from ml.features.phenology_class_prototypes import (
+        load_class_prototype_matrix_by_id,
+    )
+
+    if not Path(prototype_path).is_file():
+        raise FileNotFoundError(
+            f"Italian phenology prototypes not found at {prototype_path}; generate "
+            "them with `poetry run python -m scripts.build_phenology_italia` "
+            "(US-079 fix B), or pass --lambda-contrast 0 to disable the branch."
+        )
+    matrix = load_class_prototype_matrix_by_id(
+        Path(prototype_path), num_classes=num_classes
+    )  # (K, 384), row k = class id k
+    # The TSViT visual branch already lives in the 384-dim semantic space; the
+    # contrast L2-normalises both sides, so the prototypes are the L2-normalised
+    # MiniLM embeddings directly (no random untrained projection added). Zero rows
+    # (background / unseen ids) stay zero and are never indexed.
+    prototypes = F.normalize(torch.from_numpy(matrix).float(), p=2, dim=-1)
+    logger.info(
+        "italia_prototypes_loaded",
+        path=str(prototype_path),
+        num_classes=num_classes,
+        n_nonzero_rows=int((matrix != 0).any(axis=1).sum()),
+    )
+    return prototypes.to(device)
+
+
+def _compute_class_weights(
+    masks: list[np.ndarray],
+    *,
+    num_classes: int,
+    ignore_index: int,
+    scheme: str,
+) -> np.ndarray | None:
+    """Per-class CE weights from the REAL train-pixel frequencies (US-079 fix A).
+
+    The Italian dense classes are heavily imbalanced (olive/forest dominate, durum
+    / barley / sunflower are rare); a flat CE lets the head collapse onto the
+    majority classes (the US-079 F1 0.108 symptom). The weight of class ``c`` is
+    ``inverse`` = ``total / (n_classes * count_c)`` (the balanced sklearn formula)
+    or its ``sqrt_inverse`` (softer, avoids over-amplifying single-pixel classes).
+    Classes with zero train pixels (and the ignored background) get weight 0 so
+    they do not perturb the normalisation.
+
+    Args:
+        masks: The TRAIN dense masks (one ``(H, W)`` int array per train patch).
+        num_classes: The dense head size ``K``.
+        ignore_index: The label excluded from the loss (background); weight 0.
+        scheme: ``"inverse"``, ``"sqrt_inverse"`` or ``"none"``.
+
+    Returns:
+        A ``(K,)`` float32 weight vector, or ``None`` when ``scheme == "none"``.
+    """
+    if scheme == "none":
+        return None
+    counts = np.zeros(num_classes, dtype=np.float64)
+    for mask in masks:
+        ids, n = np.unique(mask, return_counts=True)
+        for cid, cnt in zip(ids, n, strict=True):
+            if 0 <= int(cid) < num_classes:
+                counts[int(cid)] += float(cnt)
+    if 0 <= ignore_index < num_classes:
+        counts[ignore_index] = 0.0
+    present = counts > 0
+    n_present = int(present.sum())
+    total = float(counts.sum())
+    weights = np.zeros(num_classes, dtype=np.float64)
+    if total <= 0 or n_present == 0:
+        return None
+    # Balanced inverse-frequency: total / (n_present * count_c) for present classes.
+    weights[present] = total / (n_present * counts[present])
+    if scheme == "sqrt_inverse":
+        weights[present] = np.sqrt(weights[present])
+    logger.info(
+        "italia_class_weights_computed",
+        scheme=scheme,
+        n_present=n_present,
+        weight_min=round(float(weights[present].min()), 4),
+        weight_max=round(float(weights[present].max()), 4),
+    )
+    return weights.astype(np.float32)
+
+
+def _reserve_val_fold(
+    train_idx: list[int],
+    folds: list[int],
+    *,
+    val_fraction: float,
+    seed: int,
+) -> tuple[list[int], list[int]]:
+    """Split the train indices into (train, val) keeping the split SPATIAL.
+
+    US-079 fix A: ``best.pt`` must be selected on a HELD-OUT split, never on train
+    mIoU (blind to overfit). The validation split is a WHOLE spatial fold (the
+    smallest train fold whose patches reach ~``val_fraction`` of the train set, so
+    no geographically adjacent patch leaks between train and val). Falls back to
+    reserving the smallest train fold when no single fold hits the fraction, and to
+    NO val (val = train, logged) only when there is a single train fold.
+
+    Args:
+        train_idx: Indices (into the patch arrays) of the train patches.
+        folds: The per-patch spatial fold id (row-aligned with the patch arrays).
+        val_fraction: Target fraction of train patches to reserve for val.
+        seed: Unused tie-break placeholder (the choice is deterministic by size).
+
+    Returns:
+        ``(train_only_idx, val_idx)``. When no val fold can be carved out, both
+        are the same list (val = train) and the caller logs the degenerate case.
+    """
+    by_fold: dict[int, list[int]] = {}
+    for i in train_idx:
+        by_fold.setdefault(folds[i], []).append(i)
+    if len(by_fold) < 2:
+        # Single train fold: cannot reserve a spatial val without leakage.
+        return train_idx, train_idx
+    n_train = len(train_idx)
+    target = max(1, round(val_fraction * n_train))
+    # Pick the fold whose size is closest to the target from below (so val is not
+    # oversized), else the smallest fold.
+    candidates = sorted(by_fold.items(), key=lambda kv: len(kv[1]))
+    val_fold = candidates[0][0]
+    for fold_id, members in candidates:
+        if len(members) <= target:
+            val_fold = fold_id
+    val_idx = by_fold[val_fold]
+    train_only = [i for i in train_idx if folds[i] != val_fold]
+    if not train_only:
+        return train_idx, train_idx
+    logger.info(
+        "italia_val_fold_reserved",
+        val_fold=val_fold,
+        n_train=len(train_only),
+        n_val=len(val_idx),
+        val_fraction_actual=round(len(val_idx) / max(n_train, 1), 3),
+    )
+    return train_only, val_idx
+
+
 def run_italia_finetune(
     config: DenseFineTuneConfig,
     *,
@@ -565,13 +767,25 @@ def run_italia_finetune(
         )
         train_idx = [train_idx[i] for i in keep_local]
 
+    # US-079 fix A: carve a HELD-OUT val split (a whole train spatial fold) so
+    # best.pt is selected on unseen data, never on train mIoU.
+    train_only_idx, val_idx = _reserve_val_fold(
+        train_idx,
+        all_patches.folds,
+        val_fraction=config.val_fraction,
+        seed=config.seed,
+    )
+    has_val = val_idx is not train_only_idx
+
     logger.info(
         "italia_finetune_split",
         model_kind=config.model_kind,
-        n_train=len(train_idx),
+        n_train=len(train_only_idx),
+        n_val=len(val_idx) if has_val else 0,
         n_test=len(test_idx),
         test_fold=test_fold,
         n_classes=label_space.num_classes,
+        has_val=has_val,
     )
 
     model = build_italia_finetune_model(
@@ -582,24 +796,73 @@ def run_italia_finetune(
         device=device,
     )
     ignore_index = label_space.background_id if config.ignore_background else -100
-    criterion = nn.CrossEntropyLoss(ignore_index=ignore_index)
+
+    # US-079 fix A: inverse-frequency CE weights from the REAL train pixels, so the
+    # rare Mediterranean crops are not drowned by olive/forest.
+    class_weights = _compute_class_weights(
+        [all_patches.masks[i] for i in train_only_idx],
+        num_classes=label_space.num_classes,
+        ignore_index=ignore_index,
+        scheme=config.class_weighting,
+    )
+    weight_tensor = (
+        torch.from_numpy(class_weights).to(device) if class_weights is not None else None
+    )
+    criterion = nn.CrossEntropyLoss(ignore_index=ignore_index, weight=weight_tensor)
+
+    # US-079 fix B: load the ITALIAN per-class phenology prototypes for the TSViT
+    # semantic branch (Mediterranean calendar), wiring the contrastive alignment
+    # the previous fine-tune left unused. Disabled for U-TAE (no semantic branch)
+    # and when lambda_contrast == 0 (back-compat / no prototypes on disk).
+    prototypes: torch.Tensor | None = None
+    use_contrast = (
+        config.model_kind == "tsvit-pheno" and config.lambda_contrast > 0.0
+    )
+    if use_contrast:
+        proto_path = config.pheno_prototypes or DEFAULT_ITALIA_PROTOTYPES
+        if not Path(proto_path).is_file():
+            # Honest degrade (no fabrication): without the Italian prototypes the
+            # semantic branch cannot align Italian pixels, so it is disabled and
+            # the operator is told to generate them. The fine-tune still runs (CE +
+            # scheduler + best-by-val), just without US-079 fix B.
+            logger.warning(
+                "italia_prototypes_missing_branch_disabled",
+                path=str(proto_path),
+                note="generate them with `poetry run python -m "
+                "scripts.build_phenology_italia` (US-079 fix B); training "
+                "continues WITHOUT the phenology contrastive branch.",
+            )
+            use_contrast = False
+        else:
+            prototypes = _load_italia_prototypes(
+                proto_path, num_classes=label_space.num_classes, device=device
+            )
 
     run_dir = ckpt_root / f"{config.model_kind}-italia" / run_name
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    def _forward(xb: torch.Tensor, doy_list: list[np.ndarray]) -> torch.Tensor:
+    def _forward(
+        xb: torch.Tensor, doy_list: list[np.ndarray], *, want_proj: bool
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
         if config.model_kind == "utae":
             # One DOY vector per sample; the batch shares the equispaced length.
             positions = _doy_positions(doy_list[0], xb.shape[0], device=device)
             out = model(xb, positions)
-        else:
-            out = model(xb)
-        logits: torch.Tensor = out[0] if isinstance(out, tuple) else out
-        return logits
+            logits = out[0] if isinstance(out, tuple) else out
+            return logits, None
+        # TSViT exposes the per-pixel visual projection for the contrastive branch.
+        if want_proj:
+            logits, visual_proj = model(xb, return_visual_proj=True)
+            return logits, visual_proj
+        out = model(xb)
+        logits = out[0] if isinstance(out, tuple) else out
+        return logits, None
 
     def _epoch(
-        idxs: list[int], *, train: bool, opt: torch.optim.Optimizer
+        idxs: list[int], *, train: bool, opt: torch.optim.Optimizer | None
     ) -> dict[str, float]:
+        from ml.models.pheno_semantic_branch import phenology_contrastive_loss
+
         model.train(train)
         order = (
             np.random.default_rng(config.seed).permutation(len(idxs))
@@ -610,27 +873,48 @@ def run_italia_finetune(
             label_space.num_classes, ignore_index=ignore_index
         )
         running = 0.0
-        for start in range(0, len(order), config.batch_size):
-            batch_local = order[start : start + config.batch_size]
-            batch = [idxs[i] for i in batch_local]
-            xb = torch.from_numpy(
-                np.stack([all_patches.images[i] for i in batch])
-            ).float().to(device)
-            yb = torch.from_numpy(
-                np.stack([all_patches.masks[i] for i in batch])
-            ).long().to(device)
-            doy_list = [all_patches.doys[i] for i in batch]
-            logits = _forward(xb, doy_list)  # (B, K, H, W)
-            loss = criterion(logits, yb)
-            if train:
-                opt.zero_grad()
-                loss.backward()
-                opt.step()
-            running += float(loss.item()) * len(batch)
-            acc.update(logits.argmax(dim=1).detach().cpu(), yb.detach().cpu())
+        grad_ctx = torch.enable_grad() if train else torch.no_grad()
+        with grad_ctx:
+            for start in range(0, len(order), config.batch_size):
+                batch_local = order[start : start + config.batch_size]
+                batch = [idxs[i] for i in batch_local]
+                xb = torch.from_numpy(
+                    np.stack([all_patches.images[i] for i in batch])
+                ).float().to(device)
+                yb = torch.from_numpy(
+                    np.stack([all_patches.masks[i] for i in batch])
+                ).long().to(device)
+                doy_list = [all_patches.doys[i] for i in batch]
+                logits, visual_proj = _forward(
+                    xb, doy_list, want_proj=train and use_contrast
+                )
+                loss = criterion(logits, yb)
+                if train and use_contrast and visual_proj is not None and prototypes is not None:
+                    loss = loss + config.lambda_contrast * phenology_contrastive_loss(
+                        visual_proj, yb, prototypes, ignore_index=ignore_index
+                    )
+                if train and opt is not None:
+                    opt.zero_grad()
+                    loss.backward()
+                    # Transformer gradient clipping (mirrors train_segmentation):
+                    # without it TSViT diverges to NaN after a few epochs.
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                    opt.step()
+                running += float(loss.item()) * len(batch)
+                acc.update(logits.argmax(dim=1).detach().cpu(), yb.detach().cpu())
         metrics = acc.compute()
         metrics["loss"] = running / max(len(idxs), 1)
         return metrics
+
+    def _save_payload(ep: int, metrics: dict[str, float], val_metrics: dict[str, float]) -> dict:
+        return {
+            "epoch": ep,
+            "model_state": model.state_dict(),
+            "config": _config_to_dict(config),
+            "label_space_leaves": list(label_space.leaves),
+            "train_metrics": metrics,
+            "val_metrics": val_metrics,
+        }
 
     # Phase 1: head-only warmup (backbone frozen).
     for name, p in model.named_parameters():
@@ -639,7 +923,7 @@ def run_italia_finetune(
         [p for p in model.parameters() if p.requires_grad], lr=config.lr_head
     )
     for ep in range(config.head_warmup_epochs):
-        m = _epoch(train_idx, train=True, opt=opt)
+        m = _epoch(train_only_idx, train=True, opt=opt)
         logger.info(
             "italia_finetune_warmup_epoch",
             epoch=ep,
@@ -660,31 +944,55 @@ def run_italia_finetune(
         weight_decay=config.weight_decay,
     )
 
-    best_miou = -1.0
+    # US-079 fix A: linear warmup (~5% of the fine-tune epochs) + cosine decay, the
+    # repo-canonical schedule (mirrors ml.train.finetune_sen4agrinet). Stepped per
+    # epoch; "none" keeps the previous flat LR for back-compat.
+    scheduler = None
+    if config.scheduler == "cosine" and config.finetune_epochs > 1:
+        warmup_epochs = max(1, round(0.05 * config.finetune_epochs))
+        scheduler = torch.optim.lr_scheduler.SequentialLR(
+            opt,
+            schedulers=[
+                torch.optim.lr_scheduler.LinearLR(
+                    opt, start_factor=0.1, end_factor=1.0, total_iters=warmup_epochs
+                ),
+                torch.optim.lr_scheduler.CosineAnnealingLR(
+                    opt, T_max=max(1, config.finetune_epochs - warmup_epochs), eta_min=1e-6
+                ),
+            ],
+            milestones=[warmup_epochs],
+        )
+
+    best_val_miou = -1.0
     epoch_ckpts: list[str] = []
     for ep in range(config.finetune_epochs):
-        m = _epoch(train_idx, train=True, opt=opt)
+        m = _epoch(train_only_idx, train=True, opt=opt)
+        # US-079 fix A: select best.pt on the HELD-OUT val mIoU, not train.
+        val_m = (
+            _epoch(val_idx, train=False, opt=None)
+            if has_val
+            else m
+        )
         logger.info(
             "italia_finetune_epoch",
             epoch=ep,
             loss=round(m["loss"], 4),
             train_miou=round(m["miou"], 4),
             train_f1=round(m["f1_macro"], 4),
+            val_miou=round(val_m["miou"], 4),
+            val_f1=round(val_m["f1_macro"], 4),
+            lr=round(opt.param_groups[0]["lr"], 6),
         )
         ckpt_path = run_dir / f"epoch_{ep:02d}.pt"
-        payload = {
-            "epoch": ep,
-            "model_state": model.state_dict(),
-            "config": _config_to_dict(config),
-            "label_space_leaves": list(label_space.leaves),
-            "train_metrics": m,
-        }
+        payload = _save_payload(ep, m, val_m)
         torch.save(payload, ckpt_path)
         torch.save(payload, run_dir / "last.pt")
         epoch_ckpts.append(str(ckpt_path))
-        if m["miou"] > best_miou:
-            best_miou = m["miou"]
+        if val_m["miou"] > best_val_miou:
+            best_val_miou = val_m["miou"]
             torch.save(payload, run_dir / "best.pt")
+        if scheduler is not None:
+            scheduler.step()
 
     # Test: dense post-softmax probabilities + hard metrics on the held-out fold.
     model.eval()
@@ -695,7 +1003,7 @@ def run_italia_finetune(
     with torch.no_grad():
         for i in test_idx:
             xb = torch.from_numpy(all_patches.images[i][None]).float().to(device)
-            logits = _forward(xb, [all_patches.doys[i]])
+            logits, _ = _forward(xb, [all_patches.doys[i]], want_proj=False)
             probs = torch.softmax(logits, dim=1).squeeze(0).cpu().numpy()  # (K,H,W)
             probs_by_patch[all_patches.patch_ids[i]] = probs.astype(np.float32)
             preds = probs.argmax(axis=0)
@@ -710,7 +1018,8 @@ def run_italia_finetune(
     summary = {
         "model_kind": config.model_kind,
         "test_fold": test_fold,
-        "n_train": len(train_idx),
+        "n_train": len(train_only_idx),
+        "n_val": len(val_idx) if has_val else 0,
         "n_test": len(test_idx),
         "num_classes": label_space.num_classes,
         "n_conserved": len(label_space.conserved),
@@ -718,7 +1027,15 @@ def run_italia_finetune(
         "test_miou": round(float(test_metrics["miou"]), 4),
         "test_f1_macro": round(float(test_metrics["f1_macro"]), 4),
         "test_pixel_accuracy": round(float(test_metrics["pixel_accuracy"]), 4),
-        "best_train_miou": round(float(best_miou), 4),
+        "best_val_miou": round(float(best_val_miou), 4),
+        "scheduler": config.scheduler,
+        "class_weighting": config.class_weighting,
+        "lambda_contrast": config.lambda_contrast if use_contrast else 0.0,
+        "pheno_prototypes": (
+            str(config.pheno_prototypes or DEFAULT_ITALIA_PROTOTYPES)
+            if use_contrast
+            else None
+        ),
         "test_patch_ids": [all_patches.patch_ids[i] for i in test_idx],
         "softmax_path": str(probs_path),
         "best_ckpt": str(run_dir / "best.pt"),
@@ -836,4 +1153,11 @@ def _config_to_dict(config: DenseFineTuneConfig) -> dict[str, object]:
         "min_patches_per_class": config.min_patches_per_class,
         "ignore_background": config.ignore_background,
         "seed": config.seed,
+        "scheduler": config.scheduler,
+        "class_weighting": config.class_weighting,
+        "pheno_prototypes": (
+            str(config.pheno_prototypes) if config.pheno_prototypes is not None else None
+        ),
+        "lambda_contrast": config.lambda_contrast,
+        "val_fraction": config.val_fraction,
     }
