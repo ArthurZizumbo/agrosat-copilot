@@ -26,6 +26,10 @@ from ml.ensemble.dual_head_fusion import (
 )
 from ml.ensemble.stacking import DEFAULT_BASE_MEMBERS, StackingEnsemble
 from ml.ensemble.voting import DEFAULT_VOTING_MEMBERS, VotingEnsemble
+from ml.ensemble.voting_weighted import (
+    DEFAULT_WEIGHTED_VOTING_MEMBERS,
+    WeightedVotingEnsemble,
+)
 
 __all__ = [
     "DEFAULT_BASE_MEMBERS",
@@ -34,6 +38,7 @@ __all__ = [
     "DEFAULT_OOF_DIR",
     "DEFAULT_TSVIT_MEMBER",
     "DEFAULT_VOTING_MEMBERS",
+    "DEFAULT_WEIGHTED_VOTING_MEMBERS",
     "ENSEMBLE_EXPERIMENT",
     "BaggingEnsemble",
     "BlendingEnsemble",
@@ -42,6 +47,7 @@ __all__ = [
     "Space",
     "StackingEnsemble",
     "VotingEnsemble",
+    "WeightedVotingEnsemble",
     "build_class_prototypes",
     "farslip_cosine_map",
 ]
