@@ -521,41 +521,58 @@ def _doy_positions(
     return pos.unsqueeze(0).repeat(batch, 1)
 
 
-def _load_italia_prototypes(
+def _build_italia_pheno_branch(
     prototype_path: Path,
     *,
     num_classes: int,
     device: str,
-) -> torch.Tensor:
-    """Load the Italian per-class prototypes as an index-aligned ``(K, S)`` tensor.
+) -> nn.Module:
+    """Build the LEARNABLE Italian phenology semantic branch (US-079 fix B).
 
-    Builds the projected, L2-normalised prototype matrix the contrastive loss
-    consumes, row ``k`` = the prototype of dense class id ``k`` (US-079 fix B:
-    ITALIAN prototypes, not Bretagne/PASTIS). Reuses
-    :class:`ml.models.pheno_semantic_branch.PhenoSemanticBranch` for the 384 ->
-    ``semantic_dim`` projection (kept at 384, matching the TSViT visual branch),
-    but feeds it the id-aligned matrix so the row order matches the dense labels.
+    Replaces the previous ``_load_italia_prototypes`` (which L2-normalised the raw
+    MiniLM matrix and returned it detached -- a frozen, UNtrained projection that
+    left the text space misaligned with the TSViT visual space). The base PASTIS
+    fine-tune (F1 0.737) used
+    :class:`ml.models.pheno_semantic_branch.PhenoSemanticBranch`, whose raw text
+    prototypes are a FROZEN buffer but whose ``proj`` (``Linear 384 -> 384``) IS
+    LEARNABLE and is trained jointly with the backbone -- it learns to map the
+    MiniLM semantics onto the visual space TSViT produces with
+    ``return_visual_proj=True`` (Wen et al. 2025, eq 15-16). This rebuilds that
+    branch on the ITALIAN per-class prototypes (Mediterranean calendar), id-aligned
+    by :func:`ml.features.phenology_class_prototypes.\
+    load_class_prototype_matrix_by_id` so row ``k`` is the prototype of dense class
+    id ``k``.
+
+    The returned module's :meth:`~ml.models.pheno_semantic_branch.\
+    PhenoSemanticBranch.get_class_prototypes` is called fresh on every train step
+    (NOT detached) so the projection receives gradient; the caller adds its
+    parameters to the optimizer (see :func:`run_italia_finetune`, phase 2).
 
     Args:
         prototype_path: The Italian prototypes parquet.
-        num_classes: The dense head size ``K`` (= ``label_space.num_classes``).
-        device: Torch device for the returned tensor.
+        num_classes: The dense head size ``K`` (= ``label_space.num_classes``); the
+            branch is built with EXACTLY this many prototype rows so its
+            ``num_classes`` matches the TSViT head (39 Italian crops + background =
+            40, not the 18 of PASTIS).
+        device: Torch device the branch (and its learnable projection) lives on.
 
     Returns:
-        A detached ``(K, semantic_dim)`` float tensor of L2-normalised prototypes,
-        on ``device``. Rows of absent class ids (background, unseen classes) are
-        zero and are never indexed (the loss only scores valid in-range pixels).
+        A :class:`~ml.models.pheno_semantic_branch.PhenoSemanticBranch` on
+        ``device`` whose frozen ``raw_prototypes`` buffer is the id-aligned Italian
+        matrix and whose ``proj`` linear is trainable.
 
     Raises:
         FileNotFoundError: if the prototype parquet is absent (run
             ``scripts/build_phenology_italia.py`` first).
+        ValueError: if the built branch's ``num_classes`` does not match
+            ``num_classes`` (the parquet does not span the Italian label space).
     """
     import torch
-    import torch.nn.functional as F
 
     from ml.features.phenology_class_prototypes import (
         load_class_prototype_matrix_by_id,
     )
+    from ml.models.pheno_semantic_branch import PhenoSemanticBranch
 
     if not Path(prototype_path).is_file():
         raise FileNotFoundError(
@@ -563,21 +580,48 @@ def _load_italia_prototypes(
             "them with `poetry run python -m scripts.build_phenology_italia` "
             "(US-079 fix B), or pass --lambda-contrast 0 to disable the branch."
         )
+
+    # Build the branch on the parquet (this gives us the learnable ``proj`` and the
+    # frozen ``raw_prototypes`` buffer), then OVERWRITE the buffer with the
+    # ITALIAN matrix id-aligned to the dense label space so row ``k`` is the
+    # prototype of class id ``k`` (0..K-1). The branch's own loader
+    # (``load_class_prototype_embeddings``) returns the rows in PARQUET order with
+    # ``num_classes`` = the number of parquet rows (39 Italian crops, NOT 40 and
+    # NOT id-aligned), which the contrastive loss -- whose ``labels`` ARE the dense
+    # pixel class ids -- would index out of order / out of range. The
+    # ``proj`` (``Linear 384 -> 384``) is row-wise, so resizing the buffer to
+    # ``(K, 384)`` does not touch the learnable projection.
+    branch = PhenoSemanticBranch(
+        semantic_dim=384,
+        prototype_path=Path(prototype_path),
+        freeze_prototypes=True,
+    )
     matrix = load_class_prototype_matrix_by_id(
         Path(prototype_path), num_classes=num_classes
-    )  # (K, 384), row k = class id k
-    # The TSViT visual branch already lives in the 384-dim semantic space; the
-    # contrast L2-normalises both sides, so the prototypes are the L2-normalised
-    # MiniLM embeddings directly (no random untrained projection added). Zero rows
-    # (background / unseen ids) stay zero and are never indexed.
-    prototypes = F.normalize(torch.from_numpy(matrix).float(), p=2, dim=-1)
+    )  # (K, 384), row k = class id k (zero row for an absent id)
+    aligned = torch.from_numpy(matrix).float()
+    # Re-register the frozen buffer with the id-aligned matrix and sync the
+    # bookkeeping (``num_classes`` now == the dense head size K).
+    branch.register_buffer("raw_prototypes", aligned)
+    branch.num_classes = int(num_classes)
+    branch.class_ids = list(range(num_classes))
+    if branch.num_classes != num_classes:  # pragma: no cover - defensive
+        raise ValueError(
+            f"phenology branch has {branch.num_classes} prototype rows but the "
+            f"Italian label space has {num_classes} classes; regenerate the "
+            "prototypes for the full Italian label space (US-079 fix B)."
+        )
+    branch = branch.to(device)
+    n_nonzero = int((matrix != 0).any(axis=1).sum())
     logger.info(
-        "italia_prototypes_loaded",
+        "italia_pheno_branch_built",
         path=str(prototype_path),
         num_classes=num_classes,
-        n_nonzero_rows=int((matrix != 0).any(axis=1).sum()),
+        semantic_dim=384,
+        n_nonzero_prototype_rows=n_nonzero,
+        projection_trainable=True,
     )
-    return prototypes.to(device)
+    return branch
 
 
 def _compute_class_weights(
@@ -810,11 +854,16 @@ def run_italia_finetune(
     )
     criterion = nn.CrossEntropyLoss(ignore_index=ignore_index, weight=weight_tensor)
 
-    # US-079 fix B: load the ITALIAN per-class phenology prototypes for the TSViT
-    # semantic branch (Mediterranean calendar), wiring the contrastive alignment
-    # the previous fine-tune left unused. Disabled for U-TAE (no semantic branch)
-    # and when lambda_contrast == 0 (back-compat / no prototypes on disk).
-    prototypes: torch.Tensor | None = None
+    # US-079 fix B: build the ITALIAN phenology SEMANTIC BRANCH (Mediterranean
+    # calendar) for the TSViT contrastive alignment the previous fine-tune left
+    # unused. The branch's text prototypes are a FROZEN buffer but its projection
+    # (``Linear 384 -> 384``) is LEARNABLE -- it is added to the optimizer (phase 2)
+    # and trained jointly with the backbone, so it maps the MiniLM text space onto
+    # the TSViT visual space (return_visual_proj=True), exactly as the base PASTIS
+    # run that scored F1 0.737 (NOT the raw MiniLM embeddings used directly).
+    # Disabled for U-TAE (no semantic branch) and when lambda_contrast == 0
+    # (back-compat / no prototypes on disk).
+    pheno_branch: nn.Module | None = None
     use_contrast = (
         config.model_kind == "tsvit-pheno" and config.lambda_contrast > 0.0
     )
@@ -834,7 +883,7 @@ def run_italia_finetune(
             )
             use_contrast = False
         else:
-            prototypes = _load_italia_prototypes(
+            pheno_branch = _build_italia_pheno_branch(
                 proto_path, num_classes=label_space.num_classes, device=device
             )
 
@@ -859,11 +908,22 @@ def run_italia_finetune(
         return logits, None
 
     def _epoch(
-        idxs: list[int], *, train: bool, opt: torch.optim.Optimizer | None
+        idxs: list[int],
+        *,
+        train: bool,
+        opt: torch.optim.Optimizer | None,
+        contrast: bool = True,
     ) -> dict[str, float]:
         from ml.models.pheno_semantic_branch import phenology_contrastive_loss
 
+        # The contrastive term is applied only when its learnable projection is
+        # actually optimised (phase 2). In the head-only warmup (phase 1) the
+        # branch is NOT in the optimizer, so contrast=False keeps the warmup a
+        # pure CE phase (mirrors the base: the branch trains with the backbone).
+        epoch_contrast = train and use_contrast and contrast and pheno_branch is not None
         model.train(train)
+        if pheno_branch is not None:
+            pheno_branch.train(epoch_contrast)
         order = (
             np.random.default_rng(config.seed).permutation(len(idxs))
             if train
@@ -886,10 +946,16 @@ def run_italia_finetune(
                 ).long().to(device)
                 doy_list = [all_patches.doys[i] for i in batch]
                 logits, visual_proj = _forward(
-                    xb, doy_list, want_proj=train and use_contrast
+                    xb, doy_list, want_proj=epoch_contrast
                 )
                 loss = criterion(logits, yb)
-                if train and use_contrast and visual_proj is not None and prototypes is not None:
+                if epoch_contrast and visual_proj is not None:
+                    # Project the frozen Italian text prototypes through the
+                    # LEARNABLE projection FRESH on every step (no detach), so the
+                    # contrast aligns the TSViT visual_proj with the projected
+                    # prototypes and the projection receives gradient (Wen 2025,
+                    # eq 15-16; the base PASTIS pattern).
+                    prototypes = pheno_branch.get_class_prototypes()
                     loss = loss + config.lambda_contrast * phenology_contrastive_loss(
                         visual_proj, yb, prototypes, ignore_index=ignore_index
                     )
@@ -897,8 +963,13 @@ def run_italia_finetune(
                     opt.zero_grad()
                     loss.backward()
                     # Transformer gradient clipping (mirrors train_segmentation):
-                    # without it TSViT diverges to NaN after a few epochs.
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                    # without it TSViT diverges to NaN after a few epochs. The
+                    # phenology projection is clipped jointly with the backbone
+                    # whenever it contributes to the loss (phase 2).
+                    clip_params = list(model.parameters())
+                    if epoch_contrast and pheno_branch is not None:
+                        clip_params += list(pheno_branch.parameters())
+                    torch.nn.utils.clip_grad_norm_(clip_params, max_norm=1.0)
                     opt.step()
                 running += float(loss.item()) * len(batch)
                 acc.update(logits.argmax(dim=1).detach().cpu(), yb.detach().cpu())
@@ -907,7 +978,7 @@ def run_italia_finetune(
         return metrics
 
     def _save_payload(ep: int, metrics: dict[str, float], val_metrics: dict[str, float]) -> dict:
-        return {
+        payload = {
             "epoch": ep,
             "model_state": model.state_dict(),
             "config": _config_to_dict(config),
@@ -915,15 +986,21 @@ def run_italia_finetune(
             "train_metrics": metrics,
             "val_metrics": val_metrics,
         }
+        # Persist the trained phenology projection so the run is reproducible (the
+        # contrastive alignment is part of the learned model, US-079 fix B).
+        if pheno_branch is not None:
+            payload["pheno_branch_state"] = pheno_branch.state_dict()
+        return payload
 
-    # Phase 1: head-only warmup (backbone frozen).
+    # Phase 1: head-only warmup (backbone frozen). The phenology projection trains
+    # only with the backbone (phase 2), so the contrastive term is OFF here.
     for name, p in model.named_parameters():
         p.requires_grad = _is_head_param(name)
     opt = torch.optim.AdamW(
         [p for p in model.parameters() if p.requires_grad], lr=config.lr_head
     )
     for ep in range(config.head_warmup_epochs):
-        m = _epoch(train_only_idx, train=True, opt=opt)
+        m = _epoch(train_only_idx, train=True, opt=opt, contrast=False)
         logger.info(
             "italia_finetune_warmup_epoch",
             epoch=ep,
@@ -931,18 +1008,26 @@ def run_italia_finetune(
             train_miou=round(m["miou"], 4),
         )
 
-    # Phase 2: unfreeze the backbone (smaller LR for it).
+    # Phase 2: unfreeze the backbone (smaller LR for it). The phenology semantic
+    # branch's LEARNABLE projection joins the optimizer as a head-LR group so it is
+    # trained jointly with the backbone (US-079 fix B: it learns the MiniLM text ->
+    # TSViT visual mapping; without it the spaces stay misaligned and the contrast
+    # is a no-op, the previous bug).
     for p in model.parameters():
         p.requires_grad = True
     head_params = [p for n, p in model.named_parameters() if _is_head_param(n)]
     backbone_params = [p for n, p in model.named_parameters() if not _is_head_param(n)]
-    opt = torch.optim.AdamW(
-        [
-            {"params": head_params, "lr": config.lr_head},
-            {"params": backbone_params, "lr": config.lr_backbone},
-        ],
-        weight_decay=config.weight_decay,
-    )
+    param_groups: list[dict[str, object]] = [
+        {"params": head_params, "lr": config.lr_head},
+        {"params": backbone_params, "lr": config.lr_backbone},
+    ]
+    if pheno_branch is not None:
+        for p in pheno_branch.parameters():
+            p.requires_grad = True
+        param_groups.append(
+            {"params": list(pheno_branch.parameters()), "lr": config.lr_head}
+        )
+    opt = torch.optim.AdamW(param_groups, weight_decay=config.weight_decay)
 
     # US-079 fix A: linear warmup (~5% of the fine-tune epochs) + cosine decay, the
     # repo-canonical schedule (mirrors ml.train.finetune_sen4agrinet). Stepped per
