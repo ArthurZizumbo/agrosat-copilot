@@ -42,7 +42,10 @@ from ml.eval.paper_bench import (
 # ---------------------------------------------------------------------------
 # Fixture paths (shape fixtures, NOT real scientific data)
 # ---------------------------------------------------------------------------
-_FIXTURE_DIR = Path("data/test_fixtures")
+# Anchor to the repo root so the fixtures resolve regardless of the pytest CWD
+# (tests are run from ``ml/`` in CI, not from the repo root).
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_FIXTURE_DIR = _REPO_ROOT / "data" / "test_fixtures"
 _GEOBENCH_MINI = _FIXTURE_DIR / "geobench2_mini"
 _ITSES_MINI = _FIXTURE_DIR / "agromind_itses_mini.jsonl"
 

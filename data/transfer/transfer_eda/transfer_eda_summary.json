@@ -1,0 +1,252 @@
+{
+  "eurocrops_estonia": {
+    "n_parcels": 20526,
+    "n_classes": 55,
+    "n_enrichment_candidates": 16,
+    "top_candidates": [
+      {
+        "leaf": "legumes_harvested_green",
+        "support": 2143,
+        "share": 0.1044
+      },
+      {
+        "leaf": "fresh_vegetables",
+        "support": 1569,
+        "share": 0.0764
+      },
+      {
+        "leaf": "clover",
+        "support": 1072,
+        "share": 0.0522
+      },
+      {
+        "leaf": "orchards_fruits",
+        "support": 828,
+        "share": 0.0403
+      },
+      {
+        "leaf": "oats",
+        "support": 576,
+        "share": 0.0281
+      },
+      {
+        "leaf": "spring_rapeseed_rape",
+        "support": 539,
+        "share": 0.0263
+      },
+      {
+        "leaf": "spring_common_soft_wheat",
+        "support": 418,
+        "share": 0.0204
+      },
+      {
+        "leaf": "apples",
+        "support": 383,
+        "share": 0.0187
+      }
+    ]
+  },
+  "eurocrops_latvia": {
+    "n_parcels": 21947,
+    "n_classes": 50,
+    "n_enrichment_candidates": 24,
+    "top_candidates": [
+      {
+        "leaf": "clover",
+        "support": 2516,
+        "share": 0.1146
+      },
+      {
+        "leaf": "apples",
+        "support": 2098,
+        "share": 0.0956
+      },
+      {
+        "leaf": "fresh_vegetables",
+        "support": 833,
+        "share": 0.038
+      },
+      {
+        "leaf": "alfalfa_lucerne",
+        "support": 719,
+        "share": 0.0328
+      },
+      {
+        "leaf": "oats",
+        "support": 638,
+        "share": 0.0291
+      },
+      {
+        "leaf": "spring_common_soft_wheat",
+        "support": 605,
+        "share": 0.0276
+      },
+      {
+        "leaf": "quinces",
+        "support": 467,
+        "share": 0.0213
+      },
+      {
+        "leaf": "summer_rapeseed_rape",
+        "support": 445,
+        "share": 0.0203
+      }
+    ]
+  },
+  "worldcereal_brazil": {
+    "n_parcels": 1554,
+    "n_classes": 4,
+    "n_enrichment_candidates": 2,
+    "top_candidates": [
+      {
+        "leaf": "other_cropland",
+        "support": 400,
+        "share": 0.2574
+      },
+      {
+        "leaf": "non_crop",
+        "support": 354,
+        "share": 0.2278
+      }
+    ]
+  },
+  "worldcereal_india": {
+    "n_parcels": 1425,
+    "n_classes": 4,
+    "n_enrichment_candidates": 2,
+    "top_candidates": [
+      {
+        "leaf": "other_cropland",
+        "support": 400,
+        "share": 0.2807
+      },
+      {
+        "leaf": "non_crop",
+        "support": 225,
+        "share": 0.1579
+      }
+    ]
+  },
+  "enrichment_shortlist": [
+    {
+      "leaf": "clover",
+      "total_support": 3588,
+      "n_datasets": 2,
+      "datasets": "eurocrops_estonia, eurocrops_latvia"
+    },
+    {
+      "leaf": "apples",
+      "total_support": 2481,
+      "n_datasets": 2,
+      "datasets": "eurocrops_estonia, eurocrops_latvia"
+    },
+    {
+      "leaf": "fresh_vegetables",
+      "total_support": 2402,
+      "n_datasets": 2,
+      "datasets": "eurocrops_estonia, eurocrops_latvia"
+    },
+    {
+      "leaf": "legumes_harvested_green",
+      "total_support": 2143,
+      "n_datasets": 1,
+      "datasets": "eurocrops_estonia"
+    },
+    {
+      "leaf": "oats",
+      "total_support": 1214,
+      "n_datasets": 2,
+      "datasets": "eurocrops_estonia, eurocrops_latvia"
+    },
+    {
+      "leaf": "spring_common_soft_wheat",
+      "total_support": 1023,
+      "n_datasets": 2,
+      "datasets": "eurocrops_estonia, eurocrops_latvia"
+    },
+    {
+      "leaf": "alfalfa_lucerne",
+      "total_support": 923,
+      "n_datasets": 2,
+      "datasets": "eurocrops_estonia, eurocrops_latvia"
+    },
+    {
+      "leaf": "orchards_fruits",
+      "total_support": 828,
+      "n_datasets": 1,
+      "datasets": "eurocrops_estonia"
+    },
+    {
+      "leaf": "other_cropland",
+      "total_support": 800,
+      "n_datasets": 2,
+      "datasets": "worldcereal_brazil, worldcereal_india"
+    },
+    {
+      "leaf": "non_crop",
+      "total_support": 579,
+      "n_datasets": 2,
+      "datasets": "worldcereal_brazil, worldcereal_india"
+    },
+    {
+      "leaf": "spring_rapeseed_rape",
+      "total_support": 539,
+      "n_datasets": 1,
+      "datasets": "eurocrops_estonia"
+    },
+    {
+      "leaf": "quinces",
+      "total_support": 467,
+      "n_datasets": 1,
+      "datasets": "eurocrops_latvia"
+    },
+    {
+      "leaf": "summer_rapeseed_rape",
+      "total_support": 445,
+      "n_datasets": 1,
+      "datasets": "eurocrops_latvia"
+    },
+    {
+      "leaf": "rye",
+      "total_support": 310,
+      "n_datasets": 2,
+      "datasets": "eurocrops_estonia, eurocrops_latvia"
+    },
+    {
+      "leaf": "carrots_daucus",
+      "total_support": 284,
+      "n_datasets": 2,
+      "datasets": "eurocrops_estonia, eurocrops_latvia"
+    },
+    {
+      "leaf": "phacelia",
+      "total_support": 257,
+      "n_datasets": 1,
+      "datasets": "eurocrops_latvia"
+    },
+    {
+      "leaf": "finola",
+      "total_support": 219,
+      "n_datasets": 1,
+      "datasets": "eurocrops_estonia"
+    },
+    {
+      "leaf": "beetroot_beets",
+      "total_support": 191,
+      "n_datasets": 2,
+      "datasets": "eurocrops_estonia, eurocrops_latvia"
+    },
+    {
+      "leaf": "aromatic_medicinal_culinary_plants_spices_herbs",
+      "total_support": 190,
+      "n_datasets": 2,
+      "datasets": "eurocrops_estonia, eurocrops_latvia"
+    },
+    {
+      "leaf": "pears",
+      "total_support": 143,
+      "n_datasets": 1,
+      "datasets": "eurocrops_latvia"
+    }
+  ]
+}

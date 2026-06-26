@@ -24,4 +24,5 @@ async def metrics() -> Response:
         The metric registry serialised in Prometheus text exposition format
         with the canonical ``CONTENT_TYPE_LATEST`` media type.
     """
-    return render_latest()
+    response: Response = render_latest()
+    return response

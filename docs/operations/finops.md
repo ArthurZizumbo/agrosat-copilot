@@ -13,6 +13,35 @@
 | GCP acumulado a la fecha | ~$0.30-0.49 USD | Holgado |
 | Gemini API (descripciones FarSLIP + chat) | centavos | ~$0.0001/descripción; cabe en el operativo |
 
+### Snapshot real de infraestructura GCP (verificado 2026-06-25)
+
+Estado verificado directamente contra el proyecto `agrosat-copilot` el **2026-06-25** (no son
+estimaciones): la infra está casi toda apagada o en scale-to-zero, por lo que el costo operacional
+recurrente se reduce prácticamente a almacenamiento GCS, consistente con el objetivo **~$115/mes**.
+
+| Recurso | Estado verificado | Costo |
+|---------|-------------------|-------|
+| Cloud SQL `agrosat-pg-dev` | `db-f1-micro`, **STOPPED**, `activation_policy=NEVER` | **$0/mes** (datos preservados, sin cómputo) |
+| Cloud Run `agrosat-api-dev` (+ 4 servicios dev) | `minScale=0` (**scale-to-zero confirmado**) | **$0 idle**; 5 servicios dev en total |
+| Compute `agrosat-farslip-trainer-dev` | `g2-standard-8`, **TERMINATED** | **$0** mientras esté apagada |
+| GCS — bucket `gs://agrosat-reports` | **CREADO** (uploads de drift, US-060) | storage GCS (rubro recurrente principal) |
+| GCS — total | **6 buckets** GCS | storage GCS |
+| Billing | **habilitado** | — |
+
+**Conclusión del snapshot:** con Cloud SQL detenida (`NEVER`), Cloud Run a cero y el trainer
+apagado, el costo operacional recurrente es **solo storage GCS**, alineado con el target
+**~$115/mes**.
+
+> **Desglose por SKU NO disponible (honesto).** El export de facturación por SKU **no se pudo
+> obtener** en esta sesión: el `bq` CLI está roto en este entorno, por lo que no hay desglose fino
+> por SKU/servicio ni costo por request de la Gemini API. Mientras tanto se usan los **rangos
+> oficiales del plan v8** (GCP acumulado ~$0.30-0.49 USD, Gemini API en centavos
+> ~$0.0001/descripción FarSLIP, operativo objetivo ~$115/mes, training único histórico
+> $262 spot / $602 on-demand). El desglose fino por SKU se completa con `make cost-audit`
+> ([`scripts/cost_audit.sh`](../../scripts/cost_audit.sh)) cuando haya permisos de billing y `bq`
+> operativo (ver [`docs/blockers/epic10-notas.md`](../blockers/epic10-notas.md) B15). No se
+> fabrican cifras de SKU.
+
 ### Caveat de créditos (importante)
 
 El "Trial credit for GenAI App Builder" ($17,178) que aparece en la consola es un crédito de

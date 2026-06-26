@@ -30,14 +30,34 @@ Figure~\ref{fig:cardinality} shows the full curve.
 % src(figure): reports/ensemble/figures/us043_farslip/winner_cardinality_curve.png
 % src(curve data): reports/ensemble/metrics/us043_winner_cardinality_curve.csv
 
-The curve yields three practical operating modes (the per-$K$ macro F1
-and coverage values are taken from the held-out cardinality analysis):
-full mode (18 classes, 100\% coverage), a reduced mode that drops the
-six weakest classes (higher macro F1, around 90\% coverage), and a
-focused high-precision mode on the best-resolved classes (highest macro
-F1, lower coverage). No retraining is required: the stacking meta-model
-already produces per-class probabilities, so the category threshold is
-applied dynamically in production.
+The curve yields concrete operating points (per-$K$ macro F1 and
+cumulative support share read from the held-out cardinality analysis).
+At full cardinality ($K=18$) the model attains macro F1 0.7486 over
+100\% of parcels. Trimming to the 12 best-resolved crops raises macro
+F1 to 0.8574 while still covering 90.5\% of real parcels; the
+\texttt{france-9} operating point ($K=9$) reaches macro F1 0.8912 at
+81.9\% coverage; and a focused high-precision mode at $K=8$ exceeds
+macro F1 0.9029 over 80.0\% of parcels. The elbow sits around
+$K=8$--$9$, the optimal quality/coverage trade-off for most use cases.
+No retraining is required: the stacking meta-model already produces
+per-class probabilities, so the category threshold is applied
+dynamically in production.
+
+\section{Spatial Neighbourhood Blending: A Null Result}
+\label{app:neighbourhood}
+We also tested whether convexly blending each parcel's champion
+posterior with the mean posterior of its $k$ spatial neighbours
+(centroid $k$-NN in EPSG:2154, neighbour posteriors only, no
+ground-truth leak) improves the held-out macro F1. It does not: on the
+\texttt{france-9} label space the change is $+0.0002$ macro F1 at best,
+within noise, and the 18-class space moves by at most a few thousandths
+before degrading as the blend weight grows. We report this as an
+honest null result: the spatial context that neighbourhood blending
+would add is already absorbed by the AlphaEarth annual
+embedding~\cite{brown2025alphaearth}, which encodes regional context at
+the parcel level, so an explicit neighbourhood term is redundant.
+% src: reports/ensemble/metrics/ec_neighborhood_result.json
+% (champion france9 0.9121; alpha sweep delta_f1_macro_france9 ~ +/-0.002, noise)
 
 \section{Reproducibility Artefacts}
 \label{app:repro}

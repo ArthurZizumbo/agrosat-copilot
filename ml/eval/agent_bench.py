@@ -118,6 +118,65 @@ GEO_PASS_THRESHOLD: float = 0.35
 #: forever (US-049 hardening). Generous on purpose for slow on-prem multimodal.
 _ITEM_TIMEOUT_S: float = 200.0
 
+#: Number of attempts for a single model call before giving up (US-069 fix). A
+#: multimodal Gemini call over images intermittently returns ``504
+#: DEADLINE_EXCEEDED`` / ``503 UNAVAILABLE``; a single 504 must NOT abandon the
+#: item (the previous run stalled on item 182's 504 with ~$0 spent). The call is
+#: retried with exponential backoff on transient errors only; a permanent error
+#: (bad request, auth) fails fast on the first attempt.
+_CALL_MAX_ATTEMPTS: int = 3
+
+#: Base backoff seconds between retries; attempt ``i`` (0-indexed) sleeps
+#: ``_CALL_BACKOFF_BASE_S * 2**i`` -> 2s, 4s, 8s ... so transient server-side
+#: pressure is given time to clear before the next attempt.
+_CALL_BACKOFF_BASE_S: float = 2.0
+
+#: Substrings (case-insensitive) that mark a model-call error as TRANSIENT and
+#: therefore worth retrying. Covers Gemini ``504 DEADLINE_EXCEEDED`` /
+#: ``503 UNAVAILABLE`` / ``500 INTERNAL`` / ``429 RESOURCE_EXHAUSTED`` and the
+#: socket-level timeouts (``asyncio.TimeoutError`` is matched by type below). A
+#: 4xx that is none of these (e.g. ``400 INVALID_ARGUMENT``, ``401``) is permanent
+#: and is NOT retried -- it would just waste three attempts and money.
+_TRANSIENT_ERROR_MARKERS: tuple[str, ...] = (
+    "deadline_exceeded",
+    "deadline exceeded",
+    "504",
+    "503",
+    "unavailable",
+    "500 internal",
+    "internalservererror",
+    "429",
+    "resource_exhausted",
+    "resource exhausted",
+    "rate limit",
+    "timeout",
+    "timed out",
+    "connection reset",
+    "connection aborted",
+    "temporarily unavailable",
+)
+
+
+def _is_transient_error(exc: BaseException) -> bool:
+    """Return whether a model-call exception is worth retrying.
+
+    Treats ``asyncio.TimeoutError`` (the per-attempt timeout) and any error whose
+    string carries one of :data:`_TRANSIENT_ERROR_MARKERS` (Gemini
+    ``504 DEADLINE_EXCEEDED``, ``503``, ``429`` ...) as transient. A permanent
+    error (``400``/``401``/schema) returns ``False`` so it fails fast instead of
+    burning three attempts.
+
+    Args:
+        exc: The exception raised by the backend call.
+
+    Returns:
+        ``True`` when the call should be retried, ``False`` for a permanent error.
+    """
+    if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
+        return True
+    message = str(exc).lower()
+    return any(marker in message for marker in _TRANSIENT_ERROR_MARKERS)
+
 #: How often to emit a per-item progress log so a long phase is observable
 #: instead of a silent black box (US-049 hardening).
 _PROGRESS_EVERY: int = 20
@@ -629,8 +688,13 @@ def _build_mc_prompt(item: AgroMindItem, *, with_images: bool) -> str:
     lines = [
         "Eres un evaluador experto en agricultura satelital. Responde la pregunta "
         f"de opcion multiple eligiendo UNA sola letra ({letters_clause}).",
-        "Razona brevemente paso a paso y termina con una linea exactamente con el "
-        "formato 'Respuesta: <letra>'.",
+        "La pregunta puede estar en ingles; tu respuesta final debe ser UNICAMENTE "
+        "la letra de la opcion correcta, sin prosa, explicaciones ni el texto de la "
+        "opcion.",
+        "Razona brevemente paso a paso y termina SIEMPRE con una linea final con "
+        "exactamente el formato 'Respuesta: <letra>' (por ejemplo 'Respuesta: A'). "
+        "Es OBLIGATORIO cerrar con esa linea aunque la pregunta este en ingles; no "
+        "respondas solo con prosa.",
         "",
         "Ejemplo:",
         "Pregunta: Que indice resalta la vegetacion sana?",
@@ -656,7 +720,8 @@ def _build_mc_prompt(item: AgroMindItem, *, with_images: bool) -> str:
     lines.extend(
         [
             "",
-            "Razona paso a paso de forma breve y termina con 'Respuesta: <letra>'.",
+            "Razona paso a paso de forma breve y termina OBLIGATORIAMENTE con la "
+            f"linea 'Respuesta: <letra>' usando solo una de estas letras: {letters_clause}.",
         ]
     )
     return "\n".join(lines)
@@ -804,6 +869,55 @@ def _extract_final_answer(answer: str) -> str:
     return answer[matches[-1].end() :].strip()
 
 
+def _resolve_choice_to_letter(
+    final_answer: str, options: dict[str, str]
+) -> str:
+    """Resolve a multiple-choice prediction back to its option letter.
+
+    Defense-in-depth for the AgroMind multiple-choice contract: the prompt asks
+    the model to end with ``Respuesta: <letra>`` (only the letter), but a frozen
+    reasoner sometimes answers with the option *text* instead of its letter (e.g.
+    gold ``"A"`` whose option A is ``"maize field"`` and the model replies ``"It
+    is a maize field"``). When the extracted answer carries no recoverable letter
+    (:func:`ml.eval.agent_metrics._extract_choice_letter` returns ``None``) this
+    maps the answer text to a letter by matching the option *values*: an exact
+    normalised match wins, else the longest option value that appears as a
+    substring of the answer wins. The original ``final_answer`` is returned
+    unchanged when no option text matches, so the downstream letter parser keeps
+    today's behaviour and open (no-option) items are untouched.
+
+    Args:
+        final_answer: The extracted final answer (after the ``Respuesta:`` marker).
+        options: The item's ``{letter: value}`` option map (empty for open items).
+
+    Returns:
+        The matched option letter when the answer text maps to exactly one option
+        value; otherwise the original ``final_answer`` unchanged.
+    """
+    if not options or not final_answer:
+        return final_answer
+    valid_letters = frozenset(options)
+    # If a choice letter is already recoverable, the existing parser handles it.
+    if agent_metrics._extract_choice_letter(final_answer, valid_letters) is not None:
+        return final_answer
+    norm_answer = agent_metrics._normalize_text(final_answer)
+    if not norm_answer:
+        return final_answer
+    norm_to_letter: dict[str, str] = {}
+    for letter, value in options.items():
+        if _is_image_path(value):
+            continue
+        norm_value = agent_metrics._normalize_text(value)
+        if norm_value:
+            norm_to_letter[norm_value] = letter
+    if norm_answer in norm_to_letter:
+        return norm_to_letter[norm_answer]
+    for norm_value, letter in sorted(norm_to_letter.items(), key=lambda kv: -len(kv[0])):
+        if norm_value in norm_answer:
+            return letter
+    return final_answer
+
+
 def _resolve_image(rel_path: str, image_root: Path) -> Path | None:
     """Resolve an AgroMind relative image path under the local image root.
 
@@ -853,22 +967,88 @@ def _build_contents(prompt: str, image_parts: Sequence[Any]) -> list[Any]:
     return [types.Content(role="user", parts=parts)]
 
 
-async def _run_backend_text(backend: LLMBackend, prompt: str, image_parts: Sequence[Any]) -> str:
-    """Drive a backend for one non-streaming text answer (no tools).
+async def _run_backend_text(
+    backend: LLMBackend,
+    prompt: str,
+    image_parts: Sequence[Any],
+    *,
+    max_attempts: int = _CALL_MAX_ATTEMPTS,
+    per_attempt_timeout_s: float = _ITEM_TIMEOUT_S,
+) -> str:
+    """Drive a backend for one non-streaming text answer (no tools), with retry.
 
     Consumes the backend's chunk stream and concatenates the text deltas. Tool
     calls are not requested here (the benchmark asks for a direct answer), so any
     function-call chunk is ignored.
 
+    Hardening (US-069): each attempt is bounded by ``per_attempt_timeout_s`` and a
+    TRANSIENT failure (Gemini ``504 DEADLINE_EXCEEDED`` / ``503`` / ``429`` or a
+    socket/per-attempt timeout, classified by :func:`_is_transient_error`) is
+    retried up to ``max_attempts`` with exponential backoff
+    (:data:`_CALL_BACKOFF_BASE_S` x ``2**i`` -> 2s, 4s, 8s). A PERMANENT error
+    (``400``/``401``/schema) is re-raised immediately so it fails fast. When every
+    attempt is exhausted the last transient exception is re-raised so the caller's
+    per-item ``except`` records the item as ``""`` (one item never crashes the
+    run) -- but a single 504 no longer abandons the item, which is the bug that
+    cost the previous run ~$0 of Gemini spend.
+
     Args:
         backend: The injected or constructed :class:`LLMBackend`.
         prompt: The user prompt.
         image_parts: Image parts to attach (empty for text-only).
+        max_attempts: Maximum attempts before giving up on a transient error.
+        per_attempt_timeout_s: Wall-clock timeout for each individual attempt.
 
     Returns:
         The concatenated answer text (stripped).
+
+    Raises:
+        Exception: The last exception when all attempts fail, or a permanent
+            (non-transient) error on the attempt it occurred.
     """
     contents = _build_contents(prompt, image_parts)
+    last_exc: BaseException | None = None
+    for attempt in range(max_attempts):
+        try:
+            return await asyncio.wait_for(
+                _consume_text_stream(backend, contents),
+                timeout=per_attempt_timeout_s,
+            )
+        except Exception as exc:
+            last_exc = exc
+            transient = _is_transient_error(exc)
+            is_last = attempt == max_attempts - 1
+            if not transient or is_last:
+                if transient and is_last:
+                    logger.warning(
+                        "backend_call_retries_exhausted",
+                        attempts=max_attempts,
+                        error=str(exc),
+                    )
+                raise
+            backoff = _CALL_BACKOFF_BASE_S * (2.0**attempt)
+            logger.warning(
+                "backend_call_retrying",
+                attempt=attempt + 1,
+                max_attempts=max_attempts,
+                backoff_s=backoff,
+                error=str(exc),
+            )
+            await asyncio.sleep(backoff)
+    # Unreachable (the loop either returns or raises) but keeps mypy happy.
+    raise last_exc if last_exc is not None else RuntimeError("backend call failed")
+
+
+async def _consume_text_stream(backend: LLMBackend, contents: list[Any]) -> str:
+    """Consume a backend's chunk stream into one stripped text answer.
+
+    Args:
+        backend: The backend to drive (no tools advertised).
+        contents: The ``google.genai`` contents built for this prompt.
+
+    Returns:
+        The concatenated, stripped text of the streamed response.
+    """
     buffer: list[str] = []
     async for chunk in backend.generate_stream(contents=contents, tools=[], system_instruction=""):
         text = getattr(chunk, "text", None)
@@ -970,10 +1150,10 @@ async def eval_agromind(
         prompt = _build_agromind_prompt(item, with_images=bool(image_parts))
         errored = False
         try:
-            answer = await asyncio.wait_for(
-                _run_backend_text(resolved_backend, prompt, image_parts),
-                timeout=_ITEM_TIMEOUT_S,
-            )
+            # ``_run_backend_text`` bounds each attempt by ``_ITEM_TIMEOUT_S`` and
+            # retries transient 504/503/429 errors internally (US-069), so no outer
+            # ``wait_for`` is needed -- wrapping it would cut the retry chain short.
+            answer = await _run_backend_text(resolved_backend, prompt, image_parts)
         except Exception as exc:  # noqa: BLE001 - one item must not crash the run
             logger.warning(
                 "agromind_item_failed",
@@ -989,6 +1169,12 @@ async def eval_agromind(
         # Falls back to the full answer when no marker is present (un-marked
         # responses keep today's behaviour).
         final_answer = _extract_final_answer(answer)
+        # Defense-in-depth for the multiple-choice contract: when the reasoner
+        # answers with the option TEXT instead of its letter (no recoverable
+        # letter), resolve the text back to the option letter so the exact-match
+        # still scores. This is a no-op for open items and for answers that
+        # already carry a letter, so it never alters today's behaviour there.
+        final_answer = _resolve_choice_to_letter(final_answer, item.options)
         # Constrain the letter parser to the labels that actually exist for the
         # item (B-5): open items (no options) score via the text fallback, and a
         # choice item with options E-J scores its real letter, not a capped A-D.
@@ -1230,10 +1416,10 @@ async def eval_geoanalyst(
         prompt = _build_geo_prompt(task)
         errored = False
         try:
-            answer = await asyncio.wait_for(
-                _run_backend_text(resolved_backend, prompt, []),
-                timeout=_ITEM_TIMEOUT_S,
-            )
+            # Per-attempt timeout + transient-error retry live inside
+            # ``_run_backend_text`` (US-069); no outer ``wait_for`` (it would abort
+            # the retry chain).
+            answer = await _run_backend_text(resolved_backend, prompt, [])
         except Exception as exc:  # noqa: BLE001 - one task must not crash the run
             logger.warning(
                 "geoanalyst_task_failed",

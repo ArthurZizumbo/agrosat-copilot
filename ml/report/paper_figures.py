@@ -42,9 +42,11 @@ __all__ = [
     "REPORTS_DIR",
     "build_all_figures",
     "fig_benchmark_barplot",
+    "fig_farslip_band_ablation",
     "fig_farslip_sweep_curve",
     "fig_llm_benchmark_barplot",
     "fig_transfer_catalonia",
+    "fig_tsvit_full_config_delta",
     "promote_png",
     "save_fig_svg_png",
     "set_paper_style",
@@ -268,6 +270,140 @@ def fig_transfer_catalonia(
 
 
 # --------------------------------------------------------------------------- #
+# Fx -- FarSLIP band ablation: faithful FarSLIP vs AlphaEarth separability
+# --------------------------------------------------------------------------- #
+def fig_farslip_band_ablation(
+    faithful_csv: Path = REPORTS_DIR
+    / "farslip"
+    / "metrics"
+    / "us037_farslip_fiel_vs_alphaearth.csv",
+    *,
+    out_dir: Path = FIGURES_DIR,
+) -> dict[str, Path] | None:
+    """Plot the real FarSLIP-faithful vs AlphaEarth band-ablation evidence (B-070-5).
+
+    Reads ``us037_farslip_fiel_vs_alphaearth.csv`` and draws the grouped bars
+    (KMeans F1-macro mean with std error bars + silhouette) for the two embedding
+    spaces that ARE materialized: FarSLIP-faithful v2 (768-dim, 4-band phenology
+    distillation) vs AlphaEarth 2019 (64-dim). The 3 explicit band variants
+    (rgb / nir-rgb false-colour / 4band-pheno) require per-variant H100
+    re-extraction and are annotated as pending -- never fabricated.
+
+    AlphaEarth = GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL v1.1 (CC-BY-4.0). FarSLIP =
+    Li et al., "FarSLIP" (arXiv:2511.14901). Source CSV under reports/farslip/.
+
+    Args:
+        faithful_csv: FarSLIP-faithful vs AlphaEarth separability source.
+        out_dir: Destination directory.
+
+    Returns:
+        ``save_fig_svg_png`` mapping, or ``None`` if source is missing.
+    """
+    if not faithful_csv.exists():
+        logger.warning("paper_figure_source_missing", stem="farslip_band_ablation")
+        return None
+    df = pl.read_csv(faithful_csv)
+    set_paper_style()
+    spaces = df["space"].to_list()
+    f1 = df["f1_macro_mean"].to_list()
+    f1_std = df["f1_macro_std"].to_list()
+    sil = df["silhouette"].to_list()
+    x = np.arange(len(spaces))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6.6, 3.2))
+    ax1.bar(x, f1, yerr=f1_std, capsize=4, color=["#7b3294", "#2c6fbb"])
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(spaces, rotation=20, ha="right")
+    ax1.set_ylabel("F1-macro (KMeans, +/- std)")
+    ax1.set_title("Separabilidad supervisada")
+    ax2.bar(x, sil, color=["#7b3294", "#2c6fbb"])
+    ax2.set_xticks(x)
+    ax2.set_xticklabels(spaces, rotation=20, ha="right")
+    ax2.set_ylabel("Silhouette (no supervisada)")
+    ax2.set_title("Cohesion de clusters")
+    fig.suptitle(
+        "Ablacion FarSLIP fiel vs AlphaEarth (3 variantes de banda pendientes, B-070-5)",
+        fontsize=10,
+    )
+    fig.text(
+        0.5,
+        0.0,
+        "AlphaEarth SATELLITE_EMBEDDING/V1/ANNUAL v1.1 (CC-BY-4.0) | FarSLIP arXiv:2511.14901. "
+        "Fuente: reports/farslip/metrics/us037_farslip_fiel_vs_alphaearth.csv",
+        ha="center",
+        fontsize=6,
+        color="0.4",
+    )
+    return save_fig_svg_png(fig, "farslip_band_ablation", out_dir=out_dir)
+
+
+# --------------------------------------------------------------------------- #
+# F4 -- TSViT base vs pheno full-config (full-M) delta from fold-5 metrics
+# --------------------------------------------------------------------------- #
+def fig_tsvit_full_config_delta(
+    delta_csv: Path = REPORTS_DIR
+    / "segmentation"
+    / "metrics"
+    / "tsvit_pheno_vs_base_fold5.csv",
+    *,
+    out_dir: Path = FIGURES_DIR,
+) -> dict[str, Path] | None:
+    """Plot the real TSViT full-config (full-M) base vs pheno delta (B-070-2).
+
+    Reads ``tsvit_pheno_vs_base_fold5.csv`` (tsvit-base-fullm 0.6789,
+    tsvit-pheno-fullm 0.6756) and draws the mIoU / F1-macro / pixel-acc bars for
+    both full-config variants. The phenology branch delta is ~0 in the supervised
+    regime (saturation: dense labels already teach the temporal signatures), which
+    is the documented, valid result -- the contrastive phenology branch pays off in
+    the self-supervised FarSLIP zero-shot path, not here. This is the REAL curve
+    available; the H100 full-config training curve re-run stays separate (B-070-2).
+
+    Args:
+        delta_csv: TSViT base-vs-pheno fold-5 full-M metrics source.
+        out_dir: Destination directory.
+
+    Returns:
+        ``save_fig_svg_png`` mapping, or ``None`` if source is missing.
+    """
+    if not delta_csv.exists():
+        logger.warning("paper_figure_source_missing", stem="tsvit_full_config_delta")
+        return None
+    df = pl.read_csv(delta_csv)
+    set_paper_style()
+    labels = ["mIoU", "F1-macro", "Pix-acc"]
+    cols = ["miou_fold5", "f1_macro_fold5", "pixel_acc_fold5"]
+    models = df["modelo"].to_list()
+    x = np.arange(len(labels))
+    width = 0.38
+    colors = ["#2c6fbb", "#e08214"]
+    fig, ax = plt.subplots(figsize=(5.2, 3.3))
+    for i, model in enumerate(models):
+        vals = [float(df.filter(pl.col("modelo") == model)[c][0]) for c in cols]
+        ax.bar(
+            x + (i - (len(models) - 1) / 2) * width,
+            vals,
+            width,
+            label=model.split(" ")[0],
+            color=colors[i % len(colors)],
+        )
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels)
+    ax.set_ylabel("Score (fold-5)")
+    ax.set_ylim(0.0, 1.0)
+    ax.set_title("TSViT full-config (full-M): base vs rama fenologica")
+    ax.legend()
+    fig.text(
+        0.5,
+        -0.02,
+        "Delta fenologico ~0 en supervisado (saturacion, plan v8), valido. "
+        "Fuente: reports/segmentation/metrics/tsvit_pheno_vs_base_fold5.csv",
+        ha="center",
+        fontsize=6,
+        color="0.4",
+    )
+    return save_fig_svg_png(fig, "tsvit_full_config_delta", out_dir=out_dir)
+
+
+# --------------------------------------------------------------------------- #
 # F7-LLM -- LLM benchmark barplot recomposed from us049 eval
 # --------------------------------------------------------------------------- #
 def fig_llm_benchmark_barplot(
@@ -434,6 +570,8 @@ def build_all_figures(out_dir: Path = FIGURES_DIR) -> dict[str, dict[str, Path] 
     results: dict[str, dict[str, Path] | None] = {}
     results["benchmark_barplot_fold5"] = fig_benchmark_barplot(out_dir=out_dir)
     results["farslip_sweep_curve"] = fig_farslip_sweep_curve(out_dir=out_dir)
+    results["farslip_band_ablation"] = fig_farslip_band_ablation(out_dir=out_dir)
+    results["tsvit_full_config_delta"] = fig_tsvit_full_config_delta(out_dir=out_dir)
     results["transfer_fr_catalonia"] = fig_transfer_catalonia(out_dir=out_dir)
     results["llm_benchmark_barplot"] = fig_llm_benchmark_barplot(out_dir=out_dir)
     for stem, source in PROMOTED_FIGURES.items():

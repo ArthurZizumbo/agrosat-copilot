@@ -61,7 +61,7 @@ def test_compute_metrics_ranges_valid() -> None:
 
 def test_compute_metrics_length_mismatch_raises() -> None:
     """Vectores de distinta longitud lanzan ValueError."""
-    with pytest.raises(ValueError, match="misma forma"):
+    with pytest.raises(ValueError, match="must have the same shape"):
         compute_baseline_metrics(np.array([0, 1]), np.array([0, 1, 2]))
 
 

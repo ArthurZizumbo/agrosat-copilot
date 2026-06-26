@@ -1,0 +1,5 @@
+outs:
+- md5: f6fb984f62f939e50b6048e9a74aa0cb
+  size: 201319
+  hash: md5
+  path: worldcereal_india_karnataka.parquet

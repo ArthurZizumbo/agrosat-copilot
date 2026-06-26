@@ -1,0 +1,5 @@
+outs:
+- md5: 08b755db3846f79b5e8201c9f7500396
+  size: 239425055
+  hash: md5
+  path: iti1_2018.parquet

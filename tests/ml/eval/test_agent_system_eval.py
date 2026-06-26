@@ -46,6 +46,16 @@ from ml.eval.agent_system_eval import (
 #: by Eval 2 since the embedding fetch + classifier are stubbed per case).
 _SESSION_A = __import__("uuid").UUID("11111111-1111-1111-1111-111111111111")
 
+#: Repo root, so the curated JSONL datasets resolve regardless of the pytest CWD
+#: (CI runs the suite from ``ml/``, not from the repo root, so the module-level
+#: relative defaults would not be found).
+from pathlib import Path  # noqa: E402
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_TOOLCALL_PATH = _REPO_ROOT / "data" / "agent_eval" / "toolcalling_cases.jsonl"
+_CROP_PATH = _REPO_ROOT / "data" / "agent_eval" / "grounded_crop_cases.jsonl"
+_RAG_PATH = _REPO_ROOT / "data" / "agent_eval" / "rag_hallucination_cases.jsonl"
+
 
 class _FakeSettings:
     """Lightweight settings stub for the :class:`ToolContext` (no .env.local)."""
@@ -166,9 +176,9 @@ class FakeJudge:
 # ---------------------------------------------------------------------------
 def test_loaders_read_curated_datasets() -> None:
     """The three curated JSONL datasets load and validate."""
-    tcs = load_toolcall_cases()
-    crops = load_crop_cases()
-    rags = load_rag_cases()
+    tcs = load_toolcall_cases(_TOOLCALL_PATH)
+    crops = load_crop_cases(_CROP_PATH)
+    rags = load_rag_cases(_RAG_PATH)
     assert len(tcs) >= 18
     assert {c.expected_tool for c in tcs} >= {
         "list_parcels",
@@ -404,18 +414,23 @@ async def test_grounded_crop_needs_gee_control(monkeypatch: pytest.MonkeyPatch, 
 
 async def test_grounded_crop_faithfulness_trap(monkeypatch: pytest.MonkeyPatch, make_ctx) -> None:
     """Naming a neighbour crop (drift) fails crop_match and faithfulness."""
+    # Both ``Soybeans`` and ``Corn`` belong to the resolved france-9 label-space
+    # (the default since US-053 / the champion re-wiring), so the restricted tool
+    # actually returns ``Soybeans`` and the prose drift to ``Corn`` is a real,
+    # detectable infidelity. (Using a crop outside france-9 would be silently
+    # remapped by the restriction and the trap would not fire.)
     case = CropCase(
         id="crop-trap",
         parcel_id=21,
-        true_crop="Sorghum",
+        true_crop="Soybeans",
         injected_confidence=0.97,
-        injected_class_probabilities={"Sorghum": 0.97, "Corn": 0.03},
+        injected_class_probabilities={"Soybeans": 0.97, "Corn": 0.03},
         aoi_geometry=_POLY,
         year=2019,
         user_query="cual es el cultivo?",
         expects_needs_gee=False,
     )
-    # Tool returns Sorghum, but the prose drifts to Corn.
+    # Tool returns Soybeans, but the prose drifts to Corn.
     out = await eval_grounded_crop(
         GEMINI,
         [case],
@@ -614,6 +629,9 @@ def test_run_system_eval_aggregates_all_three(monkeypatch: pytest.MonkeyPatch, m
         make_ctx=make_ctx,
         monkeypatch_target=monkeypatch,
         judge=FakeJudge(),
+        toolcall_path=_TOOLCALL_PATH,
+        crop_path=_CROP_PATH,
+        rag_path=_RAG_PATH,
     )
 
     assert set(results["gemini"]) == {"tool_calling", "grounded_crop", "rag_ab"}

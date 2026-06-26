@@ -134,6 +134,13 @@ class FakeSettings:
 
     database_url = "postgresql+asyncpg://agrosat:agrosat@localhost:5432/agrosat"
     titiler_host_port = 8001
+    # CDSE credentials default to empty so ``search_stac`` degrades to pgstac
+    # unless a test overrides them (no live CDSE call is ever made).
+    cdse_client_id = ""
+    cdse_client_secret = ""
+    cdse_token_url = (
+        "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token"
+    )
 
 
 @pytest.fixture

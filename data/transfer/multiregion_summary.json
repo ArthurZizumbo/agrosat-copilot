@@ -1,0 +1,56 @@
+{
+  "n_parcels_total": 30489,
+  "n_fine_parcels": 17516,
+  "n_leaf_classes_fine": 30,
+  "n_macro_classes": 12,
+  "split": {
+    "n_train": 12260,
+    "n_test": 5256,
+    "n_leaf_classes": 30,
+    "train_per_region": {
+      "EUROCROPS_ES": 4127,
+      "EUROCROPS_LA": 4001,
+      "PASTIS_FR": 4132
+    },
+    "test_per_region": {
+      "EUROCROPS_ES": 1769,
+      "EUROCROPS_LA": 1715,
+      "PASTIS_FR": 1772
+    }
+  },
+  "multi_region_over_070": 7,
+  "multi_region_over_080": 2,
+  "multi_region_over_085": 2,
+  "pastis_capped_over_070": 6,
+  "pastis_capped_over_080": 3,
+  "pastis_capped_over_085": 2,
+  "pastis_full_over_070": 10,
+  "pastis_full_over_085": 2,
+  "n_rescued_classes_085": 0,
+  "macro_f1_macro_multiregion": 0.5480724025822292,
+  "leaf_f1_macro_multiregion_fine": 0.4558801457522606,
+  "paired_n_shared_leaves": 16,
+  "paired_n_shared_improved": 13,
+  "paired_n_shared_worsened": 3,
+  "paired_shared_gain_sum": 2.322736240865737,
+  "paired_shared_loss_sum": -0.14328196858317338,
+  "paired_net_shared_delta": 2.1794542722825634,
+  "paired_shared_mean_f1_pastis": 0.4535570160193443,
+  "paired_shared_mean_f1_multi": 0.5897729080370047,
+  "paired_n_new_taxonomy_leaves": 14,
+  "paired_n_new_taxonomy_f1_over_050": 4,
+  "paired_top_rescue": [
+    {
+      "leaf": "potatoes",
+      "delta_f1": 0.6428209384156343
+    },
+    {
+      "leaf": "spring_barley",
+      "delta_f1": 0.38108747044917257
+    },
+    {
+      "leaf": "pasture_meadow_grassland_grass",
+      "delta_f1": 0.27800502620220646
+    }
+  ]
+}

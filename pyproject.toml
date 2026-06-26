@@ -245,6 +245,8 @@ ignore = ["S101", "S301"]  # asserts ok en tests; pickle ok para ML
 "ml/features/temporal_features.py" = ["RUF001", "RUF002", "RUF003"]
 "tests/ml/features/test_temporal_features.py" = ["RUF001", "RUF002", "RUF003", "E501"]
 "scripts/generate_demo_parcel_ts.py" = ["RUF001", "RUF002", "RUF003", "B008", "BLE001"]
+# US-078: Typer CLI -- function-call defaults (typer.Option) son el patron estandar.
+"scripts/run_weighted_voting_pastis.py" = ["B008"]
 # US-018: scripts Typer permiten function-call defaults; build_us018_notebook
 # usa f-strings concatenadas para construir el notebook (E501 inevitable).
 "scripts/generate_feature_selection_subset.py" = ["B008"]

@@ -7,18 +7,23 @@ scaffolding.
 
 ## US-061 - Analisis costo-beneficio (A6/A7)
 
-### B17. Export .xlsx no generado en esta sesion (entregable de respaldo)
-- **Que falta:** el entregable "tablas en Excel" del AC pide un `.xlsx`. No se genero
-  programaticamente en esta sesion (la US es solo-documentacion, sin codigo de
-  aplicacion, y no se confirmo `openpyxl`/`xlsxwriter` disponible en el entorno).
-- **Estado (datos reales):** se entregan como respaldo verificable los `.csv` fuente
-  al Git (`docs/business/data/costos_crisp_ml.csv` y `beneficios_500ha.csv`), las
-  tablas Markdown en `docs/business/costo_beneficio.md` y el export LaTeX
-  `docs/business/costo_beneficio.tex` para el paper. Ninguna cifra es sintetica:
-  costos anclados a `docs/operations/finops.md` y a la factura GCP real; beneficios
-  marcados como estimaciones de literatura con su supuesto y rango.
-- **Decision:** generar el `.xlsx` desde los `.csv` cuando se confirme la dependencia
-  (`polars` + `openpyxl`) en el entorno; no bloquea la entrega del documento de negocio.
+### B17. Export .xlsx — RESUELTO (generado desde los CSV fuente, 2026-06-25)
+- **Que faltaba:** el entregable "tablas en Excel" del AC pide un `.xlsx`. En la
+  sesion previa no se genero porque `openpyxl`/`xlsxwriter` no estaban confirmados.
+- **Fix aplicado (2026-06-25):** confirmado `openpyxl` 3.1.5 disponible en el
+  entorno, se genero **`docs/business/costo_beneficio.xlsx`** (3 hojas: "Lme" con
+  procedencia de datos, "Costos CRISP-ML" 7x4, "Beneficios 500ha" 5x5) leyendo
+  DIRECTAMENTE los CSV fuente versionados (`docs/business/data/costos_crisp_ml.csv`
+  y `beneficios_500ha.csv`). Ninguna cifra es sintetica: el xlsx es la misma data
+  real de los CSV/Markdown, costos anclados a `docs/operations/finops.md` y a la
+  factura GCP real; beneficios etiquetados como estimaciones de literatura con su
+  supuesto, rango y fuente.
+- **Respaldo adicional:** ademas del `.xlsx` siguen versionados los `.csv` fuente,
+  las tablas Markdown en `docs/business/costo_beneficio.md` y el export LaTeX
+  `docs/business/costo_beneficio.tex` para el paper.
+- **Pendiente (no bloqueante):** si se quiere reproducibilidad CI del xlsx, declarar
+  `openpyxl` como dep de dev en `pyproject.toml` (hoy se instalo ad-hoc); el `.xlsx`
+  ya esta en disco como entregable.
 
 ## US-059 - Observabilidad Prometheus (scaffolding)
 
@@ -73,23 +78,32 @@ scaffolding.
 
 ## US-065 - Observabilidad de chat (metricas por turno)
 
-### B6. Tokens de Qwen/vLLM no disponibles en streaming (R1)
-- **Que falta:** el backend OpenAI-compatible de vLLM/Qwen
-  (`ml/agent/backends.py::VLLMOpenAIBackend`) NO emite `usage` en modo streaming
-  salvo que se envie `stream_options={"include_usage": True}` en
-  `chat.completions.create`, lo que hoy no se setea. En esa ruta el
-  `chat_turn_metrics` reporta `tokens_prompt/completion/total = None`.
-- **Estado (HONESTO):** Gemini SI entrega tokens reales: `GeminiBackend` lee
-  `response.usage_metadata` (`prompt_token_count` / `candidates_token_count` /
-  `total_token_count`) de la respuesta completa no-streaming que ya usa, y los
-  propaga via `BackendChunk.usage` -> `DoneEvent.usage` ->
-  `chat_turn_metrics.tokens_*`. Para vLLM/Qwen quedan `None`: **no se inventan**
-  (regla de datos reales). El resto de la US (latencia + SLO + tool-calls +
-  modelo activo) se entrega completo en ambas rutas.
-- **Decision / fix pendiente:** anadir `stream_options={"include_usage": True}` a
-  la llamada de `VLLMOpenAIBackend.generate_stream` y leer el `usage` del ultimo
-  chunk del stream (vLLM lo emite en un chunk final con `choices=[]`). Pendiente
-  de verificar contra el endpoint vLLM real del H100; no bloquea la entrega.
+### B6. Tokens de Qwen/vLLM no disponibles en streaming (R1) - RESUELTO (codigo)
+- **Que faltaba:** el backend OpenAI-compatible de vLLM/Qwen
+  (`ml/agent/backends.py::VLLMOpenAIBackend`) NO emitia `usage` en modo streaming
+  salvo que se enviara `stream_options={"include_usage": True}` en
+  `chat.completions.create`, lo que no se seteaba. En esa ruta el
+  `chat_turn_metrics` reportaba `tokens_prompt/completion/total = None`.
+- **Fix aplicado (2026-06-24, rama `fix/blockers-validacion-us040-077`):**
+  - `VLLMOpenAIBackend.generate_stream` ahora pasa
+    `stream_options={"include_usage": True}` en `chat.completions.create`.
+  - Se anadio `_usage_from_stream_event` que lee el chunk final de usage que vLLM
+    emite con `choices=[]` (`prompt_tokens` / `completion_tokens` /
+    `total_tokens`, ya en las keys neutrales del proyecto) y lo normaliza
+    defensivamente (servidores que no lo reportan -> `None`, sin sintesis).
+  - El usage se propaga sobre el ULTIMO chunk del turno: si hay tool-calls va en
+    la ultima call; si no, en un chunk usage-only. Asi llega a
+    `DoneEvent.usage` -> `chat_turn_metrics.tokens_*` igual que Gemini.
+- **Gemini intacto:** `GeminiBackend` sigue leyendo `response.usage_metadata` de
+  la respuesta no-streaming (ruta independiente, no toca `chat.completions`).
+  Verificado: los 52 tests `chat`/`metric` del backend siguen verdes.
+- **Tests:** 4 casos nuevos en `tests/ml/agent/test_backends.py`
+  (`requests_include_usage`, `surfaces_streamed_usage`, `usage_on_tool_call_chunk`,
+  `no_usage_when_server_omits_it`). Suite `tests/ml/agent/` = 134 passed.
+- **Pendiente (no bloqueante):** verificacion end-to-end contra el endpoint vLLM
+  REAL del H100 (los tests usan dobles que replican el chunk de usage de OpenAI/
+  vLLM; falta el serving Qwen vivo para confirmar el wire real). El codigo y los
+  tests no lo requieren.
 
 ### B7. Verificacion de tags MLflow contra :5010 (server caido en la sesion)
 - **Que falta:** la verificacion en vivo de que los runs llevan tags
@@ -114,6 +128,14 @@ scaffolding.
   `prometheus-client` falla (degradacion honesta). No se fabrica trafico
   sintetico para "demostrar" el panel; la instrumentacion se valida con el flujo
   de prueba controlado de `test_chat_metrics.py` / `test_chat_sse.py`.
+- **Dependencia de B6 (RESUELTA en codigo):** la fila de tokens del panel ahora
+  tiene fuente real en AMBAS rutas (Gemini + Qwen/vLLM con `include_usage`); antes
+  Qwen reportaba `None`. El panel scrapeara y se poblara solo una vez que exista
+  trafico `/chat` real contra un backend con Prometheus activo
+  (`chat_metrics_prometheus_enabled=true`). No se sintetiza trafico para
+  "demostrarlo": el dashboard queda listo y la metrica de tokens ya no esta vacia
+  por diseno en la ruta Qwen. Pendiente unicamente del despliegue del scrape
+  (infra externa), no del codigo.
 
 ### B9. Tests de integracion de /chat rotos PRE-EXISTENTE (ajeno a US-065)
 - **Observacion:** `backend/tests/integration/test_chat_endpoint.py` y
@@ -173,18 +195,30 @@ scaffolding.
   ejecutados sobre datos reales; el current set temporal se conecta cuando la
   ingesta lo genere. No bloquea la US.
 
-### B11. Subida a gs://agrosat-reports/drift/ requiere ADC (degrada a local)
-- **Que falta:** publicar el HTML semanal en `gs://agrosat-reports/drift/{week}/`
-  necesita credenciales de aplicacion (ADC) y que el bucket exista.
-- **Estado:** sin ADC/bucket, `drift_check` escribe el reporte en
-  `data/monitoring/drift/report_{week}.html` (local) y degrada la subida sin
-  fallar (`is_gcs_auth_error` clasifica el fallo). La metadata expone
-  `report_uploaded_gcs=false` y `report_url` apunta al path local. No se simula
-  el acceso a GCS.
+### B11. Subida a gs://agrosat-reports/drift/ — RESUELTO (bucket creado, subida verificada)
+- **Estado (RESUELTO 2026-06-24):** el bucket `gs://agrosat-reports/` YA EXISTE
+  (creado por el orquestador; contiene `drift/.keep`) y el ADC funciona en este
+  entorno (`google.auth.default()` -> project `ine-ubica-tu-casilla`,
+  cuenta `artzizumbo@gmail.com`). Ya no es blocker de "bucket no existe".
+- **Evidencia de la subida real:** se corrio el asset `drift_check` sobre el
+  corpus REAL (`data/farslip/embeddings_pastis.parquet`, 10 000 filas tras el
+  slice Plan B) y subio el HTML a GCS:
+  - `report_uploaded_gcs = True`
+  - `report_url = gs://agrosat-reports/drift/2026-W26/report.html`
+  - blob verificado vivo: `drift/2026-W26/report.html` size=36 491 283 bytes,
+    `updated=2026-06-25T04:39:06Z` (`storage.Client().list_blobs`).
+  - `drift_score = 0.9889`, `n_columns_drifted = 444/449`, `embedding_drift=True`,
+    `alert_triggered=True`, `status=ok`, `data_version=...@531f58b3...`,
+    `code_version=2c8dc2b`.
+- **Degradacion limpia preservada:** sin ADC/bucket el asset sigue degradando a
+  `data/monitoring/drift/report_{week}.html` local con `report_uploaded_gcs=false`
+  (clasificado por `is_gcs_auth_error`); no se simula el acceso a GCS. Es decir,
+  el camino feliz (sube) y el degradado (local) estan ambos verificados.
 - **Divergencia de bucket resuelta:** el plan v8 cita `gs://agrosat-reports/`; la
   skill `agrosat-evidently-drift` cita `gs://agrosat-artifacts/`. Se usa el del
   plan v8 (`agrosat-reports`) por ser fuente de verdad.
-- **Decision:** subida a GCS pendiente de ADC + bucket; local funciona en dev/CI.
+- **Decision:** B11 cerrado. Subida a GCS funcional y demostrada; el degradado
+  local sigue cubriendo dev/CI sin secrets.
 
 ### B12. Envio SMTP del drift_notifier no probado en dev
 - **Que falta:** el envio real de email del resource `drift_notifier`
@@ -229,21 +263,34 @@ scaffolding.
 ## US-063 - Comparativa de proveedores cloud (docs)
 
 ### B15. Precio IBM Cloud H100 (GPU-hora) no confirmado a la fecha
-- **Que falta:** el precio por GPU-hora de H100 en IBM Cloud (VPC GPU) no se pudo
-  confirmar contra una pagina de pricing oficial de IBM a la fecha de redaccion
-  (consultado 2026-06-20). IBM Cloud es proveedor OPCIONAL en US-063 (la rubrica
-  exige GCP vs Azure como minimo; AWS/IBM son referencia).
-- **Fuentes intentadas:** busqueda web de pricing IBM Cloud H100 / VPC GPU. Los
-  agregadores devolvieron datos para GCP/Azure/AWS con cifra y fecha, pero no una
-  fuente oficial IBM con precio H100 por GPU-hora verificable.
-- **Estado (regla de datos reales):** en
-  `docs/cloud/comparativa_proveedores.md` la celda de precio H100 de IBM Cloud
-  queda como "No confirmado a la fecha — ver §11", SIN numero fabricado. Los
+- **Que falta:** el precio por GPU-hora de H100 en IBM Cloud (VPC GPU, perfil
+  acelerado `gx3` H100 NVL) no se pudo confirmar contra una pagina de pricing
+  oficial de IBM. IBM Cloud es proveedor OPCIONAL en US-063 (la rubrica exige GCP
+  vs Azure como minimo; AWS/IBM son referencia).
+- **Re-investigacion 2026-06-25 (datos reales):** se repitio la busqueda web/docs.
+  Resultado: **IBM no publica un precio oficial por GPU-hora de H100**. Fuentes
+  consultadas y su veredicto:
+  - ComputePrices.com (`/providers/ibm`): "We're actively tracking prices for IBM
+    Cloud. Check back soon" -> sin cifra H100.
+  - GPUPerHour (`gpuperhour.com`): IBM Cloud NO esta entre sus 28 proveedores.
+  - Spheron 2026 (`/blog/gpu-cloud-pricing-comparison-2026/`, dato a 2026-05-14):
+    no incluye IBM.
+  - IntuitionLabs (`/articles/h100-rental-prices-cloud-comparison`, dato a
+    2026-06-20): "IBM Cloud started offering H100 in late 2024 but pricing details
+    are not widely published, so we omit them here".
+  - Docs IBM VPC accelerated profiles (`cloud.ibm.com/docs/vpc?topic=vpc-accelerated-profile-family`):
+    confirma familia `gx3` con H100 NVL, pero sin tarifa por hora.
+  - Dato secundario suelto: una busqueda devolvio ~$0.99/GPU-h (H100 NVL, 8x) SIN
+    respaldo de fuente oficial verificable -> se anota como NO confirmado y NO se
+    usa como cifra de la comparativa (regla de datos reales).
+- **Estado:** en `docs/cloud/comparativa_proveedores.md` la celda de precio H100 de
+  IBM Cloud queda como "Sin precio oficial publicado / No confirmado", con la nota
+  de re-investigacion + fuentes + fecha en §4.1 y §11. SIN numero fabricado. Los
   precios GCP/Azure/AWS si llevan fuente + fecha de consulta.
-- **Decision:** completar la celda cuando exista fuente oficial IBM; no bloquea la
-  US (IBM es opcional y solo de referencia).
+- **Decision:** completar la celda cuando IBM publique tarifa oficial; no bloquea
+  la US (IBM es opcional y solo de referencia).
 
-### B13. MMD: metodo real de Evidently 0.7.21 (no proxy)
+### B13. MMD: metodo real de Evidently 0.7.21 (no proxy) + version final confirmada
 - **Observacion:** el AC pide MMD para embeddings AlphaEarth. Evidently 0.7.21 SI
   expone MMD nativo via `EmbeddingsDrift` (detector por defecto sobre el grupo de
   columnas de embedding); NO se usa un proxy PSI/Wasserstein. El valor que
@@ -251,20 +298,51 @@ scaffolding.
   indistinguibles = sin drift). Verificado en el recon: identico ~0.48, shift de
   una clase ~0.79. El veredicto de drift se decide contra el umbral documentado
   `_EMBEDDING_MMD_DRIFT_THRESHOLD = 0.55` en `ml/monitoring/drift.py`.
+- **Version final de Evidently (verificado 2026-06-24):** `pyproject.toml` pinea
+  `evidently = "^0.7.21"` y `0.7.21` ES la ultima version estable publicada en
+  PyPI (`pip index versions evidently` -> `INSTALLED: 0.7.21` == `LATEST: 0.7.21`).
+  No hay version mas reciente que adoptar: el pin ya esta al dia, no se recomienda
+  upgrade (no existe target superior). `plotly` queda pinneado a 5.x por el
+  conflicto transitivo de evidently 0.7.21 (`>=5.10,<6`); subir plotly a 6.x solo
+  cuando evidently lance una 0.8+ con soporte. No se toca el lock.
 
-### B14. `dagster definitions validate` requiere postgres (pre-existente)
+### B14. `dagster definitions validate` requiere postgres — camino concreto documentado
 - **Observacion:** `dagster definitions validate -m dagster_project.definitions`
   intenta crear una instancia temporal que, por el `dagster.yaml` del repo
-  (storage postgres + `DAGSTER_PG_URL`), exige conexion a Postgres y falla sin
-  esa env var. Es PRE-EXISTENTE (el `dagster.yaml` es de mayo, ajeno a US-060).
+  (`run_storage`/`event_log_storage`/`schedule_storage` = `dagster_postgres.*` con
+  `DAGSTER_PG_URL`), exige conexion a Postgres y falla sin esa env var. Es
+  PRE-EXISTENTE (el `dagster.yaml` es de mayo, ajeno a US-060).
 - **Estado:** las `Definitions` cargan y resuelven correctamente en proceso
   (`import dagster_project.definitions` -> OK; `defs.resolve_asset_graph()` lista
   los 16 assets incluido `drift_check` con sus deps `farslip_embeddings_consolidated`
   + `parcel_features_fused`, el schedule `drift_check_weekly_schedule` cron
   `0 6 * * 1` y el resource `drift_notifier`). Verificado ademas por
   `tests/dagster/test_drift_asset.py::test_drift_check_registered_in_definitions`.
-- **Decision:** la validacion en proceso es suficiente; el `validate` CLI requiere
-  levantar Postgres (gotcha de entorno), no es un error de definiciones.
+- **Camino concreto para el current-set particionado por fecha (cierra el lazo
+  B10+B14):** el asset `drift_check` NO requiere Postgres para correr (es lo que
+  exige Postgres es la *instancia* Dagster — UI/daemon/`validate` CLI — por el
+  `dagster.yaml`, no el asset). Dos caminos verificados:
+  1. **Local, sin Postgres (lo usado en esta validacion):** invocar el asset con
+     `build_asset_context` y mocks de `mlflow`/`drift_notifier` desde el cwd del
+     repo (donde vive `data/farslip/embeddings_pastis.parquet`). Corre el Plan B
+     real, escribe el HTML local y, con ADC presente, sube a GCS. Esto es lo que
+     hacen los 4 tests de `tests/dagster/test_drift_asset.py` y la corrida manual
+     de esta sesion (`report_uploaded_gcs=True`). NO re-entrena nada: solo lee el
+     parquet ya versionado.
+  2. **UI/schedule Dagster (requiere Postgres):** `export DAGSTER_PG_URL=...`
+     (driver psycopg2 sincrono, distinto del `DATABASE_URL` asyncpg de la app) y
+     `poetry run dagster dev -m dagster_project.definitions`. En la VM, la misma
+     instancia Cloud SQL/Postgres del proyecto sirve; en local basta un Postgres
+     contenedor (`postgres:15`) con la url de storage. El schedule semanal
+     (`0 6 * * 1`) materializa entonces el asset igual que el camino 1.
+- **Conexion del current-set fechado (B10):** cuando la ingesta produzca lotes por
+  fecha/trimestre, apuntar `DEFAULT_CURRENT_PARQUET` en
+  `dagster_project/assets/drift.py` al parquet del trimestre vigente. Mientras no
+  exista, el contraste Plan B (clase mayoritaria vs resto, filas reales) es el
+  current-set. Ningun camino re-entrena modelos.
+- **Decision:** B14 cerrado a nivel de "como se corre". El asset corre en local
+  sin Postgres (camino 1, demostrado); la UI/schedule necesitan Postgres
+  (`DAGSTER_PG_URL`), gotcha de entorno, no error de definiciones.
 
 ## US-064 - Seguridad, Model Cards y glosario (docs)
 
@@ -304,3 +382,75 @@ scaffolding.
   cifra del cierre formal de E6 que no este en disco queda marcada "pendiente de
   cierre E6" en la card; no se fabrica.
 - **Decision:** sin claim de Gemma; cifras solo desde artefactos. No bloquea.
+
+---
+
+## Validacion 2026-06-25 (pasada de cierre US-059..067)
+
+Cierre documental: generados los 9 us-resolved + 9 manual-test (antes inexistentes)
+y actualizados los 9 handoffs a ready-to-close (US-065 ready-to-close con WARN).
+Evidencia verificada contra entregables reales en disco; cifras cruzadas entre
+docs (finops/costo-beneficio/model cards <-> CSVs reales).
+
+### B-E10-V1. US-065 quedo WARN (deuda funcional + dependencias externas)
+- **tokens Qwen None en streaming** - RESUELTO en codigo (2026-06-24, ver B6): se
+  anadio `stream_options={"include_usage": True}` + `_usage_from_stream_event` en
+  `VLLMOpenAIBackend.generate_stream`, propagando el usage real al `DoneEvent`
+  igual que Gemini. 4 tests nuevos verdes. Queda pendiente solo la verificacion
+  end-to-end contra el serving Qwen vivo en el H100 (infra externa).
+- **MLflow :5010 no verificado en vivo** (server Docker caido en la VM en la
+  sesion previa) y panel sin scrape: dependencias de infra externa no ejecutadas.
+- Entrega completa y 13 tests unitarios verdes; el WARN refleja lo no verificable
+  en sesion, no un fallo del entregable.
+
+### B-E10-V2. Fallo intermitente de aislamiento de tests Prometheus (no reproducible aislado)
+- Un subagente observo `Duplicated timeseries` en tests de integracion de `/chat`
+  al correr ciertas combinaciones de suites juntas (registro Prometheus global de
+  US-059 re-registrado). VERIFICADO esta sesion: `test_chat_endpoint.py` solo =
+  12 passed; + `test_metrics_middleware.py` = 17 passed. NO reproducible de forma
+  simple. Es flakiness de aislamiento de tests (registro global), NO un bug de
+  produccion (el middleware funciona; los 5 tests de metrics pasan).
+- **Accion recomendada**: usar un `CollectorRegistry` dedicado por test o
+  `prometheus_client` fixture con reset entre suites. No bloqueante; deuda de
+  higiene de tests.
+
+### B-E10-V3. mypy metrics.py (de US-059) YA RESUELTO en EPIC 8
+- El error `no-any-return` de `app/api/metrics.py` se corrigio en la rama de
+  validacion (variable tipada explicita). Ver docs/blockers/epic8-notas.md B-E8-1.
+
+---
+
+## Validacion 2026-06-24 (cierre drift Evidently US-060 — bucket creado)
+
+Pasada de cierre de los blockers de drift Evidently de EPIC 10, ahora que el
+orquestador creo el bucket `gs://agrosat-reports/` (con `drift/.keep`) y el ADC
+esta funcional en el entorno. Rama `fix/blockers-validacion-us040-077`.
+
+### B11 (subida a GCS) — RESUELTO con evidencia real
+- Se corrio el asset `drift_check` de verdad sobre el corpus REAL
+  `data/farslip/embeddings_pastis.parquet` (invocacion directa con
+  `build_asset_context` + mocks de `mlflow`/`drift_notifier`, sin Postgres).
+- Resultado: `status=ok`, `week=2026-W26`, `rows=10000`, `drift_score=0.9889`,
+  `n_columns_drifted=444/449`, `n_embedding_dims=64`, `embedding_drift=True`,
+  `alert_triggered=True`, `data_version=...@531f58b3...`, `code_version=2c8dc2b`.
+- **Subida a GCS confirmada:** `report_uploaded_gcs=True`,
+  `report_url=gs://agrosat-reports/drift/2026-W26/report.html`. Blob verificado
+  vivo via `storage.Client().list_blobs("agrosat-reports", prefix="drift/")`:
+  `drift/2026-W26/report.html` size=36 491 283 bytes, updated=2026-06-25T04:39Z.
+- El doc B11 (arriba) se actualizo: ya no es blocker de "bucket no existe".
+
+### B13 (version Evidently) — sin upgrade pendiente
+- `pip index versions evidently` -> `INSTALLED: 0.7.21` == `LATEST: 0.7.21`. El
+  pin `^0.7.21` del `pyproject.toml` ya esta en la ultima estable. No se toca el
+  lock; no hay upgrade recomendado (no existe target superior).
+
+### B14 (current-set / Postgres) — camino concreto documentado
+- El asset corre en LOCAL sin Postgres (camino 1, demostrado en B11 de esta
+  corrida). Postgres (`DAGSTER_PG_URL`) solo lo necesita la instancia Dagster
+  (UI/daemon/schedule/`validate` CLI), no el asset. NO se re-entreno nada (solo
+  lectura del parquet ya versionado). Detalle en B14 (arriba).
+
+### Tests de drift — 11 passed
+- `pytest tests/ml/monitoring/test_drift.py tests/dagster/test_drift_asset.py -q`
+  -> **11 passed** en 85.19s (7 del pipeline puro + 4 del asset Dagster). 0 fallos.
+  Coincide con el "drift 11 tests" del tablero maestro `docs/VALIDACION-US040-077.md`.

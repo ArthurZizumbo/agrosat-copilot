@@ -455,8 +455,16 @@ class _OAChoice:
 
 
 @dataclass
+class _OAUsage:
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
+
+
+@dataclass
 class _OAChunk:
     choices: list[_OAChoice] = field(default_factory=list)
+    usage: _OAUsage | None = None
 
 
 class _FakeAsyncStream:
@@ -516,6 +524,107 @@ async def test_vllm_backend_streams_text() -> None:
     chunks = await _drain_vllm(backend)
     text = "".join(c.text for c in chunks if getattr(c, "text", None))
     assert text == "Hola Qwen"
+
+
+async def test_vllm_backend_requests_include_usage() -> None:
+    """The streaming request carries ``stream_options={"include_usage": True}``.
+
+    Without it, vLLM never emits the ``usage`` chunk and the FinOps observability
+    of US-065 logs ``None`` tokens for Qwen (B6).
+    """
+    client = FakeOpenAIClient(
+        [_OAChunk(choices=[_OAChoice(delta=_OADelta(content="hola"))])]
+    )
+    backend = _vllm_backend_with_client(client)
+
+    await _drain_vllm(backend)
+    kwargs = client.completions.calls[0]
+    assert kwargs.get("stream") is True
+    assert kwargs.get("stream_options") == {"include_usage": True}
+
+
+async def test_vllm_backend_surfaces_streamed_usage() -> None:
+    """The final ``usage`` chunk is forwarded onto the last emitted chunk (B6).
+
+    With ``include_usage`` the endpoint emits a trailing chunk with empty
+    ``choices`` and a populated ``usage``; the backend reads it into the neutral
+    ``prompt_tokens`` / ``completion_tokens`` / ``total_tokens`` mapping so the
+    agent forwards real token counts onto the terminal ``DoneEvent``.
+    """
+    client = FakeOpenAIClient(
+        [
+            _OAChunk(choices=[_OAChoice(delta=_OADelta(content="Hola"))]),
+            _OAChunk(choices=[_OAChoice(delta=_OADelta(), finish_reason="stop")]),
+            _OAChunk(
+                choices=[],
+                usage=_OAUsage(prompt_tokens=11, completion_tokens=4, total_tokens=15),
+            ),
+        ]
+    )
+    backend = _vllm_backend_with_client(client)
+
+    chunks = await _drain_vllm(backend)
+    usages = [c.usage for c in chunks if getattr(c, "usage", None)]
+    assert usages, "expected the streamed usage to be surfaced"
+    assert usages[-1] == {
+        "prompt_tokens": 11,
+        "completion_tokens": 4,
+        "total_tokens": 15,
+    }
+
+
+async def test_vllm_backend_usage_on_tool_call_chunk() -> None:
+    """Usage rides the LAST tool-call chunk when the turn ends in tool calls."""
+    client = FakeOpenAIClient(
+        [
+            _OAChunk(
+                choices=[
+                    _OAChoice(
+                        delta=_OADelta(
+                            tool_calls=[
+                                _OAToolCall(
+                                    index=0,
+                                    id="call_1",
+                                    function=_OAFunction(
+                                        name="list_parcels", arguments="{}"
+                                    ),
+                                )
+                            ]
+                        )
+                    )
+                ]
+            ),
+            _OAChunk(choices=[_OAChoice(delta=_OADelta(), finish_reason="tool_calls")]),
+            _OAChunk(
+                choices=[],
+                usage=_OAUsage(prompt_tokens=7, completion_tokens=2, total_tokens=9),
+            ),
+        ]
+    )
+    backend = _vllm_backend_with_client(client)
+
+    chunks = await _drain_vllm(backend)
+    call_chunks = [c for c in chunks if getattr(c, "function_call", None)]
+    assert call_chunks, "expected the parsed tool call"
+    assert call_chunks[-1].usage == {
+        "prompt_tokens": 7,
+        "completion_tokens": 2,
+        "total_tokens": 9,
+    }
+
+
+async def test_vllm_backend_no_usage_when_server_omits_it() -> None:
+    """A server that does not report usage yields ``None`` (no synthesis)."""
+    client = FakeOpenAIClient(
+        [
+            _OAChunk(choices=[_OAChoice(delta=_OADelta(content="Hola"))]),
+            _OAChunk(choices=[_OAChoice(delta=_OADelta(), finish_reason="stop")]),
+        ]
+    )
+    backend = _vllm_backend_with_client(client)
+
+    chunks = await _drain_vllm(backend)
+    assert all(getattr(c, "usage", None) is None for c in chunks)
 
 
 async def test_vllm_backend_parses_tool_calls() -> None:

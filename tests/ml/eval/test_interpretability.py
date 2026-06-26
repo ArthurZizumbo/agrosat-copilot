@@ -199,7 +199,7 @@ def test_shap_normalize_handles_class_first_layout():
 
 def test_shap_normalize_rejects_unknown_shape():
     """Una forma de SHAP no reconocida (4D) lanza ``ValueError``."""
-    with pytest.raises(ValueError, match="no reconocida"):
+    with pytest.raises(ValueError, match="Unrecognized SHAP shape"):
         _normalize_shap_multiclass(
             np.zeros((2, 2, 2, 2)), n_samples=2, n_features=2
         )
@@ -253,7 +253,7 @@ def test_compute_shap_rejects_bad_model_kind(rf_model):
 
 def test_to_numpy_sample_rejects_missing_columns(rf_model):
     """``_to_numpy_sample`` exige que existan todas las columnas pedidas."""
-    with pytest.raises(ValueError, match="columnas"):
+    with pytest.raises(ValueError, match="feature columns"):
         _to_numpy_sample(rf_model.X, ("col_inexistente",))
 
 
@@ -404,7 +404,7 @@ def test_alphaearth_dominance_rejects_missing_feature_column():
 
 def test_alphaearth_dominance_rejects_missing_importance_column():
     """Una tabla sin columna de importancia reconocible lanza ``ValueError``."""
-    with pytest.raises(ValueError, match="importancia"):
+    with pytest.raises(ValueError, match="importance column"):
         alphaearth_dominance_table(
             pl.DataFrame({"feature": ["dim_00"], "rank": [1]})
         )

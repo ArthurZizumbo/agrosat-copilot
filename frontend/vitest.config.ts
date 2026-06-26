@@ -49,6 +49,9 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     include: ["tests/**/*.{test,spec}.ts"],
+    // `tests/e2e/*` are Playwright specs (`@playwright/test`), incompatible with
+    // the vitest runner; they run via `pnpm test:e2e`, not `pnpm test`.
+    exclude: ["**/node_modules/**", "tests/e2e/**"],
     setupFiles: ["tests/setup/nuxt-globals.ts"],
     globals: true,
   },

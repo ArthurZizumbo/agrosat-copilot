@@ -10,7 +10,12 @@ Our results support four claims, stated conservatively.
     \item Temporal transformers with a phenological branch are the
     strongest individual perceivers on PASTIS-R (TSViT-pheno, mIoU
     0.6253), and heterogeneous stacking over decorrelated members
-    improves the out-of-fold macro F1 over any single model.
+    lifts the held-out parcel-level macro F1 to 0.7470
+    (accuracy 0.8490), $+12.3$ points over the best single model. The
+    same champion, used as the agent's perceiver, raises parcel accuracy
+    from 0.8308 to 0.9413 ($+11$ points) on 13{,}481 real parcels,
+    confirming that the Be My Eyes separation pays off precisely because
+    the frozen reasoner inherits the champion's accuracy.
     \item A contrastive vision-language branch~\cite{li2025farslip}
     contributes a useful but modest complementary signal (the
     five-member stacking gain over three members is $+0.0118$ macro
@@ -58,6 +63,20 @@ Third, the conversational-layer benchmark on
 AgroMind~\cite{ruan2025agromind} is pending the H100 evaluation
 (US-069); we report the protocol and column structure but no
 synthetic numbers.
+
+\subsection{Cost efficiency (FinOps)}
+The system is engineered to run at low operational cost. The four
+serving components (API, frontend, tiling, inference worker) run on
+Cloud Run with scale-to-zero, and the on-premises H100 reasoner is an
+Azure spot instance activated only on demand (roughly three hours per
+day). The steady-state operational cost is approximately
+US\$115 per month, while the one-time training budget --- the H100 and
+L4 spot windows used to fit the segmenters and the FarSLIP distillation
+--- totals US\$262--602. The frozen-reasoner design is itself a cost
+lever: because the LLM is never fine-tuned as a classifier, no
+expensive GPU fine-tuning of a frontier model is on the critical path,
+and the heavy compute is confined to the one-time perception-stack
+training.
 
 \subsection{Reproducibility}
 Every figure in Section~\ref{sec:results} is anchored to a versioned

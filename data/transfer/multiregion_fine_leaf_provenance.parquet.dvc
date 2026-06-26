@@ -1,0 +1,5 @@
+outs:
+- md5: 76abc2b84173e385d8e59b999c3e4c3d
+  size: 2213
+  hash: md5
+  path: multiregion_fine_leaf_provenance.parquet

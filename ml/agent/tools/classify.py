@@ -13,9 +13,12 @@ on :class:`~ml.agent.schemas.ClassifyParcelInput` shape the output:
   resolves poorly. When OFF the full 18-class posterior is returned (legacy).
 - ``use_stacking`` (default OFF): for a parcel ALREADY materialized in the cached
   fold-5 OOF, the tool serves the Stacking-5 champion posterior (the logreg meta
-  refit on all five members' OOF; F1-macro 0.912). A new polygon with no OOF row,
-  or absent OOF artifacts (DVC not pulled), degrades CLEANLY to ``xgb-alphaearth``
-  with a structured warning -- it never crashes.
+  refit on all five members' OOF; the EPIC 6 / US-043 winner). Its F1-macro is
+  0.7486 over the full 18 semantic classes and ~0.912 over the nine well-resolved
+  ``france-9`` classes (``us043_winner_cardinality_curve.csv``) -- so it is best
+  paired with ``restrict_to_resolved_classes`` ON, which is the default. A new
+  polygon with no OOF row, or absent OOF artifacts (DVC not pulled), degrades
+  CLEANLY to ``xgb-alphaearth`` with a structured warning -- it never crashes.
 
 Default (both flags at their defaults) the tool serves the ``xgb-alphaearth``
 tabular member restricted to ``france-9``.

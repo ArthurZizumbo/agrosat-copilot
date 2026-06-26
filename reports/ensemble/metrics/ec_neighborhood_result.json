@@ -1,0 +1,160 @@
+{
+  "design": "E-c LIGHT structural-only: convex blend of the Stacking-5 champion posterior with the mean posterior of its k spatial neighbours (centroid k-NN, EPSG:2154); neighbour posteriors only, no GT leak (R-LEAK); fold-5 held-out; alpha=0 is the pure champion.",
+  "champion": {
+    "f1_macro_18": 0.7486144982078716,
+    "f1_macro_france9": 0.9120517632075082,
+    "accuracy": 0.8494591346153846,
+    "n_parcels": 16640
+  },
+  "ks": [
+    5,
+    10
+  ],
+  "alphas": [
+    0.0,
+    0.1,
+    0.2,
+    0.3,
+    0.5
+  ],
+  "sweep": [
+    {
+      "k": 5,
+      "alpha": 0.0,
+      "f1_macro_18": 0.7486144982078716,
+      "f1_macro_france9": 0.9120517632075082,
+      "accuracy": 0.8494591346153846,
+      "n_parcels": 16640,
+      "delta_f1_macro_18": 0.0,
+      "delta_f1_macro_france9": 0.0,
+      "delta_accuracy": 0.0
+    },
+    {
+      "k": 5,
+      "alpha": 0.1,
+      "f1_macro_18": 0.7513258862646013,
+      "f1_macro_france9": 0.9119721921647697,
+      "accuracy": 0.8503605769230769,
+      "n_parcels": 16640,
+      "delta_f1_macro_18": 0.0027113880567296578,
+      "delta_f1_macro_france9": -7.957104273859095e-05,
+      "delta_accuracy": 0.0009014423076922906
+    },
+    {
+      "k": 5,
+      "alpha": 0.2,
+      "f1_macro_18": 0.7518459723889396,
+      "f1_macro_france9": 0.9099124400329904,
+      "accuracy": 0.8492788461538462,
+      "n_parcels": 16640,
+      "delta_f1_macro_18": 0.0032314741810679504,
+      "delta_f1_macro_france9": -0.0021393231745178154,
+      "delta_accuracy": -0.0001802884615383915
+    },
+    {
+      "k": 5,
+      "alpha": 0.3,
+      "f1_macro_18": 0.751445050458137,
+      "f1_macro_france9": 0.9062843082852439,
+      "accuracy": 0.8469951923076923,
+      "n_parcels": 16640,
+      "delta_f1_macro_18": 0.0028305522502654057,
+      "delta_f1_macro_france9": -0.005767454922264381,
+      "delta_accuracy": -0.002463942307692313
+    },
+    {
+      "k": 5,
+      "alpha": 0.5,
+      "f1_macro_18": 0.7391164506612172,
+      "f1_macro_france9": 0.8872039276233912,
+      "accuracy": 0.8287860576923077,
+      "n_parcels": 16640,
+      "delta_f1_macro_18": -0.009498047546654398,
+      "delta_f1_macro_france9": -0.024847835584117073,
+      "delta_accuracy": -0.02067307692307685
+    },
+    {
+      "k": 10,
+      "alpha": 0.0,
+      "f1_macro_18": 0.7486144982078716,
+      "f1_macro_france9": 0.9120517632075082,
+      "accuracy": 0.8494591346153846,
+      "n_parcels": 16640,
+      "delta_f1_macro_18": 0.0,
+      "delta_f1_macro_france9": 0.0,
+      "delta_accuracy": 0.0
+    },
+    {
+      "k": 10,
+      "alpha": 0.1,
+      "f1_macro_18": 0.7513495692876494,
+      "f1_macro_france9": 0.9122268864810786,
+      "accuracy": 0.8506009615384615,
+      "n_parcels": 16640,
+      "delta_f1_macro_18": 0.0027350710797777733,
+      "delta_f1_macro_france9": 0.00017512327357038782,
+      "delta_accuracy": 0.0011418269230769607
+    },
+    {
+      "k": 10,
+      "alpha": 0.2,
+      "f1_macro_18": 0.7533217266443759,
+      "f1_macro_france9": 0.9113729658978745,
+      "accuracy": 0.850420673076923,
+      "n_parcels": 16640,
+      "delta_f1_macro_18": 0.004707228436504285,
+      "delta_f1_macro_france9": -0.0006787973096337163,
+      "delta_accuracy": 0.0009615384615384581
+    },
+    {
+      "k": 10,
+      "alpha": 0.3,
+      "f1_macro_18": 0.755459846448942,
+      "f1_macro_france9": 0.9100269684102571,
+      "accuracy": 0.8499399038461538,
+      "n_parcels": 16640,
+      "delta_f1_macro_18": 0.006845348241070415,
+      "delta_f1_macro_france9": -0.0020247947972511504,
+      "delta_accuracy": 0.00048076923076922906
+    },
+    {
+      "k": 10,
+      "alpha": 0.5,
+      "f1_macro_18": 0.7499003898548361,
+      "f1_macro_france9": 0.8995686058068557,
+      "accuracy": 0.8390024038461539,
+      "n_parcels": 16640,
+      "delta_f1_macro_18": 0.0012858916469644655,
+      "delta_f1_macro_france9": -0.012483157400652534,
+      "delta_accuracy": -0.010456730769230704
+    }
+  ],
+  "best_refined_on_18": {
+    "k": 10,
+    "alpha": 0.3,
+    "f1_macro_18": 0.755459846448942,
+    "f1_macro_france9": 0.9100269684102571,
+    "accuracy": 0.8499399038461538,
+    "n_parcels": 16640,
+    "delta_f1_macro_18": 0.006845348241070415,
+    "delta_f1_macro_france9": -0.0020247947972511504,
+    "delta_accuracy": 0.00048076923076922906
+  },
+  "best_refined_on_both": {
+    "k": 10,
+    "alpha": 0.1,
+    "f1_macro_18": 0.7513495692876494,
+    "f1_macro_france9": 0.9122268864810786,
+    "accuracy": 0.8506009615384615,
+    "n_parcels": 16640,
+    "delta_f1_macro_18": 0.0027350710797777733,
+    "delta_f1_macro_france9": 0.00017512327357038782,
+    "delta_accuracy": 0.0011418269230769607
+  },
+  "improves_18": true,
+  "improves_both": true,
+  "material_both": false,
+  "material_delta_threshold": 0.01,
+  "improves": false,
+  "verdict": "El refinamiento por vecindad da una mejora POSITIVA pero NO MATERIAL en ambos ejes (por debajo del umbral de ruido 0.01 de fold-5): el mejor punto que sube ambos ejes (k=10, alpha=0.1) deja F1-macro-18 en 0.7513 (delta=+0.0027) y france-9 en 0.9122 (delta=+0.0002); este ultimo es esencialmente ruido (decimas de punto sobre ~16.6k parcelas). En el eje de 18 clases hay un optimo mayor (k=10, alpha=0.3, delta=+0.0068) pero ya DEGRADA france-9 (-0.0020). Conclusion honesta: el eje estructural por vecindad NO aporta una mejora accionable sobre el campeon; el contexto espacial ya esta absorbido (consistente con ADR-010: AlphaEarth codifica fenologia y contexto, delta=0.0 tabular se extiende al eje estructural ligero)."
+}

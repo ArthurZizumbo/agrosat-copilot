@@ -1,0 +1,17 @@
+{
+  "label_space": "france-9",
+  "n_parcels": 13624,
+  "baseline_xgb": {
+    "accuracy": 0.8803,
+    "macro_f1": 0.8133
+  },
+  "champion_stacking5": {
+    "accuracy": 0.9431,
+    "macro_f1": 0.9035
+  },
+  "delta_accuracy": 0.0628,
+  "agreement": 0.8874,
+  "champion_fixes": 1124,
+  "champion_breaks": 268,
+  "net_fixed": 856
+}

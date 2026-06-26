@@ -1,0 +1,81 @@
+{
+  "source": "latvia",
+  "target": "estonia",
+  "n_source_parcels": 546,
+  "n_target_parcels": 486,
+  "n_shared_leaves": 14,
+  "dense_members": [
+    "tsvit-pheno-fullm",
+    "utae"
+  ],
+  "baseline_dim": 64,
+  "ensemble_dim": 102,
+  "ks": [
+    1,
+    5,
+    10,
+    20
+  ],
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "curve": [
+    {
+      "feature_set": "baseline",
+      "k": 1,
+      "f1_mean": 0.02413333333333333,
+      "f1_std": 0.016541127195233367
+    },
+    {
+      "feature_set": "ensemble",
+      "k": 1,
+      "f1_mean": 0.023266666666666668,
+      "f1_std": 0.009329999404549226
+    },
+    {
+      "feature_set": "baseline",
+      "k": 5,
+      "f1_mean": 0.24113333333333334,
+      "f1_std": 0.010574917914049698
+    },
+    {
+      "feature_set": "ensemble",
+      "k": 5,
+      "f1_mean": 0.24839999999999998,
+      "f1_std": 0.022699926578442192
+    },
+    {
+      "feature_set": "baseline",
+      "k": 10,
+      "f1_mean": 0.2647,
+      "f1_std": 0.02756120461808591
+    },
+    {
+      "feature_set": "ensemble",
+      "k": 10,
+      "f1_mean": 0.2773333333333333,
+      "f1_std": 0.013220522766601248
+    },
+    {
+      "feature_set": "baseline",
+      "k": 20,
+      "f1_mean": 0.3031333333333333,
+      "f1_std": 0.008533203124006595
+    },
+    {
+      "feature_set": "ensemble",
+      "k": 20,
+      "f1_mean": 0.3014,
+      "f1_std": 0.009312357381458247
+    }
+  ],
+  "delta_ensemble_minus_baseline_by_k": {
+    "1": -0.0009,
+    "5": 0.0073,
+    "10": 0.0126,
+    "20": -0.0017
+  },
+  "note": "Dense members run as per-parcel extractors over a tiled single pixel (no real texture); honest lower bound on their transferable signal."
+}

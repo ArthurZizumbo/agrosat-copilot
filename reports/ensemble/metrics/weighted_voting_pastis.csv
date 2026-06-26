@@ -1,0 +1,5 @@
+model,f1_macro,accuracy,f1_macro_spatialcv,n_weights,combiner
+"Stacking (parcela, meta-LogReg 54 pesos)",0.747,0.849,0.536,54,meta_logreg
+"Voting ponderado (parcela, N pesos)",0.7444,0.8631,0.5581,3,weighted_vote_f1max
+"Blending (parcela, N pesos Optuna)",0.7436,0.8629,,3,optuna_simplex
+"Voting simple (parcela, 1/N)",0.673,0.8332,0.4877,3,mean_1_over_N

@@ -333,7 +333,7 @@ def test_s2_raw_parcels_aligns_with_alphaearth() -> None:
 
 def test_load_scenario_missing_file_raises(tmp_path: Path) -> None:
     """``_load_scenario`` lanza FileNotFoundError si el parquet no existe."""
-    with pytest.raises(FileNotFoundError, match="no encontrado"):
+    with pytest.raises(FileNotFoundError, match="not found"):
         _load_scenario(tmp_path / "missing.parquet")
 
 

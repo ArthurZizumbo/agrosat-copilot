@@ -1,0 +1,5 @@
+outs:
+- md5: 51496ae0321af2b29ee8cc6edb3642a2
+  size: 2549
+  hash: md5
+  path: multiregion_per_class_macro.parquet
