@@ -2,25 +2,38 @@
 
 This tool is deliberately HONEST about which model serves a classification (it
 used to advertise itself as a "stacking ensemble" while only ever running the
-``xgb-alphaearth`` member -- US-053 corrects that oversell). Two independent flags
-on :class:`~ml.agent.schemas.ClassifyParcelInput` shape the output:
+``xgb-alphaearth`` member -- US-053 corrects that oversell). The active serving
+model is selected by ``ClassifyParcelInput.model`` (with the legacy
+``use_stacking`` flag promoted to ``model="stacking5"`` for back-compat), and two
+independent flags shape the posterior:
 
+- ``model`` (default ``"xgb"``): for a parcel ALREADY materialized in the cached
+  fold-5 OOF the tool can serve one of three models:
+    * ``"xgb"`` -- the ``xgb-alphaearth`` tabular member (the historical default).
+    * ``"voting3"`` -- the REAL EPIC 12 deployment champion: the weighted
+      soft-vote of ``tsvit-pheno`` + ``utae`` + ``xgb-alphaearth`` at the PARCEL
+      level (:class:`ml.ensemble.voting_weighted.WeightedVotingEnsemble`, US-079).
+      It wins the deployed france-10 comparison (F1-macro 0.9069 vs the Stacking-5
+      0.8927; ``reports/ensemble/metrics/france10_headline.csv``), so it is the
+      true champion the agent serves, not the legacy Stacking-5.
+    * ``"stacking5"`` -- the EPIC 6 Stacking-5 logreg meta (the US-043 winner,
+      kept as LEGACY now that Voting-3 supersedes it).
+  Any model that cannot resolve the parcel (a fresh polygon with no OOF row) or
+  whose OOF artifacts are unavailable (DVC not pulled) degrades CLEANLY to
+  ``xgb-alphaearth`` with a structured warning -- it never fabricates a posterior
+  and never crashes.
 - ``restrict_to_resolved_classes`` (default ON): the posterior is masked down to
   the well-resolved classes of the active label-space (``france-9`` by default,
   the nine classes with the highest F1 OOF fold-5) and renormalized over them
   (see :mod:`ml.eval.class_remap`). It costs no GPU and works for any parcel with
   a persisted 64-dim embedding -- it just declines to report classes the model
   resolves poorly. When OFF the full 18-class posterior is returned (legacy).
-- ``use_stacking`` (default OFF): for a parcel ALREADY materialized in the cached
-  fold-5 OOF, the tool serves the Stacking-5 champion posterior (the logreg meta
-  refit on all five members' OOF; the EPIC 6 / US-043 winner). Its F1-macro is
-  0.7486 over the full 18 semantic classes and ~0.912 over the nine well-resolved
-  ``france-9`` classes (``us043_winner_cardinality_curve.csv``) -- so it is best
-  paired with ``restrict_to_resolved_classes`` ON, which is the default. A new
-  polygon with no OOF row, or absent OOF artifacts (DVC not pulled), degrades
-  CLEANLY to ``xgb-alphaearth`` with a structured warning -- it never crashes.
+- ``use_stacking`` (default OFF): LEGACY selector kept for back-compat. When
+  ``True`` and ``model`` is left at its default ``"xgb"``, it is treated as
+  ``model="stacking5"`` (see :attr:`ClassifyParcelInput.resolved_model`). New
+  callers should set ``model`` directly.
 
-Default (both flags at their defaults) the tool serves the ``xgb-alphaearth``
+Default (every flag at its default) the tool serves the ``xgb-alphaearth``
 tabular member restricted to ``france-9``.
 
 The per-parcel inference path:
@@ -33,8 +46,8 @@ The per-parcel inference path:
 2. Loads the XGBoost-AlphaEarth classifier (CPU, ``functools.lru_cache``) trained
    leak-free on folds 1-4 of ``features_fused_pastis.parquet`` -- the same recipe
    the EPIC 6 stacking ensemble materializes its ``xgb-alphaearth`` base member.
-3. Optionally re-scores via the Stacking-5 logreg meta (cached) when
-   ``use_stacking`` and the parcel is in the fold-5 OOF universe.
+3. Optionally re-scores via the Voting-3 weighted vote or the Stacking-5 logreg
+   meta (both cached) when the parcel is in the fold-5 OOF universe.
 4. Optionally restricts + renormalizes the posterior over the active label-space.
 
 Every load is CPU-light and cached process-wide (no GPU, per the
@@ -68,6 +81,16 @@ _STACKING_MEMBERS: tuple[str, ...] = (
     "farslip-zeroshot",
 )
 
+#: Three EPIC 12 weighted-vote members (the deployment champion, US-079). The same
+#: terna Stacking/Blending vote over, so the only moving part is the combination
+#: layer (N convex weights vs the 54-weight Stacking meta). Order matters: it is
+#: the member axis of the aligned probability tensor and the learned weight vector.
+_VOTING_MEMBERS: tuple[str, ...] = (
+    "tsvit-pheno",
+    "utae",
+    "xgb-alphaearth",
+)
+
 #: Repo root resolved from this file (``ml/agent/tools/classify.py`` -> repo).
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -81,6 +104,11 @@ _OOF_DIR = _REPO_ROOT / "ml" / "eval" / "oof"
 #: PASTIS-R root used to reconstruct the per-parcel GT for the Stacking-5 meta
 #: re-fit (the OOF dump discards the target). Absent when DVC data is not pulled.
 _PASTIS_ROOT = _REPO_ROOT / "data" / "PASTIS-R"
+
+#: PASTIS-R patch metadata (per-patch footprints in EPSG:2154). The Voting-3
+#: weight learning needs per-parcel geometry for its spatial sub-folds; this is the
+#: source the runner's ``build_parcel_geometries`` reads. Absent without DVC pull.
+_PASTIS_METADATA = _PASTIS_ROOT / "metadata.geojson"
 
 #: Column prefix of the 64-dim AlphaEarth embedding in the features parquet.
 _ALPHAEARTH_PREFIX: str = "dim_"
@@ -373,6 +401,242 @@ def _load_stacking_five() -> _StackingFive:
         feature_cols=feature_cols,
         meta_features_by_id=meta_features_by_id,
     )
+
+
+class _VotingThree:
+    """Voting-3 weighted soft-vote over the three members' cached fold-5 OOF.
+
+    Holds the learned convex weights (one per member, in :data:`_VOTING_MEMBERS`
+    order) plus, for every parcel present in ALL three members' fold-5 OOF, the
+    stacked ``(3, 18)`` post-softmax member rows keyed by ``canonical_parcel_id``.
+    A single parcel's Voting-3 posterior is then the convex combination
+    ``sum_i w_i * P_i`` of those rows -- a valid post-softmax distribution -- with
+    no recomputation. This mirrors the EPIC 12
+    :class:`ml.ensemble.voting_weighted.WeightedVotingEnsemble` production path
+    (its inherited ``predict_proba`` blends the SAME aligned member tensor with the
+    SAME learned weights), but indexed per parcel for O(1) agent lookup.
+
+    The weights are LEARNED at load time by fitting the ensemble on the fold-5 OOF
+    (CPU, seconds: scipy.optimize over a 3-simplex), never hard-coded -- so they
+    stay exactly the published deployment weights and degrade honestly if any
+    member OOF or the PASTIS-R geometry/GT the fit consumes is unavailable.
+
+    Attributes:
+        weights: Learned convex weights ``(3,)`` (``w_i >= 0``, ``sum(w) == 1``),
+            aligned with :data:`_VOTING_MEMBERS`.
+        member_probs_by_id: Mapping ``canonical_parcel_id -> (3, 18)`` stacked
+            post-softmax member rows, for O(1) per-parcel scoring.
+    """
+
+    def __init__(
+        self,
+        weights: np.ndarray,
+        member_probs_by_id: dict[str, np.ndarray],
+    ) -> None:
+        self.weights = weights
+        self.member_probs_by_id = member_probs_by_id
+
+    def posterior_for_parcel(self, canonical_id: str) -> np.ndarray | None:
+        """Return the Voting-3 ``(18,)`` posterior for a fold-5 parcel.
+
+        Args:
+            canonical_id: Canonical parcel id (``"{patch}_{local}"``) to score.
+
+        Returns:
+            A ``(18,)`` ``float64`` post-softmax distribution (the convex
+            combination of the three members), or ``None`` when the parcel is not
+            present in all three members' fold-5 OOF (caller degrades).
+        """
+        member_rows = self.member_probs_by_id.get(canonical_id)
+        if member_rows is None:
+            return None
+        # Convex combination sum_i w_i * P_i over the member axis -> (18,).
+        blended = np.tensordot(self.weights, member_rows, axes=([0], [0]))
+        total = blended.sum()
+        return blended / total if total > 1e-12 else blended
+
+
+@functools.lru_cache(maxsize=1)
+def _load_voting_three() -> _VotingThree:
+    """Load (and cache) the Voting-3 weighted vote from the cached fold-5 OOF.
+
+    Mirrors the EPIC 12 ``run_weighted_voting_pastis.py`` materialization but for
+    the agent's per-parcel serving path:
+
+    1. Inner-joins the three members' per-parcel OOF on ``canonical_parcel_id`` and
+       stacks their post-softmax ``prob_000..prob_017`` rows into a ``(3, 18)``
+       tensor per parcel (the SAME ``_align_members`` intersection the ensemble
+       uses).
+    2. Reconstructs the per-parcel semantic18 GT from PASTIS-R (shared with the
+       Stacking-5 path) and the per-parcel geometry, then fits
+       :class:`ml.ensemble.voting_weighted.WeightedVotingEnsemble` to LEARN the
+       three convex weights by F1-macro maximization (the deployment weights).
+    3. Indexes every joined parcel's ``(3, 18)`` member rows by id for O(1) lookup.
+
+    The result is cached process-wide (``maxsize=1``) so the CPU-light fit happens
+    once.
+
+    Returns:
+        A ready :class:`_VotingThree` (learned weights + per-parcel member rows).
+
+    Raises:
+        FileNotFoundError: if any member OOF parquet, the PASTIS-R GT source or the
+            PASTIS-R geometry metadata is missing (run ``dvc pull ml/eval/oof`` /
+            ``dvc pull data/PASTIS-R``); the caller catches this and degrades to
+            ``xgb-alphaearth``.
+        ValueError: if the OOF intersection or the OOF/GT join leaves no parcels.
+    """
+    import polars as pl
+
+    from ml.ensemble.voting_weighted import WeightedVotingEnsemble
+    from ml.utils.parcel_id import canonical_parcel_id
+    from ml.utils.parcel_reconcile import PROB_COLUMNS
+
+    if not _PASTIS_METADATA.exists():
+        raise FileNotFoundError(
+            f"PASTIS-R geometry metadata not found: {_PASTIS_METADATA}. "
+            "Run `dvc pull data/PASTIS-R`."
+        )
+
+    key = "canonical_parcel_id"
+    # Inner-join the three members on the shared parcel set, stacking each member's
+    # post-softmax row (renamed per member so the columns do not collide).
+    joined: pl.DataFrame | None = None
+    member_cols: dict[str, list[str]] = {}
+    for member in _VOTING_MEMBERS:
+        path = _OOF_DIR / f"oof_parcel_{member}_fold5.parquet"
+        if not path.exists():
+            raise FileNotFoundError(
+                f"Voting-3 OOF parquet missing: {path}. Run `dvc pull ml/eval/oof`."
+            )
+        frame = canonical_parcel_id(pl.read_parquet(path), col=key)
+        renamed = {col: f"{member}__{col}" for col in PROB_COLUMNS}
+        member_cols[member] = list(renamed.values())
+        sub = frame.select([key, *PROB_COLUMNS]).rename(renamed)
+        joined = sub if joined is None else joined.join(sub, on=key, how="inner")
+    if joined is None or joined.height == 0:
+        raise ValueError("the three Voting-3 members share no common fold-5 parcel.")
+    joined = joined.sort(key)
+
+    all_ids = joined.get_column(key).to_list()
+    # Stack each parcel's three member rows into (n_parcels, 3, 18) for indexing.
+    per_member = [
+        joined.select(member_cols[member]).to_numpy().astype(np.float64)
+        for member in _VOTING_MEMBERS
+    ]
+    member_tensor = np.stack(per_member, axis=1)  # (n_parcels, 3, 18)
+    member_probs_by_id = {pid: member_tensor[i] for i, pid in enumerate(all_ids)}
+
+    # Learn the deployment weights: build GT + geometry over the joined parcels and
+    # fit the ensemble (CPU, scipy.optimize over the 3-simplex). The fit reuses the
+    # SAME OOF on disk via the ensemble's own loader, so the weights are identical
+    # to the published run_weighted_voting_pastis.py deployment weights.
+    gt = _build_parcel_ground_truth(all_ids)
+    geoms = _build_parcel_geometries(all_ids)
+    geoms_gdf = _geodataframe_from_wkt(geoms)
+    ensemble = WeightedVotingEnsemble(_VOTING_MEMBERS, oof_dir=_OOF_DIR, random_state=42)
+    ensemble.fit(geoms_gdf, y_true=gt)
+    weights = np.asarray(ensemble.weights, dtype=np.float64)
+
+    logger.info(
+        "classify_voting_three_loaded",
+        n_members=len(_VOTING_MEMBERS),
+        n_parcels=int(joined.height),
+        weights={
+            member: round(float(w), 4)
+            for member, w in zip(_VOTING_MEMBERS, weights, strict=True)
+        },
+    )
+    return _VotingThree(weights=weights, member_probs_by_id=member_probs_by_id)
+
+
+def _build_parcel_geometries(canonical_ids: list[str]):  # type: ignore[no-untyped-def]
+    """Build per-parcel centroid-Point geometry from PASTIS-R for the given parcels.
+
+    The Voting-3 weight learning needs a per-parcel geographic position to form the
+    spatial sub-folds of its leakage-free CV. This rebuilds the SAME centroid-Point
+    frame the EPIC 12 runner's ``build_parcel_geometries`` produces (patch centroid
+    in EPSG:4326 offset by the parcel's intra-patch pixel centroid), keyed by the
+    SAME canonical id the OOF parcels use, restricted to the patches present in
+    ``canonical_ids`` so the I/O stays bounded.
+
+    Args:
+        canonical_ids: Canonical parcel ids whose patch geometry must be built.
+
+    Returns:
+        A Polars frame with ``canonical_parcel_id`` (Utf8) + ``parcel_id`` (Int64
+        surrogate) + ``geometry`` (WKT Point in EPSG:4326).
+
+    Raises:
+        FileNotFoundError: if a required PASTIS-R raster or ``metadata.geojson`` is
+            absent (data not pulled); the caller catches this and degrades.
+    """
+    import json as _json
+
+    import polars as pl
+    from pyproj import Transformer
+    from shapely.geometry import Point, shape
+
+    from ml.utils.parcel_id import canonical_parcel_id
+    from ml.utils.parcel_reconcile import load_pastis_parcel_ids
+
+    if not _PASTIS_METADATA.exists():
+        raise FileNotFoundError(
+            f"PASTIS-R metadata.geojson not found: {_PASTIS_METADATA}."
+        )
+    meta = _json.loads(_PASTIS_METADATA.read_text(encoding="utf-8"))
+    # PASTIS-R metadata is in EPSG:2154 (Lambert-93, metres); reproject to lon/lat.
+    crs_name = meta.get("crs", {}).get("properties", {}).get("name", "EPSG:2154")
+    transformer = Transformer.from_crs(crs_name, "EPSG:4326", always_xy=True)
+    centroid_by_patch: dict[str, tuple[float, float]] = {}
+    for feature in meta["features"]:
+        pid = str(feature["properties"]["ID_PATCH"])
+        centroid = shape(feature["geometry"]).centroid
+        lon, lat = transformer.transform(float(centroid.x), float(centroid.y))
+        centroid_by_patch[pid] = (float(lon), float(lat))
+
+    patch_ids = sorted({cid.split("_")[0] for cid in canonical_ids})
+    keys: list[str] = []
+    geoms: list[str] = []
+    for pid in patch_ids:
+        cx, cy = centroid_by_patch.get(pid, (0.0, 0.0))
+        parcel_ids = load_pastis_parcel_ids(pid, _PASTIS_ROOT)
+        h, w = parcel_ids.shape
+        for local in np.unique(parcel_ids[parcel_ids != 0]):
+            ys, xs = np.where(parcel_ids == local)
+            off_x = (float(xs.mean()) / w - 0.5) * 0.01
+            off_y = (float(ys.mean()) / h - 0.5) * 0.01
+            keys.append(f"{pid}_{int(local)}")
+            geoms.append(Point(cx + off_x, cy + off_y).wkt)
+
+    frame = pl.DataFrame({"canonical_parcel_id": keys, "geometry": geoms})
+    return canonical_parcel_id(frame, col="canonical_parcel_id")
+
+
+def _geodataframe_from_wkt(frame):  # type: ignore[no-untyped-def]
+    """Convert the WKT-geometry Polars frame to a GeoDataFrame for the spatial CV.
+
+    The :class:`WeightedVotingEnsemble` spatial sub-folds need a GeoDataFrame with
+    an integer ``parcel_id`` surrogate (used by ``build_spatial_kfold``), the
+    ``canonical_parcel_id`` Utf8 key (to map back to the aligned member order) and
+    an active ``geometry`` column. This mirrors the runner's ``_geoms_for_blending``.
+
+    Args:
+        frame: Polars frame with ``canonical_parcel_id`` + ``geometry`` (WKT Point).
+
+    Returns:
+        A GeoDataFrame in EPSG:4326 with ``parcel_id`` (int surrogate),
+        ``canonical_parcel_id`` (Utf8) and an active ``geometry``.
+    """
+    import geopandas as gpd
+    from shapely import wkt as shapely_wkt
+
+    pdf = frame.to_pandas()
+    pdf["geometry"] = pdf["geometry"].map(shapely_wkt.loads)
+    gdf = gpd.GeoDataFrame(pdf, geometry="geometry", crs="EPSG:4326")
+    # Integer surrogate id required by build_spatial_kfold (the canonical id is Utf8).
+    gdf["parcel_id"] = range(len(gdf))
+    return gdf
 
 
 def _build_parcel_ground_truth(canonical_ids: list[str]):  # type: ignore[no-untyped-def]
@@ -718,34 +982,103 @@ async def _stacking_posterior(
     return posterior
 
 
+async def _voting_posterior(
+    ctx: ToolContext, inp: ClassifyParcelInput
+) -> np.ndarray | None:
+    """Try to produce the Voting-3 posterior for the parcel under ``inp.aoi``.
+
+    Resolves the parcel's bridged canonical id, loads the cached Voting-3 weighted
+    vote (learned deployment weights + per-parcel member rows) and returns its
+    ``(18,)`` posterior. Degrades CLEANLY (returns ``None``, never raises) when:
+
+    - the parcel does not resolve to the fold-5 OOF universe (a new polygon), or
+    - any member OOF, the PASTIS-R GT or the PASTIS-R geometry the weight learning
+      consumes is unavailable (DVC not pulled).
+
+    Each degradation is logged with a structured ``classify_voting3_unavailable``
+    warning so the caller can fall back to ``xgb-alphaearth`` -- it NEVER fabricates
+    a posterior (Arthur's absolute "real values only" rule).
+
+    Args:
+        ctx: Tool execution context (pool, session id).
+        inp: Validated classify arguments (AOI is used to resolve the parcel).
+
+    Returns:
+        A ``(18,)`` ``float64`` Voting-3 posterior, or ``None`` to degrade.
+    """
+    canonical_id = await _resolve_canonical_parcel_id(ctx, inp.aoi)
+    if canonical_id is None:
+        logger.warning(
+            "classify_voting3_unavailable",
+            reason="no persisted parcel resolved for the AOI; using xgb-alphaearth.",
+        )
+        return None
+
+    try:
+        voting = _load_voting_three()
+    except (FileNotFoundError, ValueError) as exc:
+        logger.warning(
+            "classify_voting3_unavailable",
+            reason="fold-5 OOF / PASTIS-R geometry or ground truth not available",
+            error=str(exc),
+        )
+        return None
+
+    posterior = voting.posterior_for_parcel(canonical_id)
+    if posterior is None:
+        logger.warning(
+            "classify_voting3_unavailable",
+            reason="parcel not in the three-member fold-5 OOF universe; "
+            "using xgb-alphaearth.",
+            canonical_parcel_id=canonical_id,
+        )
+        return None
+
+    logger.info(
+        "classify_voting3_used",
+        canonical_parcel_id=canonical_id,
+        member="voting-3",
+    )
+    return posterior
+
+
 async def run(inp: ClassifyParcelInput, ctx: ToolContext) -> ClassificationResult:
-    """Classify a parcel's crop honestly (xgb-alphaearth or Stacking-5).
+    """Classify a parcel's crop honestly (xgb-alphaearth, Voting-3 or Stacking-5).
 
     By default serves the ``xgb-alphaearth`` tabular member restricted to the
-    active label-space's resolved classes (``france-9``). With
-    ``inp.use_stacking`` the Stacking-5 posterior is used for a fold-5 parcel,
-    degrading cleanly to ``xgb-alphaearth`` when no OOF row matches or the OOF
-    artifacts are unavailable. With ``inp.restrict_to_resolved_classes=False`` the
-    full 18-class posterior is returned (legacy).
+    active label-space's resolved classes (``france-9``). The serving model is
+    selected by ``inp.resolved_model`` (``inp.model`` with the legacy
+    ``inp.use_stacking`` flag promoted to ``"stacking5"``):
+
+    - ``"voting3"`` -- the EPIC 12 weighted-vote deployment champion, used for a
+      fold-5 parcel; degrades cleanly to ``xgb-alphaearth`` when no OOF row matches
+      or the OOF / PASTIS-R geometry / GT artifacts are unavailable.
+    - ``"stacking5"`` -- the EPIC 6 Stacking-5 meta (legacy), same degradation.
+    - ``"xgb"`` -- the tabular member directly (no ensemble lookup).
+
+    With ``inp.restrict_to_resolved_classes=False`` the full 18-class posterior is
+    returned (legacy).
 
     Args:
         inp: Validated arguments (session id, AOI polygon, year, and the
-            ``restrict_to_resolved_classes`` / ``use_stacking`` / ``label_space``
-            flags).
+            ``restrict_to_resolved_classes`` / ``model`` / ``use_stacking`` /
+            ``label_space`` flags).
         ctx: Tool execution context (asyncpg pool, settings, session id).
 
     Returns:
         A :class:`ClassificationResult`. When no AlphaEarth embedding is available
         for the session's parcel (a fresh AOI), a controlled ``needs_gee_sampling``
-        result is returned instead of a guessed class -- the flags are NOT
-        evaluated before the embedding is resolved.
+        result is returned instead of a guessed class -- the model is NOT evaluated
+        before the embedding is resolved.
     """
+    requested_model = inp.resolved_model
     logger.info(
         "classify_new_parcel_started",
         session_id=str(inp.session_id),
         year=inp.year,
         geometry_type=inp.aoi.type,
         restrict=inp.restrict_to_resolved_classes,
+        model=requested_model,
         use_stacking=inp.use_stacking,
         label_space=inp.label_space,
     )
@@ -766,9 +1099,16 @@ async def run(inp: ClassifyParcelInput, ctx: ToolContext) -> ClassificationResul
 
     classifier = _load_classifier()
 
+    # Model dispatch. Voting-3 and Stacking-5 each try to serve their fold-5
+    # posterior and degrade to xgb-alphaearth (proba is None) when the parcel does
+    # not resolve or the artifacts are unavailable -- never a fabricated posterior.
     proba: np.ndarray | None = None
     member = "xgb-alphaearth"
-    if inp.use_stacking:
+    if requested_model == "voting3":
+        proba = await _voting_posterior(ctx, inp)
+        if proba is not None:
+            member = "voting-3"
+    elif requested_model == "stacking5":
         proba = await _stacking_posterior(ctx, inp)
         if proba is not None:
             member = "stacking-5"
@@ -784,6 +1124,7 @@ async def run(inp: ClassifyParcelInput, ctx: ToolContext) -> ClassificationResul
     logger.info(
         "classify_new_parcel_finished",
         session_id=str(inp.session_id),
+        requested_model=requested_model,
         member=member,
         restricted=inp.restrict_to_resolved_classes,
         n_classes=len(result.class_probabilities),

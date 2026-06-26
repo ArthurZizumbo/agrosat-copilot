@@ -139,10 +139,13 @@ TOOL_SPECS: dict[str, _ToolDescriptor] = {
         ClassifyParcelInput,
         ClassificationResult,
         False,
-        "Classify a parcel's crop. By default serves the xgb-alphaearth tabular "
-        "member restricted to the active label-space's well-resolved classes "
-        "(france-9); with use_stacking=True and cached fold-5 OOF it serves the "
-        "Stacking-5 champion posterior. Not a generic 'stacking ensemble' by default.",
+        "Classify a parcel's crop. By default (model='xgb') serves the "
+        "xgb-alphaearth tabular member restricted to the active label-space's "
+        "well-resolved classes (france-9). Set model='voting3' for the EPIC 12 "
+        "weighted-vote deployment champion (france-10 F1 0.9069), or "
+        "model='stacking5' for the legacy Stacking-5 meta; both use the cached "
+        "fold-5 OOF and degrade to xgb-alphaearth for an unresolved parcel. Not a "
+        "generic 'stacking ensemble' by default.",
     ),
     "add_aoi": (
         "ml.agent.tools.add_aoi",
