@@ -292,6 +292,9 @@ ignore = ["S101", "S301"]  # asserts ok en tests; pickle ok para ML
 # US-078: builder del notebook EDA del homologo PASTIS de Italia. Construye las
 # celdas con f-strings concatenadas largas (E501 inevitable), como los demas builders.
 "scripts/build_us078_eda_notebook.py" = ["E501"]
+# US-079: builder del notebook de evaluacion del transfer Italia + Voting-3.
+# Construye las celdas con f-strings concatenadas largas (E501 inevitable).
+"scripts/build_us079_eval_notebook.py" = ["E501"]
 # US-023-preview P4 ablation real: loop control unused (class_id muestreado
 # por enumerate solo para shuffling), lineas largas en logs MLflow + cost
 # tracking, blind-except sobre mlflow opcional (patron repo-wide).
