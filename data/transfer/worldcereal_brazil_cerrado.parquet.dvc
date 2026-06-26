@@ -1,0 +1,5 @@
+outs:
+- md5: aca0ab07c4f5ed20fecb6fe2ea81c44a
+  size: 215036
+  hash: md5
+  path: worldcereal_brazil_cerrado.parquet

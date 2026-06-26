@@ -1,0 +1,5 @@
+outs:
+- md5: 608a994e120e74ace9d5eaf4923d46d4
+  size: 3657
+  hash: md5
+  path: multiregion_paired_delta.parquet

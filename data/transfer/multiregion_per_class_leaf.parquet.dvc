@@ -1,0 +1,5 @@
+outs:
+- md5: b3f9b7ff7f3fd3425ed40f2e1cec07b6
+  size: 3277
+  hash: md5
+  path: multiregion_per_class_leaf.parquet

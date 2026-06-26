@@ -1,0 +1,5 @@
+outs:
+- md5: 43241f8c1edaf1e2f646420fb08d2964
+  size: 3273
+  hash: md5
+  path: multiregion_mexico_demo.parquet

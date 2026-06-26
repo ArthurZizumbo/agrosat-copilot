@@ -1,0 +1,5 @@
+outs:
+- md5: a28986e25f394c6ebc334723a982109a
+  size: 3019
+  hash: md5
+  path: multiregion_rescued_classes.parquet
