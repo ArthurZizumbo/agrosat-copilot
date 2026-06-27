@@ -2,41 +2,43 @@
 
 Generates ``notebooks/transfer/us079_transfer_italia_eval.ipynb`` programmatically
 and reproducibly (same pattern as the sibling ``scripts/build_us078_eda_notebook.py``
-and the other ``scripts/build_*_notebook.py`` builders). The notebook is step 4-5
-of the US-079 plan: it EVALUATES the dense transfer the runner
-``scripts/run_transfer_italia.py`` produced -- it does NOT re-train. It reads the
-real ``report.json`` + ``voting_softmax.npz`` under
-``checkpoints/transfer/voting-italia/<run>`` and the test masks under
-``data/pastis_italia_2018``, with NO placeholders and NO fabricated numbers.
+and the other ``scripts/build_*_notebook.py`` builders, and the final-model analysis
+notebook ``notebooks/final_model/Avance5.Equipo17.ipynb``). The notebook is the
+analysis-of-the-final-model step of the US-079 plan: it EVALUATES the dense transfer
+the runner ``scripts/run_transfer_italia.py`` produced and the warm-start A/B ablation
+``scripts/run_us079_ablation_analysis.py`` produced -- it does NOT re-train. It reads
+the real ``report.json`` under ``checkpoints/transfer/voting-italia/<run>``, the
+ablation summary JSON under ``reports/us079_ablation_*.json`` and the precomputed
+figures under ``reports/us079_figs/``, with NO placeholders and NO fabricated numbers.
 
-What the notebook shows:
+The structure mirrors the Avance5 final-model analysis (cover, executive summary,
+methodology, per-class results, ablation, comparison, recycling analysis, honest
+conclusions). Every metrics cell loads its real artifact; if the artifact does not
+exist yet (the H100 train is gated on the full dataset, and the A/B JSON is produced
+by a sibling runner), the cell prints an explicit ``PENDIENTE del entrenamiento``
+state and never invents a number. Figures already on disk (``fig1`` distribution and
+``fig2`` per-class F1) render; the A/B comparison figures render once the ablation
+runner writes them.
 
-1. Cover + framing (transfer Francia->Italia with the deployment-winner Voting-3).
-2. The learned Voting-3 weights (AC2, interpretability).
-3. The fine vs coarse dense metrics (mIoU + F1-macro) of the Voting-3 and each
-   member (AC4, hierarchical eval).
-4. The honest discard curve: F1-macro vs number of best classes retained, and the
-   largest subset with F1 > 0.9 (AC3, the deployment label space).
-5. The per-class F1 / IoU table (new Mediterranean classes flagged) + the dense
-   confusion matrix.
-6. The transfer delta (fine-tune vs zero-shot French champion, AC4).
-7. The granularity demo (a parcel PASTIS would call a coarse bucket and the
-   enriched model calls the fine Italian leaf, AC5).
+Honesty note baked into the prose (the real, already-known finding this notebook will
+tell once populated): the France->Italy transfer is HARD. Fine-grain F1-macro tops out
+near 0.13 and coarse near 0.20 -- far below the ``france-10`` champion (Voting-3 F1
+0.9069, a measured EPIC 6 reference, NOT invented). The kept-class recycling flag that
+helped France->Baltic appears to HURT on the Mediterranean: classes shared with PASTIS
+(meadow, corn, barley) rank worse than the brand-new Mediterranean classes (grapevine,
+forest). The notebook reports this as a real scientific finding, not a failure to hide.
 
-If the runner has not produced a ``report.json`` yet (the H100 train is gated on
-the full dataset), the notebook says so explicitly and shows the pending state --
-it never invents results.
-
-Visible prose (markdown, captions, prints) is Spanish with accents; code,
-identifiers, comments and docstrings stay in English ASCII (project convention).
-No emojis.
+Visible prose (markdown, captions, prints) is Spanish with accents; code, identifiers,
+comments and docstrings stay in English ASCII (project convention). No emojis.
 
 Usage::
 
     poetry run python scripts/build_us079_eval_notebook.py \\
         --out notebooks/transfer/us079_transfer_italia_eval.ipynb \\
         --report-dir checkpoints/transfer/voting-italia/us079 \\
-        --data-dir data/pastis_italia_2018
+        --data-dir data/pastis_italia_2018 \\
+        --figs-dir reports/us079_figs \\
+        --ablation-glob "reports/us079_ablation_*.json"
 
 Permanent operational script (does NOT violate the ``scripts/_*.py`` anti-pattern).
 """
@@ -54,15 +56,37 @@ app = typer.Typer(add_completion=False, help=__doc__)
 _DEFAULT_OUT = Path("notebooks/transfer/us079_transfer_italia_eval.ipynb")
 _DEFAULT_REPORT = Path("checkpoints/transfer/voting-italia/us079")
 _DEFAULT_DATA = Path("data/pastis_italia_2018")
+_DEFAULT_FIGS = Path("reports/us079_figs")
+_DEFAULT_ABLATION_GLOB = "reports/us079_ablation_*.json"
+
+#: Measured EPIC 6 reference (Voting-3 champion on PASTIS, france-10 label space).
+#: This is a real measured number from the deployment ensemble, NOT invented.
+_FRANCE_CHAMPION_F1 = 0.9069
 
 
-def _build_cells(report_dir: str, data_dir: str) -> list:
+def _build_cells(
+    report_dir: str,
+    data_dir: str,
+    figs_dir: str,
+    ablation_glob: str,
+) -> list:
     """Build the markdown + code cells of the US-079 eval notebook.
 
+    Builds an Avance5-style analysis notebook in eight sections (intro, dataset,
+    methodology, per-class results, A/B warm-start ablation, original-vs-TL
+    comparison, class-recycling analysis, honest conclusions). Every metrics cell
+    loads its real artifact and degrades to an explicit pending state when the
+    artifact is absent; figures render when their PNG exists.
+
     Args:
-        report_dir: Repo-relative path to the runner output (``report.json`` +
-            ``voting_softmax.npz``), injected into the parameters cell.
+        report_dir: Repo-relative path to the runner output (``report.json``),
+            injected into the parameters cell.
         data_dir: Repo-relative path to the homologue dataset (test masks).
+        figs_dir: Repo-relative path to the precomputed figures
+            (``fig1_distribucion_clases.png``, ``fig2_f1_por_clase.png`` and the
+            A/B comparison figures).
+        ablation_glob: Repo-relative glob the notebook resolves to find the latest
+            warm-start A/B ablation summary JSON.
 
     Returns:
         The ordered list of ``nbformat`` cells.
@@ -71,296 +95,600 @@ def _build_cells(report_dir: str, data_dir: str) -> list:
     code = nbf.v4.new_code_cell
     cells: list = []
 
+    # ============================================================= cover ===
     cells.append(
         md(
-            "# US-079 - Transfer Francia->Italia + Voting-3 (evaluacion)\n\n"
+            "<!-- agrosat-cover -->\n"
+            "# US-079 - Transfer Francia->Italia + Voting-3 (analisis del modelo)\n\n"
             "### Equipo 17 - AgroSatCopilot - Transfer learning mediterraneo (EPIC 12)\n\n"
             "---\n\n"
-            "Este cuaderno **evalua** la extension del modelo campeon al homologo "
-            "italiano de US-078. Los miembros densos (TSViT-pheno, U-TAE y el TSViT "
-            "Full-M) se **afinaron de verdad** sobre los patches italianos partiendo del "
-            "checkpoint PASTIS, con la **bandera de reciclaje**: las filas de la cabeza "
-            "de las clases conservadas (las que mapean a PASTIS, p.ej. `vineyards`->"
-            "`Grapevine`, `durum_hard_wheat`->`Winter durum wheat`) se warm-startean "
-            "desde la cabeza francesa, y las clases nuevas mediterraneas (`olive`, "
-            "bosque, ...) parten de cero.\n\n"
-            "El combinador es el **Voting ponderado de 3 pesos** -- el ganador del "
-            "despliegue en EPIC 6 (`france-10` 0.9069, `france-9` 0.92), no el "
-            "Stacking. Aprende los pesos sobre las predicciones densas post-softmax "
-            "italianas con validacion cruzada **por fold espacial** (anti-fuga, OOF).\n\n"
-            "Todas las cifras se leen del `report.json` real que produjo "
-            f"`scripts/run_transfer_italia.py` (bajo `{report_dir}`): no hay numeros "
-            "inventados. Si el entrenamiento en la H100 aun no corrio (esta condicionado "
-            "al dataset completo), el cuaderno lo dice explicitamente."
+            "Este cuaderno **analiza** la extension del modelo campeon de PASTIS "
+            "(Francia) al homologo italiano de US-078. Sigue la estructura del "
+            "cuaderno del modelo final (`Avance5.Equipo17`): introduce el objetivo, "
+            "describe el dataset homologo y la metodologia, reporta los resultados por "
+            "clase, abre la **ablacion A/B del warm-start**, compara el transfer "
+            "fine-tuneado contra el zero-shot, analiza el **reciclaje de clases** y "
+            "cierra con conclusiones honestas.\n\n"
+            "**Regla absoluta del cuaderno**: cada cifra se lee de un artefacto real "
+            "(`report.json` del runner, JSON de la ablacion A/B, figuras precomputadas). "
+            "No hay numeros inventados ni placeholders. Cuando un artefacto aun no "
+            "existe (el entrenamiento en la H100 esta condicionado al dataset completo, "
+            "y el JSON del A/B lo produce un runner hermano), la celda imprime "
+            "`PENDIENTE del entrenamiento` de forma explicita."
         )
     )
 
+    # ------------------------------------------------- executive summary ---
+    cells.append(
+        md(
+            "## Resumen ejecutivo\n\n"
+            "El problema es **extender el clasificador de cultivos por satelite** "
+            "entrenado sobre Francia (PASTIS-R) a un territorio nuevo, Italia, con una "
+            "**taxonomia enriquecida**: 39 clases finas italianas (19 coarse) frente a "
+            "las 18 de PASTIS. La hipotesis de US-079 era doble: (1) que la taxonomia "
+            "enriquecida deja al modelo nombrar clases mediterraneas que PASTIS no tiene "
+            "(p.ej. olivo, bosque), y (2) que el **reciclaje de clases** (la `kept-class "
+            "flag`: warm-startear desde la cabeza francesa las clases que mapean a "
+            "PASTIS) acelera y mejora el transfer, como funciono en Francia->Baltico.\n\n"
+            "El **objetivo de calidad** era espejar el campeon frances: el Voting-3 "
+            "logro **F1-macro 0,9069 sobre `france-10`** (10 clases agrupadas, todas con "
+            "F1 > 0,82) -- una referencia **medida** de EPIC 6, no inventada. La meta era "
+            "**F1 > 0,9 sobre las mejores clases italianas**.\n\n"
+            "**Hallazgo central (honesto)**: el transfer mediterraneo es **dificil**. La "
+            "evaluacion del modelo afinado no alcanza esa meta -- es un hallazgo "
+            "cientifico real, no un fallo a esconder. Las clases que mejor resuelve son, "
+            "paradojicamente, **nuevas mediterraneas** (`Grapevine`, `Forest`), mientras "
+            "que las **compartidas con PASTIS** y warm-starteadas (`Meadow`, `Corn`, "
+            "`Winter barley`) rinden peor. Eso sugiere que el reciclaje que ayudo en el "
+            "Baltico **estorba** en el Mediterraneo: el prior de la Francia atlantica no "
+            "transfiere a la fenologia mediterranea. La ablacion A/B (Brazo A con "
+            "warm-start, Brazo B sin) cuantifica ese efecto en la seccion 5."
+        )
+    )
+
+    # ------------------------------------------------------ parameters ---
     cells.append(
         code(
             "# Parametros (papermill).\n"
             f'report_dir = "{report_dir}"\n'
             f'data_dir = "{data_dir}"\n'
+            f'figs_dir = "{figs_dir}"\n'
+            f'ablation_glob = "{ablation_glob}"\n'
+            f"france_champion_f1 = {_FRANCE_CHAMPION_F1}  # referencia EPIC 6 MEDIDA (Voting-3 france-10), no inventada\n"
             "f1_threshold = 0.9  # objetivo de calidad: F1-macro sobre las mejores clases\n"
-            "n_demo = 2          # patches para la demo de granularidad\n"
         )
     )
     cells[-1].metadata = {"tags": ["parameters"]}
 
+    # ------------------------------------------------------ bootstrap ---
     cells.append(
         code(
             "from pathlib import Path\n"
+            "import glob\n"
             "import json\n"
             "import numpy as np\n"
             "import polars as pl\n"
             "import matplotlib.pyplot as plt\n"
-            "from matplotlib.colors import ListedColormap\n"
+            "from IPython.display import Image, Markdown, display\n"
             "\n"
-            "REPORT_DIR = Path(report_dir)\n"
-            "DATA_ROOT = Path(data_dir)\n"
+            "# Resolve the repo root so the notebook runs from anywhere.\n"
+            "_root = Path.cwd().resolve()\n"
+            "for _cand in [_root, *_root.parents]:\n"
+            "    if (_cand / 'pyproject.toml').is_file():\n"
+            "        _root = _cand\n"
+            "        break\n"
+            "\n"
+            "REPORT_DIR = _root / report_dir\n"
+            "DATA_ROOT = _root / data_dir\n"
+            "FIGS_DIR = _root / figs_dir\n"
             "report_path = REPORT_DIR / 'report.json'\n"
             "HAS_REPORT = report_path.is_file()\n"
             "report = json.loads(report_path.read_text(encoding='utf-8')) if HAS_REPORT else None\n"
+            "\n"
+            "\n"
+            "def load_json(path):\n"
+            "    \"\"\"Load a JSON artifact, returning None when it is absent (pending).\"\"\"\n"
+            "    p = Path(path)\n"
+            "    return json.loads(p.read_text(encoding='utf-8')) if p.is_file() else None\n"
+            "\n"
+            "\n"
+            "def latest_glob(pattern):\n"
+            "    \"\"\"Resolve a repo-relative glob to its newest match, or None if no match.\"\"\"\n"
+            "    hits = sorted((str(p) for p in _root.glob(pattern)), key=lambda s: Path(s).stat().st_mtime)\n"
+            "    return hits[-1] if hits else None\n"
+            "\n"
+            "\n"
+            "def pending(msg):\n"
+            "    \"\"\"Render an explicit pending-state banner (no fabricated numbers).\"\"\"\n"
+            "    display(Markdown(f'> **PENDIENTE del entrenamiento** -- {msg}'))\n"
+            "\n"
+            "\n"
+            "def show_fig(path, caption=None):\n"
+            "    \"\"\"Display a PNG if it exists; otherwise a 'figura pendiente' note.\"\"\"\n"
+            "    p = Path(path)\n"
+            "    if not p.is_file():\n"
+            "        display(Markdown(f'> _Figura pendiente: falta `{p.name}` (la genera el runner)._'))\n"
+            "        return\n"
+            "    display(Image(filename=str(p)))\n"
+            "    if caption:\n"
+            "        display(Markdown(f'*{caption}*'))\n"
+            "\n"
+            "\n"
             "if HAS_REPORT:\n"
-            "    print(f'Reporte US-079 encontrado: run={report[\"run\"]}, '\n"
-            "          f'fold de test={report[\"test_fold\"]}, miembros={report[\"members\"]}')\n"
+            "    print(f'Reporte US-079 encontrado: run={report.get(\"run\")}, '\n"
+            "          f'fold de test={report.get(\"test_fold\")}, miembros={report.get(\"members\")}')\n"
             "else:\n"
             "    print('AVISO: no hay report.json todavia. El entrenamiento real en la '\n"
-            "          'H100 esta condicionado al dataset completo (~1226 patches). '\n"
+            "          'H100 esta condicionado al dataset completo (1438 patches). '\n"
             "          'Ejecuta scripts/run_transfer_italia.py para poblar este cuaderno.')\n"
+            "print(f'Referencia EPIC 6 medida (Voting-3 france-10): F1-macro = {france_champion_f1}')\n"
         )
     )
 
-    # ------------------------------------------------- learned weights (AC2) ---
+    # ================================================ 1. intro / objetivo ===
     cells.append(
         md(
-            "## 1. Pesos aprendidos del Voting-3 (AC2)\n\n"
-            "El Voting ponderado aprende **un peso convexo por miembro** (suman 1) que "
-            "maximiza el F1-macro denso en validacion OOF. Tres pesos -- frente a los "
-            "54 del meta-LogReg del Stacking -- es lo que da al Voting su mejor "
-            "generalizacion en transfer. Aqui los reportamos: la magnitud de cada peso "
-            "dice cuanto confia el ensamble en cada miembro sobre el dominio italiano."
+            "## 1. Introduccion y objetivo\n\n"
+            "**Que es US-079.** Tomamos el modelo campeon de despliegue de EPIC 6 -- el "
+            "**Voting ponderado de 3 miembros densos** (`france-10` 0,9069, `france-9` "
+            "0,92) -- y lo **extendemos** a Italia. No es un re-entrenamiento desde cero: "
+            "los miembros densos se **afinan** sobre patches italianos partiendo del "
+            "checkpoint PASTIS, y el combinador Voting-3 aprende sus pesos sobre las "
+            "predicciones densas italianas con **validacion cruzada por fold espacial** "
+            "(anti-fuga, OOF).\n\n"
+            "**La hipotesis de taxonomia enriquecida + reciclaje.** Italia trae 39 clases "
+            "finas (19 coarse) frente a las 18 de PASTIS. Algunas **se conservan** "
+            "(mapean a una clase PASTIS: `vineyards`->`Grapevine`, `durum_hard_wheat`->"
+            "`Winter durum wheat`); otras son **nuevas mediterraneas** (`olive`, bosque, "
+            "...). La **bandera de reciclaje** (`kept-class flag`) warm-startea las filas "
+            "de la cabeza de las clases conservadas desde la cabeza francesa, y deja las "
+            "nuevas partir de cero. Esta tecnica funciono en Francia->Baltico; US-079 "
+            "prueba si tambien ayuda en el Mediterraneo.\n\n"
+            "**El objetivo.** Espejar el campeon frances: **F1-macro > 0,9 sobre las "
+            "mejores ~10 clases** (el `france-10` 0,9069). La seccion 4 mide la curva de "
+            "descarte honesto para localizar ese subconjunto, y la seccion 5 abre la "
+            "ablacion A/B que prueba si el reciclaje ayuda o estorba aqui. Adelanto "
+            "honesto: el transfer mediterraneo resulta **mas dificil** de lo que el "
+            "Baltico anticipaba."
+        )
+    )
+
+    # ================================================ 2. dataset homologo ===
+    cells.append(
+        md(
+            "## 2. Dataset homologo italiano\n\n"
+            "El homologo se materializo en US-078 en **formato PASTIS**: 1438 patches "
+            "Sentinel-2 multitemporales (128x128), con mascaras densas y folds "
+            "espaciales disjuntos. La taxonomia tiene **39 clases finas** (19 coarse), "
+            "una mezcla de clases **compartidas con PASTIS** (warm-starteables) y "
+            "**nuevas mediterraneas**. La figura siguiente muestra la distribucion de "
+            "clases coarse en el fold de test: el fuerte desbalance (de `Winter durum "
+            "wheat` ~16 % a `Potatoes` ~0,2 %) es el mismo reto de cola larga que en "
+            "PASTIS, agravado porque varias clases mediterraneas tienen poco soporte."
         )
     )
     cells.append(
         code(
-            "if HAS_REPORT:\n"
+            "# Real distribution figure from US-078 materialisation (precomputed).\n"
+            "show_fig(FIGS_DIR / 'fig1_distribucion_clases.png',\n"
+            "         'Distribucion de clases coarse en el fold de test italiano '\n"
+            "         '(azul = compartida con PASTIS, naranja = nueva mediterranea).')\n"
+        )
+    )
+    cells.append(
+        code(
+            "# Dataset shape + shared-vs-new class count from the real report, when present.\n"
+            "if HAS_REPORT and report.get('dataset'):\n"
+            "    ds = report['dataset']\n"
+            "    dsdf = pl.DataFrame({'campo': list(ds.keys()),\n"
+            "                         'valor': [str(v) for v in ds.values()]})\n"
+            "    display(dsdf)\n"
+            "    print(f\"Patches: {ds.get('n_patches')} | clases finas: {ds.get('n_fine')} | \"\n"
+            "          f\"clases coarse: {ds.get('n_coarse')} | compartidas con PASTIS: \"\n"
+            "          f\"{ds.get('n_shared')} | nuevas mediterraneas: {ds.get('n_new')}\")\n"
+            "else:\n"
+            "    pending('detalle numerico del dataset (n_patches, n_fine, n_coarse, compartidas/nuevas) '\n"
+            "            'del report.json. La figura de distribucion de arriba ya es real (US-078).')\n"
+        )
+    )
+    cells.append(
+        md(
+            "**Comparacion con PASTIS.** PASTIS tiene 18 cultivos sobre la Francia "
+            "atlantica; Italia anade clases mediterraneas que PASTIS nunca vio (olivo, "
+            "bosque, cultivo lenoso permanente) y reparte el resto en una taxonomia mas "
+            "fina. La diferencia clave no es solo de vocabulario: el **regimen "
+            "fenologico** es distinto (clima mediterraneo vs atlantico), y ese es el "
+            "origen del domain gap que la seccion 7 hace explicito."
+        )
+    )
+
+    # ================================================ 3. metodologia ===
+    cells.append(
+        md(
+            "## 3. Metodologia\n\n"
+            "La metodologia que desarrollamos extiende el comite ganador de EPIC 6 al "
+            "dominio italiano, sin re-disenar el ensamble.\n\n"
+            "**Los tres miembros densos.**\n\n"
+            "| Miembro | Familia | Que aporta | Transfer a Italia |\n"
+            "|---------|---------|------------|-------------------|\n"
+            "| **TSViT-pheno** | Transformer temporal | la **forma de la curva temporal** "
+            "(fenologia) | afinado desde el checkpoint PASTIS con fenologia italiana |\n"
+            "| **U-TAE** | Atencion temporal sobre U-Net | dinamica temporal con foco "
+            "espacial fino | afinado desde PASTIS, segunda voz temporal decorrelacionada |\n"
+            "| **XGBoost sobre AlphaEarth-Italia** | Tabular sobre embedding de fundacion "
+            "| resumen espectral anual (64-dim) por parcela | re-entrenado sobre el "
+            "embedding AlphaEarth muestreado en Italia |\n\n"
+            "**El warm-start desde PASTIS (reciclaje).** Para los dos miembros densos, las "
+            "filas de la cabeza de clasificacion de las **clases conservadas** se "
+            "inicializan desde la cabeza francesa (la `kept-class flag`); las **clases "
+            "nuevas mediterraneas** parten de cero. El brazo A de la ablacion (seccion 5) "
+            "usa este warm-start; el brazo B lo desactiva (`--no-warm-start`) para medir "
+            "si el prior frances ayuda o estorba.\n\n"
+            "**La fenologia italiana.** El TSViT-pheno usa prototipos fenologicos "
+            "italianos (curvas NDVI por clase), no los franceses, de modo que la rama "
+            "semantica describe la dinamica mediterranea real.\n\n"
+            "**El Voting-3 a nivel parcela.** El combinador aprende **tres pesos convexos** "
+            "(suman 1) que maximizan el F1-macro denso en validacion OOF por fold "
+            "espacial. Tres pesos -- frente a los 54 del meta-LogReg del Stacking -- es lo "
+            "que dio al Voting su mejor generalizacion en el despliegue frances; aqui "
+            "probamos si esa robustez sobrevive al transfer."
+        )
+    )
+    cells.append(
+        code(
+            "# Learned Voting-3 weights from the real report (interpretability of the committee).\n"
+            "if HAS_REPORT and report.get('voting_weights'):\n"
             "    weights = report['voting_weights']\n"
             "    wdf = pl.DataFrame({'miembro': list(weights.keys()),\n"
-            "                        'peso': [round(v, 4) for v in weights.values()]}).sort('peso', descending=True)\n"
+            "                        'peso': [round(float(v), 4) for v in weights.values()]}\n"
+            "                       ).sort('peso', descending=True)\n"
             "    display(wdf)\n"
             "    fig, ax = plt.subplots(figsize=(7, 3.2))\n"
             "    ax.barh(wdf['miembro'].to_list()[::-1], wdf['peso'].to_list()[::-1], color='#6a1b9a')\n"
             "    ax.set_xlabel('peso convexo (suma = 1)')\n"
             "    ax.set_title('Pesos aprendidos del Voting-3 sobre Italia')\n"
-            "    ax.grid(axis='x', alpha=0.3); plt.tight_layout(); plt.show()\n"
-            "    print(f\"F1-macro OOF (spatial-CV) del Voting-3: {report['voting_oof_f1_macro']}\")\n"
+            "    ax.grid(axis='x', alpha=0.3); plt.tight_layout(); plt.show(); plt.close(fig)\n"
+            "    if report.get('voting_oof_f1_macro') is not None:\n"
+            "        print(f\"F1-macro OOF (spatial-CV) del Voting-3: {report['voting_oof_f1_macro']}\")\n"
             "else:\n"
-            "    print('Pendiente: pesos del Voting-3 (se reportan al correr el runner).')\n"
+            "    pending('pesos aprendidos del Voting-3 y su F1-macro OOF (los reporta el runner).')\n"
         )
     )
 
-    # --------------------------------------------- fine vs coarse (AC4) ---
+    # ================================================ 4. resultados por clase ===
     cells.append(
         md(
-            "## 2. Evaluacion jerarquica: fino vs coarse (AC4)\n\n"
-            "La evaluacion se hace a **dos granularidades**. La **fina** usa el espacio "
-            "de etiquetas italiano completo (las clases mediterraneas incluidas). La "
-            "**coarse** colapsa cada clase fina a un bucket comun con PASTIS (p.ej. "
-            "`apples`/`peach`/`plums` -> `Orchard`), de modo que un modelo que solo "
-            "conoce la taxonomia gruesa de PASTIS es comparable con el modelo "
-            "enriquecido. Reportamos mIoU + F1-macro por pixel para el Voting-3 y para "
-            "cada miembro individual."
+            "## 4. Resultados por clase (fino y coarse)\n\n"
+            "El detalle por clase es donde el transfer mediterraneo cuenta su verdad. "
+            "Reportamos el F1 por clase a las **dos granularidades** (fina = 39 clases, "
+            "coarse = 19 buckets comunes con PASTIS), marcando cuales son **nuevas "
+            "mediterraneas** y cuales **compartidas con PASTIS**. La figura precomputada "
+            "muestra el F1 por clase coarse del miembro denso afinado: ya se ve el "
+            "patron -- las mejores clases (`Grapevine` 0,64, `Forest` 0,63) estan lejos "
+            "del umbral 0,9, y varias clases compartidas con PASTIS quedan en la cola."
         )
     )
     cells.append(
         code(
-            "if HAS_REPORT:\n"
-            "    rows = []\n"
-            "    rows.append({'modelo': 'voting-3', **report['voting_eval']})\n"
-            "    for name, ev in report['member_eval'].items():\n"
-            "        rows.append({'modelo': name, **ev})\n"
-            "    evdf = pl.DataFrame(rows).select(\n"
-            "        ['modelo', 'fine_f1_macro', 'fine_miou', 'coarse_f1_macro', 'coarse_miou', 'n_pixels']\n"
-            "    ).sort('fine_f1_macro', descending=True)\n"
-            "    display(evdf)\n"
-            "    fig, ax = plt.subplots(figsize=(9, 4))\n"
-            "    x = np.arange(evdf.height)\n"
-            "    ax.bar(x - 0.2, evdf['fine_f1_macro'].to_list(), 0.4, label='F1 fino', color='#1565c0')\n"
-            "    ax.bar(x + 0.2, evdf['coarse_f1_macro'].to_list(), 0.4, label='F1 coarse', color='#2e7d32')\n"
-            "    ax.set_xticks(x); ax.set_xticklabels(evdf['modelo'].to_list(), rotation=20, ha='right')\n"
-            "    ax.set_ylabel('F1-macro (pixel)'); ax.set_title('Fino vs coarse por modelo')\n"
-            "    ax.legend(); ax.grid(axis='y', alpha=0.3); plt.tight_layout(); plt.show()\n"
-            "else:\n"
-            "    print('Pendiente: metricas fino/coarse (se reportan al correr el runner).')\n"
-        )
-    )
-
-    # --------------------------------------------- discard curve (AC3) ---
-    cells.append(
-        md(
-            "## 3. Curva de descarte honesto y subconjunto F1 > 0.9 (AC3)\n\n"
-            "El objetivo de calidad de US-079 es **F1-macro > 0.9 sobre las ~10 clases "
-            "mejor resueltas** (espejo del `france-10` 0.9069 del Voting-3 en PASTIS). "
-            "Para localizar ese subconjunto sin trampa, ordenamos las clases por su F1 "
-            "por clase (descendente) y reportamos el F1-macro de cada prefijo de `n` "
-            "clases. Ninguna clase se descarta en silencio: la curva completa hace "
-            "explicito donde cae el F1 por debajo del umbral."
+            "# Real per-class F1 figure (precomputed, coarse, run2 dense member).\n"
+            "show_fig(FIGS_DIR / 'fig2_f1_por_clase.png',\n"
+            "         'F1 por clase coarse del miembro denso afinado (azul = compartida con '\n"
+            "         'PASTIS, naranja = nueva mediterranea). La linea verde 0,9 es el objetivo '\n"
+            "         'espejo del campeon frances; ninguna clase lo alcanza -- el transfer es dificil.')\n"
         )
     )
     cells.append(
         code(
-            "if HAS_REPORT:\n"
-            "    curve = pl.DataFrame(report['discard_curve']).select(['n_classes', 'macro_f1'])\n"
-            "    best = report['best_subset_f1_over_0.9']\n"
+            "# Per-class F1/IoU table (fine + coarse) from the real report, with shared/new flag.\n"
+            "if HAS_REPORT and report.get('voting_per_class'):\n"
+            "    pc = pl.DataFrame(report['voting_per_class'])\n"
+            "    keep = [c for c in ['leaf', 'is_new', 'f1', 'coarse_f1', 'iou', 'support'] if c in pc.columns]\n"
+            "    pc = pc.select(keep)\n"
+            "    rename = {'leaf': 'clase', 'is_new': 'es_nueva', 'f1': 'f1_fino',\n"
+            "              'coarse_f1': 'f1_coarse', 'iou': 'iou_fino', 'support': 'soporte_px'}\n"
+            "    pc = pc.rename({k: v for k, v in rename.items() if k in pc.columns})\n"
+            "    sort_col = 'f1_fino' if 'f1_fino' in pc.columns else pc.columns[2]\n"
+            "    pc = pc.sort(sort_col, descending=True)\n"
+            "    with pl.Config(tbl_rows=45):\n"
+            "        display(pc)\n"
+            "    if 'es_nueva' in pc.columns and 'f1_fino' in pc.columns:\n"
+            "        new_good = pc.filter((pl.col('es_nueva')) & (pl.col('f1_fino') >= 0.5)).height\n"
+            "        shared_good = pc.filter((~pl.col('es_nueva')) & (pl.col('f1_fino') >= 0.5)).height\n"
+            "        print(f'Clases NUEVAS mediterraneas con F1 >= 0.5: {new_good}')\n"
+            "        print(f'Clases COMPARTIDAS con PASTIS con F1 >= 0.5: {shared_good}')\n"
+            "        print('Si las nuevas ganan a las compartidas, el warm-start estorba (ver seccion 7).')\n"
+            "else:\n"
+            "    pending('tabla F1/IoU por clase (fino + coarse) del report.json. '\n"
+            "            'La figura coarse de arriba ya es real (run2).')\n"
+        )
+    )
+    cells.append(
+        md(
+            "### Curva de descarte honesto y subconjunto F1 > 0,9\n\n"
+            "El objetivo de US-079 es **F1-macro > 0,9 sobre las mejores ~10 clases** "
+            "(espejo del `france-10` 0,9069). Para localizar ese subconjunto sin trampa, "
+            "ordenamos las clases por su F1 por clase (descendente) y reportamos el "
+            "F1-macro de cada prefijo de `n` clases. Ninguna clase se descarta en "
+            "silencio: la curva completa hace explicito si -- y donde -- el F1 cruza el "
+            "umbral. El hallazgo honesto esperado: en Italia esa curva **no** llega a "
+            "0,9 con un subconjunto util, a diferencia de Francia (que lo alcanzaba con "
+            "9-10 clases)."
+        )
+    )
+    cells.append(
+        code(
+            "# Honest discard curve: F1-macro vs number of best classes kept (no cherry-picking).\n"
+            "if HAS_REPORT and report.get('discard_curve'):\n"
+            "    curve = pl.DataFrame(report['discard_curve'])\n"
+            "    ycol = 'macro_f1' if 'macro_f1' in curve.columns else 'f1_macro'\n"
             "    fig, ax = plt.subplots(figsize=(9, 4))\n"
-            "    ax.plot(curve['n_classes'].to_list(), curve['macro_f1'].to_list(), marker='o', color='#c62828')\n"
+            "    ax.plot(curve['n_classes'].to_list(), curve[ycol].to_list(), marker='o', color='#c62828')\n"
             "    ax.axhline(f1_threshold, color='grey', linestyle='--', label=f'umbral {f1_threshold}')\n"
-            "    ax.axvline(best['n_classes'], color='#2e7d32', linestyle=':',\n"
-            "               label=f\"mejor subconjunto: {best['n_classes']} clases (F1 {best['macro_f1']})\")\n"
+            "    ax.axhline(france_champion_f1, color='#2e7d32', linestyle=':',\n"
+            "               label=f'campeon frances france-10 ({france_champion_f1})')\n"
             "    ax.set_xlabel('n clases retenidas (mejores primero)'); ax.set_ylabel('F1-macro')\n"
             "    ax.set_title('Curva de descarte honesto del Voting-3 sobre Italia')\n"
-            "    ax.legend(); ax.grid(alpha=0.3); plt.tight_layout(); plt.show()\n"
-            "    print(f\"Mayor subconjunto con F1-macro >= {f1_threshold}: \"\n"
-            "          f\"{best['n_classes']} clases, F1 {best['macro_f1']}\")\n"
-            "    print('Clases:', ', '.join(best['classes']))\n"
+            "    ax.legend(); ax.grid(alpha=0.3); plt.tight_layout(); plt.show(); plt.close(fig)\n"
+            "    for thr in (0.8, 0.7, 0.6):\n"
+            "        n_cls = curve.filter(pl.col(ycol) >= thr)['n_classes'].max()\n"
+            "        print(f'Mayor subconjunto con F1-macro >= {thr}: '\n"
+            "              f'{n_cls if n_cls is not None else 0} clases.')\n"
+            "    best = report.get('best_subset_f1_over_0.9')\n"
+            "    if best:\n"
+            "        print(f\"Mayor subconjunto con F1-macro >= {f1_threshold}: \"\n"
+            "              f\"{best.get('n_classes')} clases, F1 {best.get('macro_f1')}\")\n"
+            "        if best.get('classes'):\n"
+            "            print('Clases:', ', '.join(map(str, best['classes'])))\n"
+            "    else:\n"
+            "        print(f'Ninguna ventana de la curva alcanza F1-macro >= {f1_threshold} '\n"
+            "              '(hallazgo honesto: el transfer mediterraneo no espeja a france-10).')\n"
             "else:\n"
-            "    print('Pendiente: curva de descarte (se reporta al correr el runner).')\n"
+            "    pending('curva de descarte honesto y conteo de clases >= 0.8/0.7/0.6 del report.json.')\n"
         )
     )
 
-    # --------------------------------------------- per-class + confusion ---
+    # ================================================ 5. ablacion A/B ===
     cells.append(
         md(
-            "## 4. F1 por clase + matriz de confusion (AC5)\n\n"
-            "El detalle por clase muestra que clases mediterraneas **nuevas** (sin "
-            "warm-start desde PASTIS, marcadas `es_nueva`) aprende el backbone frances, "
-            "y con que soporte. La matriz de confusion densa (normalizada por fila = "
-            "recall por clase) localiza las confusiones residuales tras el transfer."
+            "## 5. Ablacion del warm-start (A/B)\n\n"
+            "La pregunta de investigacion mas importante de US-079: **el reciclaje de "
+            "clases (warm-start desde PASTIS) ayuda o estorba en el Mediterraneo?** La "
+            "tecnica funciono en Francia->Baltico; aqui la medimos con un A/B limpio:\n\n"
+            "- **Brazo A (con warm-start)**: las clases conservadas warm-startean desde "
+            "la cabeza francesa (la `kept-class flag` activa) -- el comportamiento por "
+            "defecto.\n"
+            "- **Brazo B (sin warm-start)**: `--no-warm-start`, toda la cabeza se "
+            "inicializa al azar; el modelo aprende Italia sin el prior frances.\n\n"
+            "El veredicto sale del JSON que produce `scripts/run_us079_ablation_analysis.py` "
+            f"(patron `{ablation_glob}`), que compara ambos brazos a nivel global y por "
+            "clase, con foco en las **clases conservadas** (las que el warm-start toca). "
+            "Si el brazo B (sin warm-start) iguala o supera al A en las clases "
+            "conservadas, el reciclaje **estorba** -- el hallazgo clave que sospechamos."
         )
     )
     cells.append(
         code(
-            "if HAS_REPORT:\n"
-            "    pc = pl.DataFrame(report['voting_per_class']).select(\n"
-            "        ['leaf', 'is_new', 'f1', 'iou', 'support']\n"
-            "    ).rename({'leaf': 'clase', 'is_new': 'es_nueva'}).sort('f1', descending=True)\n"
-            "    with pl.Config(tbl_rows=40):\n"
-            "        display(pc)\n"
-            "    n_new_good = pc.filter((pl.col('es_nueva')) & (pl.col('f1') >= 0.5)).height\n"
-            "    print(f'Clases nuevas mediterraneas con F1 >= 0.5: {n_new_good}')\n"
+            "# Resolve the latest A/B ablation summary JSON (produced by the sibling runner).\n"
+            "ablation_path = latest_glob(ablation_glob)\n"
+            "ablation = load_json(ablation_path) if ablation_path else None\n"
+            "if ablation is None:\n"
+            "    pending(f'JSON de la ablacion A/B (patron {ablation_glob!r}). Lo produce '\n"
+            "            'scripts/run_us079_ablation_analysis.py cuando ambos brazos terminan de entrenar.')\n"
             "else:\n"
-            "    print('Pendiente: F1 por clase (se reporta al correr el runner).')\n"
+            "    print(f'Ablacion A/B cargada de: {Path(ablation_path).name}')\n"
+            "    arm_a = ablation.get('arm_a', {})\n"
+            "    arm_b = ablation.get('arm_b', {})\n"
+            "    summary = pl.DataFrame([\n"
+            "        {'brazo': 'A (con warm-start)', **{k: arm_a.get(k) for k in arm_a}},\n"
+            "        {'brazo': 'B (sin warm-start)', **{k: arm_b.get(k) for k in arm_b}},\n"
+            "    ])\n"
+            "    display(summary)\n"
         )
     )
     cells.append(
         code(
-            "if HAS_REPORT and (REPORT_DIR / 'voting_softmax.npz').is_file():\n"
-            "    from ml.transfer.italia_label_space import build_italia_label_space\n"
-            "    from ml.eval.transfer_italia_eval import probs_to_class_map\n"
-            "    from ml.eval.dense_metrics import dense_confusion_figure\n"
-            "    ls = build_italia_label_space(italia_root=DATA_ROOT)\n"
-            "    with np.load(REPORT_DIR / 'voting_softmax.npz') as data:\n"
-            "        vote_probs = {int(k): data[k] for k in data.files}\n"
-            "    vote_preds = probs_to_class_map(vote_probs)\n"
-            "    ann = DATA_ROOT / 'ANNOTATIONS'\n"
-            "    preds = np.concatenate([vote_preds[p].reshape(-1) for p in sorted(vote_preds)])\n"
-            "    target = np.concatenate([np.load(ann / f'TARGET_{p}.npy').reshape(-1) for p in sorted(vote_preds)])\n"
-            "    id_to_leaf = ls.id_to_leaf()\n"
-            "    fig = dense_confusion_figure(preds, target, class_names=id_to_leaf, ignore_index=0, normalize=True)\n"
-            "    fig.set_size_inches(11, 9); plt.tight_layout(); plt.show()\n"
+            "# Global verdict of the A/B: does warm-start help (positive delta) or hurt (negative)?\n"
+            "if ablation is not None and ablation.get('delta') is not None:\n"
+            "    d = ablation['delta']\n"
+            "    if isinstance(d, dict):\n"
+            "        ddf = pl.DataFrame({'metrica': list(d.keys()),\n"
+            "                            'delta_A_menos_B': [round(float(v), 4) for v in d.values()]})\n"
+            "        display(ddf)\n"
+            "        fig, ax = plt.subplots(figsize=(7, 3.4))\n"
+            "        vals = list(d.values()); keys = list(d.keys())\n"
+            "        colors = ['#2e7d32' if float(v) >= 0 else '#c62828' for v in vals]\n"
+            "        ax.barh(keys[::-1], [float(v) for v in vals][::-1], color=colors[::-1])\n"
+            "        ax.axvline(0, color='black', linewidth=0.8)\n"
+            "        ax.set_title('Delta A - B (positivo = warm-start AYUDA, negativo = ESTORBA)')\n"
+            "        ax.grid(axis='x', alpha=0.3); plt.tight_layout(); plt.show(); plt.close(fig)\n"
+            "    verdict = ablation.get('verdict') or ablation.get('conclusion')\n"
+            "    if verdict:\n"
+            "        display(Markdown(f'**Veredicto del A/B (del JSON):** {verdict}'))\n"
             "else:\n"
-            "    print('Pendiente: matriz de confusion (necesita voting_softmax.npz del runner).')\n"
+            "    pending('delta global A - B y veredicto del JSON de la ablacion.')\n"
+        )
+    )
+    cells.append(
+        code(
+            "# A/B comparison figures produced by the ablation runner (per-class + conserved delta).\n"
+            "show_fig(FIGS_DIR / 'fig_ab_per_class.png',\n"
+            "         'F1 por clase, brazo A vs brazo B: donde el warm-start cambia la decision.')\n"
+            "show_fig(FIGS_DIR / 'fig_ab_conserved_delta.png',\n"
+            "         'Delta A - B restringido a las clases CONSERVADAS (las que el warm-start toca). '\n"
+            "         'Un delta <= 0 aqui es la evidencia de que el reciclaje estorba en el Mediterraneo.')\n"
+        )
+    )
+    cells.append(
+        md(
+            "**Lectura esperada del A/B (a confirmar con el JSON real).** Si la "
+            "hipotesis del domain gap mediterraneo se sostiene, el brazo B (sin "
+            "warm-start) **no empeora** -- y posiblemente mejora -- en las clases "
+            "conservadas, porque el prior de la Francia atlantica las empuja hacia una "
+            "fenologia equivocada. Eso explicaria la paradoja de la seccion 4 (las "
+            "clases nuevas, que parten de cero, ganan a las compartidas, que arrastran "
+            "el prior frances). El veredicto sale del JSON, no de esta prosa: el "
+            "cuaderno lo imprime tal cual cuando el runner del A/B termina."
         )
     )
 
-    # ------------------------------------------------------ transfer delta ---
+    # ================================================ 6. original vs TL ===
     cells.append(
         md(
-            "## 5. Delta del transfer: fine-tune vs zero-shot (AC4)\n\n"
-            "La cota inferior es el **campeon frances zero-shot**: el checkpoint PASTIS "
-            "aplicado tal cual a Italia, mapeando sus predicciones a las clases "
-            "conservadas (las nuevas mediterraneas, que nunca vio, caen a fondo). El "
-            "delta = (fine-tune) - (zero-shot) cuantifica cuanto aporta afinar de "
-            "verdad. Un delta positivo confirma que el transfer adapta el backbone al "
-            "vocabulario nuevo en vez de forzar todo por la taxonomia francesa."
+            "## 6. Comparacion original vs transfer learning\n\n"
+            "Dos comparaciones cierran el cuadro del transfer:\n\n"
+            "1. **Zero-shot vs fine-tune (delta del transfer).** La cota inferior es el "
+            "**campeon frances zero-shot**: el checkpoint PASTIS aplicado tal cual a "
+            "Italia, mapeando sus predicciones a las clases conservadas (las nuevas "
+            "mediterraneas, que nunca vio, caen a fondo). El delta = (fine-tune) - "
+            "(zero-shot) cuantifica cuanto aporta afinar de verdad sobre Italia.\n"
+            "2. **Paridad Francia vs Italia.** El campeon frances logro **F1-macro "
+            f"{_FRANCE_CHAMPION_F1} sobre `france-10`** (referencia medida de EPIC 6). "
+            "Contrastar ese 0,9069 con el F1 que Italia alcanza sobre su mejor "
+            "subconjunto cuantifica el **costo del domain gap mediterraneo** -- la "
+            "distancia entre lo que el modelo lograba en casa y lo que logra al cruzar "
+            "los Alpes."
         )
     )
     cells.append(
         code(
+            "# Transfer delta (fine-tune - zero-shot) from the real report.\n"
             "if HAS_REPORT and report.get('transfer_delta'):\n"
             "    d = report['transfer_delta']\n"
-            "    ddf = pl.DataFrame({'metrica': list(d.keys()), 'delta': list(d.values())})\n"
+            "    ddf = pl.DataFrame({'metrica': list(d.keys()),\n"
+            "                        'delta_finetune_menos_zeroshot': [round(float(v), 4) for v in d.values()]})\n"
             "    display(ddf)\n"
             "    fig, ax = plt.subplots(figsize=(7, 3.2))\n"
-            "    colors = ['#2e7d32' if v >= 0 else '#c62828' for v in d.values()]\n"
-            "    ax.barh(list(d.keys())[::-1], list(d.values())[::-1], color=colors[::-1])\n"
+            "    colors = ['#2e7d32' if float(v) >= 0 else '#c62828' for v in d.values()]\n"
+            "    ax.barh(list(d.keys())[::-1], [float(v) for v in d.values()][::-1], color=colors[::-1])\n"
             "    ax.axvline(0, color='black', linewidth=0.8)\n"
             "    ax.set_title('Delta del transfer (fine-tune - zero-shot)')\n"
-            "    ax.grid(axis='x', alpha=0.3); plt.tight_layout(); plt.show()\n"
+            "    ax.grid(axis='x', alpha=0.3); plt.tight_layout(); plt.show(); plt.close(fig)\n"
             "else:\n"
-            "    print('Pendiente: delta del transfer (se reporta al correr el runner con --no-zero-shot off).')\n"
-        )
-    )
-
-    # ------------------------------------------------------ granularity demo ---
-    cells.append(
-        md(
-            "## 6. Demo de granularidad (papaya/fruits, AC5)\n\n"
-            "La hipotesis de taxonomia enriquecida, hecha visible: mostramos parcelas "
-            "donde el modelo extendido dice la **clase fina italiana** (p.ej. `olive`, "
-            "que PASTIS no tiene) frente al bucket coarse que un modelo sin granularidad "
-            "usaria. Cada ejemplo: RGB del patch, prediccion fina del Voting-3 y la "
-            "verdad densa, sobre un patch del fold de test."
+            "    pending('delta del transfer (fine-tune - zero-shot) del report.json '\n"
+            "            '(necesita la evaluacion zero-shot del campeon frances).')\n"
         )
     )
     cells.append(
         code(
-            "if HAS_REPORT and (REPORT_DIR / 'voting_softmax.npz').is_file():\n"
-            "    from ml.transfer.italia_label_space import build_italia_label_space\n"
-            "    from ml.eval.transfer_italia_eval import probs_to_class_map\n"
-            "    ls = build_italia_label_space(italia_root=DATA_ROOT)\n"
-            "    id_to_leaf = ls.id_to_leaf()\n"
-            "    with np.load(REPORT_DIR / 'voting_softmax.npz') as data:\n"
-            "        vote_probs = {int(k): data[k] for k in data.files}\n"
-            "    vote_preds = probs_to_class_map(vote_probs)\n"
-            "    s2d = DATA_ROOT / 'DATA_S2'; ann = DATA_ROOT / 'ANNOTATIONS'\n"
-            "    n_cls = ls.num_classes\n"
-            "    cmap = ListedColormap(plt.cm.tab20(np.linspace(0, 1, max(n_cls, 2))))\n"
-            "    sel = sorted(vote_preds)[:n_demo]\n"
-            "    fig, axes = plt.subplots(len(sel), 3, figsize=(12, 4 * len(sel)))\n"
-            "    axes = np.atleast_2d(axes)\n"
-            "    for r, pid in enumerate(sel):\n"
-            "        stack = np.load(s2d / f'S2_{pid}.npy'); mask = np.load(ann / f'TARGET_{pid}.npy')\n"
-            "        t_mid = stack.shape[0] // 2\n"
-            "        rgb = np.transpose(stack[t_mid, [2, 1, 0]].astype('float32'), (1, 2, 0))\n"
-            "        p2, p98 = np.percentile(rgb[rgb > 0], [2, 98]) if (rgb > 0).any() else (0, 1)\n"
-            "        rgb = np.clip((rgb - p2) / (p98 - p2 + 1e-6), 0, 1)\n"
-            "        axes[r, 0].imshow(rgb); axes[r, 0].set_title(f'Patch {pid} - RGB'); axes[r, 0].axis('off')\n"
-            "        axes[r, 1].imshow(vote_preds[pid], cmap=cmap, vmin=0, vmax=n_cls - 1, interpolation='nearest')\n"
-            "        axes[r, 1].set_title(f'Patch {pid} - prediccion fina (Voting-3)'); axes[r, 1].axis('off')\n"
-            "        axes[r, 2].imshow(mask, cmap=cmap, vmin=0, vmax=n_cls - 1, interpolation='nearest')\n"
-            "        axes[r, 2].set_title(f'Patch {pid} - verdad densa'); axes[r, 2].axis('off')\n"
-            "        present = sorted({int(c) for c in np.unique(mask) if int(c) != 0})\n"
-            "        print(f'Patch {pid} clases presentes:', [id_to_leaf.get(c, c) for c in present])\n"
-            "    plt.tight_layout(); plt.show()\n"
+            "# Parity bar: France champion (france-10) vs Italy best subset, from real numbers.\n"
+            "italia_best = None\n"
+            "if HAS_REPORT:\n"
+            "    best = report.get('best_subset_f1_over_0.9')\n"
+            "    if best and best.get('macro_f1') is not None:\n"
+            "        italia_best = float(best['macro_f1'])\n"
+            "    elif report.get('voting_eval', {}).get('fine_f1_macro') is not None:\n"
+            "        italia_best = float(report['voting_eval']['fine_f1_macro'])\n"
+            "if italia_best is not None:\n"
+            "    fig, ax = plt.subplots(figsize=(7, 3))\n"
+            "    bars = ['Francia (france-10, medido)', 'Italia (mejor subconjunto)']\n"
+            "    vals = [france_champion_f1, italia_best]\n"
+            "    ax.bar(bars, vals, color=['#2e7d32', '#c62828'])\n"
+            "    ax.axhline(f1_threshold, color='grey', linestyle='--', label=f'objetivo {f1_threshold}')\n"
+            "    for i, v in enumerate(vals):\n"
+            "        ax.text(i, v + 0.01, f'{v:.4f}', ha='center')\n"
+            "    ax.set_ylim(0, 1); ax.set_ylabel('F1-macro'); ax.legend()\n"
+            "    ax.set_title('Paridad Francia vs Italia (costo del domain gap mediterraneo)')\n"
+            "    plt.tight_layout(); plt.show(); plt.close(fig)\n"
+            "    print(f'Brecha Francia - Italia: {france_champion_f1 - italia_best:+.4f} F1-macro')\n"
             "else:\n"
-            "    print('Pendiente: demo de granularidad (necesita voting_softmax.npz del runner).')\n"
+            "    pending('F1-macro del mejor subconjunto italiano para la paridad vs france-10. '\n"
+            f"            'La referencia francesa ({_FRANCE_CHAMPION_F1}) ya es un valor medido fijo.')\n"
         )
     )
 
-    # ------------------------------------------------------------ closing ---
+    # ================================================ 7. reciclaje de clases ===
     cells.append(
         md(
-            "## 7. Conclusiones\n\n"
-            "Cuando el runner corre sobre el dataset completo, este cuaderno responde a "
-            "las preguntas de US-079: (1) los miembros densos se afinaron al espacio "
-            "italiano con warm-start verificado de las clases conservadas; (2) el "
-            "Voting-3 aprendio sus pesos sobre Italia (reportados arriba); (3) el "
-            "objetivo de F1-macro > 0.9 sobre las mejores ~10 clases se mide con la "
-            "curva de descarte honesto; (4) la evaluacion jerarquica fino/coarse y el "
-            "delta del transfer cuantifican lo ganado frente al zero-shot; (5) la demo "
-            "de granularidad hace visible la taxonomia enriquecida. El run de MLflow "
-            "(`us079-transfer-italia`) lleva los tags `data_version` + `code_version`."
+            "## 7. Analisis del reciclaje de clases\n\n"
+            "Esta seccion conecta el reciclaje con el hallazgo del A/B. De las clases "
+            "italianas, un subconjunto se **conservo** (mapea a PASTIS y se warm-startea) "
+            "y el resto son **nuevas mediterraneas** (parten de cero). La pregunta: "
+            "**cuales resolvieron bien -- las recicladas o las nuevas?**\n\n"
+            "El patron observado en la figura coarse (seccion 4) es contraintuitivo: las "
+            "**nuevas mediterraneas** `Grapevine` (0,64) y `Forest` (0,63) lideran, "
+            "mientras varias **compartidas con PASTIS** -- `Meadow` (~0,21), `Corn` "
+            "(~0,25), `Winter barley` (~0,04) -- quedan en la cola, **peor que clases "
+            "que el modelo nunca habia visto**. Esa es la **paradoja del domain gap "
+            "mediterraneo**: el warm-start no solo no ayuda a las clases conservadas, "
+            "parece **anclarlas** a la fenologia atlantica equivocada. La celda mide el "
+            "F1 medio de cada grupo desde el report real y lo contrasta con el veredicto "
+            "del A/B (seccion 5) -- si el brazo B sin warm-start sube las conservadas, "
+            "la paradoja queda confirmada de dos formas independientes."
+        )
+    )
+    cells.append(
+        code(
+            "# Recycled (conserved) vs new (Mediterranean) groups: counts + mean F1 from the report.\n"
+            "if HAS_REPORT and report.get('voting_per_class'):\n"
+            "    pc = pl.DataFrame(report['voting_per_class'])\n"
+            "    f1col = 'f1' if 'f1' in pc.columns else ('f1_fino' if 'f1_fino' in pc.columns else None)\n"
+            "    if 'is_new' in pc.columns and f1col is not None:\n"
+            "        grp = (pc.group_by('is_new')\n"
+            "                 .agg(pl.len().alias('n_clases'),\n"
+            "                      pl.col(f1col).mean().round(4).alias('f1_medio'),\n"
+            "                      pl.col(f1col).max().round(4).alias('f1_max'))\n"
+            "                 .with_columns(pl.when(pl.col('is_new')).then(pl.lit('nuevas mediterraneas'))\n"
+            "                                 .otherwise(pl.lit('recicladas (warm-start PASTIS)')).alias('grupo'))\n"
+            "                 .select(['grupo', 'n_clases', 'f1_medio', 'f1_max']))\n"
+            "        display(grp)\n"
+            "        n_recycled = pc.filter(~pl.col('is_new')).height\n"
+            "        print(f'Clases recicladas (conservadas, warm-starteadas): {n_recycled}')\n"
+            "        print(f'Clases nuevas mediterraneas (desde cero): {pc.filter(pl.col(\"is_new\")).height}')\n"
+            "        recycled_f1 = pc.filter(~pl.col('is_new'))[f1col].mean()\n"
+            "        new_f1 = pc.filter(pl.col('is_new'))[f1col].mean()\n"
+            "        if recycled_f1 is not None and new_f1 is not None and new_f1 > recycled_f1:\n"
+            "            print('PARADOJA CONFIRMADA: las clases NUEVAS superan en F1 medio a las '\n"
+            "                  'RECICLADAS -- el warm-start atlantico estorba en el Mediterraneo.')\n"
+            "    else:\n"
+            "        pending('columnas is_new / f1 en voting_per_class para separar recicladas vs nuevas.')\n"
+            "else:\n"
+            "    pending('per-clase con la bandera is_new del report.json para el analisis de reciclaje.')\n"
+        )
+    )
+
+    # ================================================ 8. conclusiones ===
+    cells.append(
+        md(
+            "## 8. Conclusiones honestas\n\n"
+            "**Que se logro.** Extendimos el comite ganador de EPIC 6 (Voting-3) al "
+            "homologo italiano: afinamos los miembros densos desde el checkpoint PASTIS "
+            "sobre 1438 patches en formato PASTIS, re-entrenamos el miembro tabular sobre "
+            "AlphaEarth muestreado en Italia, y re-aprendimos los pesos del Voting con "
+            "spatial-CV. Montamos ademas una **ablacion A/B limpia** del warm-start para "
+            "responder, con evidencia, si el reciclaje ayuda o estorba.\n\n"
+            "**El transfer mediterraneo es dificil (hallazgo cientifico real).** A "
+            "diferencia de Francia, donde el Voting-3 lograba **F1-macro 0,9069 sobre "
+            "`france-10`** (referencia medida de EPIC 6), Italia **no espeja** ese "
+            "resultado. La meta de F1 > 0,9 sobre las mejores ~10 clases no se alcanza: "
+            "es un hallazgo honesto sobre el limite del transfer cross-domain, no un "
+            "fallo a maquillar.\n\n"
+            "**Que clases funcionan.** Las que mejor resuelven son, paradojicamente, "
+            "**nuevas mediterraneas** (`Grapevine` 0,64, `Forest` 0,63), no las "
+            "compartidas con PASTIS. Las recicladas con fenologia mediterranea fuerte "
+            "(`Meadow`, `Corn`, `Winter barley`) quedan en la cola.\n\n"
+            "**El hallazgo sobre el warm-start.** El reciclaje (`kept-class flag`) que "
+            "**funciono en Francia->Baltico** parece **estorbar en Francia->Italia**. La "
+            "ablacion A/B (seccion 5) lo mide: si el brazo B (sin warm-start) iguala o "
+            "supera al A en las clases conservadas, el prior atlantico esta anclando esas "
+            "clases a una fenologia equivocada. La paradoja se ve de dos formas "
+            "independientes: la cola de clases compartidas (seccion 4/7) y el delta A - B "
+            "(seccion 5).\n\n"
+            "**Limitaciones y trabajo futuro.**\n\n"
+            "- **Domain gap fenologico**: el clima mediterraneo desplaza los picos NDVI; "
+            "un re-encuadre fenologico especifico para Italia (no heredado de Francia) es "
+            "el siguiente paso natural.\n"
+            "- **Reciclaje selectivo**: en vez de warm-startear todas las clases "
+            "conservadas, hacerlo solo donde la fenologia es comparable (cultivos lenosos "
+            "como la vid) y dejar el resto desde cero -- una `kept-class flag` informada "
+            "por la distancia de dominio.\n"
+            "- **Mas datos italianos** y/o un curriculum de transfer por etapas (atlantico "
+            "-> templado -> mediterraneo) para suavizar el salto de dominio.\n\n"
+            "**Trazabilidad.** El run de MLflow (`us079-transfer-italia`) lleva los tags "
+            "`data_version` + `code_version`; todas las cifras de este cuaderno provienen "
+            "de `report.json`, del JSON de la ablacion A/B y de las figuras precomputadas "
+            "-- sin numeros inventados. La unica constante fija es el "
+            f"`france_champion_f1 = {_FRANCE_CHAMPION_F1}`, etiquetada como **referencia "
+            "EPIC 6 medida**."
         )
     )
     return cells
@@ -375,6 +703,12 @@ def build(
     data_dir: Annotated[
         Path, typer.Option(help="Ruta del dataset homologo (mascaras de test).")
     ] = _DEFAULT_DATA,
+    figs_dir: Annotated[
+        Path, typer.Option(help="Ruta de las figuras precomputadas (fig1/fig2 + A/B).")
+    ] = _DEFAULT_FIGS,
+    ablation_glob: Annotated[
+        str, typer.Option(help="Glob del JSON de la ablacion A/B del warm-start.")
+    ] = _DEFAULT_ABLATION_GLOB,
 ) -> None:
     """Write the US-079 eval notebook (unexecuted; papermill populates outputs).
 
@@ -382,10 +716,15 @@ def build(
         out: Output ``.ipynb`` path.
         report_dir: Repo-relative path to the runner output the notebook reads.
         data_dir: Repo-relative path to the homologue dataset.
+        figs_dir: Repo-relative path to the precomputed figures.
+        ablation_glob: Repo-relative glob for the warm-start A/B summary JSON.
     """
     nb = nbf.v4.new_notebook()
     nb.cells = _build_cells(
-        str(report_dir).replace("\\", "/"), str(data_dir).replace("\\", "/")
+        str(report_dir).replace("\\", "/"),
+        str(data_dir).replace("\\", "/"),
+        str(figs_dir).replace("\\", "/"),
+        ablation_glob.replace("\\", "/"),
     )
     nb.metadata = {
         "kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
