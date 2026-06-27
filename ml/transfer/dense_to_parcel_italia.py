@@ -299,10 +299,20 @@ def load_eurocrops_parcel_rasters(
 
     name_to_id = load_italia_label_space(italia_root)
     bboxes = load_patch_bboxes(italia_root)
+    # CRITICAL (US-079 vote-join bug): ``canonical_parcel_id`` is assigned by
+    # ``parcels_in_patches`` as a GLOBAL running row index over EVERY in-patch
+    # parcel of the frame it receives. Filtering ``bboxes`` to ``patch_ids`` BEFORE
+    # that call would re-enumerate the seqs over a smaller universe, so the SAME
+    # physical polygon gets a DIFFERENT id than the ``xgb-alphaearth-italia`` member
+    # (which always runs ``parcels_in_patches`` over the FULL metadata) -> the
+    # per-parcel join collapses to a handful of spurious seq collisions (run2 voted
+    # over 32 parcels instead of ~22k). FIX: ALWAYS build the parcels over the FULL
+    # metadata so the canonical ids match the xgb 1:1, then keep only the rasters of
+    # the requested patches AFTER rasterisation.
+    parcels = parcels_in_patches(bboxes, name_to_id)
     if patch_ids is not None:
         keep = set(int(p) for p in patch_ids)
         bboxes = bboxes.filter(pl.col("patch_id").is_in(list(keep)))
-    parcels = parcels_in_patches(bboxes, name_to_id)
 
     rasters: dict[int, tuple[np.ndarray, dict[int, str]]] = {}
     for row in bboxes.iter_rows(named=True):
