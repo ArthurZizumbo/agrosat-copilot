@@ -171,6 +171,10 @@ class DenseFineTuneConfig:
     pheno_prototypes: Path | None = None
     lambda_contrast: float = 0.1
     val_fraction: float = 0.2
+    #: US-079 A/B ablation: warm-start the conserved head rows from PASTIS (the
+    #: kept-class flag). Set ``False`` to init every row randomly and test whether
+    #: the Atlantic-France prior hurts the conserved classes on the Mediterranean.
+    warm_start: bool = True
 
 
 @dataclass
@@ -316,6 +320,7 @@ def build_italia_finetune_model(
     pastis_checkpoint: Path,
     n_timesteps: int = 10,
     device: str = "cuda",
+    warm_start: bool = True,
 ) -> nn.Module:
     """Build the dense model with an Italian head, backbone init from PASTIS.
 
@@ -417,13 +422,20 @@ def build_italia_finetune_model(
         n_classes_new=k_new,
     )
 
-    _warm_start_dense_head(
-        model,
-        pastis_state,
-        label_space=label_space,
-        head_kind=head_kind,
-        pastis_class_names=pastis_head_ids,
-    )
+    if warm_start:
+        _warm_start_dense_head(
+            model,
+            pastis_state,
+            label_space=label_space,
+            head_kind=head_kind,
+            pastis_class_names=pastis_head_ids,
+        )
+    else:
+        # US-079 A/B ablation: skip the kept-class flag so EVERY head row starts at
+        # its random init. Tests the hypothesis that the PASTIS (Atlantic France)
+        # prior HURTS the conserved classes in the Mediterranean domain (the
+        # observed paradox: conserved classes underperform the new ones).
+        logger.info("italia_warm_start_skipped", model_kind=model_kind)
 
     model.to(device)
     return model
@@ -838,6 +850,7 @@ def run_italia_finetune(
         pastis_checkpoint=pastis_ckpt,
         n_timesteps=config.n_timesteps,
         device=device,
+        warm_start=config.warm_start,
     )
     ignore_index = label_space.background_id if config.ignore_background else -100
 

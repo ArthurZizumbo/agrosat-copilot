@@ -113,6 +113,7 @@ def _member_finetune(
         lambda_contrast=args.lambda_contrast,
         val_fraction=args.val_fraction,
         seed=args.seed,
+        warm_start=not args.no_warm_start,
     )
     # The Full-M member shares the tsvit-pheno builder but inits from the Full-M
     # checkpoint; the L4 member inits from tsvit-pheno-v1.
@@ -323,6 +324,13 @@ def main() -> None:
         type=float,
         default=0.1,
         help="Weight of the phenology contrastive term (TSViT-pheno only); 0 = off.",
+    )
+    parser.add_argument(
+        "--no-warm-start",
+        action="store_true",
+        help="US-079 A/B ablation: init every head row randomly (skip the "
+        "kept-class flag) to test whether the Atlantic-France prior hurts the "
+        "conserved classes in the Mediterranean domain.",
     )
     parser.add_argument(
         "--val-fraction",
