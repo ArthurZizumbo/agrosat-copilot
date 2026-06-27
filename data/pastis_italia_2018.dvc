@@ -1,6 +1,6 @@
 outs:
-- md5: 195795287a61a3c6f1a7b2d1cefabd94.dir
-  size: 174348704
-  nfiles: 64
+- md5: fa81b5f717b6c2a3ffe2601bdfc49fba.dir
+  size: 11567101421
+  nfiles: 4318
   hash: md5
   path: pastis_italia_2018
