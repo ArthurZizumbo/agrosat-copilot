@@ -175,6 +175,10 @@ class DenseFineTuneConfig:
     #: kept-class flag). Set ``False`` to init every row randomly and test whether
     #: the Atlantic-France prior hurts the conserved classes on the Mediterranean.
     warm_start: bool = True
+    #: US-079 no-transfer baseline: when ``True`` load NOTHING from PASTIS (neither
+    #: backbone nor head) and train Italy entirely from scratch with the same
+    #: methodology. Isolates the contribution of the France->Italy transfer.
+    from_scratch: bool = False
 
 
 @dataclass
@@ -321,6 +325,7 @@ def build_italia_finetune_model(
     n_timesteps: int = 10,
     device: str = "cuda",
     warm_start: bool = True,
+    from_scratch: bool = False,
 ) -> nn.Module:
     """Build the dense model with an Italian head, backbone init from PASTIS.
 
@@ -402,6 +407,18 @@ def build_italia_finetune_model(
         pastis_head_ids = dict(pastis_names)
     else:
         raise ValueError(f"unsupported model_kind {model_kind!r}")
+
+    if from_scratch:
+        # US-079 no-transfer baseline: build the SAME architecture/methodology
+        # (Italian phenology prototypes, weighted CE, cosine schedule, Voting-3) but
+        # load NOTHING from PASTIS -- neither backbone nor head. Every parameter
+        # keeps its random init, so the model learns Italy entirely from scratch.
+        # This isolates how much the France->Italy transfer actually contributes vs
+        # training directly on Italy with the developed pipeline. ``from_scratch``
+        # implies no warm-start (there is no PASTIS head to copy).
+        logger.info("italia_from_scratch_no_pastis", model_kind=model_kind, n_total=len(model.state_dict()))
+        model.to(device)
+        return model
 
     spec = CHECKPOINT_REGISTRY[spec_key]
     loaded = torch.load(pastis_checkpoint, map_location="cpu", weights_only=False)
@@ -850,7 +867,8 @@ def run_italia_finetune(
         pastis_checkpoint=pastis_ckpt,
         n_timesteps=config.n_timesteps,
         device=device,
-        warm_start=config.warm_start,
+        warm_start=config.warm_start and not config.from_scratch,
+        from_scratch=config.from_scratch,
     )
     ignore_index = label_space.background_id if config.ignore_background else -100
 

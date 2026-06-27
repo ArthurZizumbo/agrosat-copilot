@@ -114,6 +114,7 @@ def _member_finetune(
         val_fraction=args.val_fraction,
         seed=args.seed,
         warm_start=not args.no_warm_start,
+        from_scratch=args.from_scratch,
     )
     # The Full-M member shares the tsvit-pheno builder but inits from the Full-M
     # checkpoint; the L4 member inits from tsvit-pheno-v1.
@@ -331,6 +332,14 @@ def main() -> None:
         help="US-079 A/B ablation: init every head row randomly (skip the "
         "kept-class flag) to test whether the Atlantic-France prior hurts the "
         "conserved classes in the Mediterranean domain.",
+    )
+    parser.add_argument(
+        "--from-scratch",
+        action="store_true",
+        help="US-079 no-transfer baseline: load NOTHING from PASTIS (neither "
+        "backbone nor head); train Italy from scratch with the same methodology "
+        "(Italian phenology, weighted CE, cosine, Voting-3). Isolates how much the "
+        "France->Italy transfer contributes. Implies --no-warm-start.",
     )
     parser.add_argument(
         "--val-fraction",
