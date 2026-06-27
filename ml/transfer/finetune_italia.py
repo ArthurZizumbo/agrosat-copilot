@@ -416,7 +416,11 @@ def build_italia_finetune_model(
         # This isolates how much the France->Italy transfer actually contributes vs
         # training directly on Italy with the developed pipeline. ``from_scratch``
         # implies no warm-start (there is no PASTIS head to copy).
-        logger.info("italia_from_scratch_no_pastis", model_kind=model_kind, n_total=len(model.state_dict()))
+        logger.info(
+            "italia_from_scratch_no_pastis",
+            model_kind=model_kind,
+            n_total=len(model.state_dict()),
+        )
         model.to(device)
         return model
 
