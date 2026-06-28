@@ -91,7 +91,7 @@ def _trigger_shutdown(reason: str) -> None:
         # Daemon de control de VM: comando fijo de apagado (no input de usuario).
         cmd = ["sudo", "shutdown", "-h", "+1", reason]
         subprocess.run(cmd, check=False, timeout=10)  # noqa: S603
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - best-effort shutdown: never re-raise
         log.error("shutdown_failed", exc_info=str(exc))
 
 

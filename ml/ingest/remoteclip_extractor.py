@@ -191,7 +191,7 @@ def _row_to_array(row: dict[str, Any]) -> np.ndarray:
     shape = row.get("shape")
     if isinstance(img, np.ndarray):
         arr = img
-    elif isinstance(img, (bytes, bytearray)):
+    elif isinstance(img, bytes | bytearray):
         arr = np.frombuffer(img, dtype=np.float32).copy()
         if shape:
             arr = arr.reshape(tuple(int(s) for s in shape))

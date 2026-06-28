@@ -296,7 +296,7 @@ def _summarize(report_dict: dict[str, Any], *, n_embedding_dims: int) -> DriftSu
         if name.startswith("ValueDrift"):
             column = str(config.get("column", name))
             n_columns += 1
-            pvalue = float(value) if isinstance(value, (int, float)) else None
+            pvalue = float(value) if isinstance(value, int | float) else None
             column_pvalues[column] = pvalue
             drifted = pvalue is not None and pvalue < _COLUMN_PVALUE_THRESHOLD
             column_drift[column] = drifted
@@ -307,7 +307,7 @@ def _summarize(report_dict: dict[str, Any], *, n_embedding_dims: int) -> DriftSu
             # (~0.5 == indistinguishable clouds == no drift). We keep the raw
             # score and derive a verdict against a documented threshold instead
             # of trusting truthiness of a float.
-            if isinstance(value, (int, float)):
+            if isinstance(value, int | float):
                 embedding_mmd_score = float(value)
                 embedding_drift = embedding_mmd_score > _EMBEDDING_MMD_DRIFT_THRESHOLD
             continue

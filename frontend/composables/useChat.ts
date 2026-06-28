@@ -21,6 +21,7 @@
 import type { AgentEvent, ChatRequest, LlmVariant } from "~/types/agent";
 import { useChatStore } from "~/stores/chat";
 import { useMapStore } from "~/stores/map";
+import { useSessionsStore } from "~/stores/sessions";
 
 /** Retry tuning (US-057 D3). */
 const MAX_RETRIES = 3;
@@ -128,7 +129,8 @@ function backoffDelayMs(attempt: number): number {
 export function useChat() {
   const store = useChatStore();
   const mapStore = useMapStore();
-  const { ensureSession, apiUrl } = useSession();
+  const sessionsStore = useSessionsStore();
+  const { apiUrl } = useSession();
   const { locale } = useI18n();
 
   let abort: AbortController | null = null;
@@ -146,9 +148,34 @@ export function useChat() {
     if (!trimmed || store.isBusy) return;
     if (!import.meta.client) return;
 
-    store.startUserTurn(trimmed);
+    // The active chat tab IS the backend session (US-080). It is created on app
+    // open by useSessions.ensureActiveSession, so it is always set here.
+    const sessionId = sessionsStore.activeId;
+    if (!sessionId) return;
 
-    const sessionId = ensureSession();
+    // Title an untitled tab from its first user turn (local + server, so the
+    // session list shows it from any browser). The PATCH is best-effort.
+    if (store.messages.length === 0) {
+      const snippet = trimmed.length > 32 ? `${trimmed.slice(0, 32)}…` : trimmed;
+      sessionsStore.renameTab(sessionId, snippet);
+      // Best-effort server PATCH so the session list shows the title from any
+      // browser. Referenced via globalThis so the unit tests (no Nuxt $fetch)
+      // simply skip it instead of throwing.
+      const patchFetch = (
+        globalThis as unknown as {
+          $fetch?: (url: string, opts: unknown) => Promise<unknown>;
+        }
+      ).$fetch;
+      if (typeof patchFetch === "function") {
+        void patchFetch(apiUrl(`/sessions/${sessionId}`), {
+          method: "PATCH",
+          headers: { "X-Session-ID": sessionId },
+          body: { title: snippet },
+        }).catch(() => {});
+      }
+    }
+
+    store.startUserTurn(trimmed);
 
     // History already includes the just-added user turn (assistant turns are
     // appended lazily once deltas stream, so they are not in the request yet).
@@ -253,7 +280,7 @@ export function useChat() {
     signal: AbortSignal,
     receivedDeltaBefore: boolean,
   ): Promise<ReadOutcome> {
-    const sessionId = body.session_id ?? ensureSession();
+    const sessionId = body.session_id ?? sessionsStore.activeId ?? "";
 
     const res = await fetch(apiUrl("/chat"), {
       method: "POST",

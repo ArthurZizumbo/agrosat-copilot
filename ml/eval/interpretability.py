@@ -222,7 +222,7 @@ def _normalize_shap_multiclass(
         ValueError: if the output does not match any of the known shapes.
     """
     # Explanation object -> extract .values and recurse.
-    if hasattr(raw, "values") and not isinstance(raw, (list, tuple, np.ndarray)):
+    if hasattr(raw, "values") and not isinstance(raw, list | tuple | np.ndarray):
         return _normalize_shap_multiclass(
             np.asarray(raw.values, dtype=np.float64),
             n_samples=n_samples,
@@ -230,7 +230,7 @@ def _normalize_shap_multiclass(
         )
 
     # List/tuple of 2D arrays, one per class.
-    if isinstance(raw, (list, tuple)):
+    if isinstance(raw, list | tuple):
         per_class = [np.asarray(arr, dtype=np.float64) for arr in raw]
         if not per_class:
             raise ValueError("`shap_values` returned an empty list.")

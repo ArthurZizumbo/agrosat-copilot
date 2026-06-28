@@ -62,10 +62,10 @@ def session_id_key(request: Request) -> str:
     Returns:
         The ``X-Session-ID`` value, or the remote address when it is missing.
     """
-    header = request.headers.get(SESSION_ID_HEADER)
+    header: str | None = request.headers.get(SESSION_ID_HEADER)
     if header and header.strip():
         return header.strip()
-    return get_remote_address(request)
+    return str(get_remote_address(request))
 
 
 def build_limiter(settings: Settings) -> Limiter:

@@ -86,7 +86,11 @@
     "preview_answer": "Ejemplo: en esta área se detectaron 3 parcelas. Predominan viñedo y olivar, con muy buen vigor vegetativo (NDVI medio 0,59).",
     "close": "Cerrar chat",
     "toggle": "Abrir o cerrar el chat",
-    "expand": "Expandir o reducir el chat"
+    "expand": "Expandir o reducir el chat",
+    "new_chat": "Nuevo chat",
+    "close_chat": "Cerrar chat",
+    "tabs_label": "Pestañas de chat",
+    "tab_default": "Chat {n}"
   },
   "map": {
     "label": "Mapa de parcelas",

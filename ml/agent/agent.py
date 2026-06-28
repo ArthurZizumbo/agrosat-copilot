@@ -539,7 +539,7 @@ class Agent:
         """
         jsonable: dict[str, Any] = {}
         for key, value in args.items():
-            if isinstance(value, (str, int, float, bool, type(None), list, dict)):
+            if isinstance(value, str | int | float | bool | type(None) | list | dict):
                 jsonable[key] = value
             else:
                 jsonable[key] = str(value)

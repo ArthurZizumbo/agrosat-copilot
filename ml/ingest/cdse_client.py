@@ -299,13 +299,13 @@ def _bbox_from_footprint(footprint: Any) -> tuple[float, float, float, float]:
 
     def _walk(node: Any) -> None:
         if (
-            isinstance(node, (list, tuple))
+            isinstance(node, list | tuple)
             and len(node) == 2
-            and all(isinstance(x, (int, float)) for x in node)
+            and all(isinstance(x, int | float) for x in node)
         ):
             lons.append(float(node[0]))
             lats.append(float(node[1]))
-        elif isinstance(node, (list, tuple)):
+        elif isinstance(node, list | tuple):
             for child in node:
                 _walk(child)
 

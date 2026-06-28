@@ -56,7 +56,7 @@ def is_gcs_auth_error(exc: BaseException) -> bool:
             RefreshError,
         )
 
-        if isinstance(exc, (DefaultCredentialsError, GoogleAuthError, RefreshError)):
+        if isinstance(exc, DefaultCredentialsError | GoogleAuthError | RefreshError):
             return True
     except ImportError:  # pragma: no cover
         pass
@@ -68,7 +68,7 @@ def is_gcs_auth_error(exc: BaseException) -> bool:
             Unauthenticated,
         )
 
-        if isinstance(exc, (Forbidden, NotFound, PermissionDenied, Unauthenticated)):
+        if isinstance(exc, Forbidden | NotFound | PermissionDenied | Unauthenticated):
             return True
     except ImportError:  # pragma: no cover
         pass

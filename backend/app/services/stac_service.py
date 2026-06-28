@@ -103,7 +103,7 @@ def _normalise_collection(raw: object, limit: int) -> dict:
     """
     if raw is None:
         return _empty_collection()
-    decoded = json.loads(raw) if isinstance(raw, (str, bytes)) else raw
+    decoded = json.loads(raw) if isinstance(raw, str | bytes) else raw
     if not isinstance(decoded, dict):
         return _empty_collection()
     collection: dict = decoded

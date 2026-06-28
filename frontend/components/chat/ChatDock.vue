@@ -23,6 +23,13 @@ const { messages, perceiverNotes, toolCalls, findings, status, llmVariant } =
 const { previewActive } = storeToRefs(mapStore);
 
 const { sendMessage, switchLlm, dispose } = useChat();
+const { ensureActiveSession } = useSessions();
+
+// On open, guarantee a valid active session (create the first one, or restore
+// the persisted active tab + its transcript) before the user can chat.
+onMounted(() => {
+  void ensureActiveSession();
+});
 
 const isBusy = computed(
   () => status.value === "dispatching" || status.value === "streaming",
@@ -110,6 +117,9 @@ onBeforeUnmount(() => {
         </button>
       </div>
     </header>
+
+    <!-- Chat tabs: one tab per session, each with its own transcript + map AOI -->
+    <ChatTabs />
 
     <!-- Preview banner -->
     <div

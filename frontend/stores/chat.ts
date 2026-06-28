@@ -320,6 +320,34 @@ export const useChatStore = defineStore("chat", {
     },
 
     /**
+     * Replace the transcript with a session's history loaded from the server
+     * (US-080). Called on tab switch; maps the persisted `{role, content,
+     * created_at}` rows to renderable `ChatMessage`s (user/assistant only; the
+     * transient perceiver/tool state is not persisted). Resets first so no turn
+     * from the previous tab leaks in.
+     */
+    loadMessages(
+      serverMessages: Array<{
+        id: number;
+        role: string;
+        content: string;
+        created_at: string;
+      }>,
+    ) {
+      this.reset();
+      this.messages = serverMessages
+        .filter((m) => m.role === "user" || m.role === "assistant")
+        .map((m) => ({
+          id: `srv-${m.id}`,
+          role: m.role as "user" | "assistant",
+          text: m.content,
+          citations: [],
+          createdAt: Date.parse(m.created_at) || Date.now(),
+        }));
+      this.status = "idle";
+    },
+
+    /**
      * Load a local sample assistant turn + findings (no transport). Used by the
      * empty-state "see example" button to showcase the FindingCard design. The
      * reducer and event contract are untouched; this only seeds renderable
@@ -356,8 +384,13 @@ export const useChatStore = defineStore("chat", {
   // in useSession. SSR-safe: `localStorage()` is a no-op on the server, so the
   // persisted state never reaches the server render and the store hydrates from
   // localStorage on the client only -- that is what avoids a hydration mismatch.
+  // US-080: the transcript is NO LONGER persisted here -- it lives in Postgres
+  // (chat_messages) and is reloaded per active session via `loadMessages` on tab
+  // switch. Only the display-only LLM variant is kept client-side. This also
+  // removes the SSR/localStorage message mismatch that left streamed text
+  // unpainted before the ClientOnly fix.
   persist: {
     storage: piniaPluginPersistedstate.localStorage(),
-    pick: ["messages", "llmVariant"],
+    pick: ["llmVariant"],
   },
 });

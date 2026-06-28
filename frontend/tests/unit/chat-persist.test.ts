@@ -7,15 +7,13 @@ import { useChatStore } from "~/stores/chat";
 // Exercises the REAL persistence path of the chat store. The Nuxt module wires
 // `pinia-plugin-persistedstate` onto Pinia at runtime; here we install the same
 // plugin (`createPersistedState`) and mount Pinia on a Vue app so its store
-// plugins actually run (plugins only fire for stores created on an app-installed
-// pinia). The store's own `persist` block (pick: ["messages","llmVariant"],
-// localStorage backend) then runs unchanged. The storage adapter comes from the
-// `piniaPluginPersistedstate` global shim (tests/setup), which reads/writes the
-// in-memory `localStorage` — a genuine serialise -> store -> read -> hydrate
-// round-trip, not a stubbed behaviour.
+// plugins actually run.
 //
-// Writes are flushed by the plugin's detached `$subscribe`, which runs on the
-// Vue scheduler microtask, so the write assertions `await nextTick()` first.
+// US-080: the transcript is NO LONGER persisted to localStorage -- it lives in
+// Postgres (chat_messages) and is reloaded per active session via
+// `loadMessages`. Only the display-only `llmVariant` is persisted client-side.
+// These tests assert that contract (messages are NOT written/rehydrated) and
+// that `loadMessages` restores a server transcript into the store.
 
 const STORE_KEY = "chat"; // defineStore("chat", ...) -> default persist key.
 
@@ -37,39 +35,27 @@ afterEach(() => {
   globalThis.localStorage.clear();
 });
 
-describe("chatStore persistence (pick: messages, llmVariant)", () => {
-  it("rehydrates messages + llmVariant from localStorage on creation", () => {
-    // Seed storage as the plugin serialises it: only the picked keys.
+describe("chatStore persistence (pick: llmVariant only; transcript is server-side)", () => {
+  it("rehydrates llmVariant only; messages in storage are ignored", () => {
+    // Seed storage with both a (legacy) messages array and llmVariant. Only the
+    // picked key (llmVariant) must hydrate; messages must NOT come back.
     globalThis.localStorage.setItem(
       STORE_KEY,
       JSON.stringify({
-        messages: [
-          { id: "user-1", role: "user", text: "hello", createdAt: 1 },
-          {
-            id: "assistant-1",
-            role: "assistant",
-            text: "hi there",
-            citations: [],
-            createdAt: 2,
-          },
-        ],
+        messages: [{ id: "user-1", role: "user", text: "stale", createdAt: 1 }],
         llmVariant: "qwen35",
       }),
     );
 
     mountPinia();
-    // Creating the store triggers hydration from the seeded storage.
     const store = useChatStore();
 
-    expect(store.messages).toHaveLength(2);
-    expect(store.messages[1]?.text).toBe("hi there");
     expect(store.llmVariant).toBe("qwen35");
-    // Transient state is NOT persisted, so it starts clean.
-    expect(store.toolCalls).toHaveLength(0);
-    expect(store.status).toBe("idle");
+    // The transcript is no longer persisted -> not rehydrated from storage.
+    expect(store.messages).toHaveLength(0);
   });
 
-  it("persists only the picked keys after a turn (not transient state)", async () => {
+  it("persists only llmVariant after a turn (messages + transient excluded)", async () => {
     mountPinia();
     const store = useChatStore();
     store.startUserTurn("how are my parcels?");
@@ -84,29 +70,34 @@ describe("chatStore persistence (pick: messages, llmVariant)", () => {
     expect(raw).not.toBeNull();
     const saved = JSON.parse(raw as string);
 
-    // Durable conversation state is written.
-    expect(saved.messages).toHaveLength(2);
+    // Only the display-only variant is persisted now.
     expect(saved.llmVariant).toBe("gemini");
-    // Transient per-turn state is excluded (would be wrong to rehydrate).
+    // The transcript and transient per-turn state are NOT persisted.
+    expect(saved).not.toHaveProperty("messages");
     expect(saved).not.toHaveProperty("toolCalls");
     expect(saved).not.toHaveProperty("findings");
     expect(saved).not.toHaveProperty("status");
     expect(saved).not.toHaveProperty("activeAssistantId");
   });
 
-  it("round-trips: a saved store rehydrates into a fresh store instance", async () => {
+  it("loadMessages restores a server transcript into the store", () => {
     mountPinia();
-    const first = useChatStore();
-    first.startUserTurn("ping");
-    first.applyEvent({ type: "text_delta", text: "pong" });
-    first.applyEvent({ type: "done" });
-    first.setLlmVariant("qwen35");
-    await nextTick();
+    const store = useChatStore();
+    store.loadMessages([
+      { id: 1, role: "user", content: "ping", created_at: "2026-06-28T10:00:00Z" },
+      {
+        id: 2,
+        role: "assistant",
+        content: "pong",
+        created_at: "2026-06-28T10:00:05Z",
+      },
+      // A persisted system/grounding row (if any) is not shown as a turn.
+      { id: 3, role: "system", content: "grounding", created_at: "2026-06-28T10:00:06Z" },
+    ]);
 
-    // A fresh app+pinia reading the same localStorage simulates a page reload.
-    mountPinia();
-    const reloaded = useChatStore();
-    expect(reloaded.lastAssistant?.text).toBe("pong");
-    expect(reloaded.llmVariant).toBe("qwen35");
+    expect(store.messages).toHaveLength(2);
+    expect(store.messages[0]).toMatchObject({ role: "user", text: "ping" });
+    expect(store.lastAssistant?.text).toBe("pong");
+    expect(store.status).toBe("idle");
   });
 });

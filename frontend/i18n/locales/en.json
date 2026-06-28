@@ -86,7 +86,11 @@
     "preview_answer": "Example: 3 parcels were detected in this area. Vineyard and olive grove predominate, with strong vegetation vigour (mean NDVI 0.59).",
     "close": "Close chat",
     "toggle": "Open or close chat",
-    "expand": "Expand or collapse chat"
+    "expand": "Expand or collapse chat",
+    "new_chat": "New chat",
+    "close_chat": "Close chat",
+    "tabs_label": "Chat tabs",
+    "tab_default": "Chat {n}"
   },
   "map": {
     "label": "Parcels map",

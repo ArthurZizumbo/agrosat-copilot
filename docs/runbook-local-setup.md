@@ -193,19 +193,18 @@ URLs:
 
 ---
 
-## 9. Registrar la sesión del chat (necesario una vez)
+## 9. Sesiones de chat (automáticas, US-080)
 
-El frontend **mintea** su `session_id` (UUID) en el cliente y lo guarda en una cookie `agrosat-session-id`. **No existe `POST /sessions`**, así que esa sesión no está en la BD y el `/chat` responde **403** (`chat_session_forbidden`) hasta que la insertes.
+Ya **no hay que crear la sesión a mano**. Al abrir el frontend, el cliente llama a **`POST /sessions`** y registra la sesión en la BD automáticamente (`useSessions.ensureActiveSession`). Además:
 
-1. Abre el frontend (http://localhost:3001), abre DevTools → Application → Cookies → copia el valor de `agrosat-session-id` (un UUID). Alternativa: míralo en los logs del backend tras intentar chatear (`session_id=...`).
-2. Inserta la fila (como superusuario `agrosat`, que bypasea RLS):
+- **Múltiples chats en pestañas**: el switcher arriba del panel permite crear (+), cambiar y cerrar (x) chats; cada pestaña es **su propia sesión** con su propio historial.
+- **Historial en Postgres**: cada turno (user + assistant) se persiste en `chat_messages` y se restaura al cambiar de pestaña o recargar (`GET /sessions/{id}/messages`).
+- **Mapa aislado por chat**: la zona dibujada (AOI) se guarda por sesión; marcar una zona en el Chat 1 no afecta al Chat 2.
+- **Pestañas desde el servidor (sin auth)**: al abrir, el front llama `GET /sessions` con un `X-User-ID` **estable** (`local-user`, constante mientras no haya auth) y reconstruye las pestañas desde la BD — así los chats se recuperan en cualquier navegador de este despliegue. El listado respeta RLS vía la función `list_chat_sessions(user_id)` (`SECURITY DEFINER`). Cuando entre Clerk, basta cambiar ese id constante por el id real del usuario.
 
-```bash
-docker compose --env-file .env.local exec -T postgres psql -U agrosat -d agrosat -c \
-"INSERT INTO chat_sessions (id, user_id, llm_model) VALUES ('<TU-UUID>', 'demo@agrosat.dev', 'gemini') ON CONFLICT (id) DO NOTHING;"
-```
+> Requiere la migración `20260628120000_create_chat_messages` aplicada (tabla `chat_messages` + `chat_sessions.title`). Si clonas limpio: `dbmate up` (o aplica el bloque `migrate:up` con psql como el resto del runbook).
 
-A partir de ahí el chat funciona (la cookie persiste 1 año). Repite solo si cambias de navegador/borras cookies.
+El INSERT manual de antes **ya no es necesario**.
 
 ---
 
