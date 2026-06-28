@@ -227,7 +227,7 @@ En los logs del backend deberías ver `classify_new_parcel_embedding_resolved so
 
 ---
 
-## 9. Troubleshooting (problemas que ya resolvimos)
+## 11. Troubleshooting (problemas que ya resolvimos)
 
 | Síntoma | Causa | Solución |
 |---|---|---|
@@ -251,6 +251,8 @@ Para que el flujo "buscar → si no está, descargar de GEE" y el resto funcione
 
 - `ml/ingest/gee_sampler.py` → nueva `sample_alphaearth_aoi_mean(...)` (muestreo AlphaEarth de un AOI vía Earth Engine).
 - `ml/agent/tools/classify.py` → fallback que, si no hay embedding persistido que intersecte el AOI, **descarga** el embedding de GEE antes de caer a `needs_gee_sampling`.
+- `backend/app/services/chat_service.py` → en `_agent_messages`, la observación del perceiver se inyecta con una directiva explícita ("el usuario ya seleccionó el AOI; responde con esta observación; no pidas dibujar"); sin esto, el reasoner respondía "dibuja el área" pese a tener una clasificación válida.
+- `frontend/layouts/default.vue` → `<ChatDock>` envuelto en `<ClientOnly>`. El store del chat persiste en `localStorage` (`pick: ["messages"]`); con SSR el servidor renderizaba el transcript vacío y el cliente hidrataba con mensajes → **hydration mismatch** que dejaba el texto del asistente (streaming `text_delta`) **sin pintar** aunque sí llegaba al store. `ClientOnly` elimina el desajuste.
 - `docker-compose.yml` → `command` del `api` corregido a `uvicorn backend.app.main:app` (solo relevante si algún día se corre el api en Docker con el stack ml).
 
 ## Apéndice B — Sin GPU (CPU)

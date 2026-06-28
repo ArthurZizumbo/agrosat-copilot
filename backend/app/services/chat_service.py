@@ -375,7 +375,20 @@ class ChatService:
         if locale is not None:
             history.append({"role": "system", "content": _LOCALE_INSTRUCTION[locale]})
         if observation is not None:
-            history.append({"role": "system", "content": observation.to_prompt_block()})
+            # Frame the perceiver block so the reasoner treats it as the answer
+            # source for the area the user already selected, instead of asking the
+            # user to draw an AOI that is in fact already provided (B: the reasoner
+            # was replying "draw the area" despite a valid observation).
+            grounding = (
+                "El usuario ya selecciono un area de interes (AOI) en el mapa y el "
+                "perceiver del equipo la observo. Responde la pregunta del usuario "
+                "USANDO esta observacion como fuente; NO pidas que dibuje el area, "
+                "porque ya esta seleccionada. Reporta la clase de cultivo estimada y "
+                "su confianza tal cual; si la confianza es baja, advierte que es una "
+                "estimacion preliminar, pero igualmente da la clase.\n\n"
+                f"{observation.to_prompt_block()}"
+            )
+            history.append({"role": "system", "content": grounding})
         history.extend({"role": m.role, "content": m.content} for m in messages)
         return history
 
