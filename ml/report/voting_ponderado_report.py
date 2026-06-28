@@ -40,10 +40,24 @@ __all__ = [
 
 #: semantic18 id ``c`` corresponds to PASTIS class ``c + 1`` (Background dropped).
 SEMANTIC18_NAMES: tuple[str, ...] = (
-    "Meadow", "Soft winter wheat", "Corn", "Winter barley", "Winter rapeseed",
-    "Spring barley", "Sunflower", "Grapevine", "Beet", "Winter triticale",
-    "Winter durum wheat", "Fruits/veg/flowers", "Potatoes", "Leguminous fodder",
-    "Soybeans", "Orchard", "Mixed cereal", "Sorghum",
+    "Meadow",
+    "Soft winter wheat",
+    "Corn",
+    "Winter barley",
+    "Winter rapeseed",
+    "Spring barley",
+    "Sunflower",
+    "Grapevine",
+    "Beet",
+    "Winter triticale",
+    "Winter durum wheat",
+    "Fruits/veg/flowers",
+    "Potatoes",
+    "Leguminous fodder",
+    "Soybeans",
+    "Orchard",
+    "Mixed cereal",
+    "Sorghum",
 )
 
 #: The nine best-resolved semantic18 ids (the deployed france-9 label-space).
@@ -53,7 +67,11 @@ FRANCE_10_IDS: tuple[int, ...] = tuple(sorted((*FRANCE_9_IDS, 10)))
 
 _VOTE3_MEMBERS: tuple[str, ...] = ("tsvit-pheno", "utae", "xgb-alphaearth")
 _STACK5_MEMBERS: tuple[str, ...] = (
-    "tsvit-pheno", "utae", "xgb-alphaearth", "farslip-ft18", "farslip-zeroshot",
+    "tsvit-pheno",
+    "utae",
+    "xgb-alphaearth",
+    "farslip-ft18",
+    "farslip-zeroshot",
 )
 
 
@@ -98,7 +116,10 @@ def _restrict(labels: np.ndarray, proba18: np.ndarray, kept: tuple[int, ...]):
 
 
 def build_voting_report(
-    oof_dir: Path, pastis_root: Path, *, random_state: int = 42,
+    oof_dir: Path,
+    pastis_root: Path,
+    *,
+    random_state: int = 42,
 ) -> VotingReport:
     """Fit the vote + stacking champions and build the comparison tables.
 
@@ -137,9 +158,9 @@ def build_voting_report(
         return EnsembleModel.compute_metrics(labels, preds, ignore_index=None)
 
     # --- Weighted vote (3 members) -------------------------------------------
-    vote3 = WeightedVotingEnsemble(
-        _VOTE3_MEMBERS, oof_dir=oof_dir, random_state=random_state
-    ).fit(geoms_gdf, y_true=gt)
+    vote3 = WeightedVotingEnsemble(_VOTE3_MEMBERS, oof_dir=oof_dir, random_state=random_state).fit(
+        geoms_gdf, y_true=gt
+    )
     v_ids = vote3._member_ids
     v_labels = _aligned_labels(v_ids, gt)
     v_proba = vote3.predict_proba()
@@ -194,13 +215,15 @@ def build_voting_report(
         _, vote_f1 = _restrict(v_labels, v_proba, kept)
         _, stack_f1 = _restrict(stack5_labels, stack5_proba, kept)
         support = np.bincount(v_labels, minlength=18)
-        return pl.DataFrame({
-            "clase": [SEMANTIC18_NAMES[c] for c in kept],
-            "support": [int(support[c]) for c in kept],
-            "Voting-3": [round(vote_f1[c], 3) for c in kept],
-            "Stacking-5": [round(stack_f1[c], 3) for c in kept],
-            "delta": [round(vote_f1[c] - stack_f1[c], 3) for c in kept],
-        })
+        return pl.DataFrame(
+            {
+                "clase": [SEMANTIC18_NAMES[c] for c in kept],
+                "support": [int(support[c]) for c in kept],
+                "Voting-3": [round(vote_f1[c], 3) for c in kept],
+                "Stacking-5": [round(stack_f1[c], 3) for c in kept],
+                "delta": [round(vote_f1[c] - stack_f1[c], 3) for c in kept],
+            }
+        )
 
     perclass_fr9 = _perclass(FRANCE_9_IDS)
     perclass_fr10 = _perclass(FRANCE_10_IDS)
@@ -211,9 +234,7 @@ def build_voting_report(
     pred_by_parcel = {
         cid: int(pred) + 1 for cid, pred in zip(v_ids, vote_pred18.tolist(), strict=True)
     }
-    weights = {
-        m: round(float(w), 4) for m, w in zip(_VOTE3_MEMBERS, vote3.weights, strict=True)
-    }
+    weights = {m: round(float(w), 4) for m, w in zip(_VOTE3_MEMBERS, vote3.weights, strict=True)}
 
     logger.info(
         "voting_report_built",

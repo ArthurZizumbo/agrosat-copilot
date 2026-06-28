@@ -402,16 +402,25 @@ class ClassifyParcelInput(BaseModel):
     """Arguments for ``classify_new_parcel`` (honest per-parcel crop classifier).
 
     By default this serves the ``xgb-alphaearth`` tabular member (one of the five
-    EPIC 6 stacking members), NOT a generic "stacking ensemble". Two independent
-    flags refine that:
+    EPIC 6 stacking members), NOT a generic "stacking ensemble". The active model
+    is selected by ``model`` (and the back-compat ``use_stacking`` flag), and two
+    independent flags refine the posterior:
 
+    - ``model`` (default ``"xgb"``) picks the serving model for a parcel already
+      materialized in the cached fold-5 OOF: ``"xgb"`` (the tabular member, the
+      historical default), ``"voting3"`` (the real EPIC 12 deployment champion --
+      the weighted soft-vote of ``tsvit-pheno`` + ``utae`` + ``xgb-alphaearth``,
+      france-10 F1 0.9069 > Stacking-5 0.8927) or ``"stacking5"`` (the EPIC 6
+      Stacking-5 meta, kept as LEGACY). Any model that cannot resolve the parcel
+      (a fresh polygon) or whose OOF artifacts are unavailable degrades cleanly to
+      ``xgb-alphaearth`` with a structured warning -- never a fabricated posterior.
     - ``restrict_to_resolved_classes`` (default ON) masks the posterior down to
       the well-resolved classes of ``label_space`` (``france-9`` by default, the
       nine classes with the highest F1 OOF fold-5) and renormalizes. This trades
       18-class breadth for honesty about which classes the model resolves.
-    - ``use_stacking`` (default OFF) serves the Stacking-5 champion posterior for
-      a parcel already materialized in the cached fold-5 OOF; a new polygon with
-      no OOF (or absent OOF artifacts) degrades cleanly to ``xgb-alphaearth``.
+    - ``use_stacking`` (default OFF) is the LEGACY selector kept for back-compat:
+      when ``True`` and ``model`` is left at its default ``"xgb"``, it is treated
+      as ``model="stacking5"``. Prefer ``model`` for new callers.
 
     Attributes:
         session_id: Tenant session.
@@ -420,9 +429,15 @@ class ClassifyParcelInput(BaseModel):
         restrict_to_resolved_classes: When ``True`` (default) the posterior is
             masked + renormalized over the active label-space's resolved classes;
             when ``False`` the full 18-class posterior is returned.
-        use_stacking: When ``True`` serve the Stacking-5 posterior for a fold-5
-            parcel (cached OOF), degrading to ``xgb-alphaearth`` when no OOF row
-            matches or the OOF artifacts are unavailable. Default ``False``.
+        model: Serving model for a fold-5 parcel: ``"xgb"`` (default tabular
+            member), ``"voting3"`` (EPIC 12 weighted-vote champion) or
+            ``"stacking5"`` (EPIC 6 Stacking-5 meta, legacy). Each degrades cleanly
+            to ``xgb-alphaearth`` when it cannot resolve the parcel or its OOF
+            artifacts are unavailable.
+        use_stacking: LEGACY back-compat flag. When ``True`` and ``model`` is at
+            its default ``"xgb"``, it is promoted to ``model="stacking5"`` (so the
+            Stacking-5 posterior is served for a fold-5 parcel). Ignored when
+            ``model`` is set explicitly to a non-default value. Default ``False``.
         label_space: Name of the registered label-space whose resolved classes
             gate the posterior when ``restrict_to_resolved_classes`` is on
             (default ``"france-9"``; EPIC 12 US-074 will register more).
@@ -434,8 +449,26 @@ class ClassifyParcelInput(BaseModel):
     aoi: GeoJSONGeometry
     year: int = 2019
     restrict_to_resolved_classes: bool = True
+    model: Literal["xgb", "voting3", "stacking5"] = "xgb"
     use_stacking: bool = False
     label_space: str = "france-9"
+
+    @property
+    def resolved_model(self) -> str:
+        """Resolve the effective serving model from ``model`` + ``use_stacking``.
+
+        ``model`` is authoritative. The legacy ``use_stacking`` flag is honoured
+        only when ``model`` is left at its default ``"xgb"`` (so an old caller
+        passing ``use_stacking=True`` still gets the Stacking-5 posterior), and is
+        otherwise ignored. This keeps the historical behaviour intact while letting
+        new callers select ``"voting3"`` / ``"stacking5"`` explicitly.
+
+        Returns:
+            One of ``"xgb"``, ``"voting3"`` or ``"stacking5"``.
+        """
+        if self.model == "xgb" and self.use_stacking:
+            return "stacking5"
+        return self.model
 
     @field_validator("year")
     @classmethod

@@ -1,0 +1,5 @@
+outs:
+- md5: a05dc35a6123b330c49e4043a9b452a0
+  size: 221584
+  hash: md5
+  path: phenology_class_prototypes_italia.parquet

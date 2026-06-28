@@ -138,8 +138,11 @@ def run_stacking5_tl(
             from ml.transfer.ensemble_full_tl import _load_region_parcels
 
             return _load_region_parcels(
-                region, max_parcels=10_000, seed=config.seed,
-                stratify_keep=keep, per_class=config.per_class,
+                region,
+                max_parcels=10_000,
+                seed=config.seed,
+                stratify_keep=keep,
+                per_class=config.per_class,
                 patch_side=patch_side,
             )
         from ml.transfer.ensemble_texture_tl import (
@@ -148,9 +151,15 @@ def run_stacking5_tl(
         )
 
         return _load_region_texture(
-            region, sh_client=sh_client, windows=build_season_windows(2021),
-            max_parcels=10_000, size=128, max_cloud=25.0, seed=config.seed,
-            stratify_keep=keep, per_class=config.per_class,
+            region,
+            sh_client=sh_client,
+            windows=build_season_windows(2021),
+            max_parcels=10_000,
+            size=128,
+            max_cloud=25.0,
+            seed=config.seed,
+            stratify_keep=keep,
+            per_class=config.per_class,
         )
 
     reg_src = _load(config.source)
@@ -168,7 +177,9 @@ def run_stacking5_tl(
     n_classes = len(label_space.leaves)
     logger.info(
         "stacking5_data_ready",
-        n_train=len(p_src), n_test=len(p_tgt), n_classes=n_classes,
+        n_train=len(p_src),
+        n_test=len(p_tgt),
+        n_classes=n_classes,
     )
     _persist(
         "01_data",
@@ -182,7 +193,12 @@ def run_stacking5_tl(
     # --- 2a. Dense members: fine-tune each, then per-parcel posterior. ------------
     for kind in config.dense_members:
         model = _finetune_dense_member(
-            kind, label_space, p_src, y_src, config, device=config.device,
+            kind,
+            label_space,
+            p_src,
+            y_src,
+            config,
+            device=config.device,
         )
         member_post_src[kind] = _dense_posteriors(model, p_src, kind, config, n_classes)
         member_post_tgt[kind] = _dense_posteriors(model, p_tgt, kind, config, n_classes)
@@ -219,11 +235,12 @@ def run_stacking5_tl(
     np.savez_compressed(
         out_dir / "02_posteriors.npz",
         members=np.array(members, dtype=object),
-        post_src=post_src_stack, post_tgt=post_tgt_stack,
-        y_src=y_src, y_tgt=y_tgt,
+        post_src=post_src_stack,
+        post_tgt=post_tgt_stack,
+        y_src=y_src,
+        y_tgt=y_tgt,
     )
-    logger.info("stacking5_posteriors_persisted", members=members,
-                shape=list(post_tgt_stack.shape))
+    logger.info("stacking5_posteriors_persisted", members=members, shape=list(post_tgt_stack.shape))
 
     id_to_leaf = {i: leaf for leaf, i in label_space.index.items()}
     true_leaves = [id_to_leaf[t] for t in y_tgt.tolist()]
@@ -248,9 +265,11 @@ def run_stacking5_tl(
     wvote_leaves = _leaves(np.tensordot(vote_w, post_tgt_stack, axes=(0, 0)).argmax(axis=1))
     svote_leaves = _leaves(post_tgt_stack.mean(axis=0).argmax(axis=1))
     weighted_vote_metrics = _fc_metrics(
-        true_leaves, wvote_leaves, FINE_TO_COARSE, label_space.leaf_to_pastis)
+        true_leaves, wvote_leaves, FINE_TO_COARSE, label_space.leaf_to_pastis
+    )
     simple_vote_metrics = _fc_metrics(
-        true_leaves, svote_leaves, FINE_TO_COARSE, label_space.leaf_to_pastis)
+        true_leaves, svote_leaves, FINE_TO_COARSE, label_space.leaf_to_pastis
+    )
 
     # Per-member solo F1 (how good each member alone is on the target) for context.
     member_solo = {
@@ -301,8 +320,13 @@ def run_stacking5_tl(
 
 
 def _finetune_dense_member(
-    kind: str, label_space: object, patches: list[np.ndarray], y: np.ndarray,
-    config: Stacking5TLConfig, *, device: str,
+    kind: str,
+    label_space: object,
+    patches: list[np.ndarray],
+    y: np.ndarray,
+    config: Stacking5TLConfig,
+    *,
+    device: str,
 ) -> object:
     """Fine-tune one dense member (PASTIS init + kept flag) on the Baltic train set."""
     import torch
@@ -311,7 +335,10 @@ def _finetune_dense_member(
     from ml.transfer.finetune_baltico import build_finetune_model
 
     model = build_finetune_model(
-        label_space, model_kind=kind, pastis_checkpoint=_CKPT[kind], device=device,  # type: ignore[arg-type]
+        label_space,
+        model_kind=kind,
+        pastis_checkpoint=_CKPT[kind],
+        device=device,  # type: ignore[arg-type]
     )
     criterion = nn.CrossEntropyLoss()
 
@@ -343,8 +370,11 @@ def _finetune_dense_member(
 
     for n, p in model.named_parameters():
         p.requires_grad = _is_head(n)
-    _run_epochs(torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=1e-3),
-                config.warmup_epochs, "warmup")
+    _run_epochs(
+        torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=1e-3),
+        config.warmup_epochs,
+        "warmup",
+    )
     for p in model.parameters():
         p.requires_grad = True
     head = [p for n, p in model.named_parameters() if _is_head(n)]
@@ -353,14 +383,18 @@ def _finetune_dense_member(
         torch.optim.AdamW(
             [{"params": head, "lr": 1e-3}, {"params": back, "lr": 1e-4}], weight_decay=1e-4
         ),
-        config.finetune_epochs, "finetune",
+        config.finetune_epochs,
+        "finetune",
     )
     return model
 
 
 def _dense_posteriors(
-    model: object, patches: list[np.ndarray], kind: str,
-    config: Stacking5TLConfig, n_classes: int,
+    model: object,
+    patches: list[np.ndarray],
+    kind: str,
+    config: Stacking5TLConfig,
+    n_classes: int,
 ) -> np.ndarray:
     """Per-parcel softmax posterior ``(n, K)`` from a fine-tuned dense member."""
     import torch
@@ -370,9 +404,7 @@ def _dense_posteriors(
     model.eval()  # type: ignore[attr-defined]
     with torch.no_grad():
         for s in range(0, len(patches), config.batch_size):
-            xb = torch.from_numpy(
-                np.stack(patches[s : s + config.batch_size])
-            ).float().to(device)
+            xb = torch.from_numpy(np.stack(patches[s : s + config.batch_size])).float().to(device)
             t = xb.shape[1]
             if kind == "utae":
                 frac = torch.arange(t, device=device).float() / max(t - 1, 1)
@@ -386,8 +418,11 @@ def _dense_posteriors(
 
 
 def _xgb_posteriors(
-    a_src: np.ndarray, y_src: np.ndarray, a_tgt: np.ndarray,
-    n_classes: int, seed: int,
+    a_src: np.ndarray,
+    y_src: np.ndarray,
+    a_tgt: np.ndarray,
+    n_classes: int,
+    seed: int,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Champion XGBoost on the AlphaEarth embedding -> per-parcel posteriors."""
     from ml.train.baseline import _XGB_BASE_PARAMS, build_estimator
@@ -409,8 +444,11 @@ def _xgb_posteriors(
 
 
 def _farslip_posteriors(
-    p_src: list[np.ndarray], y_src: np.ndarray, p_tgt: list[np.ndarray],
-    n_classes: int, config: Stacking5TLConfig,
+    p_src: list[np.ndarray],
+    y_src: np.ndarray,
+    p_tgt: list[np.ndarray],
+    n_classes: int,
+    config: Stacking5TLConfig,
 ) -> tuple[np.ndarray, np.ndarray]:
     """FarSLIP per-parcel posteriors via class-prototype cosine (captions Gemini).
 
@@ -443,8 +481,12 @@ def _simplex(raw: np.ndarray) -> np.ndarray:
 
 
 def _learn_vote_weights(
-    post_src_stack: np.ndarray, y_src: np.ndarray, *, seed: int,
-    n_restarts: int = 6, max_iter: int = 400,
+    post_src_stack: np.ndarray,
+    y_src: np.ndarray,
+    *,
+    seed: int,
+    n_restarts: int = 6,
+    max_iter: int = 400,
 ) -> np.ndarray:
     """Learn convex weights maximizing source F1-macro of the weighted vote.
 
@@ -487,7 +529,9 @@ def _learn_vote_weights(
     best_raw, best_neg = None, np.inf
     for x0 in starts:
         res = minimize(
-            neg_f1, x0, method="Nelder-Mead",
+            neg_f1,
+            x0,
+            method="Nelder-Mead",
             options={"maxiter": max_iter, "xatol": 1e-4, "fatol": 1e-4},
         )
         if float(res.fun) < best_neg:
@@ -498,8 +542,10 @@ def _learn_vote_weights(
 
 
 def _fc_metrics(
-    true_leaves: list[str], pred_leaves: list[str],
-    fine_to_coarse: dict[str, str], leaf_to_pastis: dict[str, str],
+    true_leaves: list[str],
+    pred_leaves: list[str],
+    fine_to_coarse: dict[str, str],
+    leaf_to_pastis: dict[str, str],
 ) -> dict[str, float]:
     """Fine + collapsed-to-coarse macro-F1 / accuracy for one combiner's preds."""
     from sklearn.metrics import accuracy_score, f1_score

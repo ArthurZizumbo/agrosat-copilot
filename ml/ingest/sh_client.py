@@ -50,7 +50,16 @@ _TOKEN_URL: str = (
 #: The 10 PASTIS-R bands (surface reflectance) in the order the dense models read
 #: them. Matches ``ml.transfer.ensemble_full_tl._PASTIS_BANDS``.
 PASTIS_BANDS: tuple[str, ...] = (
-    "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B8A", "B11", "B12",
+    "B02",
+    "B03",
+    "B04",
+    "B05",
+    "B06",
+    "B07",
+    "B08",
+    "B8A",
+    "B11",
+    "B12",
 )
 
 #: Evalscript returning the 10 PASTIS bands as FLOAT32 surface reflectance. The
@@ -60,13 +69,12 @@ _EVALSCRIPT: str = (
     "//VERSION=3\n"
     "function setup(){return {input:["
     + ",".join(f'"{b}"' for b in PASTIS_BANDS)
-    + '],output:{bands:'
+    + "],output:{bands:"
     + str(len(PASTIS_BANDS))
     + ',sampleType:"FLOAT32"}};}\n'
-    "function evaluatePixel(s){return ["
-    + ",".join(f"s.{b}" for b in PASTIS_BANDS)
-    + "];}"
+    "function evaluatePixel(s){return [" + ",".join(f"s.{b}" for b in PASTIS_BANDS) + "];}"
 )
+
 
 def _orbit_evalscript(n_frames: int) -> str:
     """Build a multi-temporal evalscript that returns ``n_frames`` x 10 bands.
@@ -107,8 +115,8 @@ def _orbit_evalscript(n_frames: int) -> str:
             out_terms.append(f"({clear}?samples[{f}].{b}:0)")
     return (
         "//VERSION=3\n"
-        f"function setup(){{return {{input:[{{bands:[{bands_in},\"SCL\"]}}],"
-        f"output:{{bands:{total},sampleType:\"FLOAT32\"}},mosaicking:\"ORBIT\"}};}}\n"
+        f'function setup(){{return {{input:[{{bands:[{bands_in},"SCL"]}}],'
+        f'output:{{bands:{total},sampleType:"FLOAT32"}},mosaicking:"ORBIT"}};}}\n'
         "function evaluatePixel(samples){var n=samples.length;return ["
         + ",".join(out_terms)
         + "];}"
@@ -213,9 +221,7 @@ class SentinelHubClient:
         response.raise_for_status()
         payload: dict[str, Any] = response.json()
         self._access_token = str(payload["access_token"])
-        self._token_expiry = (
-            now + float(payload.get("expires_in", 600.0)) - _TOKEN_REFRESH_MARGIN_S
-        )
+        self._token_expiry = now + float(payload.get("expires_in", 600.0)) - _TOKEN_REFRESH_MARGIN_S
         return self._access_token
 
     def post_process(
@@ -315,9 +321,7 @@ class SentinelHubClient:
             "output": {
                 "width": size,
                 "height": size,
-                "responses": [
-                    {"identifier": "default", "format": {"type": "image/tiff"}}
-                ],
+                "responses": [{"identifier": "default", "format": {"type": "image/tiff"}}],
             },
             "evalscript": _EVALSCRIPT,
         }
@@ -431,8 +435,10 @@ class SentinelHubClient:
             data.
         """
         bbox = (
-            lon - half_side_deg, lat - half_side_deg,
-            lon + half_side_deg, lat + half_side_deg,
+            lon - half_side_deg,
+            lat - half_side_deg,
+            lon + half_side_deg,
+            lat + half_side_deg,
         )
         nb = len(PASTIS_BANDS)
         payload = {
@@ -514,8 +520,13 @@ class SentinelHubClient:
         def _one(lonlat: tuple[float, float]) -> np.ndarray | None:
             lon, lat = lonlat
             return self.parcel_series_orbit(
-                lon, lat, date_from=date_from, date_to=date_to,
-                n_frames=n_frames, size=size, half_side_deg=half_side_deg,
+                lon,
+                lat,
+                date_from=date_from,
+                date_to=date_to,
+                n_frames=n_frames,
+                size=size,
+                half_side_deg=half_side_deg,
                 max_cloud=max_cloud,
             )
 

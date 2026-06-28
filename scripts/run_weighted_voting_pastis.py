@@ -138,12 +138,8 @@ def _simple_vote_oof_cv(
         del train_pos
         blended = helper._blend(member_probs[:, test_pos, :], uniform)
         preds = blended.argmax(axis=-1)
-        per_fold.append(
-            EnsembleModel.compute_metrics(labels[test_pos], preds, ignore_index=None)
-        )
-    metrics = {
-        key: float(np.mean([f[key] for f in per_fold])) for key in per_fold[0]
-    }
+        per_fold.append(EnsembleModel.compute_metrics(labels[test_pos], preds, ignore_index=None))
+    metrics = {key: float(np.mean([f[key] for f in per_fold])) for key in per_fold[0]}
     logger.info(
         "simple_vote_oof_cv_done",
         members=members,
@@ -387,10 +383,7 @@ def run(
     table.write_parquet(out_parquet)
 
     # Per-member learned weights of the weighted vote (final refit on all OOF).
-    final_weights = {
-        m: round(float(w), 4)
-        for m, w in zip(members, wvote.weights, strict=True)
-    }
+    final_weights = {m: round(float(w), 4) for m, w in zip(members, wvote.weights, strict=True)}
     logger.info(
         "weighted_vote_experiment_done",
         # Vara titular = evaluate() directo (comparable al 0.747 del Stacking).

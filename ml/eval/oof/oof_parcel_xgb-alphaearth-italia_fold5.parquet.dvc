@@ -1,0 +1,5 @@
+outs:
+- md5: 01b89dd26bc9c86bf186bdb628f9a12f
+  size: 14874167
+  hash: md5
+  path: oof_parcel_xgb-alphaearth-italia_fold5.parquet

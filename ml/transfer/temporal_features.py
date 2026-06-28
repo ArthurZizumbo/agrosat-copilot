@@ -91,8 +91,19 @@ _HCAT3_CSV: Path = _REFERENCE_DIR / "eurocrops_hcat3.csv"
 #: "order is important"). 13 bands; B10 (cirrus, index 10) is near-zero over
 #: land and excluded from index math.
 S2_BAND_NAMES: tuple[str, ...] = (
-    "B01", "B02", "B03", "B04", "B05", "B06", "B07",
-    "B08", "B8A", "B09", "B10", "B11", "B12",
+    "B01",
+    "B02",
+    "B03",
+    "B04",
+    "B05",
+    "B06",
+    "B07",
+    "B08",
+    "B8A",
+    "B09",
+    "B10",
+    "B11",
+    "B12",
 )
 _BIDX: dict[str, int] = {name: i for i, name in enumerate(S2_BAND_NAMES)}
 
@@ -101,7 +112,16 @@ _ALPHAEARTH_COLS: tuple[str, ...] = tuple(f"dim_{i:02d}" for i in range(64))
 
 #: Bands used for index math (B10 cirrus excluded).
 _INDEX_BANDS: tuple[str, ...] = (
-    "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B8A", "B11", "B12",
+    "B02",
+    "B03",
+    "B04",
+    "B05",
+    "B06",
+    "B07",
+    "B08",
+    "B8A",
+    "B11",
+    "B12",
 )
 
 #: The phenology-similar fine leaves the annual embedding struggles to separate.
@@ -148,9 +168,7 @@ def _load_hcat_name_map() -> dict[int, str]:
     """Return ``{hcat_code: hcat_leaf_name}`` from the HCAT v3 reference CSV."""
     if not _HCAT3_CSV.is_file():
         raise FileNotFoundError(f"HCAT v3 reference missing at {_HCAT3_CSV}")
-    h = pl.read_csv(
-        _HCAT3_CSV, schema_overrides={"HCAT3_code": pl.Utf8, "HCAT3_name": pl.Utf8}
-    )
+    h = pl.read_csv(_HCAT3_CSV, schema_overrides={"HCAT3_code": pl.Utf8, "HCAT3_name": pl.Utf8})
     return {int(c): str(n) for c, n in zip(h["HCAT3_code"], h["HCAT3_name"], strict=True)}
 
 
@@ -258,8 +276,15 @@ def _ndvi_phenology(doy: np.ndarray, ndvi: np.ndarray) -> dict[str, float]:
 
 
 _PHENO_KEYS: tuple[str, ...] = (
-    "peak_doy", "peak_val", "amplitude", "early_mean", "mid_mean",
-    "late_mean", "sog_doy", "ndvi_auc", "ndvi_min",
+    "peak_doy",
+    "peak_val",
+    "amplitude",
+    "early_mean",
+    "mid_mean",
+    "late_mean",
+    "sog_doy",
+    "ndvi_auc",
+    "ndvi_min",
 )
 
 #: Index curves summarised by temporal stats (mean/std/min/max/p10/p50/p90).
@@ -275,8 +300,12 @@ def _temporal_stats(curve: np.ndarray) -> list[float]:
     if v.size == 0:
         return [0.0] * len(_STAT_FNS)
     return [
-        float(v.mean()), float(v.std()), float(v.min()), float(v.max()),
-        float(np.percentile(v, 10)), float(np.percentile(v, 50)),
+        float(v.mean()),
+        float(v.std()),
+        float(v.min()),
+        float(v.max()),
+        float(np.percentile(v, 10)),
+        float(np.percentile(v, 50)),
         float(np.percentile(v, 90)),
     ]
 
@@ -340,10 +369,14 @@ def parcel_temporal_vector(data: np.ndarray, dates: np.ndarray) -> np.ndarray:
         if col.size == 0:
             band_feats.extend([0.0, 0.0, 0.0, 0.0])
         else:
-            band_feats.extend([
-                float(col.mean()), float(col.std()),
-                float(np.percentile(col, 10)), float(np.percentile(col, 90)),
-            ])
+            band_feats.extend(
+                [
+                    float(col.mean()),
+                    float(col.std()),
+                    float(np.percentile(col, 10)),
+                    float(np.percentile(col, 90)),
+                ]
+            )
 
     curves = _spectral_index_curves(data)
     idx_feats: list[float] = []
@@ -415,7 +448,8 @@ def build_aligned_dataset(
     # lives OUTSIDE the DVC-tracked ``eurocropsml/`` dir so it does not perturb
     # the ``eurocropsml.dvc`` directory hash.
     cache_path = (
-        _TRANSFER_DIR / "_temporal_cache"
+        _TRANSFER_DIR
+        / "_temporal_cache"
         / f"temporal_aligned_{'_'.join(regions)}_supp{min_leaf_support}.parquet"
     )
     if max_parcels is None and cache_path.is_file():
@@ -429,11 +463,10 @@ def build_aligned_dataset(
         p = _TRANSFER_DIR / f"eurocropsml_alphaearth_{region}.parquet"
         if not p.is_file():
             raise FileNotFoundError(f"EuroCropsML parquet missing at {p}")
-        df = pl.read_parquet(
-            p, columns=["npz_name", "hcat_code", "lon", "lat", *_ALPHAEARTH_COLS]
-        )
+        df = pl.read_parquet(p, columns=["npz_name", "hcat_code", "lon", "lat", *_ALPHAEARTH_COLS])
         df = df.with_columns(
-            pl.col("hcat_code").cast(pl.Int64)
+            pl.col("hcat_code")
+            .cast(pl.Int64)
             .replace_strict(name_map, default="unknown_hcat", return_dtype=pl.Utf8)
             .alias("leaf")
         )
@@ -603,9 +636,7 @@ def _spatial_split(
     idx = np.arange(n)
     _, counts = np.unique(leaf, return_counts=True)
     stratify = leaf if counts.min() >= 2 else None
-    tr, _te = train_test_split(
-        idx, test_size=_TEST_FRACTION, random_state=seed, stratify=stratify
-    )
+    tr, _te = train_test_split(idx, test_size=_TEST_FRACTION, random_state=seed, stratify=stratify)
     is_train = np.zeros(n, dtype=bool)
     is_train[tr] = True
     return is_train, ~is_train
@@ -625,8 +656,12 @@ def _fit_xgb(feats: np.ndarray, y: np.ndarray, seed: int) -> object:
 
 
 def _fit_and_score(
-    feats_tr: np.ndarray, feats_te: np.ndarray,
-    y_tr: np.ndarray, y_te: np.ndarray, classes: np.ndarray, seed: int,
+    feats_tr: np.ndarray,
+    feats_te: np.ndarray,
+    y_tr: np.ndarray,
+    y_te: np.ndarray,
+    classes: np.ndarray,
+    seed: int,
 ) -> tuple[np.ndarray, np.ndarray, float]:
     """Train once and return ``(f1_per_class, support, macro_f1)`` on the test."""
     model = _fit_xgb(feats_tr, y_tr, seed)
@@ -664,9 +699,7 @@ def run_temporal_vs_annual(
     Returns:
         A :class:`TemporalComparisonResult`.
     """
-    ds = build_aligned_dataset(
-        regions=regions, max_parcels=max_parcels
-    )
+    ds = build_aligned_dataset(regions=regions, max_parcels=max_parcels)
     is_train, is_test = _spatial_split(ds.lon, ds.lat, ds.leaf, seed=seed)
 
     classes = np.array(sorted(set(ds.leaf.tolist())))
@@ -729,8 +762,15 @@ def run_temporal_vs_annual(
         "pheno_n_improved_fusion": int(pheno.filter(pl.col("delta_f1_fusion") > 1e-9).height),
         "pheno_n_worsened_fusion": int(pheno.filter(pl.col("delta_f1_fusion") < -1e-9).height),
         "pheno_per_class": pheno.select(
-            ["leaf", "f1_annual", "f1_temporal", "f1_fusion",
-             "delta_f1", "delta_f1_fusion", "support_test"]
+            [
+                "leaf",
+                "f1_annual",
+                "f1_temporal",
+                "f1_fusion",
+                "delta_f1",
+                "delta_f1_fusion",
+                "support_test",
+            ]
         ).to_dicts(),
     }
     logger.info(
@@ -738,9 +778,13 @@ def run_temporal_vs_annual(
         **{
             k: summary[k]
             for k in (
-                "n_parcels", "n_leaf_classes", "macro_f1_annual",
-                "macro_f1_temporal", "macro_f1_fusion",
-                "pheno_mean_f1_delta_temporal", "pheno_mean_f1_delta_fusion",
+                "n_parcels",
+                "n_leaf_classes",
+                "macro_f1_annual",
+                "macro_f1_temporal",
+                "macro_f1_fusion",
+                "pheno_mean_f1_delta_temporal",
+                "pheno_mean_f1_delta_fusion",
             )
         },
     )
@@ -790,15 +834,21 @@ def make_figure(result: TemporalComparisonResult, fig_path: Path) -> Path:
     ax.barh(y + height, f1_a, height=height, color="#9aa0a6", label="AlphaEarth anual (64-dim)")
     ax.barh(y, f1_t, height=height, color="#1f77b4", label="Temporal S2 (99-dim)")
     ax.barh(
-        y - height, f1_f, height=height, color="#2ca02c",
+        y - height,
+        f1_f,
+        height=height,
+        color="#2ca02c",
         label="Fusion anual+temporal (163-dim)",
     )
     for i, (a, t, f, d, df, s) in enumerate(
         zip(f1_a, f1_t, f1_f, deltas, deltas_f, sup, strict=True)
     ):
         ax.text(
-            max(a, t, f) + 0.01, i,
-            f"dT={d:+.3f} dF={df:+.3f} (n={s})", va="center", fontsize=7.5,
+            max(a, t, f) + 0.01,
+            i,
+            f"dT={d:+.3f} dF={df:+.3f} (n={s})",
+            va="center",
+            fontsize=7.5,
         )
     ax.set_yticks(y)
     ax.set_yticklabels(names, fontsize=9)

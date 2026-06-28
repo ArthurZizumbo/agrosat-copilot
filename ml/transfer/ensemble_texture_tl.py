@@ -83,10 +83,7 @@ def build_season_windows(year: int = 2021) -> list[tuple[str, str]]:
         List of ``(date_from, date_to)`` ISO-date windows, one per month.
     """
     months = [(5, 1, 28), (6, 1, 28), (6, 15, 30), (7, 1, 28), (7, 15, 31), (8, 1, 28), (9, 1, 28)]
-    return [
-        (f"{year}-{m:02d}-{d0:02d}", f"{year}-{m:02d}-{d1:02d}")
-        for (m, d0, d1) in months
-    ]
+    return [(f"{year}-{m:02d}-{d0:02d}", f"{year}-{m:02d}-{d1:02d}") for (m, d0, d1) in months]
 
 
 def fit_patch_to_timesteps(stack: np.ndarray, n: int = _N_TIMESTEPS) -> np.ndarray:
@@ -117,9 +114,7 @@ def _load_hcat_name_map() -> dict[int, str]:
     """Return ``{hcat_code: hcat_leaf_name}`` from the HCAT v3 reference CSV."""
     if not _HCAT3_CSV.is_file():
         raise FileNotFoundError(f"HCAT v3 reference missing at {_HCAT3_CSV}")
-    h = pl.read_csv(
-        _HCAT3_CSV, schema_overrides={"HCAT3_code": pl.Utf8, "HCAT3_name": pl.Utf8}
-    )
+    h = pl.read_csv(_HCAT3_CSV, schema_overrides={"HCAT3_code": pl.Utf8, "HCAT3_name": pl.Utf8})
     return {int(c): str(n) for c, n in zip(h["HCAT3_code"], h["HCAT3_name"], strict=True)}
 
 
@@ -135,9 +130,16 @@ class _RegionTexture:
 
 
 def _load_region_texture(
-    region: str, *, sh_client: object, windows: list[tuple[str, str]],
-    max_parcels: int, size: int, max_cloud: float, seed: int,
-    stratify_keep: set[str] | None = None, per_class: int | None = None,
+    region: str,
+    *,
+    sh_client: object,
+    windows: list[tuple[str, str]],
+    max_parcels: int,
+    size: int,
+    max_cloud: float,
+    seed: int,
+    stratify_keep: set[str] | None = None,
+    per_class: int | None = None,
 ) -> _RegionTexture:
     """Download real-texture series for a region's parcels and pair with AlphaEarth.
 
@@ -164,7 +166,8 @@ def _load_region_texture(
     df = pl.read_parquet(
         parquet, columns=["lon", "lat", "hcat_code", *_ALPHAEARTH_COLS]
     ).with_columns(
-        pl.col("hcat_code").cast(pl.Int64)
+        pl.col("hcat_code")
+        .cast(pl.Int64)
         .replace_strict(name_map, default="unknown_hcat", return_dtype=pl.Utf8)
         .alias("leaf")
     )
@@ -209,15 +212,22 @@ def _load_region_texture(
         else:
             to_fetch.append(i)
     logger.info(
-        "texture_cache_status", region=region,
-        n_cached=len(cached), n_to_fetch=len(to_fetch), n_total=len(coords),
+        "texture_cache_status",
+        region=region,
+        n_cached=len(cached),
+        n_to_fetch=len(to_fetch),
+        n_total=len(coords),
     )
 
     if to_fetch:
         fetch_coords = [coords[i] for i in to_fetch]
         fetched = sh_client.parcel_series_batch(  # type: ignore[attr-defined]
-            fetch_coords, date_from=date_from, date_to=date_to,
-            size=size, max_cloud=max_cloud, max_workers=2,
+            fetch_coords,
+            date_from=date_from,
+            date_to=date_to,
+            size=size,
+            max_cloud=max_cloud,
+            max_workers=2,
         )
         for j, i in enumerate(to_fetch):
             stack = fetched[j]
@@ -250,8 +260,10 @@ def _load_region_texture(
         n_downloaded += 1
 
     logger.info(
-        "texture_region_loaded", region=region,
-        n_downloaded=n_downloaded, n_dropped=n_dropped,
+        "texture_region_loaded",
+        region=region,
+        n_downloaded=n_downloaded,
+        n_dropped=n_dropped,
         n_from_cache=len(coords) - len(to_fetch),
     )
     return _RegionTexture(
@@ -307,12 +319,22 @@ def run_texture_tl(
     """
     windows = build_season_windows(year)
     reg_src = _load_region_texture(
-        source, sh_client=sh_client, windows=windows, max_parcels=max_parcels_per_region,
-        size=size, max_cloud=max_cloud, seed=seed,
+        source,
+        sh_client=sh_client,
+        windows=windows,
+        max_parcels=max_parcels_per_region,
+        size=size,
+        max_cloud=max_cloud,
+        seed=seed,
     )
     reg_tgt = _load_region_texture(
-        target, sh_client=sh_client, windows=windows, max_parcels=max_parcels_per_region,
-        size=size, max_cloud=max_cloud, seed=seed,
+        target,
+        sh_client=sh_client,
+        windows=windows,
+        max_parcels=max_parcels_per_region,
+        size=size,
+        max_cloud=max_cloud,
+        seed=seed,
     )
 
     shared = sorted(set(reg_src.leaf.tolist()) & set(reg_tgt.leaf.tolist()))

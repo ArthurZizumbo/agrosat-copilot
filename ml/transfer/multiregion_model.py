@@ -160,13 +160,8 @@ def _load_hcat_name_map() -> dict[int, str]:
     """Return ``{hcat_code: hcat_name}`` from the real HCAT v3 reference CSV."""
     if not _HCAT3_CSV.is_file():
         raise FileNotFoundError(f"HCAT v3 reference missing at {_HCAT3_CSV}")
-    h = pl.read_csv(
-        _HCAT3_CSV, schema_overrides={"HCAT3_code": pl.Utf8, "HCAT3_name": pl.Utf8}
-    )
-    return {
-        int(c): str(n)
-        for c, n in zip(h["HCAT3_code"], h["HCAT3_name"], strict=True)
-    }
+    h = pl.read_csv(_HCAT3_CSV, schema_overrides={"HCAT3_code": pl.Utf8, "HCAT3_name": pl.Utf8})
+    return {int(c): str(n) for c, n in zip(h["HCAT3_code"], h["HCAT3_name"], strict=True)}
 
 
 def _pastis_frame() -> pl.DataFrame:
@@ -456,12 +451,8 @@ def train_multiregion_model(
         "n_train": int(is_train.sum()),
         "n_test": int(is_test.sum()),
         "n_leaf_classes": int(classes.shape[0]),
-        "train_per_region": {
-            str(r): int((region[is_train] == r).sum()) for r in np.unique(region)
-        },
-        "test_per_region": {
-            str(r): int((region[is_test] == r).sum()) for r in np.unique(region)
-        },
+        "train_per_region": {str(r): int((region[is_train] == r).sum()) for r in np.unique(region)},
+        "test_per_region": {str(r): int((region[is_test] == r).sum()) for r in np.unique(region)},
     }
     logger.info(
         "multiregion_model_trained",
@@ -514,9 +505,7 @@ def _train_pastis_only(seed: int, *, cap: int | None = None) -> pl.DataFrame:
 # --------------------------------------------------------------------------- #
 # Honest paired per-class F1 delta (the metric the 0.85 binary count hid)
 # --------------------------------------------------------------------------- #
-def evaluate_per_class_delta(
-    ds: HarmonizedDataset, *, seed: int = _RANDOM_STATE
-) -> pl.DataFrame:
+def evaluate_per_class_delta(ds: HarmonizedDataset, *, seed: int = _RANDOM_STATE) -> pl.DataFrame:
     """Per-leaf F1 DELTA of multi-region vs PASTIS-only on the SAME test set.
 
     This is the corrected, honest metric. The headline experiment counted how
@@ -589,8 +578,11 @@ def evaluate_per_class_delta(
     def _f1_per_leaf(pred_names: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         y_pred = np.array([label_to_id.get(c, -1) for c in pred_names])
         _p, _r, f1, sup = precision_recall_fscore_support(
-            y_true, y_pred, labels=np.arange(len(all_leaves)),
-            average=None, zero_division=0,
+            y_true,
+            y_pred,
+            labels=np.arange(len(all_leaves)),
+            average=None,
+            zero_division=0,
         )
         return f1, sup.astype(int)
 
@@ -622,9 +614,7 @@ def evaluate_per_class_delta(
         n_leaves=out.height,
         n_shared_improve=n_imp,
         n_shared_worsen=n_wor,
-        net_shared_delta=float(
-            out.filter(pl.col("shared")).get_column("delta_f1").sum()
-        ),
+        net_shared_delta=float(out.filter(pl.col("shared")).get_column("delta_f1").sum()),
     )
     return out
 
@@ -664,9 +654,7 @@ def _per_class_table(
     ).filter(pl.col("support") > 0)
 
 
-def _collapse_to_macro(
-    leaf_names: np.ndarray, leaf_to_macro: dict[str, str]
-) -> np.ndarray:
+def _collapse_to_macro(leaf_names: np.ndarray, leaf_to_macro: dict[str, str]) -> np.ndarray:
     """Map an array of leaf names to their macro group."""
     return np.array([leaf_to_macro.get(name, "void") for name in leaf_names])
 
@@ -676,8 +664,14 @@ def _threshold_counts(per_class: pl.DataFrame, source: str) -> pl.DataFrame:
     rows = []
     for thr in F1_THRESHOLDS:
         n_good = per_class.filter(pl.col("f1") >= thr).height
-        rows.append({"source": source, "threshold": thr, "n_classes_over": n_good,
-                     "n_classes_total": per_class.height})
+        rows.append(
+            {
+                "source": source,
+                "threshold": thr,
+                "n_classes_over": n_good,
+                "n_classes_total": per_class.height,
+            }
+        )
     return pl.DataFrame(rows)
 
 
@@ -733,9 +727,7 @@ def run_multiregion_experiment(*, seed: int = _RANDOM_STATE) -> MultiRegionResul
     fine_leaf = ds.leaf[ds.has_fine]
     pred_id = model.predict(fine_feats[is_test_fine])  # type: ignore[attr-defined]
     class_to_id = {c: i for i, c in enumerate(classes)}
-    y_true_id = np.array(
-        [class_to_id[c] for c in fine_leaf[is_test_fine]], dtype=np.int64
-    )
+    y_true_id = np.array([class_to_id[c] for c in fine_leaf[is_test_fine]], dtype=np.int64)
     per_leaf_fine = _per_class_table(y_true_id, pred_id, classes, level="leaf")
 
     # ---- Measurement A, MACRO level (collapse over the FULL multi-region test) -
@@ -749,9 +741,7 @@ def run_multiregion_experiment(*, seed: int = _RANDOM_STATE) -> MultiRegionResul
     true_macro = ds.macro[is_test_full]
     pred_macro = _collapse_to_macro(classes[pred_full_id], leaf_to_macro)
     y_true_macro = np.array([macro_to_id[c] for c in true_macro], dtype=np.int64)
-    y_pred_macro = np.array(
-        [macro_to_id.get(c, -1) for c in pred_macro], dtype=np.int64
-    )
+    y_pred_macro = np.array([macro_to_id.get(c, -1) for c in pred_macro], dtype=np.int64)
     valid = y_pred_macro >= 0
     per_macro = _per_class_table(
         y_true_macro[valid], y_pred_macro[valid], macro_classes, level="macro"
@@ -820,14 +810,9 @@ def run_multiregion_experiment(*, seed: int = _RANDOM_STATE) -> MultiRegionResul
         "paired_shared_mean_f1_pastis": float(shared.get_column("f1_pastis").mean()),
         "paired_shared_mean_f1_multi": float(shared.get_column("f1_multi").mean()),
         "paired_n_new_taxonomy_leaves": int(new_tax.height),
-        "paired_n_new_taxonomy_f1_over_050": int(
-            new_tax.filter(pl.col("f1_multi") >= 0.50).height
-        ),
+        "paired_n_new_taxonomy_f1_over_050": int(new_tax.filter(pl.col("f1_multi") >= 0.50).height),
         "paired_top_rescue": (
-            shared.sort("delta_f1", descending=True)
-            .head(3)
-            .select(["leaf", "delta_f1"])
-            .to_dicts()
+            shared.sort("delta_f1", descending=True).head(3).select(["leaf", "delta_f1"]).to_dicts()
         ),
     }
     logger.info(
@@ -868,19 +853,14 @@ def _full_test_mask(ds: HarmonizedDataset, *, seed: int) -> np.ndarray:
     Mirrors the fine-head split protocol but on the full pooled dataset so the
     macro-only regions also contribute held-out test rows.
     """
-    _tr, te = _region_stratified_split(
-        ds.region, ds.leaf, test_fraction=_TEST_FRACTION, seed=seed
-    )
+    _tr, te = _region_stratified_split(ds.region, ds.leaf, test_fraction=_TEST_FRACTION, seed=seed)
     return te
 
 
 def _leaf_to_macro_map(ds: HarmonizedDataset) -> dict[str, str]:
     """Build the leaf-name -> macro-group map from the harmonized provenance."""
     pairs = ds.provenance.select(["leaf", "macro"]).unique()
-    return {
-        leaf: macro
-        for leaf, macro in zip(pairs["leaf"], pairs["macro"], strict=True)
-    }
+    return {leaf: macro for leaf, macro in zip(pairs["leaf"], pairs["macro"], strict=True)}
 
 
 def _dominant_region_per_leaf(ds: HarmonizedDataset) -> dict[str, str]:
@@ -1035,8 +1015,12 @@ def make_figures(result: MultiRegionResult, fig_dir: Path) -> list[Path]:
         ax.axvline(0.0, color="black", linewidth=1)
         for i, d in enumerate(deltas4):
             ax.text(
-                d + (0.01 if d >= 0 else -0.01), i, f"{d:+.3f}",
-                fontsize=7, va="center", ha="left" if d >= 0 else "right",
+                d + (0.01 if d >= 0 else -0.01),
+                i,
+                f"{d:+.3f}",
+                fontsize=7,
+                va="center",
+                ha="left" if d >= 0 else "right",
             )
         ax.set_xlabel("Delta F1 = multi-region - solo-PASTIS (mismo test, mismo presupuesto)")
         ax.set_title(

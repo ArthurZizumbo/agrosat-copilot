@@ -169,9 +169,7 @@ class WeightedVotingEnsemble(BlendingEnsemble):
     # Weight learning (direct F1-macro maximization on the simplex).
     # ------------------------------------------------------------------
 
-    def _learn_weights(
-        self, probs: np.ndarray, labels: np.ndarray
-    ) -> np.ndarray:
+    def _learn_weights(self, probs: np.ndarray, labels: np.ndarray) -> np.ndarray:
         """Learn convex weights maximizing F1-macro of the weighted vote.
 
         Optimizes the simplex logits with :func:`scipy.optimize.minimize`
@@ -291,15 +289,11 @@ class WeightedVotingEnsemble(BlendingEnsemble):
                 [keys[i] for i in test_pos],
                 context=f"weighted-vote sub-fold {fold_idx}",
             )
-            weights = self._learn_weights(
-                member_probs[:, train_pos, :], labels[train_pos]
-            )
+            weights = self._learn_weights(member_probs[:, train_pos, :], labels[train_pos])
             self.subfold_weights_.append(weights)
             blended_test = self._blend(member_probs[:, test_pos, :], weights)
             preds = blended_test.argmax(axis=-1)
-            fold_metrics = EnsembleModel.compute_metrics(
-                labels[test_pos], preds, ignore_index=None
-            )
+            fold_metrics = EnsembleModel.compute_metrics(labels[test_pos], preds, ignore_index=None)
             per_fold.append(fold_metrics)
             logger.info(
                 "weighted_vote_subfold_done",
@@ -314,9 +308,7 @@ class WeightedVotingEnsemble(BlendingEnsemble):
 
         # Final refit on ALL fold-5 OOF rows for the production predict_proba.
         self._weights = self._learn_weights(member_probs, labels)
-        self.best_params = {
-            f"w_{i}": float(w) for i, w in enumerate(self._weights)
-        }
+        self.best_params = {f"w_{i}": float(w) for i, w in enumerate(self._weights)}
         logger.info(
             "weighted_vote_fit_done",
             n_members=len(self.base_members),
@@ -384,19 +376,11 @@ class WeightedVotingEnsemble(BlendingEnsemble):
             test_int = set(fold.test_ids)
             train_int = set(fold.train_ids) | set(fold.val_ids)
             test_pos = np.array(
-                sorted(
-                    pos_by_key[int_to_canonical[i]]
-                    for i in test_int
-                    if i in int_to_canonical
-                ),
+                sorted(pos_by_key[int_to_canonical[i]] for i in test_int if i in int_to_canonical),
                 dtype=np.int64,
             )
             train_pos = np.array(
-                sorted(
-                    pos_by_key[int_to_canonical[i]]
-                    for i in train_int
-                    if i in int_to_canonical
-                ),
+                sorted(pos_by_key[int_to_canonical[i]] for i in train_int if i in int_to_canonical),
                 dtype=np.int64,
             )
             test_pos = test_pos[np.isin(test_pos, all_pos)]

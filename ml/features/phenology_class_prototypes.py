@@ -49,6 +49,7 @@ Regeneration (US-033 AC-8):
 from __future__ import annotations
 
 import json
+import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -67,6 +68,21 @@ _CLASS_MAP_PATH = _REPO_ROOT / "data" / "reference" / "pastis_class_mapping.json
 _DEFAULT_OUTPUT = (
     _REPO_ROOT / "data" / "features" / "phenology_class_prototypes_pastis.parquet"
 )
+
+#: Default US-078 Mediterranean homologue dataset root (Italy 2018).
+_DEFAULT_ITALIA_ROOT = _REPO_ROOT / "data" / "pastis_italia_2018"
+#: Default output for the Italian per-class prototypes (39 Mediterranean crops).
+_DEFAULT_ITALIA_OUTPUT = (
+    _REPO_ROOT / "data" / "features" / "phenology_class_prototypes_italia.parquet"
+)
+
+#: Mediterranean agronomic context appended to each Italian class hint so Gemini
+#: grounds the description in the Italy 2018 calendar (durum harvest in June,
+#: perennial olive/vineyard, displaced season) instead of the Bretagne/PASTIS one.
+#: It is a static, factual qualifier (NOT a fabricated number): it only nudges the
+#: crop-type hint of block 2 of the prompt; the NDVI curve itself is the REAL
+#: Italian one computed from the patches.
+_ITALIA_CONTEXT_HINT = "cultivo mediterraneo en Italia 2018"
 
 #: Band indices in the PASTIS-R .npy files (standard 10-band S2 order:
 #: B2,B3,B4,B5,B6,B7,B8,B8A,B11,B12). NDVI uses B4 (red) and B8 (NIR).
@@ -226,6 +242,157 @@ def compute_class_mean_ndvi_curves(
     return curves
 
 
+def load_italia_class_names(
+    italia_root: Path = _DEFAULT_ITALIA_ROOT,
+) -> dict[int, str]:
+    """Loads the ``class_id -> hcat4_name`` map of the Italian dense classes.
+
+    Reads the US-078 builder's ``class_mapping.json`` (or ``class_table.parquet``
+    as a fallback), which materialises the contiguous Italian ids ``[1, K]``
+    (id 0 = background). These are the SAME ids burnt into the dense
+    ``TARGET_<id>.npy`` masks, so the prototype matrix row-aligns 1:1 with the
+    pixel labels of the contrastive loss.
+
+    Args:
+        italia_root: The US-078 homologue dataset root.
+
+    Returns:
+        Dictionary ``{1: "olive", 2: "vineyards_wine_vine_rebland_grapes", ...}``
+        (background id 0 excluded).
+
+    Raises:
+        FileNotFoundError: if neither ``class_mapping.json`` nor
+            ``class_table.parquet`` is present (run the US-078 builder first).
+    """
+    mapping_path = italia_root / "class_mapping.json"
+    if mapping_path.is_file():
+        data = json.loads(mapping_path.read_text(encoding="utf-8"))
+        return {int(c["class_id"]): str(c["hcat4_name"]) for c in data["classes"]}
+    table_path = italia_root / "class_table.parquet"
+    if table_path.is_file():
+        table = pl.read_parquet(table_path).sort("class_id")
+        return {
+            int(cid): str(name)
+            for cid, name in zip(
+                table["class_id"].to_list(),
+                table["hcat4_name"].to_list(),
+                strict=True,
+            )
+        }
+    raise FileNotFoundError(
+        f"no class_mapping.json / class_table.parquet under {italia_root}; run the "
+        "US-078 builder (scripts/build_italia_pastis.py) first."
+    )
+
+
+def compute_italia_class_mean_ndvi_curves(
+    italia_root: Path = _DEFAULT_ITALIA_ROOT,
+    *,
+    n_time_bins: int = _N_TIME_BINS,
+    max_patches: int | None = None,
+) -> dict[int, np.ndarray]:
+    """Computes the mean NDVI curve per Italian class over a regular DOY grid.
+
+    Mediterranean analogue of :func:`compute_class_mean_ndvi_curves`. The US-078
+    homologue stores, per patch, ``DATA_S2/S2_<id>.npy (T, 10, 128, 128)`` (int16
+    DN, scaled ``/10000``), the dense semantic mask ``ANNOTATIONS/TARGET_<id>.npy
+    (128, 128)`` and the per-frame day-of-year vector ``ANNOTATIONS/dates_<id>.npy
+    (T,)`` -- unlike PASTIS the DOY lives next to the patch, so no
+    ``metadata.geojson`` is parsed. NDVI is accumulated per pixel-time and grouped
+    by the pixel's class into a regular DOY grid, then averaged. The curve is the
+    REAL Italian phenology (durum peaking earlier, perennial olive/vine, displaced
+    season), NOT the French PASTIS one.
+
+    Args:
+        italia_root: The US-078 homologue dataset root.
+        n_time_bins: Number of regular DOY bins (1..365), matched to the PASTIS
+            grid so the two prototype banks live in a comparable temporal frame.
+        max_patches: If given, limits the scan (for smoke/tests on the pilot).
+
+    Returns:
+        ``{class_id: curve (n_time_bins,)}`` for every Italian crop id present on
+        disk, with NaN in bins without observation. Classes never seen in the
+        scanned patches are absent (reported by the caller).
+
+    Raises:
+        FileNotFoundError: if the dataset root or its ``DATA_S2`` are absent.
+    """
+    s2_dir = italia_root / "DATA_S2"
+    ann_dir = italia_root / "ANNOTATIONS"
+    if not s2_dir.is_dir():
+        raise FileNotFoundError(
+            f"homologue dataset incomplete under {italia_root} (need DATA_S2/); run "
+            "scripts/build_italia_pastis.py first."
+        )
+
+    class_names = load_italia_class_names(italia_root)
+    crop_ids = tuple(sorted(class_names))  # background id 0 not in the map
+
+    bin_edges = np.linspace(1, 366, n_time_bins + 1)
+    sums = {c: np.zeros(n_time_bins, dtype=np.float64) for c in crop_ids}
+    counts = {c: np.zeros(n_time_bins, dtype=np.int64) for c in crop_ids}
+
+    s2_paths = sorted(
+        s2_dir.glob("S2_*.npy"), key=lambda p: int(p.stem.split("_", 1)[1])
+    )
+    if max_patches is not None:
+        s2_paths = s2_paths[:max_patches]
+
+    seen_classes: set[int] = set()
+    for s2_path in s2_paths:
+        pid = int(s2_path.stem.split("_", 1)[1])
+        target_path = ann_dir / f"TARGET_{pid}.npy"
+        date_path = ann_dir / f"dates_{pid}.npy"
+        if not target_path.is_file():
+            continue
+        s2 = np.load(s2_path).astype(np.float32) / 10000.0  # (T,10,H,W)
+        target = np.load(target_path)  # (H,W) semantic class
+        doy = (
+            np.load(date_path).astype(np.int64)
+            if date_path.is_file()
+            else np.linspace(1, 365, s2.shape[0]).astype(np.int64)
+        )
+        b4 = s2[:, _BAND_B4]  # (T,H,W)
+        b8 = s2[:, _BAND_B8]
+        denom = b8 + b4
+        with np.errstate(divide="ignore", invalid="ignore"):
+            ndvi = np.where(denom > 1e-6, (b8 - b4) / denom, np.nan)
+        # NDVI valid in [-1, 1]; out-of-range values are cloud/shadow artifacts
+        # (the homologue SCL-masks per pixel but residual haze can survive).
+        ndvi = np.where(np.abs(ndvi) <= 1.0, ndvi, np.nan)
+        bin_idx = np.clip(np.digitize(doy, bin_edges) - 1, 0, n_time_bins - 1)
+        for c in crop_ids:
+            class_mask = target == c  # (H,W)
+            if not class_mask.any():
+                continue
+            seen_classes.add(c)
+            ndvi_class = ndvi[:, class_mask]  # (T, n_pix_class)
+            with warnings.catch_warnings():
+                # A timestep fully clouded for this class is an all-NaN slice;
+                # nanmean warns but the NaN is dropped by the finite mask below.
+                warnings.simplefilter("ignore", category=RuntimeWarning)
+                per_t = np.nanmean(ndvi_class, axis=1)  # (T,)
+            valid = np.isfinite(per_t)
+            np.add.at(sums[c], bin_idx[valid], per_t[valid])
+            np.add.at(counts[c], bin_idx[valid], 1)
+
+    curves: dict[int, np.ndarray] = {}
+    for c in crop_ids:
+        if c not in seen_classes:
+            continue
+        with np.errstate(divide="ignore", invalid="ignore"):
+            curve = np.where(counts[c] > 0, sums[c] / counts[c], np.nan)
+        curves[c] = curve
+    logger.info(
+        "italia_class_mean_ndvi_curves_computed",
+        n_patches=len(s2_paths),
+        n_classes_present=len(curves),
+        n_classes_total=len(crop_ids),
+        n_time_bins=n_time_bins,
+    )
+    return curves
+
+
 def _encode_descriptions(descriptions: Sequence[str]) -> np.ndarray:
     """Encodes a list of descriptions into L2-norm 384-dim embeddings.
 
@@ -326,6 +493,105 @@ def generate_class_prototypes(
     return output_path
 
 
+def generate_italia_class_prototypes(
+    italia_root: Path = _DEFAULT_ITALIA_ROOT,
+    *,
+    output_path: Path = _DEFAULT_ITALIA_OUTPUT,
+    model: str = "gemini-3.5-flash",
+    n_time_bins: int = _N_TIME_BINS,
+    max_patches: int | None = None,
+    context_hint: str = _ITALIA_CONTEXT_HINT,
+) -> Path:
+    """Generates the Italian per-class phenological prototypes and persists them.
+
+    Mediterranean homologue of :func:`generate_class_prototypes`: REAL mean NDVI
+    curve per Italian class (from the US-078 patches) -> per-class Gemini
+    description (3-block prompt Wen et al. Fig. 2, with the Italian HCAT4 class
+    name + Mediterranean context as ``crop_type_hint``) -> 384-dim ``all-MiniLM-
+    L6-v2`` embedding. This fixes the US-079 root cause B: the TSViT-pheno semantic
+    branch must align Italian pixels with ITALIAN prototypes (olive perennial,
+    durum harvested in June, displaced vine), not the Bretagne/PASTIS calendar.
+
+    Only the classes actually present in the scanned patches get a row (their curve
+    is real); absent classes are reported and skipped (NEVER fabricated). The
+    output is row-indexed by the dense ``class_id`` so it maps 1:1 onto the
+    ``TARGET_<id>.npy`` labels of the contrastive loss.
+
+    Args:
+        italia_root: The US-078 homologue dataset root.
+        output_path: Output parquet (one row per present Italian class).
+        model: LLM model for the descriptions (Gemini 3.5 Flash; needs creds).
+        n_time_bins: DOY bins of the mean curve (matched to the PASTIS grid).
+        max_patches: Limits the NDVI scan (smoke/tests on the 20-patch pilot).
+        context_hint: Mediterranean qualifier appended to each class hint so the
+            description is grounded in the Italy 2018 calendar.
+
+    Returns:
+        ``Path`` of the written parquet with columns ``class_id, class_name,
+        ndvi_curve (list), description, emb_000..emb_383``.
+
+    Raises:
+        RuntimeError: if no Italian class curve could be computed (empty dataset).
+    """
+    from ml.features.phenology_description import (
+        generate_phenology_description,
+    )
+
+    class_names = load_italia_class_names(italia_root)
+    curves = compute_italia_class_mean_ndvi_curves(
+        italia_root, n_time_bins=n_time_bins, max_patches=max_patches
+    )
+    if not curves:
+        raise RuntimeError(
+            f"no Italian class NDVI curve computed under {italia_root}; the patches "
+            "carry no labelled crop pixel. Cannot fabricate prototypes."
+        )
+    bin_edges = np.linspace(1, 366, n_time_bins + 1)
+    bin_doy = ((bin_edges[:-1] + bin_edges[1:]) / 2).astype(np.int32)
+
+    rows: list[dict[str, object]] = []
+    descriptions: list[str] = []
+    for c in sorted(curves):
+        curve = curves[c]
+        name = class_names.get(c, f"class_{c}")
+        # The crop hint marries the Italian class name with the Mediterranean
+        # context so Gemini does not default to a temperate-European calendar.
+        crop_hint = f"{name} ({context_hint})"
+        desc = generate_phenology_description(
+            ndvi_curve=curve,
+            doy=bin_doy,
+            parcel_id=f"italia_class_{c}",
+            crop_type_hint=crop_hint,
+            model=model,
+        )
+        descriptions.append(desc)
+        rows.append(
+            {
+                "class_id": c,
+                "class_name": name,
+                "ndvi_curve": curve.tolist(),
+                "description": desc,
+            }
+        )
+        logger.info("italia_class_prototype_generated", class_id=c, class_name=name)
+
+    embeddings = _encode_descriptions(descriptions)
+    for i, row in enumerate(rows):
+        for j in range(_EMB_DIM):
+            row[f"emb_{j:03d}"] = float(embeddings[i, j])
+
+    df = pl.DataFrame(rows).sort("class_id")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    df.write_parquet(output_path)
+    logger.info(
+        "italia_class_prototypes_persisted",
+        path=str(output_path),
+        n_classes=df.height,
+        emb_dim=_EMB_DIM,
+    )
+    return output_path
+
+
 def load_class_prototype_embeddings(
     path: Path = _DEFAULT_OUTPUT,
 ) -> tuple[np.ndarray, list[int]]:
@@ -346,6 +612,43 @@ def load_class_prototype_embeddings(
     prototypes = df.select(emb_cols).to_numpy().astype(np.float32)
     class_ids = df["class_id"].to_list()
     return prototypes, class_ids
+
+
+def load_class_prototype_matrix_by_id(
+    path: Path,
+    *,
+    num_classes: int,
+) -> np.ndarray:
+    """Loads the prototypes as a dense ``(num_classes, 384)`` ROW-INDEXED matrix.
+
+    Unlike :func:`load_class_prototype_embeddings` (which returns the rows in
+    parquet order plus their ids), this returns a matrix whose row ``k`` IS the
+    prototype of class id ``k``, so it can be indexed directly by the dense pixel
+    label in :func:`ml.models.pheno_semantic_branch.phenology_contrastive_loss`
+    (which does ``feats @ protos.t()`` and ``cross_entropy(logits, labels)`` with
+    ``labels`` = the pixel class ids). Class ids absent from the parquet (e.g. the
+    background row 0, or an Italian class never seen in the scanned patches) stay
+    as a zero row -- never indexed because the contrastive loss only scores valid,
+    in-range, non-ignored pixels.
+
+    Args:
+        path: The per-class prototypes parquet (``class_id`` + ``emb_000..383``).
+        num_classes: The dense head size ``K`` (= ``label_space.num_classes``,
+            background included). The returned matrix is ``(K, 384)``.
+
+    Returns:
+        A ``(num_classes, 384)`` float32 matrix, row ``k`` = prototype of class
+        id ``k`` (zero row for an absent id).
+    """
+    df = pl.read_parquet(path)
+    emb_cols = [f"emb_{j:03d}" for j in range(_EMB_DIM)]
+    matrix = np.zeros((num_classes, _EMB_DIM), dtype=np.float32)
+    embs = df.select(emb_cols).to_numpy().astype(np.float32)
+    for row_i, cid in enumerate(df["class_id"].to_list()):
+        cid_int = int(cid)
+        if 0 <= cid_int < num_classes:
+            matrix[cid_int] = embs[row_i]
+    return matrix
 
 
 def _build_arg_parser():  # pragma: no cover - CLI thin wrapper.

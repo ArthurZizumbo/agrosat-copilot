@@ -19,3 +19,4 @@
 # FR->Catalonia de US-075. Versionado en DVC (`data/sen4agrinet.dvc`,
 # MD5 e292ab8cfbfb05ecc9ab5310e01dd79e.dir); los `.nc` NUNCA al repo Git.
 /sen4agrinet
+/pastis_italia_2018

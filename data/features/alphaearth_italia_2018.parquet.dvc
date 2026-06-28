@@ -1,0 +1,5 @@
+outs:
+- md5: 5d1a9a85a7f252dccc3ea6b8cb2770fb
+  size: 453114
+  hash: md5
+  path: alphaearth_italia_2018.parquet
