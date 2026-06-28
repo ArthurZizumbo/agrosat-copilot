@@ -113,10 +113,7 @@ class ItaliaParcelVotingResult:
 
     def weight_map(self) -> dict[str, float]:
         """Return ``{member: weight}`` (the interpretable vote, AC2)."""
-        return {
-            m: round(float(w), 6)
-            for m, w in zip(self.members, self.weights, strict=True)
-        }
+        return {m: round(float(w), 6) for m, w in zip(self.members, self.weights, strict=True)}
 
     def parcel_vote(self) -> dict[str, np.ndarray]:
         """Return ``{canonical_parcel_id: (n_crops,)}`` the blended vote per parcel.
@@ -126,10 +123,7 @@ class ItaliaParcelVotingResult:
         """
         if self.blended_probs is None:
             return {}
-        return {
-            pid: self.blended_probs[i]
-            for i, pid in enumerate(self.parcel_ids)
-        }
+        return {pid: self.blended_probs[i] for i, pid in enumerate(self.parcel_ids)}
 
 
 class ItaliaParcelVotingEnsemble:
@@ -233,9 +227,7 @@ class ItaliaParcelVotingEnsemble:
                     "ml.transfer.dense_to_parcel_italia.write_parcel_oof first, or "
                     "train the xgb member with ml.ensemble.xgb_alphaearth_italia."
                 )
-            frame = pl.read_parquet(path).with_columns(
-                pl.col("canonical_parcel_id").cast(pl.Utf8)
-            )
+            frame = pl.read_parquet(path).with_columns(pl.col("canonical_parcel_id").cast(pl.Utf8))
             frames[member] = frame
             member_class_ids[member] = _member_crop_class_ids(frame)
 
@@ -252,9 +244,7 @@ class ItaliaParcelVotingEnsemble:
         coverage = {m: round(len(common) / max(len(sets[m]), 1), 4) for m in self.members}
 
         # Global crop-class column space = union of every member's class ids.
-        crop_class_ids = tuple(
-            sorted(set().union(*member_class_ids.values()))
-        )
+        crop_class_ids = tuple(sorted(set().union(*member_class_ids.values())))
         col_of = {cid: i for i, cid in enumerate(crop_class_ids)}
         n_crops = len(crop_class_ids)
 
@@ -277,9 +267,7 @@ class ItaliaParcelVotingEnsemble:
             row_sums = scattered.sum(axis=1, keepdims=True)
             row_sums = np.where(row_sums < 1e-12, 1.0, row_sums)
             scattered = scattered / row_sums
-            self._learner.validate_probs(
-                scattered, class_axis=-1, name=f"italia-parcel-{member}"
-            )
+            self._learner.validate_probs(scattered, class_axis=-1, name=f"italia-parcel-{member}")
             stacked.append(scattered)
             if labels is None:
                 labels = aligned["class_id"].to_numpy().astype(np.int64)
@@ -347,14 +335,10 @@ class ItaliaParcelVotingEnsemble:
                     [parcel_ids[i] for i in test_pos],
                     context=f"italia-parcel-vote fold {held}",
                 )
-                weights = self._learner._learn_weights(
-                    probs[:, train_pos, :], labels[train_pos]
-                )
+                weights = self._learner._learn_weights(probs[:, train_pos, :], labels[train_pos])
                 blended = self._learner._blend(probs[:, test_pos, :], weights)
                 preds = blended.argmax(axis=-1)
-                metrics = EnsembleModel.compute_metrics(
-                    labels[test_pos], preds, ignore_index=None
-                )
+                metrics = EnsembleModel.compute_metrics(labels[test_pos], preds, ignore_index=None)
                 per_fold.append(
                     {
                         "fold": held,
@@ -383,12 +367,8 @@ class ItaliaParcelVotingEnsemble:
         # Blend every parcel with the production weights so the dense projection
         # (US-079 rubric eval) can re-paint the voted distribution onto the grid.
         blended_probs = self._learner._blend(probs, final_weights)
-        oof_f1 = (
-            float(np.mean([f["f1_macro"] for f in per_fold])) if per_fold else float("nan")
-        )
-        oof_acc = (
-            float(np.mean([f["accuracy"] for f in per_fold])) if per_fold else float("nan")
-        )
+        oof_f1 = float(np.mean([f["f1_macro"] for f in per_fold])) if per_fold else float("nan")
+        oof_acc = float(np.mean([f["accuracy"] for f in per_fold])) if per_fold else float("nan")
         logger.info(
             "italia_parcel_vote_fit_done",
             members=list(self.members),
@@ -428,9 +408,7 @@ def _member_crop_class_ids(frame: pl.DataFrame) -> list[int]:
         The global crop class id of each prob column, in column order.
     """
     prob_cols = sorted(c for c in frame.columns if c.startswith("prob_"))
-    crop_ids = sorted(
-        int(c) for c in frame["class_id"].unique().to_list() if int(c) != 0
-    )
+    crop_ids = sorted(int(c) for c in frame["class_id"].unique().to_list() if int(c) != 0)
     if len(crop_ids) == len(prob_cols):
         return crop_ids
     # Defensive: if the prob columns outnumber the present GT classes (a fold
@@ -647,14 +625,10 @@ class ItaliaPixelVotingEnsemble:
         from ml.eval.dense_metrics import compute_dense_metrics
 
         common_ids = sorted(
-            set.intersection(
-                *[set(member_preds[m].probs_by_patch) for m in self.members]
-            )
+            set.intersection(*[set(member_preds[m].probs_by_patch) for m in self.members])
         )
         if not common_ids:
-            raise ValueError(
-                "no patch is predicted by every member; the members are not aligned."
-            )
+            raise ValueError("no patch is predicted by every member; the members are not aligned.")
 
         fold_of = {pid: folds_by_patch.get(pid, 0) for pid in common_ids}
         folds = sorted(set(fold_of.values()))
@@ -666,12 +640,8 @@ class ItaliaPixelVotingEnsemble:
                 EnsembleModel.assert_oof_only(
                     train_ids, test_ids, context=f"italia-vote fold {held}"
                 )
-                probs_tr, y_tr = self._stack_pixels(
-                    member_preds, masks_by_patch, train_ids
-                )
-                probs_te, y_te = self._stack_pixels(
-                    member_preds, masks_by_patch, test_ids
-                )
+                probs_tr, y_tr = self._stack_pixels(member_preds, masks_by_patch, train_ids)
+                probs_te, y_te = self._stack_pixels(member_preds, masks_by_patch, test_ids)
                 weights = self._learner._learn_weights(probs_tr, y_tr)
                 blended = self._learner._blend(probs_te, weights)
                 preds = blended.argmax(axis=-1)
@@ -706,12 +676,8 @@ class ItaliaPixelVotingEnsemble:
         probs_all, y_all = self._stack_pixels(member_preds, masks_by_patch, common_ids)
         final_weights = self._learner._learn_weights(probs_all, y_all)
 
-        oof_f1 = (
-            float(np.mean([f["f1_macro"] for f in per_fold])) if per_fold else float("nan")
-        )
-        oof_miou = (
-            float(np.mean([f["miou"] for f in per_fold])) if per_fold else float("nan")
-        )
+        oof_f1 = float(np.mean([f["f1_macro"] for f in per_fold])) if per_fold else float("nan")
+        oof_miou = float(np.mean([f["miou"] for f in per_fold])) if per_fold else float("nan")
 
         blended_by_patch: dict[int, np.ndarray] = {}
         for pid in common_ids:

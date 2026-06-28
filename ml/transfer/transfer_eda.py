@@ -86,9 +86,7 @@ class DatasetEDA:
 
 def _load_hcat_name_map() -> dict[int, str]:
     """Return ``{hcat_code: hcat_leaf_name}`` from the HCAT v3 reference CSV."""
-    h = pl.read_csv(
-        _HCAT3_CSV, schema_overrides={"HCAT3_code": pl.Utf8, "HCAT3_name": pl.Utf8}
-    )
+    h = pl.read_csv(_HCAT3_CSV, schema_overrides={"HCAT3_code": pl.Utf8, "HCAT3_name": pl.Utf8})
     return {int(c): str(n) for c, n in zip(h["HCAT3_code"], h["HCAT3_name"], strict=True)}
 
 
@@ -125,7 +123,8 @@ def _eurocrops_leaves(region: str) -> list[str]:
     parquet = _TRANSFER_DIR / f"eurocropsml_alphaearth_{region}.parquet"
     name_map = _load_hcat_name_map()
     df = pl.read_parquet(parquet, columns=["hcat_code"]).with_columns(
-        pl.col("hcat_code").cast(pl.Int64)
+        pl.col("hcat_code")
+        .cast(pl.Int64)
         .replace_strict(name_map, default="unknown_hcat", return_dtype=pl.Utf8)
         .alias("leaf")
     )

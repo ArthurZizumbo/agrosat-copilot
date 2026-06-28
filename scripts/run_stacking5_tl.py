@@ -36,11 +36,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--no-farslip", action="store_true")
     parser.add_argument(
-        "--sh-texture", action="store_true",
+        "--sh-texture",
+        action="store_true",
         help="Use Sentinel Hub textured patches (paid quota) instead of local npz.",
     )
     parser.add_argument(
-        "--dense-members", nargs="+", default=["utae"],
+        "--dense-members",
+        nargs="+",
+        default=["utae"],
         help="Dense members to fine-tune (utae works at 8px; tsvit needs 128px SH).",
     )
     parser.add_argument("--device", default="cuda")
@@ -62,18 +65,19 @@ def main(argv: list[str] | None = None) -> int:
     result = run_stacking5_tl(config, sh_client=client)
     out = _OUT / "stacking5_tl_summary.json"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(
-        json.dumps(result.summary, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
+    out.write_text(json.dumps(result.summary, indent=2, ensure_ascii=False), encoding="utf-8")
     logger.info(
         "stacking5_runner_done",
         out=str(out),
         **{k: v for k, v in result.summary.items() if not isinstance(v, (list, dict))},
     )
-    print(json.dumps(
-        {k: v for k, v in result.summary.items() if not isinstance(v, list)},
-        indent=2, ensure_ascii=False,
-    ))
+    print(
+        json.dumps(
+            {k: v for k, v in result.summary.items() if not isinstance(v, list)},
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
     return 0
 
 

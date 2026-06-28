@@ -181,9 +181,7 @@ class CDSEClient:
         token = self._ensure_token()
         start, _, end = datetime_range.partition("/")
         if not start or not end:
-            raise ValueError(
-                f"datetime_range must be 'start/end'; got {datetime_range!r}"
-            )
+            raise ValueError(f"datetime_range must be 'start/end'; got {datetime_range!r}")
         start_iso = _to_odata_instant(start)
         end_iso = _to_odata_instant(end)
         min_lon, min_lat, max_lon, max_lat = bbox

@@ -320,10 +320,7 @@ def build_finetune_model(
     loaded = torch.load(pastis_checkpoint, map_location="cpu", weights_only=False)
     pastis_state = resolve_state_dict(loaded, spec)
     own = model.state_dict()
-    compatible = {
-        k: v for k, v in pastis_state.items()
-        if k in own and own[k].shape == v.shape
-    }
+    compatible = {k: v for k, v in pastis_state.items() if k in own and own[k].shape == v.shape}
     own.update(compatible)
     model.load_state_dict(own, strict=False)
     logger.info(
@@ -346,14 +343,15 @@ def build_finetune_model(
         new_w2 = new_w.reshape(new_w.shape[0], -1)
         pw2 = pw.reshape(pw.shape[0], -1)
         new_w2, new_b, warmed = warm_start_head(
-            new_w2, new_b, pw2, pb,
+            new_w2,
+            new_b,
+            pw2,
+            pb,
             label_space=label_space,
             pastis_class_names=dict(SEMANTIC18_CLASS_NAMES),
         )
         with torch.no_grad():
-            model.state_dict()[head_w_name].copy_(
-                torch.from_numpy(new_w2.reshape(new_w.shape))
-            )
+            model.state_dict()[head_w_name].copy_(torch.from_numpy(new_w2.reshape(new_w.shape)))
             model.state_dict()[head_b_name].copy_(torch.from_numpy(new_b))
         logger.info("finetune_head_warmstarted", n_warmed=len(warmed))
 
@@ -404,17 +402,19 @@ def run_finetune(
 
     def _load(region: str) -> tuple[np.ndarray, np.ndarray]:
         reg = _load_region_texture(
-            region, sh_client=sh_client, windows=windows,
+            region,
+            sh_client=sh_client,
+            windows=windows,
             max_parcels=config.max_parcels_per_region,
-            size=128, max_cloud=25.0, seed=config.seed,
+            size=128,
+            max_cloud=25.0,
+            seed=config.seed,
             stratify_keep=keep if config.per_class else None,
             per_class=config.per_class,
         )
         mask = np.array([leaf in keep for leaf in reg.leaf], dtype=bool)
         patches = [p for p, m in zip(reg.patches, mask, strict=True) if m]
-        y = np.array(
-            [label_space.index[leaf] for leaf in reg.leaf[mask]], dtype=np.int64
-        )
+        y = np.array([label_space.index[leaf] for leaf in reg.leaf[mask]], dtype=np.int64)
         return patches, y
 
     train_patches, y_train = _load(source)
@@ -427,8 +427,10 @@ def run_finetune(
     )
 
     model = build_finetune_model(
-        label_space, model_kind=config.model_kind,
-        pastis_checkpoint=pastis_checkpoint, device=device,
+        label_space,
+        model_kind=config.model_kind,
+        pastis_checkpoint=pastis_checkpoint,
+        device=device,
     )
     criterion = nn.CrossEntropyLoss()
 
@@ -453,9 +455,7 @@ def run_finetune(
         total, correct = 0, 0
         for start in range(0, len(order), config.batch_size):
             batch_idx = order[start : start + config.batch_size]
-            xb = torch.from_numpy(
-                np.stack([patches[i] for i in batch_idx])
-            ).float().to(device)
+            xb = torch.from_numpy(np.stack([patches[i] for i in batch_idx])).float().to(device)
             yb = torch.from_numpy(ys[batch_idx]).to(device)
             logits = _forward(xb)  # (B, K, H, W)
             pooled = logits.mean(dim=(2, 3))  # (B, K) per-parcel
@@ -471,9 +471,7 @@ def run_finetune(
     # Phase 1: head-only warmup (backbone frozen).
     for name, p in model.named_parameters():
         p.requires_grad = _is_head(name)
-    opt = torch.optim.AdamW(
-        [p for p in model.parameters() if p.requires_grad], lr=config.lr_head
-    )
+    opt = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=config.lr_head)
     for ep in range(config.head_warmup_epochs):
         acc = _epoch(train_patches, y_train, train=True, opt=opt)
         logger.info("finetune_warmup_epoch", epoch=ep, train_acc=round(acc, 4))
@@ -499,9 +497,11 @@ def run_finetune(
     preds: list[int] = []
     with torch.no_grad():
         for start in range(0, len(test_patches), config.batch_size):
-            xb = torch.from_numpy(
-                np.stack(test_patches[start : start + config.batch_size])
-            ).float().to(device)
+            xb = (
+                torch.from_numpy(np.stack(test_patches[start : start + config.batch_size]))
+                .float()
+                .to(device)
+            )
             pooled = _forward(xb).mean(dim=(2, 3))
             preds.extend(pooled.argmax(1).cpu().numpy().tolist())
     id_to_leaf = {i: leaf for leaf, i in label_space.index.items()}

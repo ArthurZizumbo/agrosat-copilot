@@ -84,7 +84,7 @@ class Settings(BaseSettings):
     # Token endpoint of the CDSE Keycloak realm (verified against the official docs:
     # eu-cdse/documentation, sh_token_url). Public URL, not a secret.
     cdse_token_url: str = (
-        "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token"
+        "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token"  # noqa: S105
     )
     # Legacy username/password grant (kept for backward compatibility; prefer the
     # client-credentials pair above for automation).

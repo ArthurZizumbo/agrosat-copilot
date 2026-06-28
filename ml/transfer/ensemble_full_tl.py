@@ -77,14 +77,34 @@ _MIN_LEAF_SUPPORT: int = 50
 
 #: EuroCropsML S2 band order (eurocropsml.acquisition.config.S2_BANDS), 13 bands.
 _EUROCROPS_BANDS: tuple[str, ...] = (
-    "B01", "B02", "B03", "B04", "B05", "B06", "B07",
-    "B08", "B8A", "B09", "B10", "B11", "B12",
+    "B01",
+    "B02",
+    "B03",
+    "B04",
+    "B05",
+    "B06",
+    "B07",
+    "B08",
+    "B8A",
+    "B09",
+    "B10",
+    "B11",
+    "B12",
 )
 
 #: PASTIS-R 10-band order the dense models were trained on (the standard PASTIS
 #: S2 selection drops B01, B09, B10 -- the atmospheric/cirrus bands).
 _PASTIS_BANDS: tuple[str, ...] = (
-    "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B8A", "B11", "B12",
+    "B02",
+    "B03",
+    "B04",
+    "B05",
+    "B06",
+    "B07",
+    "B08",
+    "B8A",
+    "B11",
+    "B12",
 )
 
 #: Index into the 13-band EuroCropsML series for each of the 10 PASTIS bands, in
@@ -132,15 +152,17 @@ def _load_hcat_name_map() -> dict[int, str]:
     """Return ``{hcat_code: hcat_leaf_name}`` from the HCAT v3 reference CSV."""
     if not _HCAT3_CSV.is_file():
         raise FileNotFoundError(f"HCAT v3 reference missing at {_HCAT3_CSV}")
-    h = pl.read_csv(
-        _HCAT3_CSV, schema_overrides={"HCAT3_code": pl.Utf8, "HCAT3_name": pl.Utf8}
-    )
+    h = pl.read_csv(_HCAT3_CSV, schema_overrides={"HCAT3_code": pl.Utf8, "HCAT3_name": pl.Utf8})
     return {int(c): str(n) for c, n in zip(h["HCAT3_code"], h["HCAT3_name"], strict=True)}
 
 
 def _load_region_parcels(
-    region: str, *, max_parcels: int, seed: int,
-    stratify_keep: set[str] | None = None, per_class: int | None = None,
+    region: str,
+    *,
+    max_parcels: int,
+    seed: int,
+    stratify_keep: set[str] | None = None,
+    per_class: int | None = None,
     patch_side: int = _PATCH_SIDE,
 ) -> _RegionParcels:
     """Load a region's AlphaEarth + raw S2 series + leaf, bridging series to patches.
@@ -181,7 +203,8 @@ def _load_region_parcels(
     df = pl.read_parquet(
         parquet, columns=["npz_name", "hcat_code", *_ALPHAEARTH_COLS]
     ).with_columns(
-        pl.col("hcat_code").cast(pl.Int64)
+        pl.col("hcat_code")
+        .cast(pl.Int64)
         .replace_strict(name_map, default="unknown_hcat", return_dtype=pl.Utf8)
         .alias("leaf")
     )

@@ -248,9 +248,14 @@ def download_parcels_by_tile(
         width = int(min(_MAX_TILE_PX, max(patch, (max_lon - min_lon) * m_per_deg_lon / _S2_RES_M)))
         height = int(min(_MAX_TILE_PX, max(patch, (max_lat - min_lat) * 111_000.0 / _S2_RES_M)))
         tile = _download_tile(
-            client, (min_lon, min_lat, max_lon, max_lat),
-            date_from=date_from, date_to=date_to, n_frames=n_frames,
-            width=width, height=height, max_cloud=max_cloud,
+            client,
+            (min_lon, min_lat, max_lon, max_lat),
+            date_from=date_from,
+            date_to=date_to,
+            n_frames=n_frames,
+            width=width,
+            height=height,
+            max_cloud=max_cloud,
         )
         n_tiles += 1
         if tile is None:
