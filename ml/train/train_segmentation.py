@@ -761,7 +761,7 @@ def _run_epoch(
     lambda_contrast: float,
     ignore_index: int,
     optimizer: torch.optim.Optimizer | None,
-    scaler: torch.cuda.amp.GradScaler | None,
+    scaler: torch.amp.GradScaler | None,
     use_amp: bool,
     dirpa: DirPALogitAdjuster | None = None,
 ) -> float:
@@ -895,7 +895,7 @@ def _save_checkpoint_seg(
     epoch: int,
     model: nn.Module,
     optimizer: torch.optim.Optimizer,
-    scaler: torch.cuda.amp.GradScaler | None,
+    scaler: torch.amp.GradScaler | None,
     scheduler: torch.optim.lr_scheduler.LRScheduler | None,
     best_metrics: dict[str, float],
 ) -> None:
@@ -932,7 +932,7 @@ def _load_checkpoint_seg(
     *,
     model: nn.Module,
     optimizer: torch.optim.Optimizer,
-    scaler: torch.cuda.amp.GradScaler | None,
+    scaler: torch.amp.GradScaler | None,
     scheduler: torch.optim.lr_scheduler.LRScheduler | None,
     device: torch.device,
 ) -> tuple[int, dict[str, float]]:
@@ -949,7 +949,11 @@ def _load_checkpoint_seg(
         ``(start_epoch, best_metrics)``: the epoch from which to continue
         (= last completed + 1) and the previous best metrics.
     """
-    ckpt = torch.load(path, map_location=device, weights_only=False)
+    # Restricted unpickling: the checkpoint holds only state_dicts and scalars
+    # (model/optimizer/scaler/scheduler state, epoch, best_metrics), so
+    # weights_only=True is sufficient and avoids the pickle RCE vector when a
+    # checkpoint is pulled from a shared store (per the us-017 resume convention).
+    ckpt = torch.load(path, map_location=device, weights_only=True)
     model.load_state_dict(ckpt["model_state"])
     optimizer.load_state_dict(ckpt["optimizer_state"])
     if scaler is not None and ckpt.get("scaler_state") is not None:
@@ -1180,7 +1184,7 @@ def train_segmentation(
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
     amp_enabled = use_amp and resolved_device.type == "cuda"
-    scaler = torch.cuda.amp.GradScaler(enabled=amp_enabled) if amp_enabled else None
+    scaler = torch.amp.GradScaler("cuda", enabled=amp_enabled) if amp_enabled else None
     # DirPA: built once, applied only in the train epoch (eval passes through).
     dirpa = DirPALogitAdjuster(alpha=dirpa_alpha, tau=dirpa_tau)
 
