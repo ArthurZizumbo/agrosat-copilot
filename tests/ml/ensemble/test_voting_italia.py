@@ -1,4 +1,4 @@
-"""Tests for :class:`ml.ensemble.voting_italia.ItaliaVotingEnsemble` (US-079).
+"""Tests for :class:`ml.ensemble.voting_italia.ItaliaPixelVotingEnsemble` (US-079).
 
 The adapter reuses the EPIC 6 WINNER (``WeightedVotingEnsemble``) weight learner
 over DENSE Italian member predictions, learning the convex vote OUT-OF-FOLD by
@@ -26,7 +26,7 @@ import pytest
 
 from ml.ensemble.voting_italia import (
     DenseMemberPreds,
-    ItaliaVotingEnsemble,
+    ItaliaPixelVotingEnsemble,
     load_member_softmax,
 )
 
@@ -116,7 +116,7 @@ def test_load_member_softmax_missing_raises(tmp_path: Path) -> None:
 # --------------------------------------------------------------------------- #
 def test_single_member_rejected() -> None:
     with pytest.raises(ValueError, match="at least 2 members"):
-        ItaliaVotingEnsemble(("tsvit-pheno",), num_classes=_K)
+        ItaliaPixelVotingEnsemble(("tsvit-pheno",), num_classes=_K)
 
 
 # --------------------------------------------------------------------------- #
@@ -126,7 +126,7 @@ def test_fit_predict_learns_convex_weights_oof() -> None:
     """The learned weights are convex and the OOF CV runs over >= 2 folds."""
     masks, folds, label_maps = _toy_problem()
     members = _members(label_maps, strong=True)
-    ens = ItaliaVotingEnsemble(
+    ens = ItaliaPixelVotingEnsemble(
         ("tsvit-pheno", "utae", "tsvit-pheno-fullm"),
         num_classes=_K,
         n_restarts=4,
@@ -152,7 +152,7 @@ def test_fit_predict_favours_the_better_member() -> None:
     """A near-perfect member earns more weight than the noisy ones."""
     masks, folds, label_maps = _toy_problem(seed=3)
     members = _members(label_maps, strong=True)
-    ens = ItaliaVotingEnsemble(
+    ens = ItaliaPixelVotingEnsemble(
         ("tsvit-pheno", "utae", "tsvit-pheno-fullm"), num_classes=_K, n_restarts=6
     )
     result = ens.fit_predict(members, masks, folds)
@@ -166,7 +166,7 @@ def test_fit_predict_blended_maps_are_post_softmax() -> None:
     """The blended dense maps keep the (K, H, W) shape and sum to 1 per pixel."""
     masks, folds, label_maps = _toy_problem()
     members = _members(label_maps, strong=True)
-    ens = ItaliaVotingEnsemble(
+    ens = ItaliaPixelVotingEnsemble(
         ("tsvit-pheno", "utae", "tsvit-pheno-fullm"), num_classes=_K, n_restarts=4
     )
     result = ens.fit_predict(members, masks, folds)
@@ -195,7 +195,7 @@ def test_fit_predict_oof_is_leak_free(monkeypatch: pytest.MonkeyPatch) -> None:
         return original(train_ids, test_ids, context=context)
 
     monkeypatch.setattr(EnsembleModel, "assert_oof_only", staticmethod(_spy))
-    ItaliaVotingEnsemble(
+    ItaliaPixelVotingEnsemble(
         ("tsvit-pheno", "utae"), num_classes=_K, n_restarts=3
     ).fit_predict(members, masks, folds)
 
@@ -209,7 +209,7 @@ def test_fit_predict_single_fold_degrades_with_warning() -> None:
     masks, _, label_maps = _toy_problem()
     folds_one = {pid: 0 for pid in range(4)}  # every patch in the same fold
     members = _members(label_maps, strong=True)
-    ens = ItaliaVotingEnsemble(("tsvit-pheno", "utae"), num_classes=_K, n_restarts=3)
+    ens = ItaliaPixelVotingEnsemble(("tsvit-pheno", "utae"), num_classes=_K, n_restarts=3)
     result = ens.fit_predict(members, masks, folds_one)
     assert result.per_fold == []
     assert np.isnan(result.oof_f1_macro)
@@ -226,6 +226,6 @@ def test_fit_predict_unaligned_members_raise() -> None:
         "tsvit-pheno": DenseMemberPreds("tsvit-pheno", a, _K),
         "utae": DenseMemberPreds("utae", b, _K),
     }
-    ens = ItaliaVotingEnsemble(("tsvit-pheno", "utae"), num_classes=_K, n_restarts=2)
+    ens = ItaliaPixelVotingEnsemble(("tsvit-pheno", "utae"), num_classes=_K, n_restarts=2)
     with pytest.raises(ValueError, match="no patch is predicted by every member"):
         ens.fit_predict(members, masks, folds)
