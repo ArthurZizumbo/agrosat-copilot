@@ -22,11 +22,23 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
-__all__ = ["RefineEvalReport", "f1_macro", "run_refine_eval"]
+__all__ = [
+    "RefineEvalReport",
+    "build_farslip_zeroshot_scorer",
+    "f1_macro",
+    "load_real_inputs",
+    "run_real_eval",
+    "run_refine_eval",
+]
 
 #: A per-parcel FarSLIP scorer: ``canonical_id -> {class_name: score}`` (or ``None``
 #: when the chip / FarSLIP signal is unavailable for that parcel).
 FarSLIPScorer = Callable[[str], dict[str, float] | None]
+
+#: FarSLIP fold-5 zero-shot OOF: the REAL precomputed FarSLIP signal that already
+#: covers the Voting-3 fold-5 parcels (same canonical id), so the delta-F1 runs
+#: without the FarSLIP model or the chips.
+_FARSLIP_ZEROSHOT_OOF: str = "oof_parcel_farslip-zeroshot_fold5.parquet"
 
 
 def f1_macro(y_true: list[str], y_pred: list[str], *, labels: list[str] | None = None) -> float:
@@ -137,3 +149,129 @@ def run_refine_eval(
     )
     logger.info("farslip_refine_eval_done", **report)
     return report
+
+
+# ---------------------------------------------------------------------------
+# REAL inputs: the precomputed FarSLIP zero-shot OOF already covers the Voting-3
+# fold-5 parcels, so the delta-F1 runs with no FarSLIP model and no chips.
+# ---------------------------------------------------------------------------
+def _restricted_names(proba, label_space) -> dict[str, float]:
+    """Restrict an 18-class posterior to the label-space and key it by class name."""
+    from ml.eval.class_remap import restrict_posterior
+
+    restricted = restrict_posterior(proba, label_space)
+    return {label_space.class_names.get(cid, str(cid)): float(p) for cid, p in restricted.items()}
+
+
+def build_farslip_zeroshot_scorer(label_space) -> FarSLIPScorer:
+    """Build the REAL per-parcel FarSLIP scorer from the zero-shot fold-5 OOF.
+
+    The precomputed FarSLIP zero-shot posterior is restricted to the active
+    label-space and renormalized, indexed by canonical id -- the real FarSLIP signal
+    with no model / no chips. NOTE: this OOF used FarSLIP's own class prompts; the
+    US-080 variant that re-scores FarSLIP with the LLM phenology prompts is the next
+    step (needs the FarSLIP image embeddings for fold-5, not yet keyed to the OOF).
+
+    Args:
+        label_space: The active :class:`~ml.eval.class_remap.LabelSpace`.
+
+    Returns:
+        A :data:`FarSLIPScorer` (``canonical_id -> {class_name: score}``).
+
+    Raises:
+        FileNotFoundError: if the FarSLIP zero-shot OOF parquet is absent.
+    """
+    import numpy as np
+    import polars as pl
+
+    from ml.agent.tools import classify
+    from ml.utils.parcel_id import canonical_parcel_id
+    from ml.utils.parcel_reconcile import PROB_COLUMNS
+
+    path = classify._OOF_DIR / _FARSLIP_ZEROSHOT_OOF
+    if not path.exists():
+        raise FileNotFoundError(
+            f"FarSLIP zero-shot OOF missing: {path}. Run `dvc pull ml/eval/oof`."
+        )
+    frame = canonical_parcel_id(pl.read_parquet(path), col="canonical_parcel_id")
+    by_id: dict[str, dict[str, float]] = {}
+    for row in frame.iter_rows(named=True):
+        probs = np.asarray([row[c] for c in PROB_COLUMNS], dtype=np.float64)
+        by_id[row["canonical_parcel_id"]] = _restricted_names(probs, label_space)
+
+    def scorer(canonical_id: str) -> dict[str, float] | None:
+        return by_id.get(canonical_id)
+
+    return scorer
+
+
+def load_real_inputs(label_space):
+    """Build the REAL Voting-3 posteriors, member predictions and GT (label-space names).
+
+    Args:
+        label_space: The active :class:`~ml.eval.class_remap.LabelSpace`.
+
+    Returns:
+        ``(voting_posteriors, member_predictions, ground_truth)`` keyed by the fold-5
+        canonical id; GT keeps only parcels whose true class is in the label-space.
+    """
+    import numpy as np
+
+    from ml.agent.tools import classify
+
+    voting = classify._load_voting_three()
+    voting_posteriors: dict[str, dict[str, float]] = {}
+    member_predictions: dict[str, dict[str, str]] = {}
+    for cid, member_rows in voting.member_probs_by_id.items():
+        proba = voting.posterior_for_parcel(cid)
+        if proba is None:
+            continue
+        voting_posteriors[cid] = _restricted_names(proba, label_space)
+        preds: dict[str, str] = {}
+        for i, member in enumerate(classify._VOTING_MEMBERS):
+            names = _restricted_names(np.asarray(member_rows[i], dtype=np.float64), label_space)
+            if names:
+                preds[member] = max(names, key=lambda k: names[k])
+        member_predictions[cid] = preds
+
+    gt_frame = classify._build_parcel_ground_truth(list(voting_posteriors))
+    ground_truth: dict[str, str] = {}
+    for row in gt_frame.iter_rows(named=True):
+        name = label_space.class_names.get(int(row["label"]))
+        if name is not None:
+            ground_truth[row["canonical_parcel_id"]] = name
+    logger.info(
+        "farslip_refine_inputs_loaded",
+        n_voting=len(voting_posteriors),
+        n_gt=len(ground_truth),
+    )
+    return voting_posteriors, member_predictions, ground_truth
+
+
+def run_real_eval(*, alpha: float = 0.4, margin_tau: float = 0.15) -> RefineEvalReport:
+    """Run the REAL delta-F1 (Voting-3 vs Voting-3 + FarSLIP-zeroshot) over fold-5.
+
+    Ties the real Voting-3 posteriors + member predictions + GT to the real FarSLIP
+    zero-shot scorer and runs :func:`run_refine_eval`. No FarSLIP model / no chips
+    (the signal is the precomputed zero-shot OOF). Reports the delta as measured.
+
+    Args:
+        alpha: Convex weight of the FarSLIP signal when the refinement fires.
+        margin_tau: Uncertainty margin threshold for the trigger.
+
+    Returns:
+        The :class:`RefineEvalReport`.
+    """
+    from ml.eval.class_remap import get_label_space
+
+    label_space = get_label_space("france-9")
+    voting_posteriors, member_predictions, ground_truth = load_real_inputs(label_space)
+    scorer = build_farslip_zeroshot_scorer(label_space)
+    return run_refine_eval(
+        voting_posteriors,
+        ground_truth,
+        scorer,
+        member_predictions=member_predictions,
+        alpha=alpha,
+        margin_tau=margin_tau,
+    )
