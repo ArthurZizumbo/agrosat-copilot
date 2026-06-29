@@ -50,6 +50,7 @@ from ml.transfer.alphaearth_italia import (
     DEFAULT_DATASET_DIR,
     DEFAULT_FEATURES_PATH,
     ITALIA_YEAR,
+    ITALY_PARCELS_PARQUET,
     build_alphaearth_italia_features,
 )
 
@@ -75,6 +76,11 @@ def main(
         DEFAULT_OOF_DIR, help="Directory for the per-parcel OOF parquet (Voting input)."
     ),
     year: int = typer.Option(ITALIA_YEAR, help="AlphaEarth annual image year."),
+    parcels_parquet: Path = typer.Option(
+        ITALY_PARCELS_PARQUET,
+        help="EuroCrops Italy parcels parquet (e.g. iti1_2023.parquet to migrate the "
+        "ground truth to 2023; defaults to the 2018 reference).",
+    ),
     batch_size: int = typer.Option(100, help="Polygons per GEE reduceRegions request."),
     project: str | None = typer.Option(
         None, help="GCP project for the EE quota (ADC). Defaults to the active one."
@@ -116,6 +122,7 @@ def main(
         features = build_alphaearth_italia_features(
             dataset_dir=dataset_dir,
             patches_metadata=patches_metadata,
+            parcels_parquet=parcels_parquet,
             year=year,
             batch_size=batch_size,
             project=project,
