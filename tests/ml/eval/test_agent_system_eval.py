@@ -513,6 +513,106 @@ async def test_grounded_crop_no_routing_fails(monkeypatch: pytest.MonkeyPatch, m
     assert out["crop_match_accuracy"] == 0.0
 
 
+async def test_grounded_crop_out_of_vocab_handoff(
+    monkeypatch: pytest.MonkeyPatch, make_ctx
+) -> None:
+    """US-081 AC3: a dropped-crop case scores via the out-of-vocabulary handoff.
+
+    The injected posterior leans to ``Winter triticale`` (a france-12 DROPPED
+    crop). The default label-space is ``france-12``, so the REAL ``classify.run``
+    surfaces ``unresolved_candidate == 'Winter triticale'`` and renormalizes the
+    headline to an in-vocab artifact. The handoff is correct only when the agent
+    HEDGES toward the unresolved candidate (names it), and the case is scored by
+    ``oov_handoff_accuracy`` -- NOT by ``crop_match`` (which excludes it).
+    """
+    case = CropCase(
+        id="crop-oov",
+        parcel_id=26,
+        true_crop="Winter triticale",
+        injected_confidence=0.7483,
+        injected_class_probabilities={
+            "Winter triticale": 0.7483,
+            "Meadow": 0.1527,
+            "Soft winter wheat": 0.0783,
+            "Mixed cereal": 0.0207,
+        },
+        aoi_geometry=_POLY,
+        year=2019,
+        user_query="que cereal de invierno se cultiva en esta parcela?",
+        expects_needs_gee=False,
+        expects_out_of_vocab=True,
+        expected_unresolved_candidate="Winter triticale",
+    )
+    # The reasoner hedges toward the real (dropped) crop -- the honest handoff.
+    backend = ScriptedBackend(
+        turns=[
+            [_Chunk(function_call=_FC(name="classify_new_parcel", args={"aoi": _POLY}))],
+            [
+                _Chunk(
+                    text=(
+                        "El indicio mas fuerte es Winter triticale, un cultivo "
+                        "fuera de mi vocabulario calibrado; lo reporto con cautela."
+                    )
+                )
+            ],
+        ]
+    )
+    out = await eval_grounded_crop(
+        GEMINI,
+        [case],
+        backend=backend,
+        make_ctx=make_ctx,
+        monkeypatch_target=monkeypatch,
+        seed=0,
+    )
+    assert out["routing_accuracy"] == 1.0
+    assert out["oov_handoff_accuracy"] == 1.0
+    assert out["n_oov"] == 1
+    # crop_match has no in-vocab denominator for a pure out-of-vocab batch.
+    import math
+
+    assert math.isnan(out["crop_match_accuracy"])
+
+
+async def test_grounded_crop_out_of_vocab_no_hedge_fails(
+    monkeypatch: pytest.MonkeyPatch, make_ctx
+) -> None:
+    """An out-of-vocab case fails the handoff when the agent does NOT hedge."""
+    case = CropCase(
+        id="crop-oov-nohedge",
+        parcel_id=26,
+        true_crop="Winter triticale",
+        injected_confidence=0.7483,
+        injected_class_probabilities={
+            "Winter triticale": 0.7483,
+            "Meadow": 0.1527,
+            "Soft winter wheat": 0.0783,
+        },
+        aoi_geometry=_POLY,
+        year=2019,
+        user_query="que cereal hay?",
+        expects_needs_gee=False,
+        expects_out_of_vocab=True,
+        expected_unresolved_candidate="Winter triticale",
+    )
+    # The reasoner confidently asserts the in-vocab artifact (no hedge) -> fail.
+    backend = ScriptedBackend(
+        turns=[
+            [_Chunk(function_call=_FC(name="classify_new_parcel", args={"aoi": _POLY}))],
+            [_Chunk(text="El cultivo es Soft winter wheat, con alta confianza.")],
+        ]
+    )
+    out = await eval_grounded_crop(
+        GEMINI,
+        [case],
+        backend=backend,
+        make_ctx=make_ctx,
+        monkeypatch_target=monkeypatch,
+        seed=0,
+    )
+    assert out["oov_handoff_accuracy"] == 0.0
+
+
 @dataclass
 class SequencedTextBackend:
     """Text backend yielding ``answers[i]`` on the i-th ``generate_stream`` call.

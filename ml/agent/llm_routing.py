@@ -32,8 +32,8 @@ backend classes in :mod:`ml.agent.backends`.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
 
 import structlog
 
@@ -46,10 +46,15 @@ logger = structlog.get_logger(__name__)
 __all__ = [
     "DEFAULT_VARIANT",
     "VARIANTS",
+    "AvailabilityProbe",
     "ResolvedRoute",
     "Route",
+    "RouteDecision",
+    "SocketAvailabilityProbe",
     "make_backend_for_variant",
+    "make_backend_for_variant_available",
     "resolve_route",
+    "resolve_route_available",
 ]
 
 #: The four supported persisted variant tags (1:1 with the DB CHECK constraint
@@ -294,3 +299,231 @@ def make_backend_for_variant(variant: str, settings: Settings) -> LLMBackend:
         model=resolved.model_id,
         api_key=resolved.api_key or "EMPTY",
     )
+
+
+# ---------------------------------------------------------------------------
+# Availability-aware routing (US-081 AC10).
+# ---------------------------------------------------------------------------
+# Finding of the agent scorecard (US-049 a.3): the variant numbers showed the
+# routing is decided by AVAILABILITY, not capability -- the on-prem Qwen / Gemma
+# endpoints are only reachable when their tunnel/host is up, otherwise the request
+# silently failed at request time. This layer FORMALISES that: it probes whether
+# the resolved OpenAI-compatible endpoint is reachable and, when it is not, falls
+# back to the always-resolvable ``gemini`` route (honest degradation), surfacing
+# the decision so it is observable rather than a silent timeout. The probe is
+# INJECTABLE so tests assert the fallback with zero network.
+
+#: Connect timeout (seconds) for the default socket reachability probe. Short on
+#: purpose: a dead on-prem tunnel must fall back fast, not stall the request.
+_PROBE_TIMEOUT_S: float = 2.0
+
+
+@runtime_checkable
+class AvailabilityProbe(Protocol):
+    """Injectable reachability check for an OpenAI-compatible endpoint (AC10).
+
+    A probe answers the single question "is this base URL reachable right now?".
+    The production probe opens a TCP connection to the URL's host/port; tests pass
+    a deterministic stub (e.g. ``lambda url: False``) so the availability-aware
+    fallback is exercised with zero network.
+    """
+
+    def __call__(self, base_url: str) -> bool:
+        """Return ``True`` when ``base_url`` is reachable, ``False`` otherwise."""
+        ...
+
+
+class SocketAvailabilityProbe:
+    """Default :class:`AvailabilityProbe`: a short TCP connect to host:port.
+
+    Parses the host and port from the endpoint URL and attempts a TCP connection
+    with a short timeout. Any failure (DNS, refused, timeout, malformed URL) is
+    treated as "unreachable" so the caller degrades to ``gemini`` rather than
+    waiting on a dead on-prem tunnel. NEVER raises.
+
+    Attributes:
+        timeout: Connect timeout in seconds.
+    """
+
+    def __init__(self, timeout: float = _PROBE_TIMEOUT_S) -> None:
+        """Initialise the probe.
+
+        Args:
+            timeout: TCP connect timeout in seconds (default short).
+        """
+        self.timeout = timeout
+
+    def __call__(self, base_url: str) -> bool:
+        """Return whether a TCP connection to the URL's host:port succeeds.
+
+        Args:
+            base_url: The OpenAI-compatible endpoint URL (``http(s)://host:port/...``).
+
+        Returns:
+            ``True`` when the TCP connect succeeds within :attr:`timeout`,
+            ``False`` on any failure (unreachable, malformed, no URL).
+        """
+        import socket
+        from urllib.parse import urlparse
+
+        if not base_url:
+            return False
+        try:
+            parsed = urlparse(base_url)
+            host = parsed.hostname
+            if not host:
+                return False
+            port = parsed.port or (443 if parsed.scheme == "https" else 80)
+            with socket.create_connection((host, port), timeout=self.timeout):
+                return True
+        except OSError:
+            return False
+
+
+@dataclass(frozen=True)
+class RouteDecision:
+    """The outcome of an availability-aware route resolution (AC10).
+
+    Attributes:
+        route: The :class:`ResolvedRoute` actually selected (the requested one
+            when reachable, the ``gemini`` fallback otherwise).
+        requested_variant: The variant the caller asked for.
+        fell_back: ``True`` when the requested on-prem variant was unreachable and
+            the resolver fell back to ``gemini``.
+        reason: Why the decision was made -- ``"available"`` (used as requested),
+            ``"gemini_native"`` (a Gemini variant needs no probe), or
+            ``"onprem_unreachable"`` (probed and fell back).
+    """
+
+    route: ResolvedRoute
+    requested_variant: str
+    fell_back: bool
+    reason: str
+
+
+def resolve_route_available(
+    variant: str,
+    settings: Settings,
+    *,
+    probe: AvailabilityProbe | None = None,
+) -> RouteDecision:
+    """Resolve a variant to a route, falling back to ``gemini`` when unreachable.
+
+    Formalises the availability-aware routing of AC10. The flow:
+
+    1. Resolve the requested variant's route (:func:`resolve_route`).
+    2. A ``gemini`` (native SDK) route needs no probe -- the cloud API is the
+       always-resolvable degradation target, so it is returned as-is.
+    3. An ``openai_compat`` route (on-prem Qwen / Gemma) is PROBED: when the
+       endpoint is reachable it is used; when it is NOT, the resolver degrades to
+       the ``gemini`` route and flags ``fell_back=True`` so the swap is observable
+       (logged ``llm_route_onprem_unreachable``), never a silent request-time
+       timeout.
+
+    Args:
+        variant: The requested variant tag (one of :data:`VARIANTS`).
+        settings: Typed settings carrying the per-host URL / key / model values.
+        probe: Injectable reachability check. ``None`` uses the default
+            :class:`SocketAvailabilityProbe` (a short TCP connect); tests pass a
+            deterministic stub for a zero-network assertion.
+
+    Returns:
+        A :class:`RouteDecision` carrying the selected route and the fallback flag.
+    """
+    requested = resolve_route(variant, settings)
+    if requested.backend_type == "gemini":
+        return RouteDecision(
+            route=requested,
+            requested_variant=variant,
+            fell_back=False,
+            reason="gemini_native",
+        )
+
+    active_probe = probe or SocketAvailabilityProbe()
+    reachable = bool(active_probe(requested.base_url))
+    if reachable:
+        logger.info(
+            "llm_route_onprem_available",
+            variant=requested.variant,
+            base_url=requested.base_url,
+        )
+        return RouteDecision(
+            route=requested,
+            requested_variant=variant,
+            fell_back=False,
+            reason="available",
+        )
+
+    fallback = resolve_route(DEFAULT_VARIANT, settings)
+    logger.warning(
+        "llm_route_onprem_unreachable",
+        requested_variant=requested.variant,
+        base_url=requested.base_url,
+        fallback=DEFAULT_VARIANT,
+    )
+    # Keep the fallback's own variant tag so the caller can see it is now Gemini,
+    # but record the request in the decision for the scorecard / observability.
+    return RouteDecision(
+        route=replace(fallback, variant=DEFAULT_VARIANT),
+        requested_variant=variant,
+        fell_back=True,
+        reason="onprem_unreachable",
+    )
+
+
+def make_backend_for_variant_available(
+    variant: str,
+    settings: Settings,
+    *,
+    probe: AvailabilityProbe | None = None,
+) -> tuple[LLMBackend, RouteDecision]:
+    """Build a backend with availability-aware fallback (AC10), returning the decision.
+
+    The availability-aware sibling of :func:`make_backend_for_variant`: it resolves
+    the route through :func:`resolve_route_available` (probing on-prem reachability
+    and degrading to ``gemini`` when unreachable) and constructs the matching
+    backend. The :class:`RouteDecision` is returned alongside the backend so the
+    caller (``ChatService`` / scorecard) can record whether a fallback happened.
+
+    Args:
+        variant: The requested variant tag (one of :data:`VARIANTS`).
+        settings: Typed settings carrying the per-host URL / key / model values.
+        probe: Injectable reachability check (``None`` -> default socket probe).
+
+    Returns:
+        A ``(backend, decision)`` pair: the ready :class:`LLMBackend` and the
+        :class:`RouteDecision` describing whether it fell back.
+    """
+    from ml.agent.backends import VLLMOpenAIBackend, make_backend
+
+    decision = resolve_route_available(variant, settings, probe=probe)
+    resolved = decision.route
+    if resolved.backend_type == "gemini":
+        backend = make_backend(resolved.model_id, settings)
+        logger.info(
+            "backend_for_variant_available_selected",
+            requested_variant=decision.requested_variant,
+            variant=resolved.variant,
+            backend_type=resolved.backend_type,
+            model=resolved.model_id,
+            fell_back=decision.fell_back,
+            reason=decision.reason,
+        )
+        return backend, decision
+
+    logger.info(
+        "backend_for_variant_available_selected",
+        requested_variant=decision.requested_variant,
+        variant=resolved.variant,
+        backend_type=resolved.backend_type,
+        model=resolved.model_id,
+        base_url=resolved.base_url,
+        fell_back=decision.fell_back,
+        reason=decision.reason,
+    )
+    backend = VLLMOpenAIBackend(
+        base_url=resolved.base_url or _FALLBACK_OPENAI_BASE_URL,
+        model=resolved.model_id,
+        api_key=resolved.api_key or "EMPTY",
+    )
+    return backend, decision

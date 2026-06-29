@@ -4,13 +4,16 @@ This tool is deliberately HONEST about which model serves a classification (it
 used to advertise itself as a "stacking ensemble" while only ever running the
 ``xgb-alphaearth`` member -- US-053 corrects that oversell). The active serving
 model is selected by ``ClassifyParcelInput.model`` (with the legacy
-``use_stacking`` flag promoted to ``model="stacking5"`` for back-compat), and two
-independent flags shape the posterior:
+``use_stacking`` flag promoted to ``model="stacking5"`` only when ``model="xgb"``
+is set explicitly, for back-compat), and two independent flags shape the
+posterior:
 
-- ``model`` (default ``"xgb"``): for a parcel ALREADY materialized in the cached
-  fold-5 OOF the tool can serve one of three models:
-    * ``"xgb"`` -- the ``xgb-alphaearth`` tabular member (the historical default).
-    * ``"voting3"`` -- the REAL EPIC 12 deployment champion: the weighted
+- ``model`` (default ``"voting3"`` since US-081 AC4a): for a parcel ALREADY
+  materialized in the cached fold-5 OOF the tool can serve one of three models:
+    * ``"xgb"`` -- the ``xgb-alphaearth`` tabular member (the historical default,
+      kept for back-compat).
+    * ``"voting3"`` -- the REAL EPIC 12 deployment champion (the copilot DEFAULT):
+      the weighted
       soft-vote of ``tsvit-pheno`` + ``utae`` + ``xgb-alphaearth`` at the PARCEL
       level (:class:`ml.ensemble.voting_weighted.WeightedVotingEnsemble`, US-079).
       It wins the deployed france-10 comparison (F1-macro 0.9069 vs the Stacking-5
@@ -31,12 +34,15 @@ independent flags shape the posterior:
   a persisted 64-dim embedding -- it just declines to report classes the model
   resolves poorly. When OFF the full 18-class posterior is returned (legacy).
 - ``use_stacking`` (default OFF): LEGACY selector kept for back-compat. When
-  ``True`` and ``model`` is left at its default ``"xgb"``, it is treated as
-  ``model="stacking5"`` (see :attr:`ClassifyParcelInput.resolved_model`). New
-  callers should set ``model`` directly.
+  ``True`` and ``model`` is set explicitly to ``"xgb"``, it is treated as
+  ``model="stacking5"`` (see :attr:`ClassifyParcelInput.resolved_model`); under
+  the new ``"voting3"`` default it is a no-op. New callers should set ``model``
+  directly.
 
-Default (every flag at its default) the tool serves the ``xgb-alphaearth``
-tabular member restricted to the configured default label-space.
+Default (every flag at its default) the tool serves the ``voting3`` EPIC 12
+deployment champion for a fold-5 parcel -- degrading cleanly to the
+``xgb-alphaearth`` tabular member for a fresh AOI -- restricted to the configured
+default label-space.
 
 The per-parcel inference path:
 
@@ -1122,13 +1128,15 @@ async def _voting_posterior(ctx: ToolContext, inp: ClassifyParcelInput) -> np.nd
 
 
 async def run(inp: ClassifyParcelInput, ctx: ToolContext) -> ClassificationResult:
-    """Classify a parcel's crop honestly (xgb-alphaearth, Voting-3 or Stacking-5).
+    """Classify a parcel's crop honestly (Voting-3, xgb-alphaearth or Stacking-5).
 
-    By default serves the ``xgb-alphaearth`` tabular member restricted to the
-    active label-space's resolved classes (the configured
-    :data:`~ml.eval.class_remap.DEFAULT_LABEL_SPACE`). The serving model is
-    selected by ``inp.resolved_model`` (``inp.model`` with the legacy
-    ``inp.use_stacking`` flag promoted to ``"stacking5"``):
+    By default serves the ``"voting3"`` EPIC 12 deployment champion (US-081 AC4a)
+    restricted to the active label-space's resolved classes (the configured
+    :data:`~ml.eval.class_remap.DEFAULT_LABEL_SPACE`); for a fresh AOI with no
+    fold-5 OOF row it degrades cleanly to ``xgb-alphaearth`` (the historical
+    behaviour). The serving model is selected by ``inp.resolved_model``
+    (``inp.model`` with the legacy ``inp.use_stacking`` flag promoted to
+    ``"stacking5"`` only when ``inp.model == "xgb"``):
 
     - ``"voting3"`` -- the EPIC 12 weighted-vote deployment champion, used for a
       fold-5 parcel; degrades cleanly to ``xgb-alphaearth`` when no OOF row matches

@@ -1,0 +1,68 @@
+{
+  "description": "US-081 AC1: perceiver champion-vs-baseline over the real fold-5 OOF. Previous champion (Stacking-5 v1) vs v2 champion (Voting-3 v2) over france-9 (comparable) and france-12 (expanded scope).",
+  "previous_champion_france9": {
+    "label_space": "france-9",
+    "champion": "stacking5",
+    "n_parcels": 13624,
+    "n_classes": 9,
+    "baseline_xgb": {
+      "accuracy": 0.8803,
+      "macro_f1": 0.8133
+    },
+    "champion_stacking5": {
+      "accuracy": 0.9431,
+      "macro_f1": 0.9035
+    },
+    "delta_accuracy": 0.0628,
+    "delta_macro_f1": 0.0901,
+    "agreement": 0.8874,
+    "champion_fixes": 1124,
+    "champion_breaks": 268,
+    "net_fixed": 856
+  },
+  "v2_champion_france9": {
+    "label_space": "france-9",
+    "champion": "voting3",
+    "n_parcels": 13624,
+    "n_classes": 9,
+    "baseline_xgb": {
+      "accuracy": 0.8803,
+      "macro_f1": 0.8133
+    },
+    "champion_voting3": {
+      "accuracy": 0.9571,
+      "macro_f1": 0.94
+    },
+    "delta_accuracy": 0.0768,
+    "delta_macro_f1": 0.1266,
+    "agreement": 0.8925,
+    "champion_fixes": 1214,
+    "champion_breaks": 167,
+    "net_fixed": 1047
+  },
+  "v2_champion_france12": {
+    "label_space": "france-12",
+    "champion": "voting3",
+    "n_parcels": 14688,
+    "n_classes": 12,
+    "baseline_xgb": {
+      "accuracy": 0.8539,
+      "macro_f1": 0.748
+    },
+    "champion_voting3": {
+      "accuracy": 0.9375,
+      "macro_f1": 0.8992
+    },
+    "delta_accuracy": 0.0836,
+    "delta_macro_f1": 0.1513,
+    "agreement": 0.8711,
+    "champion_fixes": 1465,
+    "champion_breaks": 237,
+    "net_fixed": 1228
+  },
+  "deltas": {
+    "v2_vs_v1_france9_accuracy": 0.014,
+    "v2_vs_v1_france9_macro_f1": 0.0365,
+    "v2_france12_minus_france9_accuracy": -0.0196
+  }
+}

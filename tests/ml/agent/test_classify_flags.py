@@ -110,7 +110,11 @@ async def test_restrict_on_reduces_to_nine_and_renormalizes(monkeypatch, make_ct
 
     out = await classify_mod.run(
         ClassifyParcelInput(
-            session_id=SESSION_A, aoi=_POLYGON, year=2019, label_space="france-9"
+            session_id=SESSION_A,
+            aoi=_POLYGON,
+            year=2019,
+            label_space="france-9",
+            model="xgb",
         ),
         make_ctx(),
     )
@@ -145,6 +149,7 @@ async def test_restrict_off_surfaces_full_eighteen(monkeypatch, make_ctx) -> Non
             aoi=_POLYGON,
             year=2019,
             restrict_to_resolved_classes=False,
+            model="xgb",
         ),
         make_ctx(),
     )
@@ -169,7 +174,11 @@ async def test_restrict_on_zero_kept_mass_is_unresolved(monkeypatch, make_ctx) -
 
     out = await classify_mod.run(
         ClassifyParcelInput(
-            session_id=SESSION_A, aoi=_POLYGON, year=2019, label_space="france-9"
+            session_id=SESSION_A,
+            aoi=_POLYGON,
+            year=2019,
+            label_space="france-9",
+            model="xgb",
         ),
         make_ctx(),
     )
@@ -201,7 +210,8 @@ async def test_out_of_vocabulary_handoff_is_flagged(monkeypatch, make_ctx) -> No
     )
 
     out = await classify_mod.run(
-        ClassifyParcelInput(session_id=SESSION_A, aoi=_POLYGON, year=2019), make_ctx()
+        ClassifyParcelInput(session_id=SESSION_A, aoi=_POLYGON, year=2019, model="xgb"),
+        make_ctx(),
     )
     assert out.unresolved_candidate == "Potatoes"
     assert "Potatoes" in out.out_of_vocabulary_classes
@@ -216,7 +226,8 @@ async def test_out_of_vocabulary_handoff_is_flagged(monkeypatch, make_ctx) -> No
         classify_mod, "_load_classifier", lambda: _FakeClassifier(proba_ok, class_names)
     )
     out_ok = await classify_mod.run(
-        ClassifyParcelInput(session_id=SESSION_A, aoi=_POLYGON, year=2019), make_ctx()
+        ClassifyParcelInput(session_id=SESSION_A, aoi=_POLYGON, year=2019, model="xgb"),
+        make_ctx(),
     )
     assert out_ok.unresolved_candidate is None
     assert out_ok.crop_class == "Corn"
@@ -226,11 +237,15 @@ async def test_out_of_vocabulary_handoff_is_flagged(monkeypatch, make_ctx) -> No
 # use_stacking
 # ---------------------------------------------------------------------------
 async def test_use_stacking_serves_meta_posterior(monkeypatch, make_ctx) -> None:
-    """``use_stacking=True`` serves the Stacking-5 posterior; xgb is NOT invoked.
+    """Legacy ``model="xgb" + use_stacking=True`` serves the Stacking-5 posterior.
 
-    The Stacking-5 branch is stubbed to return a deterministic meta posterior (no
-    PASTIS-R / OOF I/O). The xgb fallback is wired to fail loudly if called, so a
-    passing test proves the stacking branch produced the result.
+    Since US-081 flipped the default ``model`` to ``"voting3"``, the legacy
+    ``use_stacking`` promotion to Stacking-5 fires ONLY when ``model`` is set
+    explicitly to ``"xgb"`` (see :attr:`ClassifyParcelInput.resolved_model`); this
+    test pins that legacy path. The Stacking-5 branch is stubbed to return a
+    deterministic meta posterior (no PASTIS-R / OOF I/O). The xgb fallback is wired
+    to fail loudly if called, so a passing test proves the stacking branch
+    produced the result.
     """
     meta_proba = _deterministic_posterior()
     _patch_embedding(monkeypatch)
@@ -252,6 +267,7 @@ async def test_use_stacking_serves_meta_posterior(monkeypatch, make_ctx) -> None
             session_id=SESSION_A,
             aoi=_POLYGON,
             year=2019,
+            model="xgb",
             use_stacking=True,
             label_space="france-9",
         ),
@@ -296,6 +312,7 @@ async def test_use_stacking_degrades_to_xgb_without_oof(monkeypatch, make_ctx, c
             session_id=SESSION_A,
             aoi=_POLYGON,
             year=2019,
+            model="xgb",
             use_stacking=True,
             restrict_to_resolved_classes=False,
         ),
@@ -337,6 +354,7 @@ async def test_use_stacking_degrades_when_parcel_not_in_oof(monkeypatch, make_ct
             session_id=SESSION_A,
             aoi=_POLYGON,
             year=2019,
+            model="xgb",
             use_stacking=True,
             restrict_to_resolved_classes=False,
         ),
@@ -347,12 +365,15 @@ async def test_use_stacking_degrades_when_parcel_not_in_oof(monkeypatch, make_ct
     assert out.crop_class == f"class_{int(np.argmax(proba))}"
 
 
-async def test_default_flags_are_xgb_restricted(monkeypatch, make_ctx) -> None:
-    """Both flags at their defaults: xgb-alphaearth restricted to france-12.
+async def test_default_model_is_voting3_degrading_to_xgb(monkeypatch, make_ctx) -> None:
+    """Default ``model`` is ``"voting3"`` (US-081 AC4a), degrading to xgb on a fresh AOI.
 
-    Stacking must NOT be consulted (``use_stacking`` defaults OFF) and the output
-    must be the twelve-class restricted posterior of the configured
-    ``DEFAULT_LABEL_SPACE`` (``restrict`` defaults ON).
+    With every flag at its default, ``run`` dispatches to the Voting-3 champion
+    branch. For an AOI that resolves to no fold-5 OOF parcel (``_voting_posterior``
+    returns ``None``) it degrades CLEANLY to the ``xgb-alphaearth`` posterior --
+    the exact safe behaviour the historical ``xgb`` default had -- restricted to
+    the configured ``DEFAULT_LABEL_SPACE`` (``france-12``, twelve classes). The
+    legacy stacking branch must NOT be consulted (``use_stacking`` defaults OFF).
     """
     proba = _deterministic_posterior()
     class_names = {i: f"class_{i}" for i in range(HARNESS_NUM_CLASSES)}
@@ -361,14 +382,22 @@ async def test_default_flags_are_xgb_restricted(monkeypatch, make_ctx) -> None:
     async def _stacking_must_not_run(ctx, inp):
         pytest.fail("stacking branch must not run when use_stacking defaults OFF")
 
+    # The default model is voting3; the AOI maps to no persisted fold-5 parcel, so
+    # the vote degrades to xgb (returns None) without touching the DB pool.
+    async def _voting_degrades(ctx, inp):
+        return None
+
     monkeypatch.setattr(classify_mod, "_stacking_posterior", _stacking_must_not_run)
+    monkeypatch.setattr(classify_mod, "_voting_posterior", _voting_degrades)
     monkeypatch.setattr(
         classify_mod, "_load_classifier", lambda: _FakeClassifier(proba, class_names)
     )
 
-    out = await classify_mod.run(
-        ClassifyParcelInput(session_id=SESSION_A, aoi=_POLYGON, year=2019), make_ctx()
-    )
+    inp = ClassifyParcelInput(session_id=SESSION_A, aoi=_POLYGON, year=2019)
+    assert inp.model == "voting3"
+    assert inp.resolved_model == "voting3"
+
+    out = await classify_mod.run(inp, make_ctx())
 
     assert len(out.class_probabilities) == 12
     assert sum(out.class_probabilities.values()) == pytest.approx(1.0, abs=1e-6)
@@ -412,6 +441,7 @@ async def test_run_honours_registered_custom_label_space(monkeypatch, make_ctx) 
                 aoi=_POLYGON,
                 year=2019,
                 label_space="corn-grape-2",
+                model="xgb",
             ),
             make_ctx(),
         )

@@ -1,0 +1,21 @@
+{
+  "us": "US-081 AC8",
+  "description": "Hedge A/B out-of-vocabulary: reasoner analysis WITH vs WITHOUT retrieve_context (RAG) grounding on REAL france-12 dropped-class parcels",
+  "reasoner_model": "gemini-2.5-pro",
+  "judge_type": "LLMHedgeJudge",
+  "judge_model": "gemini-2.5-pro",
+  "dataset": "data/agent_eval/hedge_oov_cases.jsonl",
+  "label_space": "france-12",
+  "n_cases": 6,
+  "run_date": "2026-06-29",
+  "result": {
+    "hedge_quality_ungrounded": 1.0,
+    "hedge_quality_grounded": 1.0,
+    "hedge_quality_delta": 0.0,
+    "forced_label_rate_ungrounded": 0.0,
+    "forced_label_rate_grounded": 0.0,
+    "n": 6
+  },
+  "status": "ok",
+  "interpretation": "REAL number (Gemini 2.5 Pro reasoner + Gemini 2.5 Pro LLM-as-judge over the six real out-of-vocabulary PASTIS parcels, one per france-12 dropped class). Gemini hedges CORRECTLY on BOTH runs: forced_label_rate = 0.0 (it never forces one of the twelve resolved crops) and hedge_quality = 1.0 (it acknowledges the vocabulary limit AND names the true out-of-vocabulary crop). The grounding delta is 0.0 because the ungrounded reasoner ALREADY hedges perfectly: it has the unresolved_candidate cue (= true crop in this dataset) plus the honest-hedge system prompt, so RAG adds no measurable lift on THESE cases. Honest framing (documented in hedge_ab_eval.py): a reasoner that already hedges well ungrounded yields a zero delta even though grounding works as designed; the value here is the demonstrated HONESTY (never a forced wrong label), not an accuracy gain. Caveat: unresolved_candidate == true_crop in this dataset, so the ungrounded reasoner can name the crop from the cue alone; a harder variant that hides the true crop from the cue (forcing reliance on the neighbour evidence) would isolate the RAG contribution and is left as a follow-up."
+}

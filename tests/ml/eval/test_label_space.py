@@ -29,7 +29,9 @@ import pytest
 
 from ml.data.pastis_filter import SEMANTIC18_CLASS_NAMES
 from ml.eval.class_remap import (
+    DEFAULT_LABEL_SPACE,
     FRANCE_9,
+    FRANCE_12,
     HARNESS_NUM_CLASSES,
     LabelSpace,
     get_label_space,
@@ -89,9 +91,17 @@ def test_france9_names_resolved_by_id_not_hardcoded() -> None:
     assert frozenset(space.class_names.values()) == _FRANCE_9_NAMES
 
 
-def test_get_label_space_default_is_france9() -> None:
-    """Calling ``get_label_space()`` with no name returns ``france-9``."""
-    assert get_label_space() is FRANCE_9
+def test_get_label_space_default_is_france12() -> None:
+    """Calling ``get_label_space()`` with no name returns the champion-v2 default.
+
+    The default label space was promoted to ``france-12`` in commit ``8dd4335``
+    when the copilot was re-pointed at the Voting-3 v2 champion (12 classes,
+    macro-F1 0.9001 at 12 per ``reports/voting_new/cardinalidad.json``). US-081
+    consolidates that default; ``DEFAULT_LABEL_SPACE`` is the single source of
+    truth (no hardcoded ``france-9``/``france-12`` at call sites).
+    """
+    assert DEFAULT_LABEL_SPACE == FRANCE_12.name
+    assert get_label_space() is FRANCE_12
 
 
 def test_get_label_space_unknown_raises_keyerror() -> None:
