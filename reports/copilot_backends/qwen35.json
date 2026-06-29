@@ -1,0 +1,10 @@
+{
+  "model": "qwen35",
+  "ok": true,
+  "available": true,
+  "answer": "La parcela 52 es de trigo blando de invierno con una confianza del 97,9 %; el vigor del cultivo no pudo ser determinado debido a la falta de métricas fenológicas registradas.",
+  "n_tool_calls": 0,
+  "tool_calls": [],
+  "latency_ms": 2391.1,
+  "error": null
+}

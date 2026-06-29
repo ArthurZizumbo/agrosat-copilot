@@ -174,15 +174,11 @@ async def test_classify_use_stacking_with_oof(monkeypatch, make_ctx) -> None:
     monkeypatch.setattr(
         classify_mod,
         "_load_classifier",
-        lambda: _FakeClassifier(
-            np.full(18, np.nan), {i: f"class_{i}" for i in range(18)}
-        ),
+        lambda: _FakeClassifier(np.full(18, np.nan), {i: f"class_{i}" for i in range(18)}),
     )
 
     out = await classify_mod.run(
-        ClassifyParcelInput(
-            session_id=SESSION_A, aoi=_POLYGON, year=2019, use_stacking=True
-        ),
+        ClassifyParcelInput(session_id=SESSION_A, aoi=_POLYGON, year=2019, use_stacking=True),
         make_ctx(),
     )
 
@@ -458,7 +454,14 @@ def _owns_parcel(monkeypatch) -> None:
     async def _belongs(ctx, parcel_id):
         return True
 
+    # These OOF tests exercise the legacy numeric-cast bridge, so the parcel
+    # carries no stored canonical id (US-079): force the DB lookup to ``None`` (no
+    # real DB) so ``_compute_comparison`` falls back to the integer-id cast.
+    async def _no_canonical(ctx, parcel_id):
+        return None
+
     monkeypatch.setattr(compare_mod, "_parcel_belongs_to_session", _belongs)
+    monkeypatch.setattr(classify_mod, "fetch_canonical_parcel_id", _no_canonical)
 
 
 async def test_compare_models_full_agreement(monkeypatch, make_ctx) -> None:
@@ -502,9 +505,7 @@ async def test_compare_models_empty_when_no_match(monkeypatch, make_ctx) -> None
 
     _owns_parcel(monkeypatch)
     out = await compare_mod.run(
-        CompareModelsInput(
-            session_id=SESSION_A, parcel_id=999_999, models=["utae", "tsvit-pheno"]
-        ),
+        CompareModelsInput(session_id=SESSION_A, parcel_id=999_999, models=["utae", "tsvit-pheno"]),
         make_ctx(),
     )
 
@@ -537,6 +538,45 @@ async def test_compare_models_enqueues_when_defer_wired(monkeypatch, make_ctx) -
     assert isinstance(out, ModelComparison)  # inline result still returned
 
 
+async def test_fetch_canonical_parcel_id_reads_column(monkeypatch, make_ctx) -> None:
+    """``fetch_canonical_parcel_id`` returns the stored id (US-079), else ``None``."""
+    import ml.agent.db as agent_db
+
+    conn = FakeConn(fetchval_value="10003_1103071")
+    monkeypatch.setattr(agent_db, "session_scoped_conn", fake_session_scoped_conn(conn))
+    assert await classify_mod.fetch_canonical_parcel_id(make_ctx(), 52) == "10003_1103071"
+
+    conn_none = FakeConn(fetchval_value=None)
+    monkeypatch.setattr(agent_db, "session_scoped_conn", fake_session_scoped_conn(conn_none))
+    assert await classify_mod.fetch_canonical_parcel_id(make_ctx(), 52) is None
+
+
+async def test_compare_models_uses_stored_canonical_id(monkeypatch, make_ctx) -> None:
+    """A stored canonical id resolves the real OOF rows for an int parcel id (US-079).
+
+    ``parcel_id=52`` never matches a composite OOF key by the numeric cast; the
+    stored ``canonical_parcel_id`` is what bridges it to the genuine fold-5 rows.
+    """
+    if not _oof_present("utae", "xgb-alphaearth"):
+        pytest.skip("OOF parquet fixtures missing (run `dvc pull ml/eval/oof`).")
+
+    async def _belongs(ctx, parcel_id):
+        return True
+
+    async def _canonical(ctx, parcel_id):
+        return _REAL_PARCEL
+
+    monkeypatch.setattr(compare_mod, "_parcel_belongs_to_session", _belongs)
+    monkeypatch.setattr(classify_mod, "fetch_canonical_parcel_id", _canonical)
+
+    out = await compare_mod.run(
+        CompareModelsInput(session_id=SESSION_A, parcel_id=52, models=["utae", "xgb-alphaearth"]),
+        make_ctx(),
+    )
+    # Real OOF rows resolved via the stored canonical id (not the numeric "52").
+    assert set(out.predictions) == {"utae", "xgb-alphaearth"}
+
+
 # -- multi-tenant gate (B-1 regression): parcel ownership before any OOF read --
 async def test_compare_models_rejects_foreign_parcel(monkeypatch, make_ctx) -> None:
     """A parcel not owned by the session yields the controlled empty comparison.
@@ -549,9 +589,7 @@ async def test_compare_models_rejects_foreign_parcel(monkeypatch, make_ctx) -> N
     """
     # ``fetchrow`` returns ``None`` -> parcel not visible to the session.
     fake_conn = FakeConn(fetchrow_row=None)
-    monkeypatch.setattr(
-        "ml.agent.db.session_scoped_conn", fake_session_scoped_conn(fake_conn)
-    )
+    monkeypatch.setattr("ml.agent.db.session_scoped_conn", fake_session_scoped_conn(fake_conn))
     monkeypatch.setattr(
         compare_mod,
         "_predict_for_parcel",
@@ -562,9 +600,7 @@ async def test_compare_models_rejects_foreign_parcel(monkeypatch, make_ctx) -> N
         pytest.fail("defer must not be called for a foreign parcel")
 
     out = await compare_mod.run(
-        CompareModelsInput(
-            session_id=SESSION_A, parcel_id=42, models=["utae", "xgb-alphaearth"]
-        ),
+        CompareModelsInput(session_id=SESSION_A, parcel_id=42, models=["utae", "xgb-alphaearth"]),
         make_ctx(defer=_defer),
     )
 
@@ -585,9 +621,7 @@ async def test_compare_models_accepts_owned_parcel(monkeypatch, make_ctx) -> Non
 
     # ``fetchrow`` returns a row -> parcel belongs to the session.
     fake_conn = FakeConn(fetchrow_row=FakeRecord({"?column?": 1}))
-    monkeypatch.setattr(
-        "ml.agent.db.session_scoped_conn", fake_session_scoped_conn(fake_conn)
-    )
+    monkeypatch.setattr("ml.agent.db.session_scoped_conn", fake_session_scoped_conn(fake_conn))
     # Bridge the int id to the real composite OOF row (real argmax, no fakes).
     real_predict = compare_mod._predict_for_parcel
     monkeypatch.setattr(

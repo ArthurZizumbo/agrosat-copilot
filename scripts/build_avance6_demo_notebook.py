@@ -1,37 +1,46 @@
 """Builder of the Avance 6 conversational-copilot demo notebook (Equipo 17).
 
 Generates ``notebooks/final_model/Avance6.Demo.Copiloto.Equipo17.ipynb``
-programmatically and reproducibly (same pattern as
-``scripts/build_avance5_notebook.py``). Unlike the Avance 5 integrator, this
-notebook is a **live end-to-end demonstration** of the conversational agent: it
-imports the real ``ml.agent`` stack and runs it against the seeded demo session
-in the local Postgres+PostGIS+pgvector instance. There are no placeholders and
-no fabricated outputs -- the notebook is committed UNEXECUTED and is meant to be
-run with papermill against the real database.
+programmatically and reproducibly (same idempotent ``nbformat`` + ``typer``
+pattern as the sibling ``scripts/build_*_notebook.py``). Unlike the Avance 5
+integrator, this notebook is a **live end-to-end demonstration** of the
+conversational agent: it imports the real ``ml.agent`` stack and runs it against
+the seeded demo session in the local Postgres + PostGIS + pgvector instance. No
+placeholders, no fabricated outputs -- it is committed UNEXECUTED and is meant to
+be run with papermill against the real database and LLM credentials.
+
+Scope: this is the **general** copilot demo over the seeded PASTIS parcels. The
+Mediterranean transfer-learning story (US-079, original-vs-TL) lives in
+``notebooks/transfer/`` (``us079_copilot_original_vs_tl`` for the copilot view and
+``us079_transfer_italia_eval`` for the dense analysis), so it is deliberately NOT
+duplicated here -- this notebook stays focused on the mechanism.
 
 What the notebook shows (the "Be My Eyes" pattern):
 
 1. Cover and the Be My Eyes framing (perceiver = the team's trained models emit
-   TEXT, reasoner = Gemini/Qwen reasons over that text, never over pixels).
-2. The ten geospatial tools (US-045): a table built from
-   ``build_function_declarations()``.
-3. The perceiver (US-046): ``PerceiverLayer.observe(parcel_id)`` on real parcels,
-   showing the structured TEXT observation and its ``to_prompt_block()``.
-4. The conversational agent end to end (US-047): real queries through
-   ``agent.stream_response`` rendering the tool_call -> tool_result -> answer flow.
-5. Spatial-RAG lite on/off (US-046): the ``rag_documents`` corpus and a real
-   ``spatial_rag`` retrieval near a demo parcel (anti-hallucination grounding).
-6. The on-prem Qwen variant (US-048): documented; only ``make_backend('qwen35')``
-   is executed (local, no serving required) to prove the backend swap.
+   TEXT, reasoner = a frontier/on-prem LLM reasons over that text, never pixels).
+2. The geospatial tools (US-045): a table from ``demo.tool_inventory()``.
+3. The perceiver (US-046): ``PerceiverLayer.observe`` on real parcels, surfacing
+   the structured TEXT observation and its ``to_prompt_block()``.
+4. The conversational agent end to end (US-047): three real queries that exercise
+   the synchronous parcel tools, plus the AOI/deferred tools shown directly
+   (``classify_new_parcel`` / ``get_aoi_stats`` / ``compare_models`` / ``add_aoi``).
+5. Spatial-RAG lite (US-046): the corpus, a real retrieval, AND the reasoner
+   answering over the retrieved neighbours (the anti-hallucination grounding IN USE).
+6. The three reasoner backends (US-048/052): Gemini 3.5 Flash (cloud), Qwen3.6-VL
+   (on-prem multimodal) and Qwen3.5-35B (on-prem text), with an honest availability
+   probe and the SAME grounded question put to each -- which reasoner reasons best
+   over the identical perceiver TEXT.
 7. Accessible conclusions with the real numbers.
 
-Visible prose (markdown, captions, prints) is Spanish with proper accents and
-the letter "n" with tilde; code, identifiers, comments and docstrings stay in
-English ASCII (project convention). Section titles read as work, not as a
-rubric checklist.
+All the reusable driver/renderer logic lives in :mod:`ml.agent.demo` (unit-tested
+in ``tests/ml/agent/test_demo.py``), so every cell here is a short call -- the
+notebook is the narrative, not the implementation (notebooks/CLAUDE.md).
 
-The async cells use top-level ``await`` (modern ipykernel supports it), exactly
-as the agent's public API requires.
+Visible prose (markdown, captions, prints) is Spanish with proper accents and the
+letter "n" with tilde; code, identifiers, comments and docstrings stay English
+ASCII (project convention). No emojis. The async cells use top-level ``await``
+(modern ipykernel supports it), exactly as the agent's public API requires.
 
 Usage::
 
@@ -64,42 +73,50 @@ def _build_cells() -> list:
     cells.append(
         md(
             "# Avance 6 - Demostracion del Copiloto Conversacional\n\n"
-            "### Patron \"Be My Eyes\": los modelos del equipo *ven*, un LLM frontera *razona*\n\n"
+            '### Patron "Be My Eyes": los modelos del equipo *ven*, un LLM frontera *razona*\n\n'
             "**Equipo 17** - AgroSatCopilot\n\n"
             "---\n\n"
             "Este cuaderno demuestra, de principio a fin y **con datos reales**, el copiloto "
             "conversacional para analisis satelital agricola. La idea central es el patron "
             "**Be My Eyes**:\n\n"
-            "- El **perceiver** son los modelos entrenados por el equipo (clasificador de cultivo "
-            "AlphaEarth+XGBoost y el descriptor fenologico). No hablan con el usuario: **miran una "
-            "parcela y emiten una observacion en TEXTO** (cultivo, fenologia, vigor, confianza).\n"
-            "- El **reasoner** es un LLM frontera (Gemini en la nube, o Qwen on-prem). **No clasifica "
-            "pixeles**: lee ese texto, llama herramientas geoespaciales cuando hace falta y redacta "
-            "la respuesta en lenguaje natural.\n\n"
+            "- El **perceiver** son los modelos entrenados por el equipo (el ensamble campeon "
+            "**Voting-3**: tsvit-pheno + utae + xgb-alphaearth, y el descriptor fenologico). No "
+            "hablan con el usuario: "
+            "**miran una parcela y emiten una observacion en TEXTO** (cultivo, fenologia, vigor, "
+            "confianza).\n"
+            "- El **reasoner** es un LLM frontera (Gemini en la nube) u on-prem (Qwen). **No "
+            "clasifica pixeles**: lee ese texto, llama herramientas geoespaciales cuando hace falta "
+            "y redacta la respuesta en lenguaje natural.\n\n"
             "Esta separacion es lo que hace al sistema **auditable y anti-alucinacion**: toda cifra "
             "que el reasoner enuncia proviene de una herramienta o de una observacion del perceiver, "
             "nunca de la imaginacion del modelo.\n\n"
-            "> El cuaderno corre contra la sesion de demostracion ya sembrada en la base de datos "
-            "local (Postgres + PostGIS + pgvector): 12 parcelas reales del conjunto PASTIS con su "
-            "embedding satelital y su fenologia, y un corpus de 300 documentos fenologicos con "
-            "vector para el RAG."
+            "> Esta es la demo **general** del copiloto sobre las parcelas PASTIS sembradas. El "
+            "transfer learning mediterraneo (US-079, original vs Italia) se trata aparte, en "
+            "`notebooks/transfer/` (`us079_copilot_original_vs_tl` y `us079_transfer_italia_eval`), "
+            "para que este cuaderno se mantenga centrado en el mecanismo.\n\n"
+            "> Corre contra la sesion de demostracion ya sembrada en la base local (Postgres + "
+            "PostGIS + pgvector): parcelas reales de **PASTIS-R** (fold-5 retenido) que el campeon "
+            "**Voting-3** puntua desde su OOF real, y un corpus de descripciones fenologicas "
+            "(FarSLIP) con vector para el RAG."
         )
     )
 
-    # --------------------------------------------------- parameters (papermill) ---
+    # --------------------------------------------- parameters (papermill) ---
     cells.append(
         code(
             "# Parameters cell (papermill). Defaults are the seeded demo values; override\n"
             "# any of them at run time with `papermill -p <name> <value>`.\n"
-            "model = 'gemini-2.5-flash'        # fast reasoner that works for the demo\n"
+            "model = 'gemini-3.5-flash'        # default cloud reasoner (live if GEMINI_API_KEY set)\n"
             "demo_user = 'demo@agrosat.dev'    # seeded demo session owner\n"
-            "n_parcels_show = 12               # how many seeded parcels to surface\n"
             "n_perceiver_parcels = 3           # how many parcels to run through the perceiver\n"
+            "classify_year = 2019              # AlphaEarth annual campaign for classify / aoi_stats\n"
+            "classify_model = 'voting3'        # EPIC 12 deployment champion served by classify\n"
             "rag_radius_m = 20000.0            # ST_DWithin radius for the Spatial-RAG demo (m)\n"
-            "rag_top_k = 5                     # documents retrieved per RAG query"
+            "rag_top_k = 5                     # documents retrieved per RAG query\n"
+            "# The three reasoner backends contrasted in section 5 (make_backend resolves each).\n"
+            "backend_models = ['gemini-3.5-flash', 'qwen3.6-vl', 'qwen35']"
         )
     )
-    # Tag the parameters cell so papermill recognises it.
     cells[-1]["metadata"]["tags"] = ["parameters"]
 
     # ------------------------------------------------------------------ Setup ---
@@ -107,14 +124,15 @@ def _build_cells() -> list:
         md(
             "## Preparacion del entorno\n\n"
             "Resolvemos la raiz del repositorio (sin rutas absolutas), cargamos `.env.local` para "
-            "tomar la cadena de conexion y las credenciales del LLM, y abrimos el *pool* de la base "
-            "de datos. La consola de Windows usa cp1252; forzamos UTF-8 en la salida estandar para "
-            "que los acentos de los logs y los textos en espanol no rompan la ejecucion."
+            "tomar la cadena de conexion y las credenciales del LLM, y **silenciamos el ruido de "
+            "logs** del agente (structlog emite una linea INFO por paso; en una demo en vivo eso "
+            "tapa la respuesta). La consola de Windows usa cp1252; forzamos UTF-8 en la salida para "
+            "que los acentos no rompan la ejecucion."
         )
     )
     cells.append(
         code(
-            "# --- Repo bootstrap, UTF-8 safety, env, autoreload ---\n"
+            "# --- Repo bootstrap, UTF-8 safety, env, autoreload, quiet logging ---\n"
             "import os\n"
             "import sys\n"
             "from pathlib import Path\n\n"
@@ -135,9 +153,15 @@ def _build_cells() -> list:
             "%load_ext autoreload\n"
             "%autoreload 2\n\n"
             "import time\n\n"
+            "import polars as pl\n"
             "from IPython.display import Markdown, display\n\n"
+            "# Reusable copilot-demo driver + renderers (unit-tested in tests/ml/agent/test_demo).\n"
+            "# Keeping them in ml/agent/demo is what lets every cell below be a single short call.\n"
+            "from ml.agent import demo\n\n"
+            "# Silence the agent/perceiver/tool INFO-DEBUG structlog stream (warnings still show).\n"
+            "demo.quiet_logging()\n\n"
             "print('repo:', REPO_ROOT)\n"
-            "print('reasoner model:', model, '| demo user:', demo_user)"
+            "print('reasoner por defecto:', model, '| usuario demo:', demo_user)"
         )
     )
 
@@ -149,8 +173,14 @@ def _build_cells() -> list:
             "settings = get_settings()\n"
             "pool = await get_pool()\n\n"
             "async with pool.acquire() as conn:\n"
+            "    # Pick the demo user's session that actually owns parcels (deterministic even\n"
+            "    # if several demo sessions exist), so the perceiver/tools have data to work on.\n"
             "    session_id = await conn.fetchval(\n"
-            "        'SELECT id FROM chat_sessions WHERE user_id = $1', demo_user\n"
+            "        'SELECT cs.id FROM chat_sessions cs '\n"
+            "        'LEFT JOIN parcels p ON p.session_id = cs.id '\n"
+            "        'WHERE cs.user_id = $1 '\n"
+            "        'GROUP BY cs.id ORDER BY count(p.id) DESC, cs.id LIMIT 1',\n"
+            "        demo_user,\n"
             "    )\n"
             "    n_parcels = await conn.fetchval('SELECT count(*) FROM parcels')\n"
             "    n_features = await conn.fetchval('SELECT count(*) FROM features_parcels')\n"
@@ -183,47 +213,19 @@ def _build_cells() -> list:
             "conjunto cerrado de herramientas geoespaciales, cada una con un esquema de entrada y "
             "salida validado (Pydantic). Esto acota lo que el agente puede hacer y deja cada accion "
             "rastreable.\n\n"
-            "Hay diez herramientas. Cinco son **sincronas** (se ejecutan en linea dentro del bucle "
-            "del agente: listar parcelas, serie temporal, estadisticas de un area, clasificar una "
-            "parcela nueva y explicar una prediccion). Las otras cinco son **diferidas** "
-            "(*deferred*): pueden completarse fuera de linea via un *worker* (busqueda de escenas, "
-            "teselas de mapa, guardar un area, comparar modelos y recuperar contexto del RAG).\n\n"
-            "La tabla siguiente se construye directamente desde "
-            "`build_function_declarations()`, la misma fuente de verdad que se le anuncia al LLM."
+            "Cinco son **sincronas** (se ejecutan en linea dentro del bucle del agente: listar "
+            "parcelas, serie temporal, estadisticas de un area, clasificar y explicar). Las otras "
+            "cinco son **diferidas** (*deferred*): se completan fuera de linea via un *worker* "
+            "(buscar escenas, teselas de mapa, guardar un area, comparar modelos y recuperar "
+            "contexto del RAG). La tabla se construye desde `build_function_declarations()` -- la "
+            "misma fuente de verdad que se le anuncia al LLM."
         )
     )
     cells.append(
         code(
-            "# Build the tool table straight from the function declarations advertised to the LLM.\n"
-            "import polars as pl\n\n"
-            "from google.genai import types as genai_types\n\n"
-            "from ml.agent.tools import TOOL_SPECS, build_function_declarations\n\n"
-            "declarations = build_function_declarations()\n"
-            "_rows = []\n"
-            "for decl in declarations:\n"
-            "    deferred = TOOL_SPECS[decl.name][3]\n"
-            "    _rows.append({\n"
-            "        'herramienta': decl.name,\n"
-            "        'tipo': 'diferida' if deferred else 'sincrona',\n"
-            "        'comportamiento': (\n"
-            "            'NON_BLOCKING' if deferred else 'BLOCKING'\n"
-            "        ),\n"
-            "        'descripcion': decl.description,\n"
-            "    })\n"
-            "tools_df = pl.DataFrame(_rows).sort('tipo', 'herramienta')\n"
-            "with pl.Config(fmt_str_lengths=120, tbl_width_chars=200):\n"
-            "    display(tools_df)\n"
-            "print('total de herramientas:', tools_df.height,\n"
-            "      '| sincronas:', tools_df.filter(pl.col('tipo') == 'sincrona').height,\n"
-            "      '| diferidas:', tools_df.filter(pl.col('tipo') == 'diferida').height)"
-        )
-    )
-    cells.append(
-        md(
-            "**Lectura**: el agente que conversa en esta demo expone las cinco herramientas "
-            "sincronas; las diferidas (incluida la del RAG, `retrieve_context`) requieren el "
-            "ejecutor en segundo plano y la bandera `rag_enabled`. Mas abajo demostramos el RAG "
-            "llamando su capa directamente, sin pasar por el bucle diferido."
+            "# The tool table, straight from the declarations advertised to the LLM. The whole\n"
+            "# rendering lives in ml/agent/demo so this cell is one line.\n"
+            "_tools = demo.tool_inventory()"
         )
     )
 
@@ -231,62 +233,42 @@ def _build_cells() -> list:
     cells.append(
         md(
             "## 2. El perceiver: los modelos del equipo emiten TEXTO\n\n"
-            "El perceiver es el componente que **mira** una parcela a traves de los modelos "
-            "entrenados y produce una **observacion en texto plano**, nunca tensores ni "
-            "probabilidades crudas hacia el reasoner. Reune dos cosas reales:\n\n"
-            "- el **posterior sobre los 18 cultivos** del clasificador AlphaEarth+XGBoost "
-            "(el mismo que esta detras de la herramienta de clasificacion), y\n"
-            "- la **fenologia, el vigor y la descripcion** en lenguaje natural del descriptor "
-            "fenologico (Wen et al., 2025) sobre las metricas reales de la parcela.\n\n"
+            "El perceiver **mira** una parcela a traves de los modelos entrenados y produce una "
+            "**observacion en texto plano**, nunca tensores ni probabilidades crudas hacia el "
+            "reasoner. Reune el **posterior del campeon Voting-3** -- el voto ponderado de "
+            "`tsvit-pheno` + `utae` + `xgb-alphaearth` (ganador de despliegue, F1-macro 0.9069 sobre "
+            "`france-10`) -- resuelto sobre el fold-5 real de PASTIS via `canonical_parcel_id`, mas "
+            "la **fenologia / vigor / descripcion** del descriptor (Wen et al., 2025) cuando la "
+            "parcela tiene metricas fenologicas.\n\n"
             "El metodo `to_prompt_block()` rinde esa observacion como el bloque de **anclaje** que "
             "se inyecta en el prompt del reasoner. *Ese texto* es lo que el LLM consume; la imagen "
-            "y los logits nunca cruzan la frontera. Lo mostramos sobre algunas parcelas reales de "
-            "la sesion."
+            "y los logits nunca cruzan la frontera."
         )
     )
     cells.append(
         code(
-            "# Pick the first N seeded parcels of this session and run the perceiver on each.\n"
+            "# Run the perceiver over the first N seeded parcels and tabulate the TEXT fields it\n"
+            "# exposes (no tensors). observe_parcels + perceiver_table live in ml/agent/demo.\n"
             "from ml.agent.perceiver import PerceiverLayer\n\n"
             "async with pool.acquire() as conn:\n"
-            "    parcel_ids = await conn.fetch(\n"
-            "        'SELECT id FROM parcels ORDER BY id LIMIT $1', int(n_perceiver_parcels)\n"
+            "    # Session-scoped (multi-tenant): only this session's parcels.\n"
+            "    _rows = await conn.fetch(\n"
+            "        'SELECT id FROM parcels WHERE session_id = $1 ORDER BY id LIMIT $2',\n"
+            "        session_id, int(n_perceiver_parcels),\n"
             "    )\n"
-            "parcel_ids = [int(r['id']) for r in parcel_ids]\n"
-            "print('parcelas a observar:', parcel_ids)\n\n"
+            "parcel_ids = [int(r['id']) for r in _rows]\n\n"
             "perceiver = PerceiverLayer(ctx)\n"
-            "observations = []\n"
-            "for _pid in parcel_ids:\n"
-            "    _t0 = time.perf_counter()\n"
-            "    obs = await perceiver.observe(_pid)\n"
-            "    _ms = round((time.perf_counter() - _t0) * 1000.0, 1)\n"
-            "    observations.append((obs, _ms))\n"
-            "print('observaciones generadas:', len(observations))"
+            "observations = await demo.observe_parcels(perceiver, parcel_ids)\n"
+            "demo.perceiver_table(observations)"
         )
     )
     cells.append(
         code(
-            "# Tabular view of the structured TEXT fields the perceiver exposes (no tensors).\n"
-            "_rows = []\n"
-            "for obs, _ms in observations:\n"
-            "    _rows.append({\n"
-            "        'parcela': obs.parcel_id,\n"
-            "        'cultivo': obs.crop_class,\n"
-            "        'confianza': round(obs.confidence, 3),\n"
-            "        'vigor': obs.vigor,\n"
-            "        'latencia_ms': _ms,\n"
-            "    })\n"
-            "obs_df = pl.DataFrame(_rows)\n"
-            "display(obs_df)"
-        )
-    )
-    cells.append(
-        code(
-            "# The actual grounding block the reasoner reads for the first parcel:\n"
-            "# this is the perceiver/reasoner contract -- plain TEXT, no logits.\n"
-            "first_obs, _ = observations[0]\n"
+            "# The actual grounding block the reasoner reads for the first parcel: plain TEXT,\n"
+            "# no logits -- the perceiver/reasoner contract.\n"
+            "first_obs = observations[0][0]\n"
             "display(Markdown(\n"
-            "    f'**Bloque de anclaje (`to_prompt_block`) para la parcela {first_obs.parcel_id}:**'\n"
+            "    f'**Bloque de anclaje (`to_prompt_block`) -- parcela {first_obs.parcel_id}:**'\n"
             "))\n"
             "print(first_obs.to_prompt_block())\n"
             "display(Markdown('\\n**Descripcion en lenguaje natural:**\\n\\n> ' + first_obs.description))"
@@ -294,11 +276,11 @@ def _build_cells() -> list:
     )
     cells.append(
         md(
-            "**Lectura**: cada bloque resume lo que el modelo *ve* en una parcela como frases "
-            "legibles -- cultivo estimado y confianza, fenologia (inicio de verdor, pico, "
-            "senescencia), vigor y las clases mas probables. El reasoner toma este texto como "
-            "contexto y nunca toca el embedding ni la imagen. Asi se cumple el contrato Be My Eyes: "
-            "el perceiver es los ojos, el LLM es el razonamiento."
+            "**Lectura**: cada bloque resume lo que el modelo *ve* como frases legibles -- cultivo "
+            "estimado y confianza, fenologia (inicio de verdor, pico, senescencia), vigor y las "
+            "clases mas probables. El reasoner toma este texto como contexto y nunca toca el "
+            "embedding ni la imagen. Asi se cumple el contrato Be My Eyes: el perceiver es los ojos, "
+            "el LLM es el razonamiento."
         )
     )
 
@@ -306,136 +288,93 @@ def _build_cells() -> list:
     cells.append(
         md(
             "## 3. El agente conversacional, de principio a fin\n\n"
-            "Ahora juntamos las piezas: construimos el agente con el reasoner elegido y le hacemos "
-            "preguntas reales. El agente decide que herramientas llamar, las ejecuta sobre la base "
-            "de datos de la sesion y redacta la respuesta. Mostramos el **flujo de eventos** que "
-            "emite el bucle de llamada a funciones:\n\n"
-            "1. `tool_call` - el reasoner decide llamar una herramienta (con sus argumentos).\n"
-            "2. `tool_result` - la herramienta devuelve su resultado validado.\n"
-            "3. `text_delta` - fragmentos de la respuesta final en lenguaje natural.\n"
-            "4. `done` - fin del turno.\n\n"
-            "Un ayudante recorre `agent.stream_response`, acumula los eventos y los renderiza de "
-            "forma legible: cada llamada con sus argumentos, un resumen del resultado y, al final, "
-            "la respuesta del reasoner en markdown."
+            "Construimos el agente con el reasoner por defecto y le hacemos **preguntas reales**. "
+            "El agente decide que herramientas llamar, las ejecuta sobre la base de la sesion y "
+            "redacta la respuesta. El ayudante `demo.run_agent_turn` recorre `stream_response` y "
+            "renderiza el flujo `tool_call -> tool_result -> respuesta`, de modo que cada cifra de "
+            "la respuesta tiene un origen visible.\n\n"
+            "Estas tres consultas ejercitan las herramientas **sincronas** que dependen de una "
+            "parcela: `list_parcels`, `explain_prediction` y `get_parcel_timeseries`."
         )
     )
     cells.append(
         code(
-            "# Helper: drive one turn of the agent and render the event flow nicely.\n"
-            "import json\n\n"
-            "from ml.agent.agent import create_agent\n"
-            "from ml.agent.events import (\n"
-            "    DoneEvent,\n"
-            "    ErrorEvent,\n"
-            "    PerceiverObservationEvent,\n"
-            "    TextDeltaEvent,\n"
-            "    ToolCallEvent,\n"
-            "    ToolResultEvent,\n"
-            ")\n\n"
+            "# Build the agent on the default reasoner and put three real questions to it. The\n"
+            "# driver (ml/agent/demo) renders the tool_call -> tool_result -> answer flow.\n"
+            "from ml.agent.agent import create_agent\n\n"
             "agent = create_agent(model=model, settings=settings)\n"
             "print('agente listo | backend:', type(agent.backend).__name__,\n"
             "      '| modelo:', getattr(agent.backend, 'model', None),\n"
-            "      '| herramientas:', [t.name for t in agent.tools])\n\n\n"
-            "def _summarize_result(result: dict, *, limit: int = 280) -> str:\n"
-            '    """Compact one tool result dict into a short, readable string."""\n'
-            "    text = json.dumps(result, ensure_ascii=False, default=str)\n"
-            "    return text if len(text) <= limit else text[:limit] + ' ...'\n\n\n"
-            "async def run_query(question: str) -> str:\n"
-            '    """Stream one user turn through the agent and render its event flow.\n\n'
-            "    Renders every tool_call / tool_result and accumulates the final answer\n"
-            "    text, returning it. Errors are surfaced inline (never raised).\n"
-            '    """\n'
-            "    display(Markdown(f'### Pregunta\\n\\n> {question}'))\n"
-            "    answer_parts: list[str] = []\n"
-            "    n_tool_calls = 0\n"
-            "    t0 = time.perf_counter()\n"
-            "    async for ev in agent.stream_response(\n"
-            "        messages=[{'role': 'user', 'content': question}],\n"
-            "        session_id=session_id,\n"
-            "        ctx=ctx,\n"
-            "    ):\n"
-            "        if isinstance(ev, ToolCallEvent):\n"
-            "            n_tool_calls += 1\n"
-            "            display(Markdown(\n"
-            "                f'**herramienta** `{ev.name}`  \\n'\n"
-            "                f'argumentos: `{json.dumps(ev.arguments, ensure_ascii=False, default=str)}`'\n"
-            "            ))\n"
-            "        elif isinstance(ev, ToolResultEvent):\n"
-            "            _flag = 'ok' if ev.ok else 'ERROR'\n"
-            "            display(Markdown(\n"
-            "                f'**resultado** ({_flag}) de `{ev.name}`: '\n"
-            "                f'`{_summarize_result(ev.result)}`'\n"
-            "            ))\n"
-            "        elif isinstance(ev, PerceiverObservationEvent):\n"
-            "            display(Markdown('**observacion del perceiver inyectada al reasoner.**'))\n"
-            "        elif isinstance(ev, TextDeltaEvent):\n"
-            "            answer_parts.append(ev.text)\n"
-            "        elif isinstance(ev, ErrorEvent):\n"
-            "            display(Markdown(f'**error del agente**: {ev.message}'))\n"
-            "        elif isinstance(ev, DoneEvent):\n"
-            "            pass\n"
-            "    elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 1)\n"
-            "    answer = ''.join(answer_parts).strip()\n"
-            "    display(Markdown(\n"
-            "        f'### Respuesta del reasoner\\n\\n{answer or \"_(sin texto)_\"}\\n\\n'\n"
-            "        f'_herramientas usadas: {n_tool_calls} | latencia del turno: {elapsed_ms} ms_'\n"
-            "    ))\n"
-            "    return answer"
+            "      '| herramientas:', [t.name for t in agent.tools])\n\n"
+            "_pid = parcel_ids[0]\n"
+            "_live_queries = [\n"
+            "    ('inventario -> list_parcels',\n"
+            "     'Cuantas parcelas tengo y de que cultivos son? Dame un resumen.'),\n"
+            "    ('explicacion -> explain_prediction',\n"
+            "     f'Explica la prediccion de la parcela {_pid}: que cultivo es, con que confianza '\n"
+            "     'y que dice su fenologia.'),\n"
+            "    ('serie temporal -> get_parcel_timeseries',\n"
+            "     f'Como evoluciono el NDVI de la parcela {_pid} durante 2019? Resume su '\n"
+            "     'comportamiento estacional.'),\n"
+            "]\n"
+            "for _label, _q in _live_queries:\n"
+            "    await demo.run_agent_turn(\n"
+            "        agent, _q, ctx=ctx, session_id=session_id, title=f'### {_label}'\n"
+            "    )"
         )
     )
     cells.append(
         md(
-            "### Consulta A - inventario de parcelas\n\n"
-            "Pregunta abierta sobre el inventario. Esperamos que el agente llame `list_parcels` "
-            "para enumerar las parcelas de la sesion y luego resuma cuantas hay y de que cultivos."
+            "### Las herramientas de area y diferidas, en crudo\n\n"
+            "El bucle conversacional de Gemini no puede invocar las herramientas **diferidas** "
+            "(su `behavior=NON_BLOCKING` lo rechaza la API estandar de generacion). Las "
+            "demostramos **directamente** -- el mismo `tool_result` que consumiria el agente -- "
+            "sobre un AOI pequeno alrededor de la primera parcela: `classify_new_parcel`, "
+            "`get_aoi_stats`, `compare_models` y `add_aoi`. El ayudante `demo.run_tool` inyecta el "
+            "`session_id` y **degrada de forma honesta**.\n\n"
+            "`compare_models` contrasta los **tres miembros del Voting-3 + FarSLIP** (cada uno con "
+            "su OOF fold-5 real), resuelto por el `canonical_parcel_id` de la parcela: cuando los "
+            "miembros coinciden el acuerdo es 1.0, y cuando discrepan se ve el valor real del "
+            "ensamble. `classify_new_parcel` sobre un AOI nuevo devuelve `needs_gee_sampling` (la "
+            "parcela aun no tiene embedding AlphaEarth materializado: el agente dispararia el "
+            "muestreo GEE) -- es la ruta honesta para un poligono recien dibujado."
         )
     )
     cells.append(
         code(
-            "_answer_a = await run_query(\n"
-            "    'Cuantas parcelas tengo y de que cultivos son? Dame un resumen.'\n"
-            ")"
-        )
-    )
-    cells.append(
-        md(
-            "### Consulta B - explicacion de una prediccion\n\n"
-            "Pregunta concreta sobre una parcela. Esperamos que el agente llame "
-            "`explain_prediction` (la puerta de entrada del patron Be My Eyes) y traduzca la "
-            "fenologia y el vigor a una explicacion en lenguaje natural."
-        )
-    )
-    cells.append(
-        code(
-            "_pid_demo = parcel_ids[0]\n"
-            "_answer_b = await run_query(\n"
-            "    f'Explica la prediccion de la parcela {_pid_demo}: que cultivo es, '\n"
-            "    'con que confianza y que dice su fenologia.'\n"
-            ")"
-        )
-    )
-    cells.append(
-        md(
-            "### Consulta C - serie temporal de un indice\n\n"
-            "Pregunta que requiere datos temporales. Esperamos que el agente llame "
-            "`get_parcel_timeseries` para recuperar la evolucion del NDVI de la parcela y la "
-            "interprete (cuando verdea, cuando alcanza el pico)."
-        )
-    )
-    cells.append(
-        code(
-            "_answer_c = await run_query(\n"
-            "    f'Como evoluciono el NDVI de la parcela {_pid_demo} durante 2019? '\n"
-            "    'Resume su comportamiento estacional.'\n"
-            ")"
+            "# Demonstrate the AOI-based + deferred tools DIRECTLY (run_tool injects the session id\n"
+            "# and degrades honestly). A tiny AOI around the first parcel centroid.\n"
+            "async with pool.acquire() as conn:\n"
+            "    _c = await conn.fetchrow(\n"
+            "        'SELECT ST_X(ST_Centroid(geom)) AS lon, ST_Y(ST_Centroid(geom)) AS lat '\n"
+            "        'FROM parcels WHERE id = $1', _pid\n"
+            "    )\n"
+            "_lon, _lat = float(_c['lon']), float(_c['lat'])\n"
+            "_d = 0.002\n"
+            "_aoi = {'type': 'Polygon', 'coordinates': [[\n"
+            "    [_lon - _d, _lat - _d], [_lon + _d, _lat - _d], [_lon + _d, _lat + _d],\n"
+            "    [_lon - _d, _lat + _d], [_lon - _d, _lat - _d]]]}\n\n"
+            "await demo.run_tool('classify_new_parcel',\n"
+            "                    {'aoi': _aoi, 'year': classify_year, 'model': classify_model}, ctx)\n"
+            "await demo.run_tool('get_aoi_stats', {'aoi': _aoi, 'year': classify_year}, ctx)\n"
+            "# compare_models contrasts the three Voting-3 members + FarSLIP (its own real\n"
+            "# fold-5 OOF) for the parcel, resolved by its stored canonical PASTIS-R id.\n"
+            "await demo.run_tool('compare_models',\n"
+            "                    {'parcel_id': _pid,\n"
+            "                     'models': ['tsvit-pheno', 'utae', 'xgb-alphaearth',\n"
+            "                                'farslip-ft18']}, ctx)\n"
+            "await demo.run_tool('add_aoi', {'aoi': _aoi, 'name': f'Demo AOI parcela {_pid}'}, ctx)"
         )
     )
     cells.append(
         md(
             "**Lectura**: en cada turno el agente **primero actua** (una o mas llamadas a "
-            "herramientas sobre la base real de la sesion) y **luego responde**. Toda cifra de la "
-            "respuesta tiene origen en un `tool_result` visible arriba: no hay numeros inventados. "
-            "Ese es el valor de auditar el flujo de eventos."
+            "herramientas sobre la base real) y **luego responde**. Las herramientas de area y "
+            "diferidas devuelven el mismo texto estructurado que el reasoner consume. Las dos "
+            "restantes (`search_stac` y `get_tiles`) dependen de servicios externos (catalogo STAC "
+            "/ CDSE y TiTiler) y corren via el *worker*; no se invocan aqui para no exigir esos "
+            "servicios en la demo. Toda cifra tiene origen en un `tool_result` visible: no hay "
+            "numeros inventados."
         )
     )
 
@@ -443,146 +382,141 @@ def _build_cells() -> list:
     cells.append(
         md(
             "## 4. Spatial-RAG *lite*: anclaje en parcelas vecinas reales\n\n"
-            "Para reducir alucinaciones, el agente puede anclarse en un corpus de documentos "
-            "reales (descripciones fenologicas de parcelas PASTIS-R) cercanos al area consultada. "
-            "La capa *lite* combina dos senales **en serie**:\n\n"
-            "1. un prefiltro **espacial** (`ST_DWithin` sobre geografia) que reduce el corpus a las "
-            "parcelas vecinas, y\n"
-            "2. una busqueda **semantica** (coseno con pgvector sobre el embedding AlphaEarth de "
-            "64 dimensiones) sobre ese conjunto reducido,\n\n"
-            "fusionadas con un peso configurable. Primero miramos el corpus; luego ejecutamos una "
-            "recuperacion real cerca de una parcela de la demo."
+            "Para reducir alucinaciones, el agente puede anclarse en un corpus de documentos reales "
+            "(descripciones fenologicas de parcelas PASTIS-R) cercanos al area consultada. La capa "
+            "*lite* combina **en serie** un prefiltro **espacial** (`ST_DWithin` sobre geografia) y "
+            "una busqueda **semantica** (coseno con pgvector sobre el embedding AlphaEarth de 64 "
+            "dimensiones), fusionados con un peso configurable. Primero recuperamos; luego el "
+            "**reasoner razona sobre esos vecinos** (el RAG en uso)."
         )
     )
     cells.append(
         code(
-            "# A glimpse of the real RAG corpus: count and a couple of example contents.\n"
-            "async with pool.acquire() as conn:\n"
-            "    rag_total = await conn.fetchval('SELECT count(*) FROM rag_documents')\n"
-            "    rag_with_geom = await conn.fetchval(\n"
-            "        'SELECT count(*) FROM rag_documents WHERE geom IS NOT NULL'\n"
-            "    )\n"
-            "    sample_docs = await conn.fetch(\n"
-            "        'SELECT id, source, parcel_id, content '\n"
-            "        'FROM rag_documents ORDER BY id LIMIT 3'\n"
-            "    )\n"
-            "display(Markdown(\n"
-            "    f'Corpus RAG: **{rag_total}** documentos '\n"
-            "    f'({rag_with_geom} con geometria para el prefiltro espacial).'\n"
-            "))\n"
-            "for _d in sample_docs:\n"
-            "    display(Markdown(\n"
-            "        f'- `[{_d[\"source\"]}:{_d[\"parcel_id\"]}]` {_d[\"content\"]}'\n"
-            "    ))"
-        )
-    )
-    cells.append(
-        code(
-            "# Build a small AOI around a real demo parcel centroid, then run the lite pipeline.\n"
+            "# Real RAG corpus glimpse + a real retrieval near the first parcel. spatial_rag runs\n"
+            "# the lite pipeline; rag_table (ml/agent/demo) renders the fused score + distance.\n"
             "from ml.agent.rag import spatial_rag\n\n"
             "async with pool.acquire() as conn:\n"
-            "    centroid = await conn.fetchrow(\n"
-            "        'SELECT ST_X(ST_Centroid(geom)) AS lon, ST_Y(ST_Centroid(geom)) AS lat '\n"
-            "        'FROM parcels ORDER BY id LIMIT 1'\n"
+            "    _rag_total = await conn.fetchval('SELECT count(*) FROM rag_documents')\n"
+            "    _rag_geom = await conn.fetchval(\n"
+            "        'SELECT count(*) FROM rag_documents WHERE geom IS NOT NULL'\n"
             "    )\n"
-            "lon, lat = float(centroid['lon']), float(centroid['lat'])\n"
-            "# A tiny square AOI (~degrees) centred on the parcel; the geodesic ST_DWithin radius\n"
-            "# (rag_radius_m) is what actually bounds the spatial candidate set.\n"
-            "_d = 0.01\n"
-            "aoi = {\n"
-            "    'type': 'Polygon',\n"
-            "    'coordinates': [[\n"
-            "        [lon - _d, lat - _d],\n"
-            "        [lon + _d, lat - _d],\n"
-            "        [lon + _d, lat + _d],\n"
-            "        [lon - _d, lat + _d],\n"
-            "        [lon - _d, lat - _d],\n"
-            "    ]],\n"
-            "}\n"
-            "print(f'AOI centrada en lon={lon:.5f}, lat={lat:.5f} | radio={rag_radius_m:.0f} m')\n\n"
+            "display(Markdown(\n"
+            "    f'Corpus RAG: **{_rag_total}** documentos ({_rag_geom} con geometria para el '\n"
+            "    'prefiltro espacial).'\n"
+            "))\n\n"
+            "# The session's parcels are real PASTIS-R (same region as the corpus), so the AOI\n"
+            "# around the first parcel centroid has real neighbours within the radius.\n"
+            "aoi_rag = {'type': 'Polygon', 'coordinates': [[\n"
+            "    [_lon - 0.05, _lat - 0.05], [_lon + 0.05, _lat - 0.05], [_lon + 0.05, _lat + 0.05],\n"
+            "    [_lon - 0.05, _lat + 0.05], [_lon - 0.05, _lat - 0.05]]]}\n"
             "retrieved = await spatial_rag(\n"
             "    ctx,\n"
             "    query='Que cultivos y fenologia hay en las parcelas vecinas a esta area?',\n"
-            "    aoi=aoi,\n"
-            "    top_k=int(rag_top_k),\n"
-            "    radius_m=float(rag_radius_m),\n"
+            "    aoi=aoi_rag, top_k=int(rag_top_k), radius_m=float(rag_radius_m),\n"
             ")\n"
-            "print('documentos recuperados:', len(retrieved))"
+            "demo.rag_table(retrieved)"
         )
     )
     cells.append(
         code(
-            "# Show the retrieved neighbours with their fused score and distance.\n"
-            "if retrieved:\n"
-            "    _rows = [{\n"
-            "        'doc_id': d.id,\n"
-            "        'fuente': d.source,\n"
-            "        'parcela': d.parcel_id,\n"
-            "        'distancia_m': round(d.distance_m, 1) if d.distance_m is not None else None,\n"
-            "        'score': round(d.score, 4),\n"
-            "        'contenido': d.content[:90] + ('...' if len(d.content) > 90 else ''),\n"
-            "    } for d in retrieved]\n"
-            "    with pl.Config(fmt_str_lengths=120, tbl_width_chars=200):\n"
-            "        display(pl.DataFrame(_rows))\n"
+            "# Spatial-RAG lite IN USE: feed the retrieved neighbours to the reasoner as a cited\n"
+            "# grounding block and let it answer over THAT text. Honest: skipped cleanly if the\n"
+            "# default reasoner is not reachable here (no fabricated answer).\n"
+            "_avail_default, _ = demo.probe_availability([model], settings, display=False)\n"
+            "if retrieved and _avail_default.get(model):\n"
+            "    _ctx_block = '\\n'.join(f'[{d.source}:{d.parcel_id}] {d.content}' for d in retrieved)\n"
+            "    _rag_q = (\n"
+            "        'Contexto recuperado por Spatial-RAG (parcelas vecinas reales):\\n'\n"
+            "        f'{_ctx_block}\\n\\nCon SOLO ese contexto, resume en dos frases que cultivos y '\n"
+            "        'fenologia predominan en las parcelas vecinas y cita [fuente:parcela].'\n"
+            "    )\n"
+            "    await demo.run_backend_turn(\n"
+            "        model, _rag_q, settings=settings, ctx=ctx, session_id=session_id,\n"
+            "        availability=_avail_default,\n"
+            "        title='### El reasoner razona sobre el contexto del RAG',\n"
+            "    )\n"
+            "elif not retrieved:\n"
+            "    display(Markdown('> Sin vecinos en el radio: nada que anclar. Aumenta `rag_radius_m`.'))\n"
             "else:\n"
             "    display(Markdown(\n"
-            "        '> No se hallaron vecinos dentro del radio. Aumenta `rag_radius_m` y reejecuta.'\n"
+            "        f'> Reasoner `{model}` no disponible aqui; la celda se ejecuta con credenciales '\n"
+            "        '/ endpoint vivos. El bloque de contexto de arriba es lo que recibiria el '\n"
+            "        'reasoner.'\n"
             "    ))"
         )
     )
     cells.append(
         md(
-            "**Lectura**: con `rag_enabled=true`, el reasoner recibe estos documentos como bloque "
-            "de contexto citado (`[fuente:parcela] ...`). Son **parcelas vecinas reales**, no "
-            "ejemplos genericos: el modelo se aterriza en evidencia local y puede citar de donde "
-            "sale cada afirmacion. Esa es la palanca anti-alucinacion del patron Spatial-RAG. Con "
-            "la bandera apagada (por defecto), la herramienta diferida `retrieve_context` ni "
-            "siquiera toca la base: el agente razona sin anclaje, exactamente como antes."
+            "**Lectura**: el reasoner recibe los documentos como bloque de contexto citado "
+            "(`[fuente:parcela] ...`). Son **parcelas vecinas reales**, no ejemplos genericos: el "
+            "modelo se aterriza en evidencia local y cita de donde sale cada afirmacion. Esa es la "
+            "palanca anti-alucinacion del patron Spatial-RAG."
         )
     )
 
-    # ====================================== Seccion 5 - Variante Qwen on-prem ===
+    # ====================================== Seccion 5 - Comparacion 3 backends ====
     cells.append(
         md(
-            "## 5. La variante on-prem con Qwen (soberania de datos)\n\n"
-            "El mismo agente puede razonar con un LLM **on-prem** en vez de Gemini en la nube. La "
-            "abstraccion de *backend* lo hace transparente: cambiar `model='qwen35'` hace que "
-            "`make_backend` devuelva un `VLLMOpenAIBackend` que apunta a un servidor "
-            "OpenAI-compatible (Qwen3.5-35B-A3B servido con vLLM en la H100, puerto `:8002`). El "
-            "bucle del agente, las herramientas y el perceiver **no cambian**.\n\n"
-            "Esto importa para clientes con **requisitos de soberania de datos**: el razonamiento "
-            "ocurre dentro de su perimetro, sin enviar datos a una API externa.\n\n"
-            "Aqui **no levantamos el serving** (puede no estar arriba), pero si comprobamos -- de "
-            "forma puramente local -- que la seleccion de backend funciona y apunta al endpoint "
-            "correcto."
+            "## 5. Tres reasoners, un mismo perceiver: comparacion de backends\n\n"
+            "La abstraccion `LLMBackend` / `make_backend` desacopla el bucle del agente del modelo "
+            "concreto. Contrastamos **tres reasoners**:\n\n"
+            "- **Gemini 3.5 Flash** -- nube (`GeminiBackend`, Vertex AI o la API GenAI).\n"
+            "- **Qwen3.6-VL** -- on-prem **multimodal** servido por llama.cpp (`:8003`).\n"
+            "- **Qwen3.5-35B** -- on-prem **texto** servido por vLLM (`:8002`). Soberania de datos: "
+            "el razonamiento ocurre dentro del perimetro.\n\n"
+            "Primero resolvemos cada nombre a su backend (sin red) y **sondeamos honestamente** "
+            "cual esta vivo aqui (credenciales de Gemini, o endpoint OpenAI-compatible que "
+            "responda). El perceiver es **el mismo** para los tres: la clase y la confianza no "
+            "cambian con el LLM, porque el LLM no clasifica.\n\n"
+            "> Los dos Qwen on-prem comparten la **misma H100**, asi que se evaluan **uno a la "
+            "vez** (no caben los dos en VRAM a la vez). Cada corrida en vivo guarda su registro "
+            "real bajo `reports/copilot_backends/` y la tabla final se rearma con todas las "
+            "corridas: un backend que aun no se evaluo aparece como **no disponible**, sin inventar."
         )
     )
     cells.append(
         code(
-            "# Backend swap is a local, network-free operation: verify the selection only.\n"
-            "from ml.agent.backends import GeminiBackend, VLLMOpenAIBackend, make_backend\n\n"
-            "cloud_backend = make_backend('gemini-2.5-flash', settings)\n"
-            "onprem_backend = make_backend('qwen35', settings)\n\n"
-            "assert isinstance(cloud_backend, GeminiBackend)\n"
-            "assert isinstance(onprem_backend, VLLMOpenAIBackend)\n\n"
-            "display(Markdown(\n"
-            "    '| variante | backend | endpoint / modelo |\\n'\n"
-            "    '|----------|---------|-------------------|\\n'\n"
-            "    f'| nube | `{type(cloud_backend).__name__}` | `{cloud_backend.model}` (Vertex AI / GenAI) |\\n'\n"
-            "    f'| on-prem | `{type(onprem_backend).__name__}` | `{onprem_backend._base_url}` '\n"
-            "    f'(modelo `{onprem_backend.model}`) |'\n"
-            "))\n"
-            "print('Backend on-prem seleccionado sin llamadas de red:',\n"
-            "      type(onprem_backend).__name__, '->', onprem_backend._base_url)"
+            "# Resolve each reasoner to its backend (network-free) and probe availability HONESTLY.\n"
+            "# Both renderings live in ml/agent/demo.\n"
+            "demo.backend_overview(backend_models, settings)\n"
+            "availability, _ = demo.probe_availability(backend_models, settings)"
+        )
+    )
+    cells.append(
+        code(
+            "# Put the SAME grounded question (the perceiver's TEXT for the first parcel) to every\n"
+            "# available backend. The dense observation is FIXED; only the reasoning over it varies.\n"
+            "# The on-prem Qwen text and Qwen-VL share the single H100 GPU, so they are evaluated\n"
+            "# ONE AT A TIME: each live pass saves its real record under reports/copilot_backends/\n"
+            "# and the table is reassembled from every pass (a backend never run shows as such).\n"
+            "_grounded_q = (\n"
+            "    first_obs.to_prompt_block()\n"
+            "    + '\\n\\nCon esa observacion del perceiver (no inventes cifras), di en una frase '\n"
+            "    f'breve que cultivo es la parcela {first_obs.parcel_id}, su confianza y su vigor.'\n"
+            ")\n"
+            "_records_dir = REPO_ROOT / 'reports' / 'copilot_backends'\n"
+            "_this_run = {}\n"
+            "for _name in backend_models:\n"
+            "    _rec = await demo.run_backend_turn(\n"
+            "        _name, _grounded_q, settings=settings, ctx=ctx, session_id=session_id,\n"
+            "        availability=availability,\n"
+            "    )\n"
+            "    _this_run[_name] = _rec\n"
+            "    demo.save_backend_record(_rec, _records_dir)   # persists only a successful run\n"
+            "# Prefer a persisted real record (possibly from a previous one-at-a-time pass).\n"
+            "_persisted = demo.load_persisted_records(backend_models, _records_dir)\n"
+            "backend_records = [_persisted.get(_n, _this_run[_n]) for _n in backend_models]\n"
+            "demo.cross_backend_table(backend_records)"
         )
     )
     cells.append(
         md(
-            "**Lectura**: la unica diferencia entre la version nube y la on-prem es el nombre del "
-            "modelo que se pasa a la fabrica. Construir el agente con `create_agent(model='qwen35')` "
-            "produciria exactamente el mismo flujo de esta demo, pero razonando dentro del "
-            "perimetro del cliente. No lo ejecutamos aqui porque depende de que el servidor vLLM "
-            "este levantado en la H100."
+            "**Lectura**: con el perceiver fijo, lo que cambia entre backends es la **calidad del "
+            "razonamiento sobre ese texto**, el uso de herramientas y la **latencia / coste**. "
+            "Gemini y Qwen3.5 (texto) pueden ademas llamar herramientas; Qwen3.6-VL razona sobre el "
+            "texto inyectado. Un backend no disponible aparece como tal -- sin cifras inventadas. "
+            "Construir el agente con cualquiera de los tres produce el mismo flujo de esta demo, "
+            "pero razonando dentro (on-prem) o fuera (nube) del perimetro del cliente."
         )
     )
 
@@ -594,31 +528,23 @@ def _build_cells() -> list:
             "- Un **copiloto conversacional completo** que responde preguntas sobre parcelas "
             "agricolas reales, hablando con un LLM que **razona** pero no clasifica pixeles.\n"
             "- La **separacion Be My Eyes**: los modelos del equipo miran cada parcela y emiten una "
-            "observacion en texto (cultivo, fenologia, vigor, confianza); el LLM lee ese texto, "
-            "llama herramientas y redacta la respuesta.\n"
-            "- Un **conjunto cerrado de diez herramientas geoespaciales** con esquemas validados, "
-            "de las cuales el agente de la demo expone cinco sincronas.\n"
-            "- Un flujo de **eventos auditable**: cada cifra de cada respuesta proviene de una "
-            "herramienta visible en el flujo, no de la imaginacion del modelo.\n"
-            "- Un **RAG espacial** que ancla al modelo en parcelas vecinas reales, recuperadas "
-            "combinando cercania geografica y similitud del embedding satelital -- la palanca "
-            "anti-alucinacion del sistema.\n"
-            "- Una **variante on-prem** que corre el mismo agente con un modelo dentro del "
-            "perimetro del cliente, cambiando una sola linea.\n\n"
-            "**Numeros de la demo**\n\n"
-            "- 12 parcelas reales con su embedding satelital y su fenologia.\n"
-            "- 300 documentos en el corpus de recuperacion, con vector de 64 dimensiones.\n"
-            "- 18 cultivos posibles en el clasificador que alimenta al perceiver.\n"
-            "- Una respuesta del agente combina, tipicamente, una o dos llamadas a herramientas "
-            "antes de redactar; las latencias por turno quedan impresas arriba.\n\n"
+            "observacion en texto; el LLM lee ese texto, llama herramientas y redacta la respuesta.\n"
+            "- Un **conjunto cerrado de diez herramientas** con esquemas validados: las cinco "
+            "sincronas y, en crudo, las de area y diferidas (`classify`, `get_aoi_stats`, "
+            "`compare_models`, `add_aoi`).\n"
+            "- Un **RAG espacial en uso**: el reasoner se ancla en parcelas vecinas reales, "
+            "recuperadas combinando cercania geografica y similitud del embedding satelital, y cita "
+            "su origen -- la palanca anti-alucinacion.\n"
+            "- **Tres reasoners intercambiables** (Gemini nube, Qwen3.6-VL y Qwen3.5 on-prem) sobre "
+            "el **mismo** perceiver, con sonda honesta de disponibilidad y la misma pregunta "
+            "anclada para cada uno.\n\n"
             "**Lo que sigue**\n\n"
-            "- Activar el RAG y las herramientas diferidas en el bucle del agente mediante el "
-            "ejecutor en segundo plano, para que el reasoner pueda pedir contexto vecino por su "
-            "cuenta.\n"
-            "- Conectar el frontend de mapa para dibujar areas y disparar estas mismas consultas "
-            "desde la interfaz.\n"
-            "- Levantar el serving on-prem y comparar, sobre las mismas preguntas, la calidad de "
-            "las respuestas de la nube frente a las del modelo local."
+            "- Activar el RAG y las herramientas diferidas dentro del bucle del agente via el "
+            "ejecutor en segundo plano, para que el reasoner pida contexto vecino por su cuenta.\n"
+            "- Conectar el frontend de mapa para dibujar areas y disparar estas mismas consultas.\n"
+            "- Para el transfer learning Francia -> Italia accedido por el copiloto, ver "
+            "`notebooks/transfer/us079_copilot_original_vs_tl` (vista copiloto) y "
+            "`us079_transfer_italia_eval` (analisis denso)."
         )
     )
 

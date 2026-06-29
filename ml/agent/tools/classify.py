@@ -314,9 +314,7 @@ class _StackingFive:
         row = self.meta_features_by_id.get(canonical_id)
         if row is None:
             return None
-        proba_local = np.asarray(
-            self.meta.predict_proba(row.reshape(1, -1)), dtype=np.float64
-        )[0]
+        proba_local = np.asarray(self.meta.predict_proba(row.reshape(1, -1)), dtype=np.float64)[0]
         full = np.zeros(_NUM_CLASSES, dtype=np.float64)
         for col, cls in enumerate(self.meta_classes):
             cls_int = int(cls)
@@ -372,15 +370,13 @@ def _load_stacking_five() -> _StackingFive:
     gt = _build_parcel_ground_truth(joined.get_column(key).to_list())
     train = joined.join(gt, on=key, how="inner").sort(key)
     if train.height == 0:
-        raise ValueError(
-            "no parcels remain after joining the OOF with the PASTIS-R ground truth."
-        )
+        raise ValueError("no parcels remain after joining the OOF with the PASTIS-R ground truth.")
 
     x_meta = train.select(feature_cols).to_numpy().astype(np.float64)
     y_meta = train.get_column("label").to_numpy().astype(np.int64)
-    meta = LogisticRegression(
-        max_iter=2000, class_weight="balanced", random_state=42
-    ).fit(x_meta, y_meta)
+    meta = LogisticRegression(max_iter=2000, class_weight="balanced", random_state=42).fit(
+        x_meta, y_meta
+    )
 
     # Index EVERY joined parcel's meta-features (not just the GT-labelled subset)
     # so a parcel present in all five OOF can be scored even if its GT was dropped.
@@ -543,8 +539,7 @@ def _load_voting_three() -> _VotingThree:
         n_members=len(_VOTING_MEMBERS),
         n_parcels=int(joined.height),
         weights={
-            member: round(float(w), 4)
-            for member, w in zip(_VOTING_MEMBERS, weights, strict=True)
+            member: round(float(w), 4) for member, w in zip(_VOTING_MEMBERS, weights, strict=True)
         },
     )
     return _VotingThree(weights=weights, member_probs_by_id=member_probs_by_id)
@@ -581,9 +576,7 @@ def _build_parcel_geometries(canonical_ids: list[str]):  # type: ignore[no-untyp
     from ml.utils.parcel_reconcile import load_pastis_parcel_ids
 
     if not _PASTIS_METADATA.exists():
-        raise FileNotFoundError(
-            f"PASTIS-R metadata.geojson not found: {_PASTIS_METADATA}."
-        )
+        raise FileNotFoundError(f"PASTIS-R metadata.geojson not found: {_PASTIS_METADATA}.")
     meta = _json.loads(_PASTIS_METADATA.read_text(encoding="utf-8"))
     # PASTIS-R metadata is in EPSG:2154 (Lambert-93, metres); reproject to lon/lat.
     crs_name = meta.get("crs", {}).get("properties", {}).get("name", "EPSG:2154")
@@ -679,9 +672,7 @@ def _build_parcel_ground_truth(canonical_ids: list[str]):  # type: ignore[no-unt
     for pid in patch_ids:
         target_path = _PASTIS_ROOT / "ANNOTATIONS" / f"TARGET_{pid}.npy"
         if not target_path.exists():
-            raise FileNotFoundError(
-                f"PASTIS-R semantic TARGET not found: {target_path}."
-            )
+            raise FileNotFoundError(f"PASTIS-R semantic TARGET not found: {target_path}.")
         target = np.load(target_path)
         if target.ndim == 3:  # PASTIS ships (3, H, W); the semantic channel is 0.
             target = target[0]
@@ -711,9 +702,7 @@ def _build_parcel_ground_truth(canonical_ids: list[str]):  # type: ignore[no-unt
     return canonical_parcel_id(frame, col="canonical_parcel_id")
 
 
-async def _resolve_canonical_parcel_id(
-    ctx: ToolContext, aoi: GeoJSONGeometry
-) -> str | None:
+async def _resolve_canonical_parcel_id(ctx: ToolContext, aoi: GeoJSONGeometry) -> str | None:
     """Resolve the canonical fold-5 OOF key of the persisted parcel under ``aoi``.
 
     The Stacking-5 OOF is keyed by a canonical ``parcel_id`` (Utf8). The DB has no
@@ -758,6 +747,35 @@ async def _resolve_canonical_parcel_id(
         pl.DataFrame({"canonical_parcel_id": [parcel_id]}), col="canonical_parcel_id"
     )["canonical_parcel_id"][0]
     return str(bridged)
+
+
+async def fetch_canonical_parcel_id(ctx: ToolContext, parcel_id: int) -> str | None:
+    """Return a stored parcel's canonical PASTIS-R id (``"{patch}_{local}"``), if any.
+
+    The OOF-backed tools (the Voting-3 perceiver and ``compare_models``) key the
+    model OOF parquets by the canonical ``"{patch}_{local}"`` id, which the numeric
+    cast of ``parcels.id`` never reproduces. A parcel seeded from a real PASTIS-R
+    fold-5 row carries that id in ``parcels.canonical_parcel_id`` (US-079 migration);
+    this reads it session-scoped so the OOF lookup hits the real held-out prediction.
+    Returns ``None`` for a parcel without it (a fresh AOI or a non-PASTIS demo
+    parcel), and the caller degrades honestly to the embedding path.
+
+    Args:
+        ctx: Tool execution context (pool, session id).
+        parcel_id: Stored parcel id to resolve.
+
+    Returns:
+        The canonical parcel id string, or ``None`` when absent.
+    """
+    from ml.agent.db import session_scoped_conn
+
+    async with session_scoped_conn(ctx.session_id) as conn:
+        value = await conn.fetchval(
+            "SELECT canonical_parcel_id FROM parcels WHERE id = $1 AND session_id = $2",
+            parcel_id,
+            ctx.session_id,
+        )
+    return str(value) if value is not None else None
 
 
 async def _fetch_parcel_embedding(
@@ -915,9 +933,7 @@ def _build_result(
         )
 
     top_idx = int(np.argmax(proba))
-    named = {
-        class_names.get(idx, str(idx)): float(proba[idx]) for idx in range(_NUM_CLASSES)
-    }
+    named = {class_names.get(idx, str(idx)): float(proba[idx]) for idx in range(_NUM_CLASSES)}
     return ClassificationResult(
         crop_class=class_names.get(top_idx, str(top_idx)),
         confidence=float(proba[top_idx]),
@@ -925,9 +941,7 @@ def _build_result(
     )
 
 
-async def _stacking_posterior(
-    ctx: ToolContext, inp: ClassifyParcelInput
-) -> np.ndarray | None:
+async def _stacking_posterior(ctx: ToolContext, inp: ClassifyParcelInput) -> np.ndarray | None:
     """Try to produce the Stacking-5 posterior for the parcel under ``inp.aoi``.
 
     Resolves the parcel's bridged canonical id, loads the cached Stacking-5 meta
@@ -982,9 +996,7 @@ async def _stacking_posterior(
     return posterior
 
 
-async def _voting_posterior(
-    ctx: ToolContext, inp: ClassifyParcelInput
-) -> np.ndarray | None:
+async def _voting_posterior(ctx: ToolContext, inp: ClassifyParcelInput) -> np.ndarray | None:
     """Try to produce the Voting-3 posterior for the parcel under ``inp.aoi``.
 
     Resolves the parcel's bridged canonical id, loads the cached Voting-3 weighted
@@ -1028,8 +1040,7 @@ async def _voting_posterior(
     if posterior is None:
         logger.warning(
             "classify_voting3_unavailable",
-            reason="parcel not in the three-member fold-5 OOF universe; "
-            "using xgb-alphaearth.",
+            reason="parcel not in the three-member fold-5 OOF universe; using xgb-alphaearth.",
             canonical_parcel_id=canonical_id,
         )
         return None

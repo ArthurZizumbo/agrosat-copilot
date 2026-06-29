@@ -10,18 +10,19 @@ text-only (AC-2 of US-046).
 What the perceiver wraps
 ------------------------
 Conceptually the perceiver is the wrapper over the phenology-aware crop models
-(TSViT-pheno / FarSLIP-pheno / AlphaEarth+XGBoost). It serves the **Stacking-5
-champion** (the EPIC 6 / US-043 winner: the logreg meta over the five members'
-cached fold-5 OOF) whenever the parcel is materialized in that OOF universe,
-restricted to the nine well-resolved ``france-9`` classes (the agent+app
-directive: the champion only ever resolves over the best-resolved classes). The
-dense temporal members (TSViT-pheno, FarSLIP-pheno) are NOT re-run inline -- the
-Stacking-5 meta consumes their pre-materialised OOF, so no raster/GPU inference
-happens inside the tool (honouring the ``ml/agent/AGENTS.md`` rule). When the OOF
-artifacts are unavailable or the parcel is fresh, it degrades CLEANLY to the
-tabular ``xgb-alphaearth`` member. The perceiver therefore composes:
+(TSViT-pheno / U-TAE / AlphaEarth+XGBoost). It serves the **Voting-3 champion**
+(the EPIC 12 deployment winner: the weighted soft-vote of those three members'
+cached fold-5 OOF, france-10 F1 0.9069 > the legacy Stacking-5 0.8927) whenever
+the parcel is materialized in that OOF universe, restricted to the nine
+well-resolved ``france-9`` classes (the agent+app directive: the champion only
+ever resolves over the best-resolved classes). The dense temporal members
+(TSViT-pheno, U-TAE) are NOT re-run inline -- the Voting-3 blend consumes their
+pre-materialised OOF, so no raster/GPU inference happens inside the tool
+(honouring the ``ml/agent/AGENTS.md`` rule). When the parcel carries no canonical
+OOF id (a fresh AOI / non-PASTIS parcel) it degrades CLEANLY to the tabular
+``xgb-alphaearth`` member. The perceiver therefore composes:
 
-* the champion-first posterior over the ``france-9`` classes (Stacking-5 meta,
+* the champion-first posterior over the ``france-9`` classes (Voting-3 blend,
   degrading to XGBoost-AlphaEarth; reused from :mod:`ml.agent.tools.classify`), and
 * the phenology / vigor / natural-language description from the real Wen et al.
   (2025) descriptor (reused from :mod:`ml.agent.tools.explain`).
@@ -169,9 +170,7 @@ class PerceiverLayer:
         )
 
         explanation = await explain.run(
-            ExplainPredictionInput(
-                session_id=self._ctx.session_id, parcel_id=parcel_id
-            ),
+            ExplainPredictionInput(session_id=self._ctx.session_id, parcel_id=parcel_id),
             self._ctx,
         )
         class_probabilities = await self._class_posterior(
@@ -195,9 +194,7 @@ class PerceiverLayer:
         )
         return observation
 
-    async def observe_aoi(
-        self, aoi: GeoJSONGeometry, year: int
-    ) -> PerceiverObservation:
+    async def observe_aoi(self, aoi: GeoJSONGeometry, year: int) -> PerceiverObservation:
         """Observe a freshly drawn AOI polygon and emit a TEXT observation.
 
         An AOI is not a persisted parcel, so there is no stored phenology row to
@@ -250,55 +247,50 @@ class PerceiverLayer:
     ) -> dict[str, float]:
         """Compute the class posterior for the session's parcel, champion-first.
 
-        Serves the Stacking-5 champion posterior (the EPIC 6 / US-043 winner)
-        restricted to the well-resolved ``france-9`` label-space, matching the
-        agent+app directive that the champion only ever resolves over the nine
-        best-resolved classes. The parcel's integer id is bridged to the cached
-        fold-5 OOF canonical key (the same lossless cast :mod:`ml.agent.tools.compare`
-        uses); when the parcel is in that OOF universe the Stacking-5 logreg meta
-        scores it. The path degrades CLEANLY -- never raises -- to the
-        ``xgb-alphaearth`` member when the OOF artifacts are unavailable or the
-        parcel is not materialized, and to a degenerate posterior on ``crop_class``
-        when the session has no persisted embedding for ``year``.
+        Serves the **Voting-3 champion** posterior (the EPIC 12 deployment winner:
+        the weighted soft-vote of ``tsvit-pheno`` + ``utae`` + ``xgb-alphaearth``,
+        france-10 F1 0.9069 > the legacy Stacking-5 0.8927) restricted to the
+        well-resolved ``france-9`` label-space. The parcel is resolved to its real
+        PASTIS-R fold-5 OOF row through ``parcels.canonical_parcel_id`` (US-079
+        migration) -- the numeric cast of ``parcels.id`` never matches a
+        ``"{patch}_{local}"`` OOF key. The path degrades CLEANLY -- never raises --
+        to the ``xgb-alphaearth`` member when the parcel carries no canonical id /
+        is absent from the OOF, and to a degenerate posterior on ``crop_class``
+        when the session also has no persisted embedding for ``year``.
 
         Args:
-            parcel_id: Stored parcel id, bridged to the OOF canonical key to look
-                up the Stacking-5 meta-feature row.
+            parcel_id: Stored parcel id, resolved to its canonical OOF key to look
+                up the Voting-3 member rows.
             crop_class: Crop class of the stored prediction, used for the fallback
                 degenerate posterior.
-            year: Campaign year of the AlphaEarth annual embedding.
+            year: Campaign year of the AlphaEarth annual embedding (fallback path).
 
         Returns:
             A ``{class_name: probability}`` posterior restricted to ``france-9``
-            and summing to ~1; or ``{crop_class: 1.0}`` when no embedding exists.
+            and summing to ~1; or ``{crop_class: 1.0}`` when nothing resolves.
         """
-        import polars as pl
-
         from ml.eval.class_remap import get_label_space, restrict_posterior
-        from ml.utils.parcel_id import canonical_parcel_id
 
         label_space = get_label_space("france-9")
 
-        # Champion-first: try the Stacking-5 meta over the parcel's fold-5 OOF row.
-        try:
-            stacking = classify._load_stacking_five()
-            canonical_id = str(
-                canonical_parcel_id(
-                    pl.DataFrame({"canonical_parcel_id": [parcel_id]}),
-                    col="canonical_parcel_id",
-                )["canonical_parcel_id"][0]
-            )
-            proba = stacking.posterior_for_parcel(canonical_id)
-        except (FileNotFoundError, ValueError) as exc:
-            logger.warning(
-                "perceiver_stacking_unavailable",
-                session_id=str(self._ctx.session_id),
-                reason="fold-5 OOF / PASTIS-R ground truth not available",
-                error=str(exc),
-            )
-            proba = None
+        # Champion-first: the EPIC 12 Voting-3 weighted vote over the parcel's
+        # fold-5 OOF row, resolved by the stored canonical PASTIS-R id (US-079).
+        proba = None
+        member = "voting3"
+        canonical_id = await classify.fetch_canonical_parcel_id(self._ctx, parcel_id)
+        if canonical_id is not None:
+            try:
+                voting = classify._load_voting_three()
+                proba = voting.posterior_for_parcel(canonical_id)
+            except (FileNotFoundError, ValueError) as exc:
+                logger.warning(
+                    "perceiver_voting3_unavailable",
+                    session_id=str(self._ctx.session_id),
+                    reason="fold-5 OOF / PASTIS-R ground truth not available",
+                    error=str(exc),
+                )
+                proba = None
 
-        member = "stacking-5"
         if proba is None:
             member = "xgb-alphaearth"
             embedding = await classify._fetch_parcel_embedding(self._ctx, year)
@@ -306,7 +298,7 @@ class PerceiverLayer:
                 logger.info(
                     "perceiver_posterior_fallback",
                     session_id=str(self._ctx.session_id),
-                    reason="no persisted AlphaEarth embedding for the session/year",
+                    reason="no canonical OOF id and no persisted embedding for the session/year",
                 )
                 return {crop_class: 1.0}
             proba = classify._load_classifier().predict_proba_18(embedding)
@@ -321,8 +313,7 @@ class PerceiverLayer:
             n_classes=len(restricted),
         )
         return {
-            label_space.class_names.get(cid, str(cid)): float(p)
-            for cid, p in restricted.items()
+            label_space.class_names.get(cid, str(cid)): float(p) for cid, p in restricted.items()
         }
 
     @staticmethod

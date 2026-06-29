@@ -96,14 +96,14 @@ async def test_observe_builds_text_observation(monkeypatch, make_ctx) -> None:
     monkeypatch.setattr(
         classify_mod, "_load_classifier", lambda: _FakeClassifier(proba, class_names)
     )
-    # The champion (Stacking-5) is unavailable in this unit (no OOF artifacts):
-    # force the clean degradation to the ``xgb-alphaearth`` member so the test
-    # exercises the tabular posterior path. ``_load_stacking_five`` raising
-    # FileNotFoundError is exactly the "DVC not pulled" degradation contract.
-    def _no_stacking() -> object:
-        raise FileNotFoundError("Stacking-5 OOF not available in this unit test")
 
-    monkeypatch.setattr(classify_mod, "_load_stacking_five", _no_stacking)
+    # The Voting-3 champion is unavailable in this unit (the parcel carries no
+    # canonical OOF id): force the clean degradation to the ``xgb-alphaearth``
+    # member so the test exercises the tabular posterior path.
+    async def _no_canonical(ctx, parcel_id):
+        return None
+
+    monkeypatch.setattr(classify_mod, "fetch_canonical_parcel_id", _no_canonical)
     monkeypatch.setattr(
         "ml.features.phenology_description.generate_phenology_description",
         lambda *a, **k: pytest.fail("perceiver must not call the LLM descriptor here"),
@@ -151,8 +151,13 @@ async def test_to_prompt_block_is_text_without_logits(monkeypatch, make_ctx) -> 
     async def _no_embedding(ctx, year, aoi=None):
         return None
 
+    async def _no_canonical(ctx, parcel_id):
+        return None
+
     monkeypatch.setattr(explain_mod, "_fetch_parcel", _fake_fetch_parcel)
-    # No embedding -> degenerate posterior path (also proves no classifier needed).
+    # No canonical OOF id + no embedding -> degenerate posterior path (also proves
+    # no classifier needed).
+    monkeypatch.setattr(classify_mod, "fetch_canonical_parcel_id", _no_canonical)
     monkeypatch.setattr(classify_mod, "_fetch_parcel_embedding", _no_embedding)
     monkeypatch.setattr(
         classify_mod,
@@ -175,9 +180,7 @@ async def test_to_prompt_block_is_text_without_logits(monkeypatch, make_ctx) -> 
         assert forbidden not in block
 
 
-async def test_observe_degenerate_posterior_without_embedding(
-    monkeypatch, make_ctx
-) -> None:
+async def test_observe_degenerate_posterior_without_embedding(monkeypatch, make_ctx) -> None:
     """No persisted embedding -> posterior collapses to ``{crop_class: 1.0}``.
 
     The perceiver must not invent alternative classes; the degenerate posterior
@@ -191,7 +194,11 @@ async def test_observe_degenerate_posterior_without_embedding(
     async def _no_embedding(ctx, year, aoi=None):
         return None
 
+    async def _no_canonical(ctx, parcel_id):
+        return None
+
     monkeypatch.setattr(explain_mod, "_fetch_parcel", _fake_fetch_parcel)
+    monkeypatch.setattr(classify_mod, "fetch_canonical_parcel_id", _no_canonical)
     monkeypatch.setattr(classify_mod, "_fetch_parcel_embedding", _no_embedding)
     monkeypatch.setattr(
         classify_mod,
