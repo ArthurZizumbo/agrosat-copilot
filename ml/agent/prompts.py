@@ -52,6 +52,11 @@ Uso de las herramientas:
   las devuelve el modelo.
 - explain_prediction: para explicar una prediccion existente con su descripcion
   fenologica estructurada; esta es la entrada del perceiver a tu razonamiento.
+- retrieve_context: cuando convenga anclar tu respuesta en evidencia, recupera las
+  descripciones de parcelas vecinas reales del corpus (Spatial-RAG) para un area y
+  cita su origen con la etiqueta [fuente:parcela]. Solo esta disponible cuando el
+  grounding RAG esta activo; si no aparece entre tus herramientas, razona con las
+  demas sin inventar contexto.
 
 Cuando expliques una prediccion, apoyate en la descripcion fenologica del
 perceiver (inicio de temporada, pico de vigor, senescencia) en lugar de afirmar

@@ -197,8 +197,8 @@ def test_tool_inventory_lists_sync_and_deferred() -> None:
     names = {r["herramienta"] for r in rows}
     assert {"classify_new_parcel", "explain_prediction", "retrieve_context"} <= names
     n_sync = sum(1 for r in rows if r["tipo"] == "sincrona")
-    # 5 synchronous demo tools (the create_agent default), the rest deferred.
-    assert n_sync == 5
+    # 6 synchronous in-loop tools (incl. the Spatial-RAG grounding tool), 4 deferred.
+    assert n_sync == 6
     assert all(
         r["comportamiento"] == ("NON_BLOCKING" if r["tipo"] == "diferida" else "BLOCKING")
         for r in rows

@@ -29,9 +29,9 @@ from ml.agent.tools import (
     get_tool,
 )
 
-# US-045 registered the nine demo tools; US-046 added the deferred
-# ``retrieve_context`` (Spatial-RAG lite), so the registry now holds ten tools:
-# five synchronous demo tools and five deferred ones.
+# US-045 registered the nine demo tools; US-046 added ``retrieve_context``
+# (Spatial-RAG lite). The registry holds ten tools: six synchronous in-loop tools
+# (incl. the Spatial-RAG grounding tool, a fast pgvector query) and four deferred ones.
 _EXPECTED_TOOLS = {
     "list_parcels",
     "get_parcel_timeseries",
@@ -50,8 +50,9 @@ _SYNC = {
     "get_aoi_stats",
     "classify_new_parcel",
     "explain_prediction",
+    "retrieve_context",
 }
-_DEFERRED = {"search_stac", "get_tiles", "add_aoi", "compare_models", "retrieve_context"}
+_DEFERRED = {"search_stac", "get_tiles", "add_aoi", "compare_models"}
 
 
 def test_registry_has_known_tools() -> None:
@@ -108,13 +109,13 @@ def test_behavior_matches_deferred_flag() -> None:
 
 
 def test_sync_and_deferred_split() -> None:
-    """AC-4/AC-5: five synchronous demo tools, five deferred ones."""
+    """AC-4/AC-5: six synchronous in-loop tools (incl. RAG), four deferred ones."""
     sync_names = {t.name for t in get_sync_tools()}
     deferred_names = {t.name for t in get_deferred_tools()}
     assert sync_names == _SYNC
     assert deferred_names == _DEFERRED
-    assert len(sync_names) == 5
-    assert len(deferred_names) == 5
+    assert len(sync_names) == 6
+    assert len(deferred_names) == 4
     assert sync_names.isdisjoint(deferred_names)
 
 
