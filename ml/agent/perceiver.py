@@ -34,12 +34,14 @@ phenology features are read only for parcels visible to ``ctx.session_id``.
 from __future__ import annotations
 
 import time
+from collections.abc import Awaitable, Callable
 
 import numpy as np
 import structlog
 from pydantic import BaseModel, ConfigDict, Field
 
 from ml.agent.context import ToolContext
+from ml.agent.refine import RefinementResult
 from ml.agent.schemas import (
     ClassificationResult,
     ClassifyParcelInput,
@@ -63,6 +65,13 @@ _DEFAULT_YEAR: int = 2019
 #: Sentinel parcel id for AOI-level observations (the AOI is not a stored parcel,
 #: so it has no integer primary key). ``-1`` flags a synthetic/AOI observation.
 _AOI_PARCEL_ID: int = -1
+
+#: Injectable US-080 second-stage refiner: given the parcel id and the Voting-3
+#: posterior, returns a :class:`~ml.agent.refine.RefinementResult` (or ``None`` when
+#: it declines). The default perceiver wires NONE, so the behaviour is identical to
+#: US-079; a live refiner encapsulates the FarSLIP zero-shot scoring + the gated
+#: fusion (the chip loading + FarSLIP model are its concern, not the perceiver's).
+PerceiverRefiner = Callable[[int, dict[str, float]], Awaitable["RefinementResult | None"]]
 
 
 class PerceiverObservation(BaseModel):
@@ -136,13 +145,18 @@ class PerceiverLayer:
     (:meth:`observe_aoi`). It does not call any LLM and emits no tensors.
     """
 
-    def __init__(self, ctx: ToolContext) -> None:
+    def __init__(self, ctx: ToolContext, *, refiner: PerceiverRefiner | None = None) -> None:
         """Initialise the perceiver with the shared tool execution context.
 
         Args:
             ctx: Tool execution context (asyncpg pool, settings, session id).
+            refiner: Optional US-080 second-stage refiner (a FarSLIP zero-shot
+                signal guided by the LLM phenology description). ``None`` (the
+                default) keeps the US-079 behaviour exactly; when provided it may
+                re-rank the Voting-3 posterior on uncertain / open-set parcels.
         """
         self._ctx = ctx
+        self._refiner = refiner
 
     async def observe(self, parcel_id: int) -> PerceiverObservation:
         """Observe a stored parcel and emit a structured TEXT observation.
@@ -178,6 +192,31 @@ class PerceiverLayer:
             crop_class=explanation.crop_class,
             year=_DEFAULT_YEAR,
         )
+
+        # US-080 optional second stage: a FarSLIP zero-shot signal guided by the LLM
+        # phenology description re-ranks the Voting-3 posterior, but ONLY on
+        # uncertain / open-set parcels (the injected refiner decides). OFF by
+        # default (no refiner wired) -> identical to US-079.
+        if self._refiner is not None:
+            result = await self._refiner(parcel_id, dict(class_probabilities))
+            if result is not None and result.refined:
+                class_probabilities = result.posterior
+                explanation = explanation.model_copy(
+                    update={
+                        "crop_class": result.top_class_after,
+                        "confidence": float(
+                            result.posterior.get(result.top_class_after, explanation.confidence)
+                        ),
+                    }
+                )
+                logger.info(
+                    "perceiver_refined",
+                    session_id=str(self._ctx.session_id),
+                    parcel_id=parcel_id,
+                    reason=result.reason,
+                    class_before=result.top_class_before,
+                    class_after=result.top_class_after,
+                )
 
         observation = self._observation_from_explanation(
             parcel_id=parcel_id,

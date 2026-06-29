@@ -212,6 +212,76 @@ async def test_observe_degenerate_posterior_without_embedding(monkeypatch, make_
 
 
 # ---------------------------------------------------------------------------
+# observe(parcel_id): US-080 optional second-stage refiner (FarSLIP-guided)
+# ---------------------------------------------------------------------------
+async def _degenerate_setup(monkeypatch) -> None:
+    """Wire the degenerate posterior path ({crop_class: 1.0}) for refiner tests."""
+    record = _stored_parcel_record()
+
+    async def _fake_fetch_parcel(ctx, parcel_id):
+        return dict(record)
+
+    async def _no_embedding(ctx, year, aoi=None):
+        return None
+
+    async def _no_canonical(ctx, parcel_id):
+        return None
+
+    monkeypatch.setattr(explain_mod, "_fetch_parcel", _fake_fetch_parcel)
+    monkeypatch.setattr(classify_mod, "fetch_canonical_parcel_id", _no_canonical)
+    monkeypatch.setattr(classify_mod, "_fetch_parcel_embedding", _no_embedding)
+    monkeypatch.setattr(
+        classify_mod,
+        "_load_classifier",
+        lambda: pytest.fail("classifier must not load without an embedding"),
+    )
+
+
+async def test_observe_applies_refiner_when_it_fires(monkeypatch, make_ctx) -> None:
+    """An injected refiner that fires re-ranks the crop, confidence and posterior."""
+    from ml.agent.refine import RefinementResult
+
+    await _degenerate_setup(monkeypatch)
+
+    async def _refiner(parcel_id, posterior):
+        # FarSLIP flips the uncertain decision from 'wheat' to 'maize'.
+        return RefinementResult(
+            posterior={"maize": 0.7, "wheat": 0.3},
+            refined=True,
+            reason="open_set",
+            top_class_before="wheat",
+            top_class_after="maize",
+        )
+
+    obs = await PerceiverLayer(make_ctx(), refiner=_refiner).observe(parcel_id=9)
+
+    assert obs.crop_class == "maize"
+    assert obs.confidence == pytest.approx(0.7)
+    assert obs.class_probabilities == {"maize": 0.7, "wheat": 0.3}
+
+
+async def test_observe_refiner_decline_keeps_voting(monkeypatch, make_ctx) -> None:
+    """A refiner that declines (easy case) leaves the Voting-3 observation intact."""
+    from ml.agent.refine import RefinementResult
+
+    await _degenerate_setup(monkeypatch)
+
+    async def _refiner(parcel_id, posterior):
+        return RefinementResult(
+            posterior=dict(posterior),
+            refined=False,  # high margin -> declined
+            reason="high_margin",
+            top_class_before="wheat",
+            top_class_after="wheat",
+        )
+
+    obs = await PerceiverLayer(make_ctx(), refiner=_refiner).observe(parcel_id=9)
+
+    assert obs.crop_class == "wheat"
+    assert obs.class_probabilities == {"wheat": 1.0}
+
+
+# ---------------------------------------------------------------------------
 # observe_aoi(aoi, year): fresh AOI
 # ---------------------------------------------------------------------------
 async def test_observe_aoi_propagates_needs_gee_sampling(monkeypatch, make_ctx) -> None:
