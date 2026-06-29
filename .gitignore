@@ -251,6 +251,9 @@ notebooks/_export/
 !paper/figures/us-023-preview/**/*.pdf
 !paper/tables/us-023-preview/*.tex
 !paper/tables/us-023-preview/**/*.tex
+# Entregables visuales del nuevo campeon (Voting-3 v2, 12 clases) -- usados en Avance5
+!reports/voting_new/*.png
+!reports/voting_new/**/*.png
 
 # Context & academic PDFs needed for reference
 !context/*.pdf
