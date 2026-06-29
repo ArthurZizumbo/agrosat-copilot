@@ -306,14 +306,25 @@ def build_system_report_html(results: dict[str, Any], out_path: Path) -> Path:
 <h2>Interpretacion</h2>
 <p>
   qwen36-vl lidera el tool-calling con una seleccion de herramienta de 0.95 y
-  empata a gemini en el acierto de cultivo (ambos 0.923) en la orquestacion
-  grounded-crop. La prueba A/B de RAG es consistente entre variantes: el contexto
-  Spatial-RAG reduce la tasa de alucinacion de aproximadamente 0.9 (sin anclaje)
-  a cerca de 0.1 (con anclaje), una reduccion cercana a 0.8-0.9. Salvedad honesta:
-  en gemini la tasa de alucinacion sin anclaje volvio como {_NA_MARKER} (error del
-  juez en ese lado de la prueba); el lado anclado de gemini si se puntuo
-  correctamente (0.1), por lo que el delta de reduccion de gemini queda sin
-  calcular y debe leerse con esa reserva.
+  tambien el acierto de cultivo (0.923) en la orquestacion grounded-crop, por
+  delante de gemini (0.718 +- 0.096 sobre 3 seeds). La prueba A/B de RAG es ahora
+  consistente entre las CUATRO variantes: el contexto Spatial-RAG reduce la tasa
+  de alucinacion de aproximadamente 0.9 (sin anclaje) a cerca de 0.1 (con
+  anclaje), una reduccion de 0.77 a 0.90 segun la variante (gemini 0.767 +- 0.047,
+  qwen 0.80, gemma-base 0.90, qwen36-vl 0.80). Esto valida el grounding en el loop
+  del agente: anclar la respuesta en el corpus recorta la alucinacion de forma
+  marcada en todos los reasoners.
+</p>
+<p class="nota">
+  Salvedad metodologica honesta: gemini se reagrego en vivo sobre 3 seeds (de ahi
+  sus desviaciones estandar no nulas), mientras que los tres reasoners on-prem
+  (qwen, gemma-base, qwen36-vl) provienen de la corrida en vivo previa en la H100
+  con 1 solo seed (desviacion 0.0), porque el tunel a los endpoints on-prem estaba
+  caido al refrescar. Por eso las celdas de alta varianza como crop_match no son
+  estrictamente comparables entre la columna de 3 seeds y las de 1 seed; el valor
+  previo de gemini en crop_match (0.923) era un unico seed optimista, corregido
+  aqui a 0.718 +- 0.096. Para una comparacion homogenea de 3 seeds en los cuatro
+  reasoners hay que re-correr el eval con el tunel H100 activo.
 </p>
 </body>
 </html>
