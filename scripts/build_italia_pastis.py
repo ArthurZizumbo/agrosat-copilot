@@ -120,6 +120,9 @@ def run(
     n_frames: int,
     max_cloud: float,
     out_dir: Path,
+    parcels_parquet: Path | None = None,
+    mapping_csv: Path | None = None,
+    region_prefix: str = "it",
 ) -> dict[str, object]:
     """Build the homologue dataset and return the pilot summary.
 
@@ -130,6 +133,13 @@ def run(
         n_frames: Max temporal frames per patch (ORBIT request).
         max_cloud: Max scene cloud cover (scene gate; SCL masks per pixel).
         out_dir: Dataset output root.
+        parcels_parquet: EuroCrops parcels parquet to label (e.g.
+            ``de4_2023.parquet`` for Lower Saxony 2023); defaults to the Italy 2018
+            reference.
+        mapping_csv: EuroCrops crosswalk CSV (``eurocrops.csv``); defaults to the
+            Italy mapping.
+        region_prefix: NUTS prefix selecting the crosswalk region (``"it"``,
+            ``"de4"``, ...).
 
     Returns:
         The pilot GATE summary dict.
@@ -137,7 +147,12 @@ def run(
     date_from, date_to = _parse_season(season)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    gdf, class_table = load_labeled_polygons(min_support=min_support)
+    label_kwargs: dict[str, object] = {"min_support": min_support, "region_prefix": region_prefix}
+    if parcels_parquet is not None:
+        label_kwargs["parcels_parquet"] = parcels_parquet
+    if mapping_csv is not None:
+        label_kwargs["mapping_csv"] = mapping_csv
+    gdf, class_table = load_labeled_polygons(**label_kwargs)
     plans = select_dense_patches(gdf, n_patches=n_patches)
     write_class_mapping_doc(out_dir, class_table)
 
@@ -189,6 +204,24 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--n-frames", type=int, default=40)
     parser.add_argument("--max-cloud", type=float, default=20.0)
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT_DIR)
+    parser.add_argument(
+        "--parcels-parquet",
+        type=Path,
+        default=None,
+        help="EuroCrops parcels parquet to label (e.g. de4_2023.parquet for Lower "
+        "Saxony); defaults to the Italy 2018 reference.",
+    )
+    parser.add_argument(
+        "--mapping-csv",
+        type=Path,
+        default=None,
+        help="EuroCrops crosswalk CSV (eurocrops.csv); defaults to the Italy mapping.",
+    )
+    parser.add_argument(
+        "--region-prefix",
+        default="it",
+        help="NUTS prefix selecting the crosswalk region (it, de4, nl, ...).",
+    )
     args = parser.parse_args(argv)
 
     with track_experiment(
@@ -214,6 +247,9 @@ def main(argv: list[str] | None = None) -> int:
             n_frames=args.n_frames,
             max_cloud=args.max_cloud,
             out_dir=args.out,
+            parcels_parquet=args.parcels_parquet,
+            mapping_csv=args.mapping_csv,
+            region_prefix=args.region_prefix,
         )
         scalar = {k: v for k, v in summary.items() if isinstance(v, (int, float))}
         mlflow.log_metrics(scalar)
