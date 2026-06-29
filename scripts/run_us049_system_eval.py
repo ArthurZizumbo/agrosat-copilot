@@ -33,6 +33,17 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import Sequence
 
+# Force UTF-8 on the standard streams BEFORE any logging is configured. On a
+# Windows cp1252 console structlog otherwise raises ``UnicodeEncodeError`` while
+# emitting accented Spanish answer prose, which the per-case ``except`` records as
+# a failed (charmap) case and silently DEPRESSES crop_match -- a measurement
+# artifact, not a model error. ``reconfigure`` works even after interpreter start,
+# so it fixes runs launched without ``PYTHONUTF8=1``.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
+
 
 def _build_live_backends(variant_names: Sequence[str]) -> dict[str, object]:
     """Build one live :class:`LLMBackend` per variant name via ``make_backend``.

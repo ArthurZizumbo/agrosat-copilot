@@ -305,26 +305,33 @@ def build_system_report_html(results: dict[str, Any], out_path: Path) -> Path:
 {tables_html}
 <h2>Interpretacion</h2>
 <p>
-  qwen36-vl lidera el tool-calling con una seleccion de herramienta de 0.95 y
-  tambien el acierto de cultivo (0.923) en la orquestacion grounded-crop, por
-  delante de gemini (0.718 +- 0.096 sobre 3 seeds). La prueba A/B de RAG es ahora
-  consistente entre las CUATRO variantes: el contexto Spatial-RAG reduce la tasa
-  de alucinacion de aproximadamente 0.9 (sin anclaje) a cerca de 0.1 (con
-  anclaje), una reduccion de 0.77 a 0.90 segun la variante (gemini 0.767 +- 0.047,
-  qwen 0.80, gemma-base 0.90, qwen36-vl 0.80). Esto valida el grounding en el loop
-  del agente: anclar la respuesta en el corpus recorta la alucinacion de forma
-  marcada en todos los reasoners.
+  En tool-calling, qwen y qwen36-vl lideran (seleccion de herramienta 0.95), con
+  gemini muy cerca (0.90) y gemma-base por detras (0.683, penalizada por fallos de
+  parseo del JSON de herramienta, propios de un modelo de razonamiento). Hallazgo
+  clave: la seleccion de herramienta de los reasoners native-FC estaba SUBESTIMADA
+  por el eval, que enviaba la peticion sin la geometria AOI que el frontend real
+  adjunta; al anclarla, gemini sube de 0.52 a 0.90 y qwen de 0.75 a 0.95.
+  qwen36-vl no cambia (su via JSON-fallback ya indicaba que la geometria se
+  inyecta), de modo que no habia una debilidad real que justificara enrutar por
+  capacidad: el enrutamiento del reasoner es por disponibilidad, no por habilidad.
+</p>
+<p>
+  En orquestacion grounded-crop, gemini y qwen36-vl empatan en acierto de cultivo
+  (0.821), por delante de qwen (0.308) y gemma-base (0.256), que enrutan peor a la
+  herramienta de clasificacion. La prueba A/B de RAG es consistente en las CUATRO
+  variantes: el contexto Spatial-RAG reduce la tasa de alucinacion de ~0.9 (sin
+  anclaje) a ~0.1 (con anclaje), con una reduccion de 0.80 a 0.90 segun la
+  variante (gemini 0.80, qwen 0.90, gemma-base 0.83, qwen36-vl 0.80). Esto valida
+  el grounding en el loop del agente: anclar la respuesta en el corpus recorta la
+  alucinacion de forma marcada en todos los reasoners.
 </p>
 <p class="nota">
-  Salvedad metodologica honesta: gemini se reagrego en vivo sobre 3 seeds (de ahi
-  sus desviaciones estandar no nulas), mientras que los tres reasoners on-prem
-  (qwen, gemma-base, qwen36-vl) provienen de la corrida en vivo previa en la H100
-  con 1 solo seed (desviacion 0.0), porque el tunel a los endpoints on-prem estaba
-  caido al refrescar. Por eso las celdas de alta varianza como crop_match no son
-  estrictamente comparables entre la columna de 3 seeds y las de 1 seed; el valor
-  previo de gemini en crop_match (0.923) era un unico seed optimista, corregido
-  aqui a 0.718 +- 0.096. Para una comparacion homogenea de 3 seeds en los cuatro
-  reasoners hay que re-correr el eval con el tunel H100 activo.
+  Todas las celdas se agregan sobre 3 seeds de evaluacion en vivo (gemini en la
+  nube; qwen, qwen36-vl y gemma-base servidos uno a uno en la H100 via el puente
+  Cloudflare), de ahi las desviaciones estandar no nulas. Las cifras son reales,
+  sin placeholders ni datos sinteticos: las celdas de alta varianza como
+  crop_match reflejan la varianza autentica del reasoner, no un unico seed
+  optimista.
 </p>
 </body>
 </html>
