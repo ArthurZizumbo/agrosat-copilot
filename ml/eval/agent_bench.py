@@ -172,7 +172,7 @@ def _is_transient_error(exc: BaseException) -> bool:
     Returns:
         ``True`` when the call should be retried, ``False`` for a permanent error.
     """
-    if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
+    if isinstance(exc, asyncio.TimeoutError | TimeoutError):
         return True
     message = str(exc).lower()
     return any(marker in message for marker in _TRANSIENT_ERROR_MARKERS)

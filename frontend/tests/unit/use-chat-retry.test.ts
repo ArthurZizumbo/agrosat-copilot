@@ -26,6 +26,10 @@ import { useChatStore } from "~/stores/chat";
 // faked so the exponential backoff resolves instantly.
 
 import { useChat } from "~/composables/useChat";
+import { useSessionsStore } from "~/stores/sessions";
+
+/** The active chat tab IS the backend session (US-080); useChat reads its id. */
+const ACTIVE_SESSION_ID = "11111111-2222-4333-8444-555555555555";
 
 // --- Real contract frames (one terminated SSE frame per array entry). -------
 const FR_PERCEIVER =
@@ -114,9 +118,14 @@ beforeEach(() => {
   app.use(pinia);
   setActivePinia(pinia);
 
+  // The active chat tab supplies the session id useChat sends (US-080).
+  const sessions = useSessionsStore();
+  sessions.addTab({ id: ACTIVE_SESSION_ID, title: "Chat 1" });
+  sessions.setActive(ACTIVE_SESSION_ID);
+
   // Stub the Nuxt auto-imports the composable reads as globals.
   vi.stubGlobal("useSession", () => ({
-    ensureSession: () => "11111111-2222-4333-8444-555555555555",
+    ensureSession: () => ACTIVE_SESSION_ID,
     apiUrl: (path: string) => `http://localhost:8000${path}`,
   }));
   vi.stubGlobal("useI18n", () => ({ locale: { value: "es" } }));

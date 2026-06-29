@@ -309,7 +309,7 @@ def run_stacking5_tl(
     _persist("03_stacking5_summary", summary, out_dir)
     logger.info(
         "stacking5_tl_done",
-        **{k: v for k, v in summary.items() if not isinstance(v, (list, dict))},
+        **{k: v for k, v in summary.items() if not isinstance(v, list | dict)},
         meta_fine_f1=meta_metrics["fine_macro_f1"],
         weighted_vote_fine_f1=weighted_vote_metrics["fine_macro_f1"],
         simple_vote_fine_f1=simple_vote_metrics["fine_macro_f1"],

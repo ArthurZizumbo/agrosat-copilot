@@ -184,7 +184,7 @@ def _extract_scenes(result: object) -> list[dict]:
     """
     if result is None:
         return []
-    collection = json.loads(result) if isinstance(result, (str, bytes)) else result
+    collection = json.loads(result) if isinstance(result, str | bytes) else result
     if not isinstance(collection, dict):
         return []
     features = collection.get("features", [])

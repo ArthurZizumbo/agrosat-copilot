@@ -573,7 +573,7 @@ def _centroids(geometries: list[object]) -> tuple[np.ndarray, np.ndarray]:
             raise ValueError("parcel_geoms has a null geometry.")
         if isinstance(value, BaseGeometry):
             geom = value
-        elif isinstance(value, (bytes, bytearray)):
+        elif isinstance(value, bytes | bytearray):
             geom = wkb.loads(bytes(value))
         elif isinstance(value, str):
             geom = wkt.loads(value)

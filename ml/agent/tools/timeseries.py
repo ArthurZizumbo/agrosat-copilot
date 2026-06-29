@@ -91,7 +91,7 @@ def _normalise_jsonb(raw: object) -> dict:
         return {}
     if isinstance(raw, dict):
         return raw
-    if isinstance(raw, (str, bytes)):
+    if isinstance(raw, str | bytes):
         decoded = json.loads(raw)
         return decoded if isinstance(decoded, dict) else {}
     return {}

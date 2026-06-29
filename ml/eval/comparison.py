@@ -618,7 +618,7 @@ def build_fold5_comparison_table(
     nested_cols = [
         name
         for name, dtype in zip(ordered.columns, ordered.dtypes, strict=True)
-        if isinstance(dtype, (pl.List, pl.Struct, pl.Array))
+        if isinstance(dtype, pl.List | pl.Struct | pl.Array)
     ]
     scalar = ordered.drop(nested_cols) if nested_cols else ordered
     scalar.write_csv(out_path)

@@ -348,6 +348,75 @@ def sample_alphaearth_roi(
     return df
 
 
+def sample_alphaearth_aoi_mean(
+    geometry: dict[str, Any],
+    year: int,
+    project: str | None = None,
+    service_account_json: Path | None = None,
+    scale: int = 10,
+) -> np.ndarray | None:
+    """Sample the mean 64-dim AlphaEarth embedding over a single AOI polygon.
+
+    Live, on-demand counterpart of `sample_alphaearth_roi` for one drawn polygon:
+    it initializes Earth Engine (service account or ADC), mosaics the annual
+    `SATELLITE_EMBEDDING/V1/ANNUAL` tiles touching the AOI for `year` and reduces
+    them to the per-band spatial mean over the polygon. Returns a `(64,)` vector
+    aligned to `dim_00..dim_63` (band order `A00..A63`).
+
+    Used by the conversational `classify_new_parcel` tool as the "download"
+    branch: when no persisted parcel embedding intersects the AOI, the embedding
+    is sampled here instead of returning the `needs_gee_sampling` sentinel.
+
+    Args:
+        geometry: GeoJSON geometry (`{"type": ..., "coordinates": ...}`) in
+            EPSG:4326 delimiting the AOI.
+        year: Year (2017-2025) selecting the annual embedding image.
+        project: GCP project id with the EE quota (e.g. `agrosat-copilot`).
+        service_account_json: Optional service-account key; falls back to ADC.
+        scale: Reduction resolution in meters (AlphaEarth native = 10).
+
+    Returns:
+        A `(64,)` `float64` embedding, or `None` when EE is unavailable,
+        initialization fails, the AOI has no coverage, or any band is null.
+    """
+    if ee is None:
+        _log.warning("alphaearth_aoi_ee_missing")
+        return None
+    band_names = _alphaearth_band_names()
+    try:
+        init_ee(service_account_json=service_account_json, project=project)
+        roi = ee.Geometry(geometry)
+        image = (
+            ee.ImageCollection(ALPHAEARTH_COLLECTION)
+            .filterBounds(roi)
+            .filterDate(f"{year}-01-01", f"{year + 1}-01-01")
+            .mosaic()
+            .select(band_names)
+        )
+        stats = image.reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=roi,
+            scale=scale,
+            maxPixels=int(1e9),
+            bestEffort=True,
+        ).getInfo()
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("alphaearth_aoi_sample_failed", year=int(year), error=str(exc))
+        return None
+
+    if not stats:
+        _log.warning("alphaearth_aoi_no_coverage", year=int(year))
+        return None
+    values: list[float] = []
+    for band in band_names:
+        val = stats.get(band)
+        if val is None:
+            _log.warning("alphaearth_aoi_null_band", band=band, year=int(year))
+            return None
+        values.append(float(val))
+    return np.asarray(values, dtype=np.float64)
+
+
 def sample_alphaearth_at_coords(
     coords: pl.DataFrame,
     year: int,

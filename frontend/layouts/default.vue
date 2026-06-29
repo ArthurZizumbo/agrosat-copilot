@@ -85,9 +85,14 @@ function onLocate(parcelId: number) {
         <slot />
       </main>
 
-      <!-- Chat dock: permanent column >=lg -->
+      <!-- Chat dock: permanent column >=lg. ClientOnly: the chat state is
+           client-only (persisted store via localStorage + SSE stream), so SSR
+           would render an empty transcript and mismatch on hydration -- which
+           left streamed assistant text unpainted. -->
       <div class="hidden w-[25rem] shrink-0 border-l border-[var(--color-border)] lg:block">
-        <ChatDock @locate="onLocate" />
+        <ClientOnly>
+          <ChatDock @locate="onLocate" />
+        </ClientOnly>
       </div>
 
       <!-- Chat slide-over (md) / bottom-sheet (<md) -->
@@ -116,7 +121,9 @@ function onLocate(parcelId: number) {
               <span class="h-1 w-10 rounded-full bg-[var(--color-border-strong)]" aria-hidden="true" />
             </button>
             <div class="min-h-0 flex-1">
-              <ChatDock @close="chatOpen = false" @locate="onLocate" />
+              <ClientOnly>
+                <ChatDock @close="chatOpen = false" @locate="onLocate" />
+              </ClientOnly>
             </div>
           </div>
         </div>

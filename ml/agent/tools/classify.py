@@ -866,6 +866,54 @@ async def _fetch_parcel_embedding(
     return embedding
 
 
+async def _sample_embedding_via_gee(
+    ctx: ToolContext, year: int, aoi: GeoJSONGeometry
+) -> np.ndarray | None:
+    """Download the AOI's AlphaEarth embedding from GEE (the "download" fallback).
+
+    Invoked only after the persisted-parcel lookup (`_fetch_parcel_embedding`)
+    misses: it samples the mean annual AlphaEarth embedding of the drawn polygon
+    live from Earth Engine. Earth Engine is authenticated from settings (service
+    account or ADC) under the configured GEE project. The blocking EE call runs
+    in a worker thread so the event loop is never blocked. Any failure (EE not
+    installed, no credentials, no coverage, null bands) returns ``None`` so the
+    caller degrades to the controlled ``needs_gee_sampling`` result.
+
+    Args:
+        ctx: Tool execution context (carries the typed settings).
+        year: Campaign year of the annual embedding.
+        aoi: Drawn AOI polygon to sample.
+
+    Returns:
+        A ``(64,)`` ``float64`` embedding, or ``None`` on any failure.
+    """
+    import asyncio
+
+    from ml.ingest.gee_sampler import sample_alphaearth_aoi_mean
+
+    project = getattr(ctx.settings, "gee_project_id", "") or None
+    sa_raw = getattr(ctx.settings, "gee_service_account_path", "") or ""
+    service_account_json = Path(sa_raw) if sa_raw else None
+    geometry = {"type": aoi.type, "coordinates": aoi.coordinates}
+    embedding = await asyncio.to_thread(
+        sample_alphaearth_aoi_mean,
+        geometry=geometry,
+        year=year,
+        project=project,
+        service_account_json=service_account_json,
+    )
+    if embedding is None:
+        return None
+    if embedding.size != _EMBED_DIM:
+        logger.warning(
+            "classify_gee_embedding_unexpected_dim",
+            expected=_EMBED_DIM,
+            got=int(embedding.size),
+        )
+        return None
+    return embedding
+
+
 def _needs_gee_result() -> ClassificationResult:
     """Build the controlled result for a parcel without an AlphaEarth embedding.
 
@@ -1094,15 +1142,27 @@ async def run(inp: ClassifyParcelInput, ctx: ToolContext) -> ClassificationResul
         label_space=inp.label_space,
     )
 
+    # Search first (persisted, session-scoped), then download (live GEE sampling)
+    # when no persisted parcel embedding intersects the drawn AOI.
     embedding = await _fetch_parcel_embedding(ctx, inp.year, inp.aoi)
+    embedding_source = "persisted"
+    if embedding is None:
+        embedding = await _sample_embedding_via_gee(ctx, inp.year, inp.aoi)
+        embedding_source = "gee"
     if embedding is None:
         logger.info(
             "classify_new_parcel_needs_gee",
             session_id=str(inp.session_id),
             year=inp.year,
-            reason="no persisted parcel embedding intersects the drawn AOI",
+            reason="no persisted embedding intersects the AOI and GEE sampling failed",
         )
         return _needs_gee_result()
+    logger.info(
+        "classify_new_parcel_embedding_resolved",
+        session_id=str(inp.session_id),
+        year=inp.year,
+        source=embedding_source,
+    )
 
     # Resolve the label-space up front so an unknown name fails fast (not after
     # the expensive model load). france-9 is the default.

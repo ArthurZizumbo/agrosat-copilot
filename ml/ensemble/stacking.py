@@ -374,7 +374,7 @@ class StackingEnsemble(EnsembleModel):
                 raise ValueError("parcel_geoms has a null geometry.")
             if isinstance(value, BaseGeometry):
                 parsed.append(value)
-            elif isinstance(value, (bytes, bytearray)):
+            elif isinstance(value, bytes | bytearray):
                 parsed.append(wkb.loads(bytes(value)))
             elif isinstance(value, str):
                 parsed.append(wkt.loads(value))

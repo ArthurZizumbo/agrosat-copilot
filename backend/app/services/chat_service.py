@@ -60,6 +60,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.db import get_pool
+from backend.app.services.session_service import SessionService
 from backend.app.utils.chat_metrics import ChatMetricsAccumulator, emit_chat_turn_metrics
 from ml.agent.context import ToolContext
 from ml.agent.llm_routing import DEFAULT_VARIANT, VARIANTS, make_backend_for_variant
@@ -375,7 +376,20 @@ class ChatService:
         if locale is not None:
             history.append({"role": "system", "content": _LOCALE_INSTRUCTION[locale]})
         if observation is not None:
-            history.append({"role": "system", "content": observation.to_prompt_block()})
+            # Frame the perceiver block so the reasoner treats it as the answer
+            # source for the area the user already selected, instead of asking the
+            # user to draw an AOI that is in fact already provided (B: the reasoner
+            # was replying "draw the area" despite a valid observation).
+            grounding = (
+                "El usuario ya selecciono un area de interes (AOI) en el mapa y el "
+                "perceiver del equipo la observo. Responde la pregunta del usuario "
+                "USANDO esta observacion como fuente; NO pidas que dibuje el area, "
+                "porque ya esta seleccionada. Reporta la clase de cultivo estimada y "
+                "su confianza tal cual; si la confianza es baja, advierte que es una "
+                "estimacion preliminar, pero igualmente da la clase.\n\n"
+                f"{observation.to_prompt_block()}"
+            )
+            history.append({"role": "system", "content": grounding})
         history.extend({"role": m.role, "content": m.content} for m in messages)
         return history
 
@@ -409,6 +423,14 @@ class ChatService:
         )
 
         ctx = await self._build_context(session_id)
+
+        # Persist the new user turn (US-080) so the transcript survives a reload.
+        # Best-effort: a persistence failure must never break the live stream.
+        if messages and messages[-1].role == "user" and messages[-1].content.strip():
+            try:
+                await SessionService.save_message(session_id, "user", messages[-1].content)
+            except Exception:  # noqa: BLE001
+                logger.warning("chat_user_message_persist_failed", session_id=str(session_id))
 
         try:
             observation = await self._observe(request, ctx)
@@ -505,6 +527,7 @@ class ChatService:
         agent_messages = self._agent_messages(messages, observation, locale)
 
         metrics = ChatMetricsAccumulator(variant=variant, model=model)
+        answer_parts: list[str] = []
         async for event in agent.stream_response(agent_messages, session_id, ctx):
             payload = event.model_dump(mode="json")
             event_name = payload.pop("type")
@@ -515,7 +538,24 @@ class ChatService:
                 metrics = metrics.observe_tool_call()
             elif event_name == "done":
                 metrics = metrics.observe_usage(payload.get("usage"))
+            elif event_name == "text_delta":
+                # Accumulate the answer to persist the assistant turn (US-080).
+                answer_parts.append(str(payload.get("text", "")))
             yield _sse_event(event_name, payload)
+
+        # Persist the assistant's final answer (US-080). Best-effort: never break
+        # the (already-finished) stream on a storage error.
+        answer = "".join(answer_parts).strip()
+        if answer:
+            try:
+                await SessionService.save_message(
+                    session_id,
+                    "assistant",
+                    answer,
+                    extra={"model": model, "variant": variant},
+                )
+            except Exception:  # noqa: BLE001
+                logger.warning("chat_assistant_message_persist_failed", session_id=str(session_id))
 
         duration_ms = round((time.perf_counter() - start) * 1000.0, 2)
         emit_chat_turn_metrics(

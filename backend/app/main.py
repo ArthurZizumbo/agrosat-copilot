@@ -32,7 +32,17 @@ from slowapi.errors import RateLimitExceeded
 from titiler.core.errors import DEFAULT_STATUS_CODES, add_exception_handlers
 
 # isort: on
-from backend.app.api import aois, chat, health, llm, metrics, stac, tiles, timeseries
+from backend.app.api import (
+    aois,
+    chat,
+    health,
+    llm,
+    metrics,
+    sessions,
+    stac,
+    tiles,
+    timeseries,
+)
 from backend.app.core.config import get_settings
 from backend.app.core.logging import configure_logging
 from backend.app.core.rate_limit import limiter
@@ -77,13 +87,16 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=settings.cors_allow_origins,
         allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=[
             "Authorization",
             "Content-Type",
             "Accept",
             "X-Request-ID",
             "X-Session-ID",
+            # US-080: the session switcher sends an anonymous browser/user id on
+            # POST/GET /sessions so chats restore from the server (no auth yet).
+            "X-User-ID",
         ],
         expose_headers=["X-Request-ID", "X-RateLimit-Remaining", "X-RateLimit-Reset"],
     )
@@ -97,6 +110,9 @@ def create_app() -> FastAPI:
     # US-059 Prometheus scrape endpoint (process metrics, not session-scoped).
     app.include_router(metrics.router)
     app.include_router(chat.router)
+    # US-080 chat-session lifecycle + server-side transcript (create/list
+    # messages/rename/delete) for the in-app multi-chat UI.
+    app.include_router(sessions.router)
     # US-054 hot-swap of the per-session reasoner variant (session-scoped, RLS).
     app.include_router(llm.router)
     # US-053 geospatial data endpoints (all session-scoped via RLS).
