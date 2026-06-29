@@ -188,6 +188,8 @@ def _label_parcels(
     parcels_parquet: Path,
     mapping_csv: Path,
     name_to_id: dict[str, int],
+    *,
+    region_prefix: str = "it",
 ) -> gpd.GeoDataFrame:
     """Load and label the EuroCrops Italy 2018 polygons with canonical ids.
 
@@ -210,12 +212,12 @@ def _label_parcels(
     """
     import geopandas as gpd
 
-    from ml.data.eurocrops_pastis_builder import _load_italy_code_to_hcat
+    from ml.data.eurocrops_pastis_builder import _load_region_code_to_hcat
 
     if not parcels_parquet.is_file():
         raise FileNotFoundError(
-            f"Italy parcels parquet not found at {parcels_parquet}; pull it with "
-            "`dvc pull data/reference/eurocrops_v2/iti1_2018.parquet`."
+            f"parcels parquet not found at {parcels_parquet}; pull it with "
+            "`dvc pull data/reference/eurocrops_v2/<region>.parquet`."
         )
     gdf = gpd.read_parquet(parcels_parquet)
     if gdf.crs is None or "3035" not in str(gdf.crs.to_epsg() or gdf.crs):
@@ -229,7 +231,9 @@ def _label_parcels(
     if n_dropped:
         logger.info("italia_polygons_empty_dropped", n=n_dropped)
 
-    crosswalk = _load_italy_code_to_hcat(mapping_csv).to_pandas()
+    crosswalk = _load_region_code_to_hcat(
+        mapping_csv, region_prefix=region_prefix
+    ).to_pandas()
     gdf["original_code"] = gdf["original_code"].astype(str)
     gdf = gdf.merge(crosswalk, on="original_code", how="left")
 
@@ -263,6 +267,7 @@ def parcels_in_patches(
     *,
     parcels_parquet: Path = ITALY_PARCELS_PARQUET,
     mapping_csv: Path = EUROCROPS_MAPPING_CSV,
+    region_prefix: str = "it",
 ) -> gpd.GeoDataFrame:
     """Keep the labelled parcels whose centroid falls in a patch bbox.
 
@@ -288,7 +293,9 @@ def parcels_in_patches(
     """
     import numpy as np
 
-    gdf = _label_parcels(parcels_parquet, mapping_csv, name_to_id)
+    gdf = _label_parcels(
+        parcels_parquet, mapping_csv, name_to_id, region_prefix=region_prefix
+    )
     # Drop background parcels (no crop label) before the spatial join.
     gdf = gdf[gdf["class_id"] != ITALIA_BACKGROUND_ID].reset_index(drop=True)
 
@@ -420,6 +427,7 @@ def build_alphaearth_italia_features(
     patches_metadata: Path | None = None,
     parcels_parquet: Path = ITALY_PARCELS_PARQUET,
     mapping_csv: Path = EUROCROPS_MAPPING_CSV,
+    region_prefix: str = "it",
     year: int = ITALIA_YEAR,
     batch_size: int = 100,
     project: str | None = None,
@@ -466,6 +474,7 @@ def build_alphaearth_italia_features(
         name_to_id,
         parcels_parquet=parcels_parquet,
         mapping_csv=mapping_csv,
+        region_prefix=region_prefix,
     )
 
     # Authenticate GEE via ADC (or service account) BEFORE sampling so an auth

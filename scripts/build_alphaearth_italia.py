@@ -78,8 +78,17 @@ def main(
     year: int = typer.Option(ITALIA_YEAR, help="AlphaEarth annual image year."),
     parcels_parquet: Path = typer.Option(
         ITALY_PARCELS_PARQUET,
-        help="EuroCrops Italy parcels parquet (e.g. iti1_2023.parquet to migrate the "
-        "ground truth to 2023; defaults to the 2018 reference).",
+        help="EuroCrops parcels parquet (e.g. iti1_2023.parquet or de4_2023.parquet "
+        "to migrate the ground truth; defaults to the Italy 2018 reference).",
+    ),
+    region_prefix: str = typer.Option(
+        "it",
+        help="NUTS prefix selecting the crosswalk region (it, de4, nl, ...).",
+    ),
+    mapping_csv_override: Path | None = typer.Option(
+        None,
+        "--mapping-csv",
+        help="EuroCrops crosswalk CSV (eurocrops.csv); defaults to the Italy mapping.",
     ),
     batch_size: int = typer.Option(100, help="Polygons per GEE reduceRegions request."),
     project: str | None = typer.Option(
@@ -119,16 +128,20 @@ def main(
         logger.info("alphaearth_italia_reuse_features", path=str(out_path))
         features = pl.read_parquet(out_path)
     else:
-        features = build_alphaearth_italia_features(
-            dataset_dir=dataset_dir,
-            patches_metadata=patches_metadata,
-            parcels_parquet=parcels_parquet,
-            year=year,
-            batch_size=batch_size,
-            project=project,
-            service_account_json=service_account_json,
-            out_path=out_path,
-        )
+        ae_kwargs: dict[str, object] = {
+            "dataset_dir": dataset_dir,
+            "patches_metadata": patches_metadata,
+            "parcels_parquet": parcels_parquet,
+            "region_prefix": region_prefix,
+            "year": year,
+            "batch_size": batch_size,
+            "project": project,
+            "service_account_json": service_account_json,
+            "out_path": out_path,
+        }
+        if mapping_csv_override is not None:
+            ae_kwargs["mapping_csv"] = mapping_csv_override
+        features = build_alphaearth_italia_features(**ae_kwargs)
 
     if features.is_empty():
         typer.secho(
