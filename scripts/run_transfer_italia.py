@@ -115,6 +115,10 @@ def _member_finetune(
         seed=args.seed,
         warm_start=not args.no_warm_start,
         from_scratch=args.from_scratch,
+        # The Full-M member rebuilds the champion capacity (dim=192, depth 6+6) so
+        # the warm-start from tsvit-pheno-fullm-v1 loads without a shape mismatch;
+        # the plain tsvit-pheno member keeps the historical L4 topology (dim=128).
+        tsvit_capacity="fullm" if member == "tsvit-pheno-fullm" else "l4",
     )
     # The Full-M member shares the tsvit-pheno builder but inits from the Full-M
     # checkpoint; the L4 member inits from tsvit-pheno-v1.
