@@ -220,19 +220,39 @@ class ItaliaDensePatches:
 
 
 def _equispaced_indices(n_available: int, n_select: int) -> np.ndarray:
-    """Deterministic equispaced indices (same convention as the PASTIS loader).
+    """Deterministic equispaced indices, ALWAYS exactly ``n_select`` long.
+
+    The PASTIS loader could assume ``n_available >= n_select`` (43 dates, select
+    <= 43) and return a variable-length subset. The Italian series are IRREGULAR
+    (9-40 real dates, US-082) and the champion resamples to ``n_timesteps=32``, so
+    a fixed length is required: every patch must yield the SAME ``(n_select, ...)``
+    shape or the batch ``np.stack`` raises "all input arrays must have the same
+    shape". This returns EXACTLY ``n_select`` indices in ``[0, n_available)``:
+
+    - ``n_available >= n_select``: equispaced picks; if rounding collapses two
+      picks into one (``np.unique`` would shorten the result), the gaps are
+      forward-filled from the equispaced grid so the length is preserved.
+    - ``n_available < n_select``: take all real dates, then PAD by repeating the
+      last real frame (temporal padding to the fixed window; the repeated tail
+      carries no new phenology but keeps the tensor shape uniform).
 
     Args:
         n_available: Dates available in the patch (T).
-        n_select: Dates to keep.
+        n_select: Fixed number of dates to keep (the model's ``n_timesteps``).
 
     Returns:
-        Sorted unique int indices in ``[0, n_available)``.
+        An int array of length EXACTLY ``n_select`` with values in
+        ``[0, n_available)``, sorted non-decreasing (repeats allowed when padding
+        or when rounding collapses neighbours).
     """
+    if n_available <= 0:
+        raise ValueError(f"n_available must be positive, got {n_available}")
     if n_select >= n_available:
-        return np.arange(n_available)
-    idx = np.linspace(0, n_available - 1, num=n_select)
-    return np.unique(np.round(idx).astype(int))
+        # Take all real dates, pad by repeating the last frame to reach n_select.
+        pad = np.full(n_select - n_available, n_available - 1, dtype=int)
+        return np.concatenate([np.arange(n_available, dtype=int), pad])
+    # Equispaced picks; keep length n_select even if rounding collapses neighbours.
+    return np.round(np.linspace(0, n_available - 1, num=n_select)).astype(int)
 
 
 def load_italia_patches(
