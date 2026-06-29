@@ -39,7 +39,9 @@ import numpy as np
 import torch
 
 __all__ = [
+    "DEFAULT_LABEL_SPACE",
     "FRANCE_9",
+    "FRANCE_12",
     "HARNESS_IGNORE_INDEX",
     "HARNESS_NUM_CLASSES",
     "HARNESS_SIZE",
@@ -367,6 +369,28 @@ class LabelSpace:
     class_names: dict[int, str]
     source: str
 
+    @property
+    def dropped_class_names(self) -> dict[int, str]:
+        """``{semantic18_id: crop name}`` for the DROPPED ids (out-of-vocabulary).
+
+        The complement of :attr:`class_names`: the crops this label-space does NOT
+        resolve reliably. Surfaced so the copilot can declare them outside its
+        calibrated vocabulary (and hand them to the RAG + reasoner layer for a
+        grounded hedge) instead of forcing a wrong in-vocabulary label. Resolved
+        against :data:`ml.data.pastis_filter.SEMANTIC18_CLASS_NAMES`.
+
+        Returns:
+            The ``{id: name}`` mapping for the dropped ids (empty when the space
+            keeps all of semantic18).
+        """
+        from ml.data.pastis_filter import SEMANTIC18_CLASS_NAMES
+
+        return {
+            cid: SEMANTIC18_CLASS_NAMES[cid]
+            for cid in self.dropped_class_ids
+            if cid in SEMANTIC18_CLASS_NAMES
+        }
+
 
 # ``france-9`` semantic18 ids resolved against
 # ``ml.data.pastis_filter.SEMANTIC18_CLASS_NAMES`` (verified, not by free-form
@@ -421,9 +445,72 @@ def _build_france9() -> LabelSpace:
 #: Module-level singleton for the first registered space (convenience export).
 FRANCE_9: LabelSpace = _build_france9()
 
+
+# ``france-12`` semantic18 ids: the twelve classes the NEW Voting-3 v2 champion
+# (tsvit-pheno-fullm-v2 @ n_timesteps=32 + utae + xgb-alphaearth, deployment
+# weights 0.902 / 0.0 / 0.098) resolves at restricted macro-F1 >= 0.90 on PASTIS
+# fold-5. Source: the v2 cardinality discard curve in
+# ``reports/voting_new/cardinalidad.json`` ("new"), which adds classes in
+# resolved-quality order and holds macro-F1 0.9264 at 10 classes, 0.9130 at 11 and
+# 0.9001 at 12 (Orchard) before dropping below 0.90 at 13 (Potatoes). The twelve
+# are france-9's nine PLUS Spring barley (5), Winter durum wheat (10) and
+# Orchard (15). The six DROPPED (below the 0.90 line) are the open-set the copilot
+# must declare it cannot resolve: Winter triticale (9), Fruits/veg/flowers (11),
+# Potatoes (12), Leguminous fodder (13), Mixed cereal (16), Sorghum (17).
+_FRANCE_12_KEPT_IDS: tuple[int, ...] = (0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 14, 15)
+
+
+def _build_france12() -> LabelSpace:
+    """Construct the ``france-12`` label-space (the v2 champion's 12 resolved crops).
+
+    Returns:
+        The frozen :class:`LabelSpace` for ``france-12`` with the twelve kept ids,
+        their name mapping (resolved against
+        :data:`ml.data.pastis_filter.SEMANTIC18_CLASS_NAMES`) and the six-class
+        dropped complement (the open-set the copilot reports as out-of-vocabulary).
+
+    Raises:
+        ValueError: if any kept id is outside ``[0, 18)`` or missing from the
+            semantic18 name table.
+    """
+    from ml.data.pastis_filter import SEMANTIC18_CLASS_NAMES
+
+    kept = tuple(sorted(_FRANCE_12_KEPT_IDS))
+    for cid in kept:
+        if not 0 <= cid < _SEMANTIC18_SIZE or cid not in SEMANTIC18_CLASS_NAMES:
+            raise ValueError(
+                f"france-12 kept id {cid} is not a valid semantic18 class id; "
+                "the SEMANTIC18_CLASS_NAMES table changed -- re-derive the ids."
+            )
+    dropped = tuple(c for c in range(_SEMANTIC18_SIZE) if c not in set(kept))
+    class_names = {cid: SEMANTIC18_CLASS_NAMES[cid] for cid in kept}
+    return LabelSpace(
+        name="france-12",
+        kept_class_ids=kept,
+        dropped_class_ids=dropped,
+        class_names=class_names,
+        source=(
+            "v2 Voting-3 cardinality discard curve (reports/voting_new/cardinalidad.json, "
+            "macro-F1 0.9001 at 12 classes); tsvit-pheno-fullm-v2 + utae + xgb"
+        ),
+    )
+
+
+#: Module-level singleton for the v2 champion's twelve-class space.
+FRANCE_12: LabelSpace = _build_france12()
+
 #: Mutable registry of label-spaces by name. EPIC 12 US-074 adds entries via
 #: :func:`register_label_space` (HCAT crosswalk) without editing the classifier.
-_REGISTRY: dict[str, LabelSpace] = {FRANCE_9.name: FRANCE_9}
+_REGISTRY: dict[str, LabelSpace] = {FRANCE_9.name: FRANCE_9, FRANCE_12.name: FRANCE_12}
+
+#: Canonical default label-space for the copilot (SINGLE SOURCE OF TRUTH -- never
+#: hardcode a space name at a call site). Consumers that take no explicit name
+#: (:func:`get_label_space`, the ``classify_new_parcel`` input default, the
+#: perceiver) resolve to this; ops can override per deployment via
+#: ``Settings.label_space`` (env ``LABEL_SPACE``) without touching code. Set to the
+#: v2 Voting-3 champion's twelve-class space (``france-12``); revert to ``france-9``
+#: with one edit here (or the env var) if a narrower vocabulary is wanted.
+DEFAULT_LABEL_SPACE: str = FRANCE_12.name
 
 
 def register_label_space(space: LabelSpace, *, overwrite: bool = False) -> None:
@@ -457,11 +544,12 @@ def register_label_space(space: LabelSpace, *, overwrite: bool = False) -> None:
     _REGISTRY[space.name] = space
 
 
-def get_label_space(name: str = "france-9") -> LabelSpace:
+def get_label_space(name: str | None = None) -> LabelSpace:
     """Return a registered label-space by name.
 
     Args:
-        name: Registered label-space name (default ``"france-9"``).
+        name: Registered label-space name. ``None`` (the default) resolves to
+            :data:`DEFAULT_LABEL_SPACE`, so no call site has to hardcode a name.
 
     Returns:
         The :class:`LabelSpace` registered under ``name``.
@@ -469,6 +557,8 @@ def get_label_space(name: str = "france-9") -> LabelSpace:
     Raises:
         KeyError: if ``name`` is not registered.
     """
+    if name is None:
+        name = DEFAULT_LABEL_SPACE
     if name not in _REGISTRY:
         raise KeyError(
             f"unknown label-space {name!r}; registered: {sorted(_REGISTRY)}."

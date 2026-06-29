@@ -305,12 +305,16 @@ class PerceiverLayer:
             year: Campaign year of the AlphaEarth annual embedding (fallback path).
 
         Returns:
-            A ``{class_name: probability}`` posterior restricted to ``france-9``
-            and summing to ~1; or ``{crop_class: 1.0}`` when nothing resolves.
+            A ``{class_name: probability}`` posterior restricted to the copilot's
+            configured label-space and summing to ~1; or ``{crop_class: 1.0}`` when
+            nothing resolves.
         """
         from ml.eval.class_remap import get_label_space, restrict_posterior
 
-        label_space = get_label_space("france-9")
+        # Resolve the active crop vocabulary from Settings (ops-configurable),
+        # falling back to DEFAULT_LABEL_SPACE -- never a hardcoded space name.
+        space_name = getattr(self._ctx.settings, "label_space", None)
+        label_space = get_label_space(space_name)
 
         # Champion-first: the EPIC 12 Voting-3 weighted vote over the parcel's
         # fold-5 OOF row, resolved by the stored canonical PASTIS-R id (US-079).

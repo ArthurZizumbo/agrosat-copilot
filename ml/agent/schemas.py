@@ -19,7 +19,9 @@ from datetime import date
 from typing import ClassVar, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from ml.eval.class_remap import DEFAULT_LABEL_SPACE
 
 __all__ = [
     "AddAoiInput",
@@ -439,8 +441,9 @@ class ClassifyParcelInput(BaseModel):
             Stacking-5 posterior is served for a fold-5 parcel). Ignored when
             ``model`` is set explicitly to a non-default value. Default ``False``.
         label_space: Name of the registered label-space whose resolved classes
-            gate the posterior when ``restrict_to_resolved_classes`` is on
-            (default ``"france-9"``; EPIC 12 US-074 will register more).
+            gate the posterior when ``restrict_to_resolved_classes`` is on.
+            Defaults to :data:`~ml.eval.class_remap.DEFAULT_LABEL_SPACE` (the
+            copilot's configured crop vocabulary) rather than a hardcoded name.
     """
 
     model_config = _STRICT_CONFIG
@@ -451,7 +454,7 @@ class ClassifyParcelInput(BaseModel):
     restrict_to_resolved_classes: bool = True
     model: Literal["xgb", "voting3", "stacking5"] = "xgb"
     use_stacking: bool = False
-    label_space: str = "france-9"
+    label_space: str = DEFAULT_LABEL_SPACE
 
     @property
     def resolved_model(self) -> str:
@@ -494,6 +497,16 @@ class ClassificationResult(BaseModel):
         crop_class: Argmax crop class predicted by the ensemble.
         confidence: Probability of ``crop_class`` in ``[0, 1]``.
         class_probabilities: Full posterior over crop classes.
+        out_of_vocabulary_classes: Crop names the active label-space does NOT
+            resolve reliably (its dropped set). Populated when restricting so the
+            reasoner knows the model's vocabulary boundary and can hand an
+            out-of-scope crop to RAG + phenology instead of forcing a label.
+        unresolved_candidate: When restricting and the model's RAW (unrestricted)
+            top class falls OUTSIDE the resolved vocabulary, the name of that
+            out-of-vocabulary crop the raw signal leaned toward -- the reasoner's
+            explicit cue that ``crop_class`` may be a renormalization artifact and
+            should be hedged with neighbouring-parcel grounding, not reported as
+            confident. ``None`` when the raw top class is in vocabulary.
     """
 
     model_config = _STRICT_CONFIG
@@ -501,6 +514,8 @@ class ClassificationResult(BaseModel):
     crop_class: str
     confidence: float
     class_probabilities: dict[str, float]
+    out_of_vocabulary_classes: list[str] = Field(default_factory=list)
+    unresolved_candidate: str | None = None
 
 
 # ---------------------------------------------------------------------------

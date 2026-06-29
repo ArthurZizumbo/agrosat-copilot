@@ -81,7 +81,7 @@ class _FakeClassifier:
 # classify_new_parcel
 # ---------------------------------------------------------------------------
 async def test_classify_restrict_default_nine_classes(monkeypatch, make_ctx) -> None:
-    """US-053: the default (restrict ON) returns the france-9 resolved posterior.
+    """US-053: an explicit france-9 (restrict ON) returns its resolved posterior.
 
     The default ``restrict_to_resolved_classes=True`` masks the 18-class posterior
     down to the nine ``france-9`` classes and renormalizes; the surfaced classes
@@ -101,7 +101,10 @@ async def test_classify_restrict_default_nine_classes(monkeypatch, make_ctx) -> 
     )
 
     out = await classify_mod.run(
-        ClassifyParcelInput(session_id=SESSION_A, aoi=_POLYGON, year=2019), make_ctx()
+        ClassifyParcelInput(
+            session_id=SESSION_A, aoi=_POLYGON, year=2019, label_space="france-9"
+        ),
+        make_ctx(),
     )
 
     space = get_label_space("france-9")
@@ -178,7 +181,13 @@ async def test_classify_use_stacking_with_oof(monkeypatch, make_ctx) -> None:
     )
 
     out = await classify_mod.run(
-        ClassifyParcelInput(session_id=SESSION_A, aoi=_POLYGON, year=2019, use_stacking=True),
+        ClassifyParcelInput(
+            session_id=SESSION_A,
+            aoi=_POLYGON,
+            year=2019,
+            use_stacking=True,
+            label_space="france-9",
+        ),
         make_ctx(),
     )
 

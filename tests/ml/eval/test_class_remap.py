@@ -138,3 +138,30 @@ def test_resample_rejects_non_2d() -> None:
     bad = np.zeros((1, 256, 256), dtype=np.int64)
     with pytest.raises(ValueError, match="2D"):
         resample_mask_128_nearest(bad)
+
+
+def test_default_label_space_is_france12_with_dropped_names() -> None:
+    """El default configurado es france-12 (campeon v2) y expone las clases
+    fuera de vocabulario por nombre para el hedge del copiloto.
+    """
+    from ml.eval.class_remap import DEFAULT_LABEL_SPACE, FRANCE_12, get_label_space
+
+    assert DEFAULT_LABEL_SPACE == "france-12"
+    # get_label_space(None) resuelve al default configurado (sin nombre hardcodeado).
+    assert get_label_space().name == "france-12"
+    assert get_label_space("france-12") is FRANCE_12
+
+    space = FRANCE_12
+    assert space.kept_class_ids == (0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 14, 15)
+    assert len(space.dropped_class_ids) == 6
+    # Las seis clases descartadas se exponen por nombre (handoff out-of-vocabulary).
+    assert set(space.dropped_class_names.values()) == {
+        "Winter triticale",
+        "Fruits, vegetables, flowers",
+        "Potatoes",
+        "Leguminous fodder",
+        "Mixed cereal",
+        "Sorghum",
+    }
+    # Kept y dropped son disjuntos y cubren todo el espacio semantic18.
+    assert set(space.class_names) | set(space.dropped_class_names) == set(range(18))

@@ -119,10 +119,10 @@ async def test_observe_builds_text_observation(monkeypatch, make_ctx) -> None:
     # Non-empty structured phenology text grounded in the real SOG landmark.
     assert obs.phenology_text
     assert "dia 95" in obs.phenology_text
-    # Posterior restricted to the nine well-resolved france-9 classes (the
-    # agent+app directive), renormalized to sum to ~1. The argmax mass (id 3,
-    # "Winter barley") is a france-9 class so it survives the restriction.
-    assert len(obs.class_probabilities) == 9
+    # Posterior restricted to the twelve well-resolved france-12 classes (the v2
+    # champion vocabulary), renormalized to sum to ~1. The argmax mass (id 3,
+    # "Winter barley") is a france-12 class so it survives the restriction.
+    assert len(obs.class_probabilities) == 12
     assert sum(obs.class_probabilities.values()) == pytest.approx(1.0, abs=1e-6)
     assert set(obs.class_probabilities) <= {
         "Meadow",
@@ -130,10 +130,13 @@ async def test_observe_builds_text_observation(monkeypatch, make_ctx) -> None:
         "Corn",
         "Winter barley",
         "Winter rapeseed",
+        "Spring barley",
         "Sunflower",
         "Grapevine",
         "Beet",
+        "Winter durum wheat",
         "Soybeans",
+        "Orchard",
     }
 
 
@@ -340,25 +343,28 @@ async def test_observe_aoi_uses_classifier_posterior(monkeypatch, make_ctx) -> N
         perceiver_mod.GeoJSONGeometry(**_POLYGON), year=2019
     )
 
-    # ``observe_aoi`` now serves the champion restricted to france-9 (use_stacking
+    # ``observe_aoi`` now serves the champion restricted to france-12 (use_stacking
     # ON); here the parcel is not in the OOF universe so it degrades to the
-    # ``xgb-alphaearth`` member, then restricts to the nine resolved classes.
+    # ``xgb-alphaearth`` member, then restricts to the twelve resolved classes.
     assert obs.parcel_id == -1
-    assert obs.crop_class == "Grapevine"  # id 7 is france-9; argmax after restrict
-    # Confidence is the renormalized mass over the nine france-9 classes (>= the
+    assert obs.crop_class == "Grapevine"  # id 7 is france-12; argmax after restrict
+    # Confidence is the renormalized mass over the twelve france-12 classes (>= the
     # raw 0.66 since the dropped classes' mass is removed).
     assert obs.confidence >= float(proba[7])
-    assert len(obs.class_probabilities) == 9
+    assert len(obs.class_probabilities) == 12
     assert set(obs.class_probabilities) <= {
         "Meadow",
         "Soft winter wheat",
         "Corn",
         "Winter barley",
         "Winter rapeseed",
+        "Spring barley",
         "Sunflower",
         "Grapevine",
         "Beet",
+        "Winter durum wheat",
         "Soybeans",
+        "Orchard",
     }
 
 
