@@ -123,6 +123,7 @@ def run(
     parcels_parquet: Path | None = None,
     mapping_csv: Path | None = None,
     region_prefix: str = "it",
+    reverse: bool = False,
 ) -> dict[str, object]:
     """Build the homologue dataset and return the pilot summary.
 
@@ -154,6 +155,12 @@ def run(
         label_kwargs["mapping_csv"] = mapping_csv
     gdf, class_table = load_labeled_polygons(**label_kwargs)
     plans = select_dense_patches(gdf, n_patches=n_patches)
+    if reverse:
+        # Parallel download: a second worker walks the SAME deterministic patch
+        # list back-to-front so the two processes converge in the middle. The
+        # ``patch_artifacts_exist`` resume guard makes any overlap idempotent (the
+        # later writer just re-saves an identical patch), so no lock is needed.
+        plans = list(reversed(plans))
     write_class_mapping_doc(out_dir, class_table)
 
     client = sh_client_from_settings(get_settings())
@@ -222,6 +229,12 @@ def main(argv: list[str] | None = None) -> int:
         default="it",
         help="NUTS prefix selecting the crosswalk region (it, de4, nl, ...).",
     )
+    parser.add_argument(
+        "--reverse",
+        action="store_true",
+        help="Walk the patch list back-to-front (a 2nd parallel worker uses this so "
+        "the two converge in the middle; resume makes overlap idempotent).",
+    )
     args = parser.parse_args(argv)
 
     with track_experiment(
@@ -250,6 +263,7 @@ def main(argv: list[str] | None = None) -> int:
             parcels_parquet=args.parcels_parquet,
             mapping_csv=args.mapping_csv,
             region_prefix=args.region_prefix,
+            reverse=args.reverse,
         )
         scalar = {k: v for k, v in summary.items() if isinstance(v, (int, float))}
         mlflow.log_metrics(scalar)
