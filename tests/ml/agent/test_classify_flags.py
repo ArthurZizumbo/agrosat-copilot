@@ -100,7 +100,7 @@ def _patch_embedding(monkeypatch) -> None:
 # restrict_to_resolved_classes
 # ---------------------------------------------------------------------------
 async def test_restrict_on_reduces_to_nine_and_renormalizes(monkeypatch, make_ctx) -> None:
-    """Default (restrict ON) collapses 18 -> 9 france-9 classes summing to ~1."""
+    """Explicit france-9 (restrict ON) collapses 18 -> 9 classes summing to ~1."""
     proba = _deterministic_posterior()
     class_names = {i: f"class_{i}" for i in range(HARNESS_NUM_CLASSES)}
     _patch_embedding(monkeypatch)
@@ -109,7 +109,10 @@ async def test_restrict_on_reduces_to_nine_and_renormalizes(monkeypatch, make_ct
     )
 
     out = await classify_mod.run(
-        ClassifyParcelInput(session_id=SESSION_A, aoi=_POLYGON, year=2019), make_ctx()
+        ClassifyParcelInput(
+            session_id=SESSION_A, aoi=_POLYGON, year=2019, label_space="france-9"
+        ),
+        make_ctx(),
     )
 
     space = get_label_space("france-9")
@@ -165,13 +168,58 @@ async def test_restrict_on_zero_kept_mass_is_unresolved(monkeypatch, make_ctx) -
     )
 
     out = await classify_mod.run(
-        ClassifyParcelInput(session_id=SESSION_A, aoi=_POLYGON, year=2019), make_ctx()
+        ClassifyParcelInput(
+            session_id=SESSION_A, aoi=_POLYGON, year=2019, label_space="france-9"
+        ),
+        make_ctx(),
     )
 
     assert out.crop_class == "unresolved"
     assert out.confidence == 0.0
     # The nine kept ids are still surfaced, all at zero (honest "no signal").
     assert all(v == 0.0 for v in out.class_probabilities.values())
+
+
+async def test_out_of_vocabulary_handoff_is_flagged(monkeypatch, make_ctx) -> None:
+    """A raw argmax OUTSIDE the vocabulary flags the out-of-vocab handoff (not a wall).
+
+    france-12 drops Potatoes (id 12). A posterior whose RAW top class is Potatoes
+    still reports a restricted in-vocabulary ``crop_class`` (the renormalized
+    argmax) BUT also carries ``unresolved_candidate="Potatoes"`` and the dropped
+    crop names in ``out_of_vocabulary_classes`` -- the cue the reasoner uses to
+    hedge with RAG/phenology instead of trusting the headline. A raw top class IN
+    vocabulary leaves ``unresolved_candidate`` ``None``.
+    """
+    # Raw argmax on Potatoes (12, out-of-vocab); the only kept mass is Corn (2).
+    proba = np.zeros(HARNESS_NUM_CLASSES, dtype=np.float64)
+    proba[12] = 0.6
+    proba[2] = 0.4
+    class_names = {i: f"class_{i}" for i in range(HARNESS_NUM_CLASSES)}
+    _patch_embedding(monkeypatch)
+    monkeypatch.setattr(
+        classify_mod, "_load_classifier", lambda: _FakeClassifier(proba, class_names)
+    )
+
+    out = await classify_mod.run(
+        ClassifyParcelInput(session_id=SESSION_A, aoi=_POLYGON, year=2019), make_ctx()
+    )
+    assert out.unresolved_candidate == "Potatoes"
+    assert "Potatoes" in out.out_of_vocabulary_classes
+    assert len(out.out_of_vocabulary_classes) == 6
+    # The in-vocab headline is the restricted argmax (Corn), not the raw Potatoes.
+    assert out.crop_class == "Corn"
+
+    # A raw top class IN vocabulary -> no handoff flag.
+    proba_ok = np.zeros(HARNESS_NUM_CLASSES, dtype=np.float64)
+    proba_ok[2] = 0.9
+    monkeypatch.setattr(
+        classify_mod, "_load_classifier", lambda: _FakeClassifier(proba_ok, class_names)
+    )
+    out_ok = await classify_mod.run(
+        ClassifyParcelInput(session_id=SESSION_A, aoi=_POLYGON, year=2019), make_ctx()
+    )
+    assert out_ok.unresolved_candidate is None
+    assert out_ok.crop_class == "Corn"
 
 
 # ---------------------------------------------------------------------------
@@ -201,7 +249,11 @@ async def test_use_stacking_serves_meta_posterior(monkeypatch, make_ctx) -> None
 
     out = await classify_mod.run(
         ClassifyParcelInput(
-            session_id=SESSION_A, aoi=_POLYGON, year=2019, use_stacking=True
+            session_id=SESSION_A,
+            aoi=_POLYGON,
+            year=2019,
+            use_stacking=True,
+            label_space="france-9",
         ),
         make_ctx(),
     )
@@ -296,10 +348,11 @@ async def test_use_stacking_degrades_when_parcel_not_in_oof(monkeypatch, make_ct
 
 
 async def test_default_flags_are_xgb_restricted(monkeypatch, make_ctx) -> None:
-    """Both flags at their defaults: xgb-alphaearth restricted to france-9.
+    """Both flags at their defaults: xgb-alphaearth restricted to france-12.
 
     Stacking must NOT be consulted (``use_stacking`` defaults OFF) and the output
-    must be the nine-class restricted posterior (``restrict`` defaults ON).
+    must be the twelve-class restricted posterior of the configured
+    ``DEFAULT_LABEL_SPACE`` (``restrict`` defaults ON).
     """
     proba = _deterministic_posterior()
     class_names = {i: f"class_{i}" for i in range(HARNESS_NUM_CLASSES)}
@@ -317,7 +370,7 @@ async def test_default_flags_are_xgb_restricted(monkeypatch, make_ctx) -> None:
         ClassifyParcelInput(session_id=SESSION_A, aoi=_POLYGON, year=2019), make_ctx()
     )
 
-    assert len(out.class_probabilities) == 9
+    assert len(out.class_probabilities) == 12
     assert sum(out.class_probabilities.values()) == pytest.approx(1.0, abs=1e-6)
 
 

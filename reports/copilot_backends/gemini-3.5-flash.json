@@ -1,0 +1,10 @@
+{
+  "model": "gemini-3.5-flash",
+  "ok": true,
+  "available": true,
+  "answer": "La parcela 52 está clasificada como trigo blando de invierno (*soft winter wheat*) con una confianza del 97.9% y un nivel de vigor desconocido (*unknown*).",
+  "n_tool_calls": 0,
+  "tool_calls": [],
+  "latency_ms": 2994.8,
+  "error": null
+}

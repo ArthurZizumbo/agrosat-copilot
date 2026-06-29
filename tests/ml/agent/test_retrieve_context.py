@@ -155,19 +155,21 @@ async def test_enabled_empty_corpus_returns_blank_grounding(monkeypatch, make_ct
 
 
 # ---------------------------------------------------------------------------
-# AC-5: registered as a deferred tool
+# Registered as a SYNCHRONOUS in-loop tool (a fast pgvector query); the agent
+# exposes it only when ``rag_enabled`` (see test_agent), so the reasoner can ground
+# itself in cited corpus evidence within the turn (anti-hallucination).
 # ---------------------------------------------------------------------------
-def test_retrieve_context_is_deferred() -> None:
-    """``retrieve_context`` is registered deferred (background / NON_BLOCKING)."""
+def test_retrieve_context_is_synchronous() -> None:
+    """``retrieve_context`` is registered synchronous (in-loop / BLOCKING)."""
     spec = TOOL_REGISTRY["retrieve_context"]
-    assert spec.deferred is True
+    assert spec.deferred is False
     assert spec.input_model is RetrieveContextInput
     assert spec.output_model is RetrievedContext
 
 
-def test_retrieve_context_in_deferred_not_sync_set() -> None:
-    """The tool appears among deferred tools and never among the synchronous ones."""
+def test_retrieve_context_in_sync_not_deferred_set() -> None:
+    """The tool appears among synchronous tools and never among the deferred ones."""
     deferred_names = {spec.name for spec in get_deferred_tools()}
     sync_names = {spec.name for spec in get_sync_tools()}
-    assert "retrieve_context" in deferred_names
-    assert "retrieve_context" not in sync_names
+    assert "retrieve_context" in sync_names
+    assert "retrieve_context" not in deferred_names

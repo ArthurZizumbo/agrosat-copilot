@@ -52,6 +52,7 @@ from ml.ingest.pastis_dataset import (
     load_norm_stats,
     pastis_fold_split,
 )
+from ml.losses.dirpa import DirPALogitAdjuster
 from ml.models.deeplabv3plus import build_dice_ce_loss
 from ml.utils.mlflow_utils import track_experiment
 
@@ -299,6 +300,8 @@ def run_training(
     resume: bool = True,
     checkpoint_every: int = 1,
     on_epoch: Callable[[int, dict[str, float]], None] | None = None,
+    dirpa_alpha: float = 1.0,
+    dirpa_tau: float = 0.0,
 ) -> dict[str, Any]:
     """Trains a dense segmentation model and logs metrics to MLflow.
 
@@ -390,6 +393,11 @@ def run_training(
     trainable = [p for p in seg_model.parameters() if p.requires_grad]
     optimizer = torch.optim.AdamW(trainable, lr=lr, weight_decay=weight_decay)
     criterion = nn.CrossEntropyLoss(ignore_index=PASTIS_IGNORE_INDEX)
+    # DirPA (Reuss et al. 2026): when dirpa_tau > 0, perturb the logits by a
+    # per-step symmetric-Dirichlet pseudo-prior before the CE, making the model
+    # robust to the train/deploy prior shift that sinks minority crop classes
+    # (e.g. sunflower/soybeans/durum). No-op at tau=0 and at inference.
+    dirpa_unet = DirPALogitAdjuster(alpha=dirpa_alpha, tau=dirpa_tau)
     use_amp = dev.type == "cuda"
     scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
 
@@ -487,6 +495,7 @@ def run_training(
                 optimizer.zero_grad()
                 with torch.amp.autocast("cuda", enabled=use_amp):
                     logits = _forward(seg_model, model, batch, dev)
+                    logits = dirpa_unet(logits, training=True)
                     loss = criterion(logits, target)
                 scaler.scale(loss).backward()
                 scaler.step(optimizer)
@@ -752,8 +761,9 @@ def _run_epoch(
     lambda_contrast: float,
     ignore_index: int,
     optimizer: torch.optim.Optimizer | None,
-    scaler: torch.cuda.amp.GradScaler | None,
+    scaler: torch.amp.GradScaler | None,
     use_amp: bool,
+    dirpa: DirPALogitAdjuster | None = None,
 ) -> float:
     """Runs one train epoch (with ``optimizer``) or eval epoch (without it).
 
@@ -770,6 +780,10 @@ def _run_epoch(
         optimizer: Optimizer for train; ``None`` for eval (no backward).
         scaler: AMP ``GradScaler`` or ``None``.
         use_amp: If ``True`` uses autocast (only effective on CUDA).
+        dirpa: Optional DirPA logit adjuster. When set (``tau > 0``) the dense
+            logits are perturbed by a per-step Dirichlet pseudo-prior before the
+            CE during TRAIN only (eval is a pass-through), so the contrastive
+            term and metrics see the unperturbed projection.
 
     Returns:
         Mean loss of the epoch (Python scalar).
@@ -792,6 +806,8 @@ def _run_epoch(
 
             with torch.autocast(device_type=device.type, enabled=amp_enabled):
                 logits, visual_proj = _forward_model(model, x, return_visual_proj=use_phenology)
+                if dirpa is not None:
+                    logits = dirpa(logits, training=is_train)
                 loss = criterion(logits, y)
                 if (
                     use_phenology
@@ -879,7 +895,7 @@ def _save_checkpoint_seg(
     epoch: int,
     model: nn.Module,
     optimizer: torch.optim.Optimizer,
-    scaler: torch.cuda.amp.GradScaler | None,
+    scaler: torch.amp.GradScaler | None,
     scheduler: torch.optim.lr_scheduler.LRScheduler | None,
     best_metrics: dict[str, float],
 ) -> None:
@@ -916,7 +932,7 @@ def _load_checkpoint_seg(
     *,
     model: nn.Module,
     optimizer: torch.optim.Optimizer,
-    scaler: torch.cuda.amp.GradScaler | None,
+    scaler: torch.amp.GradScaler | None,
     scheduler: torch.optim.lr_scheduler.LRScheduler | None,
     device: torch.device,
 ) -> tuple[int, dict[str, float]]:
@@ -933,7 +949,11 @@ def _load_checkpoint_seg(
         ``(start_epoch, best_metrics)``: the epoch from which to continue
         (= last completed + 1) and the previous best metrics.
     """
-    ckpt = torch.load(path, map_location=device, weights_only=False)
+    # Restricted unpickling: the checkpoint holds only state_dicts and scalars
+    # (model/optimizer/scaler/scheduler state, epoch, best_metrics), so
+    # weights_only=True is sufficient and avoids the pickle RCE vector when a
+    # checkpoint is pulled from a shared store (per the us-017 resume convention).
+    ckpt = torch.load(path, map_location=device, weights_only=True)
     model.load_state_dict(ckpt["model_state"])
     optimizer.load_state_dict(ckpt["optimizer_state"])
     if scaler is not None and ckpt.get("scaler_state") is not None:
@@ -1054,6 +1074,8 @@ def train_segmentation(
     warmup_epochs: int = 10,
     lr_min: float = 5e-6,
     patience: int = 0,
+    dirpa_alpha: float = 1.0,
+    dirpa_tau: float = 0.0,
 ) -> dict[str, float]:
     """Trains a PASTIS-R dense segmenter with MLflow logging.
 
@@ -1162,7 +1184,9 @@ def train_segmentation(
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
     amp_enabled = use_amp and resolved_device.type == "cuda"
-    scaler = torch.cuda.amp.GradScaler(enabled=amp_enabled) if amp_enabled else None
+    scaler = torch.amp.GradScaler("cuda", enabled=amp_enabled) if amp_enabled else None
+    # DirPA: built once, applied only in the train epoch (eval passes through).
+    dirpa = DirPALogitAdjuster(alpha=dirpa_alpha, tau=dirpa_tau)
 
     # LR schedule from Tarasiou et al. 2023 (TSViT, §4.1 "Implementation
     # details"): linear warmup 0 -> lr up to `warmup_epochs`, then cosine
@@ -1267,6 +1291,7 @@ def train_segmentation(
                 optimizer=optimizer,
                 scaler=scaler,
                 use_amp=use_amp,
+                dirpa=dirpa,
             )
             val_metrics, val_cm = _evaluate_dense(
                 model,
@@ -1420,6 +1445,8 @@ def build_and_train(
     patience: int = 0,
     mlflow_run_name: str | None = None,
     mlflow_uri: str | None = None,
+    dirpa_alpha: float = 1.0,
+    dirpa_tau: float = 0.0,
 ) -> dict[str, float]:
     """Builds dataset + model + prototypes and launches the training.
 
@@ -1542,6 +1569,8 @@ def build_and_train(
         patience=patience,
         num_classes=n_classes,
         mlflow_uri=mlflow_uri,
+        dirpa_alpha=dirpa_alpha,
+        dirpa_tau=dirpa_tau,
     )
 
 
@@ -1638,6 +1667,24 @@ def _build_arg_parser() -> argparse.ArgumentParser:  # pragma: no cover
         help="Folds de entrenamiento separados por coma.",
     )
     p.add_argument("--val-folds", default="4", help="Folds de validacion separados por coma.")
+    p.add_argument(
+        "--dirpa-alpha",
+        type=float,
+        default=1.0,
+        help=(
+            "DirPA: concentracion de la Dirichlet simetrica. <1 muestrea priors "
+            "sesgados (long-tail), >1 cerca de uniforme. Solo activo si dirpa-tau>0."
+        ),
+    )
+    p.add_argument(
+        "--dirpa-tau",
+        type=float,
+        default=0.0,
+        help=(
+            "DirPA: escala del ajuste de logits z'=z+tau*log(pi~). 0 desactiva "
+            "(entrenamiento normal). >0 robustece a las minoritarias (US-079b)."
+        ),
+    )
     return p
 
 
@@ -1668,6 +1715,8 @@ def main_legacy(argv: list[str] | None = None) -> int:  # pragma: no cover
         patience=args.patience,
         mlflow_run_name=args.run_name,
         mlflow_uri=args.mlflow_uri,
+        dirpa_alpha=args.dirpa_alpha,
+        dirpa_tau=args.dirpa_tau,
     )
     logger.info("cli_done", **{k: round(v, 4) for k, v in metrics.items()})
     return 0

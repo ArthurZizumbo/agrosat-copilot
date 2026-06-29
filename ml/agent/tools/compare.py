@@ -144,11 +144,16 @@ def _predict_for_parcel(model: str, canonical_id: str) -> int | None:
     return int(np.argmax(probs))
 
 
-def _compute_comparison(inp: CompareModelsInput) -> ModelComparison:
+def _compute_comparison(
+    inp: CompareModelsInput, canonical_id: str | None = None
+) -> ModelComparison:
     """Compute the cross-model comparison from the local OOF parquets.
 
     Args:
         inp: Validated arguments (parcel id and the model names to compare).
+        canonical_id: The parcel's stored canonical PASTIS-R OOF key
+            (``parcels.canonical_parcel_id``, US-079) when present; ``None`` falls
+            back to the Utf8 cast of the integer parcel id (legacy behaviour).
 
     Returns:
         A :class:`ModelComparison` whose ``predictions`` maps each model with a
@@ -157,8 +162,10 @@ def _compute_comparison(inp: CompareModelsInput) -> ModelComparison:
     """
     from ml.data.pastis_filter import SEMANTIC18_CLASS_NAMES
 
-    # Bridge the DB integer parcel id to the canonical Utf8 OOF key namespace.
-    canonical_id = canonical_parcel_id(pl.DataFrame({_KEY: [inp.parcel_id]}), col=_KEY)[_KEY][0]
+    # Resolve the OOF key: prefer the stored canonical PASTIS-R id, falling back to
+    # the Utf8 cast of the integer parcel id (which only matches numeric OOF keys).
+    if canonical_id is None:
+        canonical_id = canonical_parcel_id(pl.DataFrame({_KEY: [inp.parcel_id]}), col=_KEY)[_KEY][0]
 
     predictions: dict[str, str] = {}
     class_ids: list[int] = []
@@ -235,6 +242,12 @@ async def run(inp: CompareModelsInput, ctx: ToolContext) -> ModelComparison:
         )
         return _empty_comparison(inp.parcel_id)
 
+    # Resolve the parcel's canonical PASTIS-R OOF key (US-079) so the OOF lookup
+    # hits the real fold-5 row; ``None`` falls back to the legacy numeric cast.
+    from ml.agent.tools.classify import fetch_canonical_parcel_id
+
+    canonical_id = await fetch_canonical_parcel_id(ctx, inp.parcel_id)
+
     if ctx.defer is not None:
         handle = await ctx.defer(
             _DEFER_JOB,
@@ -246,4 +259,4 @@ async def run(inp: CompareModelsInput, ctx: ToolContext) -> ModelComparison:
             handle=str(handle),
         )
 
-    return _compute_comparison(inp)
+    return _compute_comparison(inp, canonical_id)

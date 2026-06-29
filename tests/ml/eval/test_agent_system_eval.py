@@ -31,6 +31,7 @@ from ml.eval.agent_system_eval import (
     CropCase,
     RagCase,
     ToolCallCase,
+    _augment_query_with_context,
     _parse_json_tool_answer,
     _score_args,
     eval_grounded_crop,
@@ -335,6 +336,48 @@ def test_score_args_fuzzy_keys_count_as_present() -> None:
     )
     # name matches; aoi present; session_id injected by the coercer -> 3/3.
     assert _score_args(case, {"name": "Valle Norte", "aoi": _POLY}) == 1.0
+
+
+def test_augment_query_appends_aoi_only_for_spatial_cases() -> None:
+    """Spatial cases get the frontend AOI appended; explicit-id cases are untouched.
+
+    This levels the native-FC and JSON-fallback channels and mirrors what the real
+    chat frontend sends, so a native reasoner no longer discovery-calls
+    ``list_parcels`` first and is mis-scored (verified live: Gemini 0.55 -> 0.95).
+    """
+    spatial = ToolCallCase(
+        id="tc-s",
+        user_query="que cultivo hay en esta zona?",
+        expected_tool="classify_new_parcel",
+        expected_args_subset={},
+        fuzzy_arg_keys=["session_id", "aoi"],
+        category="sync",
+        rationale="",
+    )
+    bbox_case = ToolCallCase(
+        id="tc-b",
+        user_query="busca escenas aqui",
+        expected_tool="search_stac",
+        expected_args_subset={},
+        fuzzy_arg_keys=["bbox", "datetime_range"],
+        category="deferred",
+        rationale="",
+    )
+    explicit = ToolCallCase(
+        id="tc-e",
+        user_query="serie ndvi de la parcela 12",
+        expected_tool="get_parcel_timeseries",
+        expected_args_subset={"parcel_id": 12},
+        fuzzy_arg_keys=["session_id"],
+        category="sync",
+        rationale="",
+    )
+    spatial_q = _augment_query_with_context(spatial)
+    assert spatial.user_query in spatial_q
+    assert "AOI (GeoJSON)" in spatial_q
+    assert "AOI (GeoJSON)" in _augment_query_with_context(bbox_case)
+    # No spatial fuzzy key -> the query is returned verbatim (no AOI noise).
+    assert _augment_query_with_context(explicit) == explicit.user_query
 
 
 # ---------------------------------------------------------------------------

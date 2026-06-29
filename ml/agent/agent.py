@@ -86,6 +86,23 @@ MAX_TURNS: int = 8
 #: left untouched.
 _SESSION_ID_FIELD: str = "session_id"
 
+#: Tool name of the Spatial-RAG grounding tool. It is synchronous (a fast pgvector
+#: query) but is exposed in the loop ONLY when ``rag_enabled``, so the default agent
+#: stays ungrounded exactly as before US-046 and only grounds itself on request.
+_RAG_TOOL_NAME: str = "retrieve_context"
+
+
+def _rag_enabled(settings: Settings | None) -> bool:
+    """Return whether the Spatial-RAG grounding tool should be in the agent loop.
+
+    Args:
+        settings: Typed settings (``None`` in tests that do not build them).
+
+    Returns:
+        ``True`` when ``settings.rag_enabled`` is truthy; ``False`` otherwise.
+    """
+    return bool(getattr(settings, "rag_enabled", False)) if settings is not None else False
+
 
 @dataclass
 class _ToolCall:
@@ -578,6 +595,11 @@ def create_agent(
     from ml.agent.prompts import ANALYST_SYSTEM_PROMPT
 
     resolved_tools = tools if tools is not None else get_sync_tools()
+    # Spatial-RAG grounding (US-046 ``retrieve_context``) is in the loop ONLY when
+    # ``rag_enabled``, so the default copilot is unchanged; when on, the reasoner can
+    # call it to ground its answer in cited corpus evidence (anti-hallucination).
+    if tools is None and not _rag_enabled(settings):
+        resolved_tools = [spec for spec in resolved_tools if spec.name != _RAG_TOOL_NAME]
     resolved_instruction = instruction if instruction is not None else ANALYST_SYSTEM_PROMPT
     backend = make_backend(model, settings)
 

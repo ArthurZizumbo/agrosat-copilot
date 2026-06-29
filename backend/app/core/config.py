@@ -145,6 +145,13 @@ class Settings(BaseSettings):
     # (AC-5, AC-10). Set ``RAG_ENABLED=true`` in ``.env.local`` to opt in.
     rag_enabled: bool = False
 
+    # Active crop label-space for the copilot's perceiver/classifier. ``None`` (the
+    # default) resolves to ``ml.eval.class_remap.DEFAULT_LABEL_SPACE`` (the v2
+    # champion's ``france-12``); set ``LABEL_SPACE=france-9`` in ``.env.local`` to
+    # serve a narrower vocabulary without touching code. The name must be a
+    # registered label-space (``france-9`` / ``france-12`` / future HCAT spaces).
+    label_space: str | None = None
+
     # MLflow / Dagster
     mlflow_tracking_uri: str = "http://localhost:5000"
     mlflow_artifact_store: str = ""

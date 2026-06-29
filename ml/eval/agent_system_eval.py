@@ -554,6 +554,46 @@ def _score_args(case: ToolCallCase, args: dict[str, Any]) -> float:
     return sum(1.0 for ok in checks if ok) / len(checks)
 
 
+#: Canonical AOI appended to spatial user turns, mirroring the geometry the real
+#: chat frontend attaches when the user draws a polygon (a small box near
+#: Toulouse, FR). Without it a native-FC reasoner (Gemini, Qwen-text) reasonably
+#: calls ``list_parcels`` to DISCOVER the area first and is then mis-scored on the
+#: first call; verified live, appending it lifts Gemini tool-selection from 0.55 to
+#: 0.95. The JSON-fallback prompt already states the geometry is auto-injected, so
+#: this levels the two channels and matches what the frontend really sends.
+_FRONTEND_AOI_GEOMETRY: str = (
+    '{"type": "Polygon", "coordinates": '
+    "[[[1.30, 43.50], [1.31, 43.50], [1.31, 43.51], [1.30, 43.51], [1.30, 43.50]]]}"
+)
+
+#: Fuzzy arg keys that mark a case as spatial (the frontend attaches a geometry).
+_SPATIAL_ARG_KEYS: frozenset[str] = frozenset({"aoi", "bbox"})
+
+
+def _augment_query_with_context(case: ToolCallCase) -> str:
+    """Append the frontend-provided AOI/bbox geometry for spatial user turns.
+
+    The real chat frontend attaches the drawn polygon to the user message for any
+    spatial request; the tool-calling eval previously sent the bare query, so a
+    native-FC reasoner (Gemini, Qwen-text) reasonably called ``list_parcels`` to
+    discover the area first and was mis-scored on that first call (a measurement
+    artifact, not a routing weakness -- ``grounded_crop`` already embeds the AOI
+    and the same reasoner routes correctly there). Cases whose ``fuzzy_arg_keys``
+    include ``aoi``/``bbox`` get the geometry appended so the metric reflects the
+    real agent; non-spatial cases (an explicit ``parcel_id``/``scene_id``) are
+    returned unchanged.
+
+    Args:
+        case: The tool-calling case.
+
+    Returns:
+        The user query, with the AOI line appended for spatial cases.
+    """
+    if set(case.fuzzy_arg_keys) & _SPATIAL_ARG_KEYS:
+        return f"{case.user_query}\nAOI (GeoJSON): {_FRONTEND_AOI_GEOMETRY}"
+    return case.user_query
+
+
 async def eval_tool_calling(
     variant: ReasonerVariant,
     cases: Sequence[ToolCallCase],
@@ -591,15 +631,19 @@ async def eval_tool_calling(
     for case in cases:
         tool_name: str | None
         args: dict[str, Any] | None
+        # Attach the AOI/bbox geometry the real frontend sends for spatial turns
+        # (no-op for cases with an explicit parcel_id/scene_id). Both channels see
+        # the same context so the native-FC and JSON-fallback paths stay comparable.
+        query = _augment_query_with_context(case)
         try:
             if native:
                 tool_name, args, _text = await asyncio.wait_for(
-                    _drive_for_call(backend, case.user_query, declarations),
+                    _drive_for_call(backend, query, declarations),
                     timeout=_ITEM_TIMEOUT_S,
                 )
             else:
                 text = await asyncio.wait_for(
-                    _drive_for_text(backend, _json_fallback_prompt(case.user_query)),
+                    _drive_for_text(backend, _json_fallback_prompt(query)),
                     timeout=_ITEM_TIMEOUT_S,
                 )
                 tool_name, args = _parse_json_tool_answer(text)

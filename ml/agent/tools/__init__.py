@@ -172,13 +172,16 @@ TOOL_SPECS: dict[str, _ToolDescriptor] = {
         "ml.agent.tools.retrieve_context",
         RetrieveContextInput,
         RetrievedContext,
-        True,
-        "Retrieve real neighbouring-parcel grounding (Spatial-RAG lite) for an AOI; "
-        "gated by the rag_enabled flag (no-op when off).",
+        False,
+        "Retrieve real neighbouring-parcel grounding (Spatial-RAG lite) for an AOI to "
+        "ground the answer in cited evidence; in-loop when rag_enabled (no-op when off).",
     ),
 }
 
-# Names of the 5 synchronous demo tools (must match TOOL_SPECS deferred=False).
+# Names of the synchronous in-loop tools (must match TOOL_SPECS deferred=False).
+# US-046's ``retrieve_context`` (Spatial-RAG) is synchronous -- a fast pgvector query,
+# not background work -- so the reasoner can ground itself in the loop; the agent only
+# exposes it when ``rag_enabled`` (see ``ml.agent.agent.create_agent``).
 _SYNC_TOOL_NAMES: frozenset[str] = frozenset(
     {
         "list_parcels",
@@ -186,6 +189,7 @@ _SYNC_TOOL_NAMES: frozenset[str] = frozenset(
         "get_aoi_stats",
         "classify_new_parcel",
         "explain_prediction",
+        "retrieve_context",
     }
 )
 

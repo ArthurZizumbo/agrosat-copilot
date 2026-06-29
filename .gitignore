@@ -205,6 +205,13 @@ gee_tasks.json
 .titiler_cache/
 *.cog.tmp
 
+# ── Datos gestionados por DVC (dir completo, no solo *.parquet) ───────────────
+# El campeon Voting-3 v2 versiona su OOF via ml/eval/oof_new32.dvc; los reportes
+# del TL Italia (US-079, descartado) no van al Git. Ignorar el dir entero evita
+# que JSON sueltos (manifest.json, report.json) se cuelen con un `git add .`.
+ml/eval/oof_new32/
+checkpoints/transfer/voting-italia/
+
 # ── Parquet / Polars / Arrow caches ───────────────────────────────────────────
 *.parquet
 *.feather
@@ -251,6 +258,9 @@ notebooks/_export/
 !paper/figures/us-023-preview/**/*.pdf
 !paper/tables/us-023-preview/*.tex
 !paper/tables/us-023-preview/**/*.tex
+# Entregables visuales del nuevo campeon (Voting-3 v2, 12 clases) -- usados en Avance5
+!reports/voting_new/*.png
+!reports/voting_new/**/*.png
 
 # Context & academic PDFs needed for reference
 !context/*.pdf

@@ -1,9 +1,11 @@
-"""``retrieve_context`` tool: Spatial-RAG *lite* grounding (deferred, US-046).
+"""``retrieve_context`` tool: Spatial-RAG *lite* grounding (synchronous, US-046).
 
-This is the deferred tool that injects real corpus grounding into the reasoner.
-It is NOT one of the five synchronous demo tools: it sits behind the
-``rag_enabled`` feature flag (default ``False``) and is only exposed to the
-function-calling harness when the flag is on (AC-5, AC-9).
+This tool injects real corpus grounding into the reasoner. It is a SYNCHRONOUS
+in-loop tool (a fast pgvector query, not background work), but it sits behind the
+``rag_enabled`` feature flag (default ``False``): :func:`ml.agent.agent.create_agent`
+only adds it to the agent's tool set when the flag is on, so the default copilot is
+ungrounded exactly as before and the reasoner can ground itself on request when RAG
+is enabled (anti-hallucination).
 
 Graceful degradation (AC-10) is the central behaviour:
 

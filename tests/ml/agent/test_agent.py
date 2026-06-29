@@ -192,15 +192,37 @@ def test_create_agent_exposes_the_five_sync_tools(monkeypatch: pytest.MonkeyPatc
 
     agent = create_agent()
 
+    # Default (rag_enabled off): the Spatial-RAG grounding tool is NOT in the loop,
+    # so the agent exposes the five non-RAG synchronous tools -- byte-identical to
+    # before the in-loop RAG change.
+    default_names = {spec.name for spec in get_sync_tools()} - {"retrieve_context"}
     assert isinstance(agent, Agent)
-    assert {spec.name for spec in agent.tools} == {spec.name for spec in get_sync_tools()}
+    assert {spec.name for spec in agent.tools} == default_names
     assert len(agent.tools) == 5
+    assert "retrieve_context" not in {spec.name for spec in agent.tools}
     assert agent.instruction == "ANALYST-PROMPT-SENTINEL"
-    # The 5 sync tools each yield a declaration advertised to the model.
     assert len(agent._declarations) == 5
-    assert {decl.name for decl in agent._declarations} == {
-        spec.name for spec in get_sync_tools()
-    }
+    assert {decl.name for decl in agent._declarations} == default_names
+
+
+def test_create_agent_includes_rag_tool_when_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With ``rag_enabled``, the Spatial-RAG grounding tool is in the loop (6 tools)."""
+    fake_backends = pytypes.ModuleType("ml.agent.backends")
+    fake_backends.make_backend = lambda model, settings: FakeBackend(  # type: ignore[attr-defined]
+        turns=[[FakeChunk(text="ok")]], model=model
+    )
+    fake_prompts = pytypes.ModuleType("ml.agent.prompts")
+    fake_prompts.ANALYST_SYSTEM_PROMPT = "P"  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "ml.agent.backends", fake_backends)
+    monkeypatch.setitem(sys.modules, "ml.agent.prompts", fake_prompts)
+
+    class _RagSettings:
+        rag_enabled = True
+
+    agent = create_agent(settings=_RagSettings())
+    names = {spec.name for spec in agent.tools}
+    assert "retrieve_context" in names  # grounded: the reasoner can call the RAG
+    assert len(agent.tools) == 6
 
 
 def test_create_agent_routes_model_to_backend(monkeypatch: pytest.MonkeyPatch) -> None:

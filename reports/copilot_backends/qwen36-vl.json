@@ -1,0 +1,10 @@
+{
+  "model": "qwen36-vl",
+  "ok": true,
+  "available": true,
+  "answer": "La parcela 52 se clasifica como Soft winter wheat con una confianza del 97.9%, y su vigor se reporta como unknown.",
+  "n_tool_calls": 0,
+  "tool_calls": [],
+  "latency_ms": 1951.9,
+  "error": null
+}
