@@ -24,6 +24,15 @@ This is CPU/network only (no GPU). Examples::
 
     # Pilot smoke over the first 20 patches:
     poetry run python -m scripts.build_phenology_italia --max-patches 20
+
+    # Another region (DE4 Baja Sajonia 2023): point --dataset-root at the DE4
+    # homologue, give it its own --out, and override --context-hint so Gemini
+    # grounds the descriptions in the German winter-cereal calendar instead of
+    # the Mediterranean one (the NDVI curves themselves are the REAL DE4 ones):
+    poetry run python -m scripts.build_phenology_italia \
+        --dataset-root data/pastis_de4_2023 \
+        --out data/features/phenology_class_prototypes_de4.parquet \
+        --context-hint "cultivo de Baja Sajonia Alemania 2023, cereales de invierno"
 """
 
 from __future__ import annotations
@@ -36,6 +45,7 @@ import structlog
 from ml.features.phenology_class_prototypes import (
     _DEFAULT_ITALIA_OUTPUT,
     _DEFAULT_ITALIA_ROOT,
+    _ITALIA_CONTEXT_HINT,
     _N_TIME_BINS,
     generate_italia_class_prototypes,
 )
@@ -78,6 +88,14 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         help="Limit the NDVI scan to the first N patches (smoke on the pilot).",
     )
+    p.add_argument(
+        "--context-hint",
+        default=_ITALIA_CONTEXT_HINT,
+        help="Regional agronomic qualifier appended to each class hint so Gemini "
+        "grounds the description in the right calendar (e.g. for DE4 pass "
+        '"cultivo de Baja Sajonia Alemania 2023, cereales de invierno"). '
+        "Defaults to the Italy 2018 Mediterranean context.",
+    )
     return p
 
 
@@ -119,6 +137,7 @@ def main(argv: list[str] | None = None) -> int:
         model=args.model,
         n_time_bins=args.n_time_bins,
         max_patches=args.max_patches,
+        context_hint=args.context_hint,
     )
     logger.info("italia_prototypes_done", output=str(out))
     return 0
