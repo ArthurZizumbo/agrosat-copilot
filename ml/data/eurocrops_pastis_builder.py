@@ -170,40 +170,59 @@ class PatchResult:
 # --------------------------------------------------------------------------- #
 # Step 1 -- labelled polygons + class table
 # --------------------------------------------------------------------------- #
-def _load_italy_code_to_hcat(mapping_csv: Path = EUROCROPS_MAPPING_CSV) -> pl.DataFrame:
-    """Load the Italy ``original_code`` -> ``hcat4_name`` mapping (100% IT).
+def _load_region_code_to_hcat(
+    mapping_csv: Path = EUROCROPS_MAPPING_CSV, *, region_prefix: str = "it"
+) -> pl.DataFrame:
+    """Load a region's ``original_code`` -> ``hcat4_name`` mapping from EuroCrops.
 
-    Filters the EuroCrops crosswalk to rows whose ``nuts`` begins with ``it``
-    (Italy regions, e.g. ``iti1``), keeping the columns needed to label parcels.
-    Codes stay ``Utf8`` to preserve any leading characters.
+    Filters the EuroCrops crosswalk to rows whose ``nuts`` begins with
+    ``region_prefix`` (``"it"`` for Italy regions like ``iti1``; ``"de4"`` for
+    Lower Saxony, etc.), keeping the columns needed to label parcels. Codes stay
+    ``Utf8`` to preserve any leading characters.
 
     Args:
-        mapping_csv: Path to ``eurocrops_mapping.csv``.
+        mapping_csv: Path to the EuroCrops crosswalk CSV (``eurocrops.csv``).
+        region_prefix: Lowercase NUTS prefix selecting the region(s) to load
+            (``"it"``, ``"de4"``, ``"nl"``, ...).
 
     Returns:
-        A Polars frame with unique ``original_code`` -> ``hcat4_name`` for Italy.
+        A Polars frame with unique ``original_code`` -> ``hcat4_name`` for the
+        region.
 
     Raises:
         FileNotFoundError: if the mapping CSV is absent.
+        ValueError: if no crosswalk row matches ``region_prefix``.
     """
     if not mapping_csv.is_file():
         raise FileNotFoundError(
             f"EuroCrops mapping CSV not found at {mapping_csv}; it is required to "
-            "label the Italian parcels (original_code -> HCAT4)."
+            f"label the {region_prefix!r} parcels (original_code -> HCAT4)."
         )
     # ``infer_schema_length=0`` reads every column as Utf8: ``original_code`` mixes
     # numeric and alphabetic codes (e.g. 'AAR'), so a numeric inference fails.
     mapping = pl.read_csv(mapping_csv, infer_schema_length=0)
-    italy = (
-        mapping.filter(pl.col("nuts").str.to_lowercase().str.starts_with("it"))
+    region = (
+        mapping.filter(
+            pl.col("nuts").str.to_lowercase().str.starts_with(region_prefix.lower())
+        )
         .select(
             original_code=pl.col("original_code").cast(pl.Utf8),
             hcat4_name=pl.col("hcat4_name").cast(pl.Utf8),
         )
         .unique(subset="original_code", keep="first")
     )
-    logger.info("italy_crosswalk_loaded", n_codes=italy.height)
-    return italy
+    if region.height == 0:
+        raise ValueError(
+            f"no EuroCrops crosswalk rows for NUTS prefix {region_prefix!r} in "
+            f"{mapping_csv}; check the prefix (e.g. 'it', 'de4', 'nl')."
+        )
+    logger.info("region_crosswalk_loaded", region=region_prefix, n_codes=region.height)
+    return region
+
+
+def _load_italy_code_to_hcat(mapping_csv: Path = EUROCROPS_MAPPING_CSV) -> pl.DataFrame:
+    """Backwards-compatible Italy crosswalk loader (delegates to the generic one)."""
+    return _load_region_code_to_hcat(mapping_csv, region_prefix="it")
 
 
 def build_class_table(
@@ -266,6 +285,7 @@ def load_labeled_polygons(
     parcels_parquet: Path = ITALY_PARCELS_PARQUET,
     mapping_csv: Path = EUROCROPS_MAPPING_CSV,
     min_support: int,
+    region_prefix: str = "it",
 ) -> tuple[gpd.GeoDataFrame, pl.DataFrame]:
     """Load EuroCrops Italy 2018 polygons labelled with contiguous class ids.
 
@@ -308,7 +328,9 @@ def load_labeled_polygons(
     if n_dropped:
         logger.info("polygons_empty_dropped", n=n_dropped)
 
-    crosswalk = _load_italy_code_to_hcat(mapping_csv).to_pandas()
+    crosswalk = _load_region_code_to_hcat(
+        mapping_csv, region_prefix=region_prefix
+    ).to_pandas()
     gdf["original_code"] = gdf["original_code"].astype(str)
     gdf = gdf.merge(crosswalk, on="original_code", how="left")
     n_unmapped = int(gdf["hcat4_name"].isna().sum())

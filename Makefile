@@ -28,6 +28,16 @@ dev:  ## Levanta docker-compose con 8 servicios (carga puertos desde .env.local)
 stop:  ## Detiene docker-compose
 	docker compose --env-file .env.local down
 
+# === Demo (presentacion) ===
+demo:  ## Levanta la app completa para demo (datos Docker + back/front nativos). Probado.
+	pwsh scripts/demo_up.ps1
+
+demo-vm:  ## Igual que demo + tunel al Qwen on-prem de la VM H100 (requiere tunel cloudflared)
+	pwsh scripts/demo_up.ps1 -WithVM
+
+demo-down:  ## Baja la demo (servicios nativos + tuneles; conserva datos Docker)
+	pwsh scripts/demo_down.ps1 -KeepDocker
+
 # === Lint & format ===
 lint:  ## ruff + ruff format check + mypy
 	cd backend && poetry run ruff check .

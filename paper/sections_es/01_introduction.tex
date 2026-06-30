@@ -1,0 +1,81 @@
+% Introduction --- derived from the Avance7 "Problem Statement" and EDA
+% findings, reorganized as a paper introduction with an explicit thesis
+% and contributions.
+\section{Introducción}
+\label{sec:intro}
+
+La gestión agrícola eficiente requiere conocer con precisión qué se
+cultiva, dónde y en qué cantidad. Los métodos tradicionales basados en
+la inspección física en campo son costosos, lentos y difíciles de
+escalar a grandes territorios. Las imágenes Sentinel-2 ofrecen una
+cobertura continua y de acceso libre, pero convertirlas en mapas de
+cultivo confiables es un problema difícil de aprendizaje automático por
+tres razones estructurales.
+
+\paragraph{Desbalance de clases severo.}
+De las 18 clases de cultivo en PASTIS-R~\cite{garnot2021pastis}, el
+prado representa hasta el 30\% de todas las parcelas, mientras que
+clases de valor agronómico como la colza, el sorgo y el huerto son
+clases minoritarias (por debajo del 1\%). Un modelo que ignora las
+clases raras tiene poco valor comercial, de modo que las métricas
+promediadas en macro son el objetivo correcto.
+
+\paragraph{Ambigüedad espectral intra-clase.}
+Cultivos como el trigo blando de invierno y la cebada de invierno son
+prácticamente indistinguibles en una sola imagen RGB. La discriminación
+requiere explotar la \emph{dinámica temporal} de la firma espectral a lo
+largo del año --- inicio del reverdecimiento, pico de NDVI, fecha de
+cosecha ---, lo que motiva las arquitecturas de series temporales frente
+a los clasificadores de imagen
+única~\cite{tarasiou2023tsvit,garnot2021utae}.
+
+\paragraph{Restricciones de producción.}
+Un sistema desplegable debe producir predicciones a nivel de parcela (no
+solo a nivel de píxel), ser explicable a usuarios no técnicos y operar
+con latencias de inferencia compatibles con una interfaz interactiva.
+
+\paragraph{Tesis.}
+Argumentamos que la cuantificación del área de cultivo se atiende mejor
+con una arquitectura de \emph{perceptor/razonador}. Una pila de
+percepción de modelos especializados --- transformadores temporales,
+clasificadores tabulares sobre los embeddings anuales de
+AlphaEarth~\cite{brown2025alphaearth} y una rama contrastiva
+visión-lenguaje~\cite{li2025farslip} --- produce observaciones
+auditables en texto plano por parcela. Un LLM frontera \emph{congelado}
+razona luego sobre esas observaciones y se comunica con el usuario,
+siguiendo el patrón \emph{Be My
+Eyes}~\cite{huang2025bemyeyes}. La capa de lenguaje es un componente de
+comunicación, explicación y orquestación de herramientas --- no un
+clasificador de píxeles ---, lo que mantiene cada cifra citada trazable
+a un resultado de herramienta determinista y preserva la opción de
+operación on-premises para la soberanía de datos.
+
+\paragraph{Contribuciones.}
+\begin{enumerate}[leftmargin=*]
+    \item Un estudio comparativo de arquitecturas de segmentación densa
+    sobre PASTIS-R, que identifica a
+    TSViT-pheno~\cite{tarasiou2023tsvit} como el mejor modelo individual
+    (mIoU 0.6253, F1 macro 0.7500 en el fold de prueba retenido), y
+    ensambles heterogéneos que mejoran el F1 macro out-of-fold sobre
+    cualquier miembro individual
+    (Sección~\ref{sec:results}).
+    \item Una capa conversacional anclada construida sobre el patrón
+    \emph{Be My Eyes} con un razonador congelado dual (Gemini~2.5~Pro en
+    la nube / Qwen3.5-35B-A3B on-premises) y un conjunto cerrado de
+    herramientas geoespaciales con Spatial-RAG
+    (Sección~\ref{sec:method}).
+    \item Un estudio honesto de la transferibilidad espacial de Francia a
+    Cataluña (Sen4AgriNet~\cite{sykas2022sen4agrinet}) y una curva
+    few-shot de $k$-shots sobre
+    EuroCropsML~\cite{reuss2025eurocropsml}, que muestra que la
+    transferencia zero-shot falla y que se requiere la adaptación
+    few-shot, en línea con los límites
+    reportados~\cite{harvesting2026alphaearth}
+    (Sección~\ref{sec:results}).
+\end{enumerate}
+
+El conjunto de datos de trabajo es PASTIS-R (Francia metropolitana), con
+2{,}433 parches Sentinel-2 multitemporales de $128\times128$ píxeles,
+etiquetas reales validadas por agricultores, 18 cultivos y folds
+espacialmente disjuntos que evitan la fuga de información entre
+entrenamiento y evaluación.

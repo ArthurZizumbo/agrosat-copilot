@@ -47,7 +47,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 import structlog
@@ -179,6 +179,13 @@ class DenseFineTuneConfig:
     #: backbone nor head) and train Italy entirely from scratch with the same
     #: methodology. Isolates the contribution of the France->Italy transfer.
     from_scratch: bool = False
+    #: US-082: TSViT-pheno capacity to rebuild for the warm-start. ``"l4"`` is the
+    #: historical light topology (dim=128, depth 4+4, ``tsvit-pheno-v1``); ``"fullm"``
+    #: is the deployment-champion capacity (dim=192, depth 6+6, ``tsvit-pheno-fullm``,
+    #: weight 0.902 in the pinned vote). Pass ``--pastis-checkpoint`` of the matching
+    #: capacity (the fullm best.pt for ``"fullm"``) or the loader raises a shape
+    #: mismatch.
+    tsvit_capacity: Literal["l4", "fullm"] = "l4"
 
 
 @dataclass
@@ -213,19 +220,39 @@ class ItaliaDensePatches:
 
 
 def _equispaced_indices(n_available: int, n_select: int) -> np.ndarray:
-    """Deterministic equispaced indices (same convention as the PASTIS loader).
+    """Deterministic equispaced indices, ALWAYS exactly ``n_select`` long.
+
+    The PASTIS loader could assume ``n_available >= n_select`` (43 dates, select
+    <= 43) and return a variable-length subset. The Italian series are IRREGULAR
+    (9-40 real dates, US-082) and the champion resamples to ``n_timesteps=32``, so
+    a fixed length is required: every patch must yield the SAME ``(n_select, ...)``
+    shape or the batch ``np.stack`` raises "all input arrays must have the same
+    shape". This returns EXACTLY ``n_select`` indices in ``[0, n_available)``:
+
+    - ``n_available >= n_select``: equispaced picks; if rounding collapses two
+      picks into one (``np.unique`` would shorten the result), the gaps are
+      forward-filled from the equispaced grid so the length is preserved.
+    - ``n_available < n_select``: take all real dates, then PAD by repeating the
+      last real frame (temporal padding to the fixed window; the repeated tail
+      carries no new phenology but keeps the tensor shape uniform).
 
     Args:
         n_available: Dates available in the patch (T).
-        n_select: Dates to keep.
+        n_select: Fixed number of dates to keep (the model's ``n_timesteps``).
 
     Returns:
-        Sorted unique int indices in ``[0, n_available)``.
+        An int array of length EXACTLY ``n_select`` with values in
+        ``[0, n_available)``, sorted non-decreasing (repeats allowed when padding
+        or when rounding collapses neighbours).
     """
+    if n_available <= 0:
+        raise ValueError(f"n_available must be positive, got {n_available}")
     if n_select >= n_available:
-        return np.arange(n_available)
-    idx = np.linspace(0, n_available - 1, num=n_select)
-    return np.unique(np.round(idx).astype(int))
+        # Take all real dates, pad by repeating the last frame to reach n_select.
+        pad = np.full(n_select - n_available, n_available - 1, dtype=int)
+        return np.concatenate([np.arange(n_available, dtype=int), pad])
+    # Equispaced picks; keep length n_select even if rounding collapses neighbours.
+    return np.round(np.linspace(0, n_available - 1, num=n_select)).astype(int)
 
 
 def load_italia_patches(
@@ -326,6 +353,7 @@ def build_italia_finetune_model(
     device: str = "cuda",
     warm_start: bool = True,
     from_scratch: bool = False,
+    tsvit_capacity: Literal["l4", "fullm"] = "l4",
 ) -> nn.Module:
     """Build the dense model with an Italian head, backbone init from PASTIS.
 
@@ -388,21 +416,43 @@ def build_italia_finetune_model(
         # U-TAE head id namespace = semantic id + 1 (id 0 = background, 19 = void).
         pastis_head_ids = {cid + 1: name for cid, name in pastis_names.items()}
     elif model_kind == "tsvit-pheno":
-        from ml.models.tsvit_wrapper import build_tsvit
+        from ml.models.tsvit_wrapper import TSVIT_FULLM_CONFIG, build_tsvit
 
-        model = build_tsvit(
-            num_classes=k_new,
-            n_timesteps=n_timesteps,
-            img_size=_PATCH_PX,
-            in_channels=10,
-            patch_size=8,
-            dim=128,
-            depth_temporal=4,
-            depth_spatial=4,
-            semantic_dim=384,
-        )
+        if tsvit_capacity == "fullm":
+            # Full-M capacity (US-038/US-039 champion: dim=192, depth 6+6, heads=6,
+            # dim_head=64). The Italian TSViT-pheno inherits the SAME backbone as the
+            # deployment champion (weight 0.902 in the pinned vote), so the Italian
+            # transfer is built on the champion's capacity, not the historical L4.
+            # ``n_timesteps`` overrides the config's native 37 (the Italian series is
+            # resampled to ``n_timesteps``); the ordinal PE is rebuilt to that length.
+            fullm = {k: v for k, v in TSVIT_FULLM_CONFIG.items() if k != "n_timesteps"}
+            model = build_tsvit(
+                num_classes=k_new,
+                n_timesteps=n_timesteps,
+                in_channels=10,
+                **fullm,
+            )
+            spec_key = "tsvit-pheno-fullm"
+        elif tsvit_capacity == "l4":
+            model = build_tsvit(
+                num_classes=k_new,
+                n_timesteps=n_timesteps,
+                img_size=_PATCH_PX,
+                in_channels=10,
+                patch_size=8,
+                dim=128,
+                depth_temporal=4,
+                depth_spatial=4,
+                semantic_dim=384,
+            )
+            spec_key = "tsvit-pheno"
+        else:
+            # Fail-fast on a typo (e.g. "full"): the old `else`-is-l4 fallback
+            # would silently build the wrong capacity (code review, finding low).
+            raise ValueError(
+                f"tsvit_capacity must be 'l4' or 'fullm'; got {tsvit_capacity!r}."
+            )
         head_kind = "cls_tokens"
-        spec_key = "tsvit-pheno"
         # TSViT cls-token id namespace = the contiguous semantic-18 ids (0..17).
         pastis_head_ids = dict(pastis_names)
     else:
@@ -873,6 +923,7 @@ def run_italia_finetune(
         device=device,
         warm_start=config.warm_start and not config.from_scratch,
         from_scratch=config.from_scratch,
+        tsvit_capacity=config.tsvit_capacity,
     )
     ignore_index = label_space.background_id if config.ignore_background else -100
 

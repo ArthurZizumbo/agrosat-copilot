@@ -1,0 +1,166 @@
+{
+  "label_space": "france-12",
+  "mode": "offline-oracle",
+  "n": 17,
+  "n_out_of_vocab": 1,
+  "n_new_france12_crops": 3,
+  "routing_accuracy": 1.0,
+  "crop_match_accuracy": 0.875,
+  "faithfulness_crop": 0.875,
+  "oov_handoff_accuracy": 1.0,
+  "per_case": [
+    {
+      "routing_accuracy": 1.0,
+      "crop_match_accuracy": 1.0,
+      "faithfulness_crop": 1.0,
+      "oov_handoff_accuracy": NaN,
+      "n": 1,
+      "n_oov": 0,
+      "case_id": "crop-001"
+    },
+    {
+      "routing_accuracy": 1.0,
+      "crop_match_accuracy": 1.0,
+      "faithfulness_crop": 1.0,
+      "oov_handoff_accuracy": NaN,
+      "n": 1,
+      "n_oov": 0,
+      "case_id": "crop-002"
+    },
+    {
+      "routing_accuracy": 1.0,
+      "crop_match_accuracy": 1.0,
+      "faithfulness_crop": 1.0,
+      "oov_handoff_accuracy": NaN,
+      "n": 1,
+      "n_oov": 0,
+      "case_id": "crop-003"
+    },
+    {
+      "routing_accuracy": 1.0,
+      "crop_match_accuracy": 1.0,
+      "faithfulness_crop": 1.0,
+      "oov_handoff_accuracy": NaN,
+      "n": 1,
+      "n_oov": 0,
+      "case_id": "crop-004"
+    },
+    {
+      "routing_accuracy": 1.0,
+      "crop_match_accuracy": 1.0,
+      "faithfulness_crop": 1.0,
+      "oov_handoff_accuracy": NaN,
+      "n": 1,
+      "n_oov": 0,
+      "case_id": "crop-005"
+    },
+    {
+      "routing_accuracy": 1.0,
+      "crop_match_accuracy": 1.0,
+      "faithfulness_crop": 1.0,
+      "oov_handoff_accuracy": NaN,
+      "n": 1,
+      "n_oov": 0,
+      "case_id": "crop-006"
+    },
+    {
+      "routing_accuracy": 1.0,
+      "crop_match_accuracy": 1.0,
+      "faithfulness_crop": 1.0,
+      "oov_handoff_accuracy": NaN,
+      "n": 1,
+      "n_oov": 0,
+      "case_id": "crop-007"
+    },
+    {
+      "routing_accuracy": 1.0,
+      "crop_match_accuracy": 1.0,
+      "faithfulness_crop": 1.0,
+      "oov_handoff_accuracy": NaN,
+      "n": 1,
+      "n_oov": 0,
+      "case_id": "crop-008"
+    },
+    {
+      "routing_accuracy": 1.0,
+      "crop_match_accuracy": 1.0,
+      "faithfulness_crop": 1.0,
+      "oov_handoff_accuracy": NaN,
+      "n": 1,
+      "n_oov": 0,
+      "case_id": "crop-009"
+    },
+    {
+      "routing_accuracy": 1.0,
+      "crop_match_accuracy": 0.0,
+      "faithfulness_crop": 0.0,
+      "oov_handoff_accuracy": NaN,
+      "n": 1,
+      "n_oov": 0,
+      "case_id": "crop-010"
+    },
+    {
+      "routing_accuracy": 1.0,
+      "crop_match_accuracy": 1.0,
+      "faithfulness_crop": 1.0,
+      "oov_handoff_accuracy": NaN,
+      "n": 1,
+      "n_oov": 0,
+      "case_id": "crop-011"
+    },
+    {
+      "routing_accuracy": 1.0,
+      "crop_match_accuracy": 1.0,
+      "faithfulness_crop": 1.0,
+      "oov_handoff_accuracy": NaN,
+      "n": 1,
+      "n_oov": 0,
+      "case_id": "crop-012"
+    },
+    {
+      "routing_accuracy": 1.0,
+      "crop_match_accuracy": 0.0,
+      "faithfulness_crop": 0.0,
+      "oov_handoff_accuracy": NaN,
+      "n": 1,
+      "n_oov": 0,
+      "case_id": "crop-013"
+    },
+    {
+      "routing_accuracy": 1.0,
+      "crop_match_accuracy": 1.0,
+      "faithfulness_crop": 1.0,
+      "oov_handoff_accuracy": NaN,
+      "n": 1,
+      "n_oov": 0,
+      "case_id": "crop-014"
+    },
+    {
+      "routing_accuracy": 1.0,
+      "crop_match_accuracy": 1.0,
+      "faithfulness_crop": 1.0,
+      "oov_handoff_accuracy": NaN,
+      "n": 1,
+      "n_oov": 0,
+      "case_id": "crop-015"
+    },
+    {
+      "routing_accuracy": 1.0,
+      "crop_match_accuracy": 1.0,
+      "faithfulness_crop": 1.0,
+      "oov_handoff_accuracy": NaN,
+      "n": 1,
+      "n_oov": 0,
+      "case_id": "crop-016"
+    },
+    {
+      "routing_accuracy": 1.0,
+      "crop_match_accuracy": NaN,
+      "faithfulness_crop": NaN,
+      "oov_handoff_accuracy": 1.0,
+      "n": 1,
+      "n_oov": 1,
+      "case_id": "crop-017"
+    }
+  ]
+}

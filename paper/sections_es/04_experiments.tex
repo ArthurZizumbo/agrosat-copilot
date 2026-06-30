@@ -1,0 +1,76 @@
+% Experiments --- setup, datasets, metrics, harness. Numbers live in
+% Results; this section fixes the protocol. The LLM-benchmark table is a
+% honest placeholder pending US-069 (H100 eval), per the data-real rule.
+\section{Configuración Experimental}
+\label{sec:experiments}
+
+\subsection{Conjuntos de datos}
+\paragraph{PASTIS-R}~\cite{garnot2021pastis} es el benchmark principal:
+2{,}433 parches Sentinel-2 multitemporales ($128\times128$ px), 18 clases
+de cultivo, Francia metropolitana, con cinco folds espacialmente
+disjuntos. Salvo que se indique lo contrario, los modelos de
+segmentación se evalúan en un fold de prueba retenido y los combinadores
+de ensamble sobre predicciones out-of-fold.
+
+\paragraph{Sen4AgriNet (Cataluña)}~\cite{sykas2022sen4agrinet}
+(CC-BY-SA-4.0) se usa para el estudio de transferencia
+Francia$\rightarrow$Cataluña. Un subconjunto de Cataluña se versiona con
+DVC (\texttt{data/sen4agrinet.dvc}).
+
+\paragraph{EuroCropsML}~\cite{reuss2025eurocropsml} (CC-BY-SA-4.0)
+sustenta la curva few-shot de $k$-shots; el subconjunto crudo se versiona
+con DVC (\texttt{data/transfer/eurocropsml.dvc}).
+
+\paragraph{AgroMind}~\cite{ruan2025agromind} se usa solo para evaluar la
+capa conversacional. No tiene partición de entrenamiento (alrededor de
+28{,}482 pares de QA); el ajuste fino sobre él induciría fuga, por lo que
+es estrictamente un conjunto de evaluación.
+
+\subsection{Métricas}
+La segmentación se reporta con la intersección sobre la unión media
+(mIoU) y el F1 promediado en macro a nivel de parcela; también
+reportamos la exactitud de píxel donde sea relevante. El promedio en
+macro es el objetivo principal porque penaliza por igual los errores en
+cultivos raros y comunes, lo que coincide con el objetivo de negocio.
+Los combinadores de ensamble se comparan por F1 macro y exactitud
+out-of-fold.
+
+\subsection{Arnés de evaluación y reproducibilidad}
+Todas las corridas de segmentación se puntúan con un arnés de evaluación
+compartido (\texttt{ml/eval/}) que impone folds espacialmente disjuntos
+y aborta ante un solapamiento geográfico entre los conjuntos de
+entrenamiento y evaluación. Un módulo de remapeo de etiquetas
+(\texttt{ml/eval/class\_remap.py}) proyecta las predicciones sobre el
+espacio macro de etiquetas armonizado para la comparación entre
+regiones. Cada cifra reportada en la Sección~\ref{sec:results} está
+anclada a un artefacto versionado (JSON/CSV/registro) en el repositorio,
+registrado en comentarios \texttt{\% src:} en el código fuente; los
+conjuntos de datos y los pesos se rastrean con DVC y las corridas con
+MLflow.
+
+\subsection{Protocolo de benchmark de la capa conversacional}
+\label{sec:experiments-llm}
+La capa conversacional se evalúa sobre AgroMind con un protocolo de
+LLM-como-juez que compara el razonador congelado Gemini~2.5~Pro frente al
+razonador multimodal Qwen on-premises servido vía vLLM. La tabla
+cuantitativa del benchmark se produce mediante una corrida de evaluación
+separada en la GPU H100 (US-069) y se deja aquí intencionalmente como un
+marcador de posición estructurado; las cifras no se fabrican.
+La Tabla~\ref{tab:llm-bench} fija la estructura de columnas.
+
+\begin{table}[htbp]
+\caption{Benchmark de la capa conversacional (solo estructura; cifras
+pendientes de la evaluación en H100, US-069).}
+\label{tab:llm-bench}
+\centering
+\begin{tabular}{lccc}
+\toprule
+\textbf{Razonador (congelado)} & \textbf{Exactitud} & \textbf{Anclaje}
+  & \textbf{LLM-juez} \\
+\midrule
+Gemini~2.5~Pro (nube)       & --- & --- & --- \\
+Qwen3.5-35B-A3B (on-prem)   & --- & --- & --- \\
+\bottomrule
+\end{tabular}
+% src: pending US-069 (H100 eval) -- do not fill with synthetic numbers.
+\end{table}

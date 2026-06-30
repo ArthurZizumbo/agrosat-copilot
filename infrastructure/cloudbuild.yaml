@@ -26,6 +26,16 @@ options:
 # excede los 30 min anteriores. Builds incrementales caen a < 15 min.
 timeout: 3600s
 
+# US-081 AC5: the GCS service-account key DVC uses to pull the Voting-3 v2 OOF
+# artifacts into the api image at build time. Stored in Secret Manager as
+# ``agrosat-dvc-sa-key`` (a key for a SA with ``roles/storage.objectViewer`` on
+# gs://agrosat-dvc-remote). Provision the secret VALUE out of band (the Terraform
+# secret container exists; the value is filled manually per the infra convention).
+availableSecrets:
+  secretManager:
+    - versionName: projects/${_PROJECT_ID}/secrets/agrosat-dvc-sa-key/versions/latest
+      env: GCS_DVC_KEY
+
 images:
   - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/api:${SHORT_SHA}"
   - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/frontend:${SHORT_SHA}"
@@ -38,19 +48,33 @@ steps:
   # --------------------------------------------------------------------------
   # 1) Build 3 images in parallel (buildx multi-platform amd64)
   # --------------------------------------------------------------------------
+  # US-081 AC5: the api image bakes the Voting-3 v2 champion OOF artifacts via a
+  # ``dvc pull`` inside the ``dvc-data`` stage of backend.Dockerfile. DVC reads the
+  # GCS remote (gs://agrosat-dvc-remote) with the SA key mounted as the BuildKit
+  # build secret ``gcs_dvc_key`` (sourced from Secret Manager ``agrosat-dvc-sa-key``
+  # via ``availableSecrets`` below). DOCKER_BUILDKIT=1 enables ``--mount=type=secret``.
   - id: build-api
     name: gcr.io/cloud-builders/docker
     waitFor: ["-"]
+    env:
+      - "DOCKER_BUILDKIT=1"
+    secretEnv:
+      - GCS_DVC_KEY
+    entrypoint: bash
     args:
-      - build
-      - -f
-      - infrastructure/docker/backend.Dockerfile
-      - --target=runtime
-      - -t
-      - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/api:${SHORT_SHA}
-      - -t
-      - ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/api:latest
-      - .
+      - -c
+      - |
+        set -eo pipefail
+        # Materialize the mounted secret as a file the BuildKit secret can read.
+        printf '%s' "$$GCS_DVC_KEY" > /workspace/gcs_dvc_key.json
+        docker build \
+          -f infrastructure/docker/backend.Dockerfile \
+          --target=runtime \
+          --secret id=gcs_dvc_key,src=/workspace/gcs_dvc_key.json \
+          -t ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/api:${SHORT_SHA} \
+          -t ${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_AR_REPO}/api:latest \
+          .
+        rm -f /workspace/gcs_dvc_key.json
 
   - id: build-frontend
     name: gcr.io/cloud-builders/docker

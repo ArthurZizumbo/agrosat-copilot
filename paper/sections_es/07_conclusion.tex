@@ -1,0 +1,33 @@
+% Conclusion --- derived from the Avance7 conclusions, restated with the
+% corrected final numbers and defensible framing.
+\section{Conclusión}
+\label{sec:conclusion}
+
+AgroSatCopilot muestra que la cuantificación del área de cultivo a partir
+de series temporales Sentinel-2 se atiende bien con un diseño
+perceptor/razonador. Los modelos de percepción especializados ---
+transformadores temporales, un clasificador XGBoost sobre los embeddings
+anuales de AlphaEarth~\cite{brown2025alphaearth} y una rama contrastiva
+visión-lenguaje~\cite{li2025farslip} --- se combinan mediante stacking
+heterogéneo, que mejora el F1 macro out-of-fold sobre cualquier modelo
+individual. El mejor perceptor individual, TSViT-pheno, alcanza mIoU
+0.6253 y F1 macro 0.7500 en el fold de prueba retenido, y el ensamble de
+stacking de cinco miembros alcanza un F1 macro out-of-fold de 0.6477.
+
+El patrón \emph{Be My Eyes}~\cite{huang2025bemyeyes} establece una
+separación limpia entre los modelos que \emph{ven} y un razonador
+congelado que \emph{comunica}, garantizando la auditabilidad y la
+resistencia a la alucinación, mientras que un backend dual
+nube/on-premises preserva la soberanía de datos. Nuestro estudio de
+transferencia es deliberadamente honesto: la generalización zero-shot de
+Francia a Cataluña falla, y el ajuste fino few-shot recupera mIoU 0.2468,
+consistente con los límites reportados sobre la transferibilidad espacial
+de los embeddings de modelos de
+fundación~\cite{harvesting2026alphaearth}.
+
+El principal desafío pendiente son las seis clases minoritarias con F1
+bajo, que requieren datos adicionales o aumentación dirigida en lugar de
+más modelos del mismo tipo. El trabajo futuro incluye el estudio
+fenológico completo de FarSLIP (US-072), el crosswalk del espacio de
+etiquetas multirregión y la curva de $k$-shots (US-073), y el benchmark
+cuantitativo de la capa conversacional en la H100 (US-069).

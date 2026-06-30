@@ -102,7 +102,11 @@ async def test_classify_restrict_default_nine_classes(monkeypatch, make_ctx) -> 
 
     out = await classify_mod.run(
         ClassifyParcelInput(
-            session_id=SESSION_A, aoi=_POLYGON, year=2019, label_space="france-9"
+            session_id=SESSION_A,
+            aoi=_POLYGON,
+            year=2019,
+            label_space="france-9",
+            model="xgb",
         ),
         make_ctx(),
     )
@@ -141,6 +145,7 @@ async def test_classify_restrict_off_full_eighteen(monkeypatch, make_ctx) -> Non
             aoi=_POLYGON,
             year=2019,
             restrict_to_resolved_classes=False,
+            model="xgb",
         ),
         make_ctx(),
     )
@@ -154,8 +159,11 @@ async def test_classify_restrict_off_full_eighteen(monkeypatch, make_ctx) -> Non
 
 
 async def test_classify_use_stacking_with_oof(monkeypatch, make_ctx) -> None:
-    """``use_stacking=True`` serves the Stacking-5 posterior when one is available.
+    """Legacy ``model="xgb" + use_stacking=True`` serves the Stacking-5 posterior.
 
+    Since US-081 flipped the default ``model`` to ``"voting3"``, the legacy
+    ``use_stacking`` promotion fires only when ``model="xgb"`` is explicit (see
+    :attr:`ClassifyParcelInput.resolved_model`); this test pins that legacy path.
     ``_stacking_posterior`` is stubbed to return a real OOF-shaped 18-vector (so
     no PASTIS-R / OOF I/O happens); the restricted result must reflect THAT
     posterior, not the xgb fallback. The classifier is patched to fail if invoked
@@ -185,6 +193,7 @@ async def test_classify_use_stacking_with_oof(monkeypatch, make_ctx) -> None:
             session_id=SESSION_A,
             aoi=_POLYGON,
             year=2019,
+            model="xgb",
             use_stacking=True,
             label_space="france-9",
         ),
@@ -230,6 +239,7 @@ async def test_classify_use_stacking_degrades_without_oof(monkeypatch, make_ctx)
             session_id=SESSION_A,
             aoi=_POLYGON,
             year=2019,
+            model="xgb",
             use_stacking=True,
             restrict_to_resolved_classes=False,
         ),

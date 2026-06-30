@@ -242,6 +242,11 @@ ignore = ["S101", "S301"]  # asserts ok en tests; pickle ok para ML
 "scripts/build_avance5_notebook.py" = ["RUF001", "RUF002", "RUF003", "E501"]
 # US-080: builder del notebook del refinador FarSLIP, misma prosa larga en f-strings.
 "scripts/build_us080_refiner_notebook.py" = ["RUF001", "RUF002", "RUF003", "E501"]
+# US-082: builder del notebook del dataset Italia completo + 3 vias, misma prosa
+# larga en f-strings y tipografia rica (E501 / RUF inevitable como los demas builders).
+"scripts/build_us082_eval_notebook.py" = ["RUF001", "RUF002", "RUF003", "E501"]
+# US-082: builder del notebook DE4 (Baja Sajonia), misma prosa larga + tipografia.
+"scripts/build_us082_de4_notebook.py" = ["RUF001", "RUF002", "RUF003", "E501"]
 # US-015 docstrings agronómicos en español usan caracteres tipográficos
 # (σ, ×, ≥, π) deliberadamente para preservar notación matemática estándar.
 "ml/features/temporal_features.py" = ["RUF001", "RUF002", "RUF003"]

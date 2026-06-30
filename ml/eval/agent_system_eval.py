@@ -172,6 +172,18 @@ class CropCase:
         user_query: Spanish user turn.
         expects_needs_gee: When ``True`` the mock returns the needs-GEE sentinel
             and the gold expectation is a faithful refusal (no fabricated crop).
+        expects_out_of_vocab: When ``True`` (US-081 AC3) the injected posterior's
+            RAW argmax (``true_crop``) is a crop the ACTIVE label-space does NOT
+            resolve (a ``dropped_class``). The restricted headline ``crop_class``
+            is then a renormalization artifact: the gold expectation is the
+            out-of-vocabulary HANDOFF -- the result carries ``unresolved_candidate``
+            equal to ``true_crop`` and the agent hedges (names the unresolved
+            candidate as the likely real crop) instead of forcing the in-vocab
+            label as a confident answer. Backward-compatible default ``False`` keeps
+            every existing france-9 case scored exactly as before.
+        expected_unresolved_candidate: For an out-of-vocab case, the crop name the
+            ``ClassificationResult.unresolved_candidate`` field must equal (the
+            dropped crop the RAW model leans to). ``None`` for in-vocab cases.
     """
 
     id: str
@@ -183,6 +195,8 @@ class CropCase:
     year: int
     user_query: str
     expects_needs_gee: bool
+    expects_out_of_vocab: bool = False
+    expected_unresolved_candidate: str | None = None
 
 
 @dataclass(frozen=True)
@@ -285,6 +299,12 @@ def load_crop_cases(path: Path = DEFAULT_CROP_PATH) -> list[CropCase]:
                 year=int(record.get("year", 2019)),
                 user_query=str(record["user_query"]),
                 expects_needs_gee=bool(record.get("expects_needs_gee", False)),
+                expects_out_of_vocab=bool(record.get("expects_out_of_vocab", False)),
+                expected_unresolved_candidate=(
+                    str(record["expected_unresolved_candidate"])
+                    if record.get("expected_unresolved_candidate") is not None
+                    else None
+                ),
             )
         )
     logger.info("crop_cases_loaded", path=str(path), n=len(cases))
@@ -821,7 +841,7 @@ async def _score_crop_case_native(
     backend: LLMBackend,
     ctx: ToolContext,
     classify_spec: Any,
-) -> tuple[bool, str | None, str]:
+) -> tuple[bool, str | None, str, dict[str, Any]]:
     """Drive the REAL :class:`Agent` loop for one crop case (native-FC variants).
 
     Runs ``Agent.stream_response`` with the single ``classify_new_parcel`` tool
@@ -836,9 +856,13 @@ async def _score_crop_case_native(
         classify_spec: The ``classify_new_parcel`` tool spec.
 
     Returns:
-        ``(routed, tool_crop, answer)`` -- ``routed`` is ``True`` when the loop
-        emitted a ``classify_new_parcel`` call, ``tool_crop`` is the crop the
-        tool returned (``None`` if it never ran), ``answer`` is the final prose.
+        ``(routed, tool_crop, answer, result_payload)`` -- ``routed`` is ``True``
+        when the loop emitted a ``classify_new_parcel`` call, ``tool_crop`` is the
+        crop the tool returned (``None`` if it never ran), ``answer`` is the final
+        prose, and ``result_payload`` is the tool's JSON-serialised
+        ``ClassificationResult`` (``{}`` when the tool never ran) so the caller can
+        read ``unresolved_candidate`` / ``out_of_vocabulary_classes`` for the
+        out-of-vocabulary handoff scoring.
     """
     from ml.agent.agent import Agent
 
@@ -848,6 +872,7 @@ async def _score_crop_case_native(
 
     routed = False
     tool_crop: str | None = None
+    result_payload: dict[str, Any] = {}
     answer_parts: list[str] = []
     # Hand the AOI + year to the model the way the frontend does when the user
     # draws a parcel: without the geometry the reasoner correctly REFUSES and asks
@@ -868,11 +893,12 @@ async def _score_crop_case_native(
             if type(event).__name__ == "ToolResultEvent" and getattr(event, "ok", False):
                 result = getattr(event, "result", {}) or {}
                 tool_crop = result.get("crop_class")
+                result_payload = dict(result)
             if type(event).__name__ == "TextDeltaEvent":
                 answer_parts.append(getattr(event, "text", "") or "")
     except Exception as exc:  # noqa: BLE001 - one case must not crash the run
         logger.warning("crop_case_failed", variant=variant.name, case=case.id, error=str(exc))
-    return routed, tool_crop, "".join(answer_parts).strip()
+    return routed, tool_crop, "".join(answer_parts).strip(), result_payload
 
 
 async def _score_crop_case_fallback(
@@ -882,7 +908,7 @@ async def _score_crop_case_fallback(
     backend: LLMBackend,
     ctx: ToolContext,
     classify_spec: Any,
-) -> tuple[bool, str | None, str]:
+) -> tuple[bool, str | None, str, dict[str, Any]]:
     """Score one crop case via the JSON tool-selection fallback (Ollama variants).
 
     The two Ollama backends (``gemma-base``, ``qwen36-vl``) IGNORE the ``tools``
@@ -910,8 +936,9 @@ async def _score_crop_case_fallback(
             + ``fn`` are reused so the same plumbing runs as on the native path).
 
     Returns:
-        ``(routed, tool_crop, answer)`` with the same contract as
-        :func:`_score_crop_case_native`.
+        ``(routed, tool_crop, answer, result_payload)`` with the same contract as
+        :func:`_score_crop_case_native` (``result_payload`` is the tool's
+        JSON-serialised ``ClassificationResult``, ``{}`` when it never ran).
     """
     from uuid import UUID
 
@@ -927,11 +954,11 @@ async def _score_crop_case_fallback(
         )
     except Exception as exc:  # noqa: BLE001 - one case must not crash the run
         logger.warning("crop_route_failed", variant=variant.name, case=case.id, error=str(exc))
-        return False, None, ""
+        return False, None, "", {}
     tool_name, _args = _parse_json_tool_answer(route_text)
     routed = tool_name == "classify_new_parcel"
     if not routed:
-        return False, None, ""
+        return False, None, "", {}
 
     # Run the REAL (stubbed) classify.run so the injected ensemble result is the
     # SAME deterministic plumbing the native path exercises.
@@ -946,7 +973,7 @@ async def _score_crop_case_fallback(
         result_obj = await classify_spec.fn(inp, ctx)
     except Exception as exc:  # noqa: BLE001 - one case must not crash the run
         logger.warning("crop_classify_failed", variant=variant.name, case=case.id, error=str(exc))
-        return True, None, ""
+        return True, None, "", {}
     result = result_obj.model_dump(mode="json")
     tool_crop = result.get("crop_class")
 
@@ -960,7 +987,7 @@ async def _score_crop_case_fallback(
     except Exception as exc:  # noqa: BLE001 - one case must not crash the run
         logger.warning("crop_report_failed", variant=variant.name, case=case.id, error=str(exc))
         answer = ""
-    return True, tool_crop, answer
+    return True, tool_crop, answer, result
 
 
 async def eval_grounded_crop(
@@ -1013,7 +1040,12 @@ async def eval_grounded_crop(
 
     Returns:
         Metric mapping with ``routing_accuracy``, ``crop_match_accuracy``,
-        ``faithfulness_crop`` and ``n``.
+        ``faithfulness_crop``, ``oov_handoff_accuracy`` (US-081 AC3; NaN when no
+        out-of-vocabulary case is present), ``n`` and ``n_oov``. The
+        ``crop_match_accuracy`` denominator EXCLUDES out-of-vocabulary cases (a
+        dropped crop has no correct in-vocab label, so scoring it there would
+        unfairly depress the metric); out-of-vocabulary handoffs are scored only by
+        ``oov_handoff_accuracy``.
     """
     import ml.agent.tools.classify as classify_mod
     from ml.agent.tools import get_tool
@@ -1025,6 +1057,7 @@ async def eval_grounded_crop(
     routing_scores: list[float] = []
     crop_scores: list[float] = []
     faithfulness_scores: list[float] = []
+    oov_scores: list[float] = []
 
     for case in cases:
         ctx = make_ctx()
@@ -1046,12 +1079,34 @@ async def eval_grounded_crop(
             classify_mod, "_load_classifier", lambda c=case: _build_stub_classifier(c)
         )
 
+        # The deployment default ``model`` is ``voting3`` (US-081 AC4a), whose
+        # posterior path first resolves a persisted PASTIS fold-5 parcel via the DB
+        # pool. This eval has no DB (the AOI is a fresh synthetic polygon) and the
+        # injected STUB classifier is the intended posterior source, so resolving to
+        # None makes ``voting3`` degrade cleanly to the stub -- the SAME contract a
+        # fresh AOI follows in production. Stubbing it here keeps the eval cero-red
+        # and decoupled from the serving default (xgb / voting3 score identically
+        # because both consume the injected posterior).
+        async def _no_resolve(_ctx: ToolContext, _aoi: Any = None) -> None:
+            return None
+
+        monkeypatch_target.setattr(classify_mod, "_resolve_canonical_parcel_id", _no_resolve)
+
+        # Cero red: a needs-GEE case must return the needs_gee sentinel
+        # deterministically, never attempt a live GEE sample. Stub the sampler to
+        # None so ``classify.run`` short-circuits to ``_needs_gee_result`` exactly as
+        # a fresh AOI with no resolvable embedding does in production.
+        async def _no_gee(_ctx: ToolContext, _year: int, _aoi: Any = None) -> None:
+            return None
+
+        monkeypatch_target.setattr(classify_mod, "_sample_embedding_via_gee", _no_gee)
+
         if native:
-            routed, tool_crop, answer = await _score_crop_case_native(
+            routed, tool_crop, answer, result_payload = await _score_crop_case_native(
                 case, variant=variant, backend=backend, ctx=ctx, classify_spec=classify_spec
             )
         else:
-            routed, tool_crop, answer = await _score_crop_case_fallback(
+            routed, tool_crop, answer, result_payload = await _score_crop_case_fallback(
                 case, variant=variant, backend=backend, ctx=ctx, classify_spec=classify_spec
             )
 
@@ -1063,6 +1118,21 @@ async def eval_grounded_crop(
             crop_scores.append(1.0 if (routed and tool_ok and answer_ok) else 0.0)
             no_crop_named = not _names_any_crop(answer, crop_names)
             faithfulness_scores.append(1.0 if tool_ok and no_crop_named else 0.0)
+        elif case.expects_out_of_vocab:
+            # US-081 AC3: the RAW model leans to a DROPPED crop, so the tool MUST
+            # surface ``unresolved_candidate`` (the handoff signal) and the agent
+            # MUST hedge toward that real crop instead of confidently asserting the
+            # renormalized in-vocab artifact. The handoff is correct when (a) the
+            # tool fired the right unresolved candidate AND (b) the prose names that
+            # candidate (the honest "likely <dropped crop>, outside my calibrated
+            # vocabulary" hedge). Out-of-vocab cases are NOT counted in crop_match
+            # (no correct in-vocab label exists for a dropped crop).
+            expected_unresolved = case.expected_unresolved_candidate or case.true_crop
+            unresolved_ok = (
+                routed and result_payload.get("unresolved_candidate") == expected_unresolved
+            )
+            hedge_ok = _crop_in_answer(answer, expected_unresolved)
+            oov_scores.append(1.0 if (unresolved_ok and hedge_ok) else 0.0)
         else:
             tool_ok = tool_crop == case.true_crop
             answer_ok = _crop_in_answer(answer, case.true_crop)
@@ -1078,24 +1148,33 @@ async def eval_grounded_crop(
                 faithfulness_scores.append(1.0 if _crop_in_answer(answer, tool_crop) else 0.0)
 
     n = len(cases)
+    n_oov = len(oov_scores)
     routing = sum(routing_scores) / n if n else math.nan
-    crop_match = sum(crop_scores) / n if n else math.nan
+    # crop_match is over the IN-VOCAB + needs-GEE cases only (its denominator is the
+    # number of crop_scores appended, which excludes out-of-vocabulary cases by
+    # construction -- a dropped crop has no correct in-vocab label to match).
+    crop_match = sum(crop_scores) / len(crop_scores) if crop_scores else math.nan
     faithfulness = (
         sum(faithfulness_scores) / len(faithfulness_scores) if faithfulness_scores else math.nan
     )
+    oov_handoff = sum(oov_scores) / n_oov if n_oov else math.nan
     logger.info(
         "crop_eval_done",
         variant=variant.name,
         seed=seed,
         routing_accuracy=routing,
         crop_match_accuracy=crop_match,
+        oov_handoff_accuracy=oov_handoff,
         n=n,
+        n_oov=n_oov,
     )
     return {
         "routing_accuracy": routing,
         "crop_match_accuracy": crop_match,
         "faithfulness_crop": faithfulness,
+        "oov_handoff_accuracy": oov_handoff,
         "n": n,
+        "n_oov": n_oov,
     }
 
 
