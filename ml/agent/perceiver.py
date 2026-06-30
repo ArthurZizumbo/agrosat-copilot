@@ -33,8 +33,10 @@ phenology features are read only for parcels visible to ``ctx.session_id``.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import Awaitable, Callable
+from typing import Any
 
 import numpy as np
 import structlog
@@ -95,6 +97,10 @@ class PerceiverObservation(BaseModel):
             (``{class_name: probability}``), summing to ~1.
         description: Natural-language summary suitable for the final answer
             (the Wen et al. 2025 phenology descriptor output).
+        map_segments: Optional per-cell crop polygons for the map overlay
+            (``[{crop_class, confidence, area_ha, geometry}]``), produced for an
+            AOI by the live segmentation. NOT rendered into ``to_prompt_block`` --
+            it is UI overlay data, never reasoner input (Be My Eyes text-only).
     """
 
     model_config = ConfigDict(strict=True, extra="forbid")
@@ -106,6 +112,7 @@ class PerceiverObservation(BaseModel):
     vigor: str
     class_probabilities: dict[str, float]
     description: str
+    map_segments: list[dict[str, Any]] = Field(default_factory=list)
 
     def to_prompt_block(self) -> str:
         """Render the observation as a grounding text block for the reasoner.
@@ -271,15 +278,64 @@ class PerceiverLayer:
             self._ctx,
         )
         observation = self._observation_from_classification(result)
+
+        # Live per-cell segmentation so the map can PAINT the recognised crops
+        # (not just report a dominant class). Best-effort: any failure leaves the
+        # AOI-level estimate untouched. Only attempted for a real crop estimate
+        # (not the needs_gee_sampling / unresolved sentinels).
+        if result.crop_class not in ("needs_gee_sampling", "unresolved"):
+            segments = await self._segment_aoi(aoi, year)
+            if segments:
+                observation.map_segments = segments
+                observation.description += (
+                    f" Mapa de cultivos por celda pintado en el mapa: "
+                    f"{len(segments)} regiones reconocidas (clasificacion por "
+                    f"celda con AlphaEarth+XGBoost)."
+                )
+
         logger.info(
             "perceiver_observe_finished",
             session_id=str(self._ctx.session_id),
             parcel_id=_AOI_PARCEL_ID,
             crop_class=observation.crop_class,
             vigor=observation.vigor,
+            n_segments=len(observation.map_segments),
             duration_ms=round((time.perf_counter() - start) * 1000.0, 2),
         )
         return observation
+
+    async def _segment_aoi(
+        self, aoi: GeoJSONGeometry, year: int
+    ) -> list[dict[str, Any]]:
+        """Run the live per-cell AOI segmentation off the event loop (best-effort).
+
+        Delegates to :func:`ml.agent.segment_aoi.segment_aoi_live` (blocking GEE +
+        classifier work) in a worker thread so the perceiver never blocks the loop.
+        Returns ``[]`` on any failure so the caller keeps the AOI-level estimate.
+
+        Args:
+            aoi: Polygon geometry of the area to segment.
+            year: Campaign year of the annual AlphaEarth embedding.
+
+        Returns:
+            A list of ``{crop_class, confidence, area_ha, geometry}`` segment
+            dicts in EPSG:4326, or ``[]`` when segmentation is unavailable.
+        """
+        from ml.agent.segment_aoi import segment_aoi_live
+
+        project = getattr(self._ctx.settings, "gee_project_id", "") or None
+        sa_raw = getattr(self._ctx.settings, "gee_service_account_path", "") or ""
+        from pathlib import Path
+
+        service_account_json = Path(sa_raw) if sa_raw else None
+        geometry = {"type": aoi.type, "coordinates": aoi.coordinates}
+        return await asyncio.to_thread(
+            segment_aoi_live,
+            geometry,
+            year,
+            project=project,
+            service_account_json=service_account_json,
+        )
 
     async def _class_posterior(
         self, *, parcel_id: int, crop_class: str, year: int

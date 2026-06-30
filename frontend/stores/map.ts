@@ -7,6 +7,7 @@
 
 import { defineStore } from "pinia";
 import type { Aoi, BasemapId, LngLat } from "~/types/map";
+import type { DemoView } from "~/utils/cropPalette";
 
 /** Parcel the user clicked on the map (US-058 link parcel->chat).
  *
@@ -41,6 +42,10 @@ interface MapState {
   parcelCount: number;
   /** True while a preview (demo) answer is shown instead of live data. */
   previewActive: boolean;
+  /** Which crop the prediction demo paints (predicted / true / hits-errors). */
+  demoView: DemoView;
+  /** Parcel accuracy of the prediction demo, when active; null otherwise. */
+  predictionAccuracy: number | null;
   /** Parcel currently selected by clicking the map; null = none. */
   selectedParcel: SelectedParcel | null;
   /** Latest visible map extent `[minLng, minLat, maxLng, maxLat]`; null until
@@ -58,6 +63,8 @@ export const useMapStore = defineStore("map", {
     cursorCoords: null,
     parcelCount: 0,
     previewActive: false,
+    demoView: "pred",
+    predictionAccuracy: null,
     selectedParcel: null,
     visibleBbox: null,
   }),
@@ -102,6 +109,12 @@ export const useMapStore = defineStore("map", {
     },
     setPreviewActive(on: boolean) {
       this.previewActive = on;
+    },
+    setDemoView(view: DemoView) {
+      this.demoView = view;
+    },
+    setPredictionAccuracy(value: number | null) {
+      this.predictionAccuracy = value;
     },
     /** Mark a parcel as selected (map highlight + chip). Complement to
      *  chatStore.setActiveParcelId, which the click handler also calls. */
