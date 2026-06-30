@@ -154,16 +154,25 @@ if (-not $SkipFrontend) {
     if ($frontInUse) {
         Write-Warn2 "Puerto $FRONT_PORT ya en uso; reutilizo el frontend existente"
     } else {
+        # pnpm en Windows es un .ps1 (ExternalScript), NO un .exe; Start-Process
+        # -FilePath "pnpm" falla en silencio. Hay que invocarlo a traves del
+        # ejecutable de PowerShell (pwsh/powershell). Resolvemos cual existe.
+        $pwshCmd = Get-Command pwsh -ErrorAction SilentlyContinue
+        $psExe = if ($pwshCmd) { $pwshCmd.Source } else { (Get-Command powershell).Source }
         if (-not (Test-Path "$repo\frontend\node_modules")) {
             Write-Warn2 "frontend/node_modules ausente; corriendo pnpm install (una vez)"
-            Start-Process -FilePath "pnpm" -ArgumentList "install" -WorkingDirectory "$repo\frontend" -Wait -WindowStyle Hidden
+            Start-Process -FilePath $psExe -ArgumentList "-NoProfile","-Command","pnpm install" `
+                -WorkingDirectory "$repo\frontend" -Wait -WindowStyle Hidden
         }
-        Start-Process -FilePath "pnpm" -ArgumentList "dev","--port","$FRONT_PORT" `
+        Start-Process -FilePath $psExe `
+            -ArgumentList "-NoProfile","-Command","pnpm dev --port $FRONT_PORT" `
             -WorkingDirectory "$repo\frontend" `
             -WindowStyle Hidden -RedirectStandardOutput "$repo\_demo_front.log" -RedirectStandardError "$repo\_demo_front.err.log"
     }
-    if (Wait-Http "http://127.0.0.1:$FRONT_PORT" 90 -AnyCode) {
-        Write-Ok "Frontend respondiendo (http://127.0.0.1:$FRONT_PORT)"
+    # Nuxt en Windows liga el dev server por nombre (localhost), y 127.0.0.1
+    # puede dar 000 por el binding IPv6/IPv4; el healthcheck usa localhost.
+    if (Wait-Http "http://localhost:$FRONT_PORT" 120 -AnyCode) {
+        Write-Ok "Frontend respondiendo (http://localhost:$FRONT_PORT)"
         $summary["Frontend"] = "OK :$FRONT_PORT"
     } else {
         Write-Warn2 "Frontend no respondio; ver _demo_front.err.log"
