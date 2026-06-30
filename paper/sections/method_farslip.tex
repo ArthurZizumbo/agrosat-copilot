@@ -1,249 +1,250 @@
 % ==============================================================================
-% US-072 -- FarSLIP contrastivo-fenologico (seccion Method/Experiments modular).
+% US-072 -- Phenology-contrastive FarSLIP (modular Method/Experiments section).
 %
-% Seccion auto-contenida del Paper Track (E11). Documenta el diagnostico del bug
-% torch.randn, el fix con prototipos fenologicos reales, el filtro 3:1 Meadow
-% per-patch, la ablacion de bandas, el protocolo incremental 4->18 y el marco
-% Be My Eyes. TODAS las cifras provienen de artefactos REALES del repo (ver los
-% comentarios de cada \input{...}). Las tablas viven en
-% paper/tables/farslip-method/ y se incluyen al final de cada subseccion.
+% Self-contained Paper Track (E11) section. Documents the torch.randn bug
+% diagnosis, the fix with real phenological prototypes, the 3:1 Meadow per-patch
+% filter, the band ablation, the 4->18 incremental protocol and the Be My Eyes
+% framework. ALL figures come from REAL repo artefacts (see each \input{...}
+% comment). Tables live in paper/tables/farslip-method/ and are included at the
+% end of each subsection.
 %
-% Para compilar de forma autonoma (fuera del manuscrito principal) se requiere:
+% To compile standalone (outside the main manuscript) the following is required:
 %   \graphicspath{{../figures/}{../../reports/farslip/figures/}}
-% y los \bibitem li2025farslip / wen2025phenology / huang2025bemyeyes
-% (ver paper/bib/farslip_refs.bib). Si se incrusta en
-% docs/final_doc/Avance7_equipo17.tex, esos recursos ya existen alli.
+% plus the \bibitem li2025farslip / wen2025phenology / huang2025bemyeyes
+% (see paper/bib/farslip_refs.bib). When embedded in
+% docs/final_doc/Avance7_equipo17.tex those resources already exist there.
 % ==============================================================================
 
-\section{FarSLIP contrastivo-fenologico: del fallo contra ruido a la senal
-visión-lenguaje}
+\section{Phenology-Contrastive FarSLIP: From Aligning Against Noise to a
+Vision-Language Signal}
 \label{sec:farslip_method}
 
-Esta seccion documenta el camino metodologico que eleva FarSLIP de una
-ablacion negativa --- perdia F1-macro $0.163$ frente al $0.233$ de AlphaEarth
-sobre las 18 clases de PASTIS-R --- a un componente visión-lenguaje cuyo aporte
-es \textit{complementario y honesto}. El relato es deliberadamente transparente:
-reportamos el bug que originaba el resultado negativo, el fix que cierra el gap
-\textit{propio} de FarSLIP, y el hecho de que, aun corregido, el espacio FarSLIP
-fiel \textbf{no supera} a AlphaEarth como clasificador denso. Su valor reside en
-el ensamble heterogeneo y en la transferibilidad multi-region (Sec.~\ref{sec:farslip_transfer}).
+This section documents the methodological path that lifts FarSLIP from a negative
+ablation --- it lost $0.163$ macro-F1 against AlphaEarth's $0.233$ over the 18
+PASTIS-R classes --- to a vision-language component whose contribution is
+\textit{complementary and honest}. The account is deliberately transparent: we
+report the bug that caused the negative result, the fix that closes FarSLIP's
+\textit{own} gap, and the fact that, even once corrected, the faithful FarSLIP
+space \textbf{does not beat} AlphaEarth as a dense classifier. Its value lies in
+the heterogeneous ensemble and in multi-region transferability
+(Sec.~\ref{sec:farslip_transfer}).
 
 % ------------------------------------------------------------------------------
-\subsection{F1 --- Diagnostico del bug: alineamiento contrastivo contra ruido}
+\subsection{F1 --- Bug Diagnosis: Contrastive Alignment Against Noise}
 \label{sec:farslip_f1}
 
-La perdida de alineamiento region-categoria de FarSLIP~\cite{li2025farslip}
-(\texttt{RegionCategoryAlignmentLoss}, un InfoNCE con temperatura $0.07$) alinea
-el token \texttt{[CLS]} del estudiante contra una matriz de \textit{prototipos
-de texto}. En la implementacion original
-(\texttt{ml/farslip/train.py}, ruta \texttt{proto\_source="random"}) esa matriz
-se inicializaba con \texttt{torch.randn(n\_protos, hidden\_dim)}: ruido gaussiano
-sin contenido semantico. El contraste empujaba el \texttt{[CLS]} hacia vectores
-aleatorios, de modo que la senal categorica nunca se anclaba a una descripcion
-real del cultivo. El docstring de \texttt{build\_text\_prototypes} nombra el
-sintoma textualmente: \textit{``contrastive alignment against noise --- the bug
-that made FarSLIP lose 0.163 vs 0.233''}. Este es el origen del resultado
-negativo: no un fallo del modelo de fundacion, sino una inicializacion que
-convertia una perdida contrastiva en regularizacion hacia ruido.
+FarSLIP's region-category alignment loss~\cite{li2025farslip}
+(\texttt{RegionCategoryAlignmentLoss}, an InfoNCE with temperature $0.07$) aligns
+the student's \texttt{[CLS]} token against a matrix of \textit{text prototypes}.
+In the original implementation (\texttt{ml/farslip/train.py}, path
+\texttt{proto\_source="random"}) that matrix was initialized with
+\texttt{torch.randn(n\_protos, hidden\_dim)}: Gaussian noise with no semantic
+content. The contrast pushed the \texttt{[CLS]} token toward random vectors, so
+the categorical signal was never anchored to a real crop description. The
+docstring of \texttt{build\_text\_prototypes} names the symptom verbatim:
+\textit{``contrastive alignment against noise --- the bug that made FarSLIP lose
+0.163 vs 0.233''}. This is the origin of the negative result: not a failure of
+the foundation model, but an initialization that turned a contrastive loss into
+regularization toward noise.
 
 % ------------------------------------------------------------------------------
-\subsection{F2 --- Prototipos fenologicos reales y reproyeccion ortogonal frozen}
+\subsection{F2 --- Real Phenological Prototypes and Frozen Orthogonal Reprojection}
 \label{sec:farslip_f2}
 
-El fix sustituye el ruido por \textit{prototipos fenologicos reales}, una clase
-a la vez. Para cada una de las 18 clases de PASTIS-R se redacta una descripcion
-fenologica siguiendo el marco de Wen et al.~\cite{wen2025phenology} (inicio de
-verdor, pico de NDVI, fecha de senescencia, textura de dosel), generada con
-Gemini~Flash y codificada con MiniLM (\texttt{all-MiniLM-L6-v2}) a un embedding
-de 384 dimensiones L2-normalizado. El flujo (ruta \texttt{proto\_source="pastis"})
-es:
+The fix replaces the noise with \textit{real phenological prototypes}, one class
+at a time. For each of the 18 PASTIS-R classes we write a phenological
+description following the framework of Wen et al.~\cite{wen2025phenology}
+(greenup onset, NDVI peak, senescence date, canopy texture), generated with
+Gemini~Flash and encoded with MiniLM (\texttt{all-MiniLM-L6-v2}) into an
+L2-normalized 384-dimensional embedding. The flow (path
+\texttt{proto\_source="pastis"}) is:
 
 \begin{enumerate}[leftmargin=*]
     \item \texttt{load\_class\_prototype\_embeddings()} $\rightarrow$
-    \texttt{proto\_18} $(18, 384)$, prototipos MiniLM por clase.
+    \texttt{proto\_18} $(18, 384)$, per-class MiniLM prototypes.
     \item \texttt{expand\_to\_cap()} $\rightarrow$ \texttt{proto\_cap}
-    $(32, 384)$, mapeo del esquema PASTIS-18 al vocabulario CAP de 32 categorias.
+    $(32, 384)$, mapping the PASTIS-18 scheme onto the 32-category CAP
+    vocabulary.
     \item \texttt{np.tile()} $\rightarrow$ \texttt{proto\_tiled}
-    $(n\_regions \cdot 32, 384)$ en orden \textit{region-major}
-    (\texttt{region $\cdot$ n\_categories + category}), coincidente con el target
-    de la perdida.
+    $(n\_regions \cdot 32, 384)$ in \textit{region-major} order
+    (\texttt{region $\cdot$ n\_categories + category}), matching the loss
+    target.
 \end{enumerate}
 
-El \textit{tile} de 384 dimensiones se reproyecta a la dimension del
-\texttt{[CLS]} del estudiante mediante una matriz semi-ortogonal $W$ generada
-con \texttt{torch.nn.init.orthogonal\_}, \texttt{requires\_grad=False}: nunca
-entra al optimizador ni al \texttt{state\_dict}. Al ser ortogonal preserva la
-norma $L_2$ y los angulos del subespacio MiniLM, de modo que las 18 clases
-permanecen distinguibles tras la reproyeccion.
+The 384-dimensional \textit{tile} is reprojected to the student's
+\texttt{[CLS]} dimension via a semi-orthogonal matrix $W$ generated with
+\texttt{torch.nn.init.orthogonal\_}, \texttt{requires\_grad=False}: it never
+enters the optimizer or the \texttt{state\_dict}. Being orthogonal, it preserves
+the $L_2$ norm and the angles of the MiniLM subspace, so the 18 classes remain
+distinguishable after reprojection.
 
-\paragraph{Correccion factual sobre la dimensionalidad.}
-La reproyeccion de los prototipos del \textit{loss} es \textbf{$384\rightarrow768$},
-no $384\rightarrow512$: el \texttt{hidden\_size} del teacher CLIP ViT-B/16 es
-$768$, confirmado por \texttt{trainer.teacher.config.hidden\_size} y por la
-columna \texttt{n\_dims}$=768$ del artefacto de evaluacion. La cifra ``512-dim
-por parcela'' corresponde a otro objeto --- el banco de \textit{features} que el
-extractor produce a nivel de parcela --- y no debe confundirse con la
-reproyeccion de prototipos del InfoNCE. Distinguimos explicitamente:
-banco-parcela $512$-dim frente a prototipos/\texttt{[CLS]} $768$-dim.
+\paragraph{Factual correction on dimensionality.}
+The reprojection of the \textit{loss} prototypes is \textbf{$384\rightarrow768$},
+not $384\rightarrow512$: the \texttt{hidden\_size} of the teacher CLIP ViT-B/16
+is $768$, confirmed by \texttt{trainer.teacher.config.hidden\_size} and by the
+\texttt{n\_dims}$=768$ column of the evaluation artefact. The ``512-dim per
+parcel'' figure corresponds to a different object --- the \textit{feature} bank
+that the extractor produces at parcel level --- and must not be confused with the
+InfoNCE prototype reprojection. We distinguish them explicitly: parcel-bank
+$512$-dim versus prototypes/\texttt{[CLS]} $768$-dim.
 
-\paragraph{Efecto del fix sobre el gap propio.}
-El fix cierra el gap \textit{propio} de FarSLIP: el espacio fiel v2 pasa de
-F1-macro $0.163$ (contra ruido) a $0.5551 \pm 0.0205$ (con prototipos
-fenologicos) sobre las mismas 567 parcelas, una mejora de $+0.392$ respecto al
-baseline buggeado. La Tabla~\ref{tab:farslip_vs_alphaearth} reporta la
-comparacion honesta frente a AlphaEarth.
+\paragraph{Effect of the fix on the own gap.}
+The fix closes FarSLIP's \textit{own} gap: the faithful v2 space goes from
+macro-F1 $0.163$ (against noise) to $0.5551 \pm 0.0205$ (with phenological
+prototypes) over the same 567 parcels, an improvement of $+0.392$ over the buggy
+baseline. Table~\ref{tab:farslip_vs_alphaearth} reports the honest comparison
+against AlphaEarth.
 
 \input{../tables/farslip-method/farslip_vs_alphaearth.tex}
 
-\paragraph{Claim defendible.}
-Corregido el bug, el espacio FarSLIP fiel \textbf{sigue por debajo} de AlphaEarth
-($-0.0024$ en F1-macro, $-0.0025$ en silhouette). No afirmamos que FarSLIP supere
-a AlphaEarth ni a Gemini: el aporte de FarSLIP es como miembro complementario del
-ensamble y en el transfer multi-region, no como clasificador denso ganador. Esta
-es la lectura que el resto de la seccion sostiene.
+\paragraph{Defensible claim.}
+With the bug fixed, the faithful FarSLIP space \textbf{is still below} AlphaEarth
+($-0.0024$ in macro-F1, $-0.0025$ in silhouette). We do not claim that FarSLIP
+beats AlphaEarth or Gemini: FarSLIP's contribution is as a complementary ensemble
+member and in multi-region transfer, not as a winning dense classifier. This is
+the reading the rest of the section supports.
 
 % ------------------------------------------------------------------------------
-\subsection{F3 --- Filtro 3:1 Meadow por parcela (\texttt{dominance\_ratio})}
+\subsection{F3 --- 3:1 Meadow Per-Parcel Filter (\texttt{dominance\_ratio})}
 \label{sec:farslip_f3}
 
-PASTIS-R esta dominado por \textit{Meadow} (clase 1) y \textit{Background}
-(clase 0), que juntos pueden cubrir $>80\%$ de un patch. Extraer
-\textit{features} sobre esos patches contamina el espacio de embeddings con
-senal poco informativa. El filtro previo de Isaac operaba en modo
-\texttt{coverage} (legacy): conservaba un patch si la cobertura combinada de las
-clases objetivo sobre los pixeles validos superaba un umbral global. El presente
-trabajo introduce el modo \texttt{dominance\_ratio} en
-\texttt{ml/data/pastis\_filter.py}: conserva un patch si
-$\text{Meadow}_{px} \leq 3 \cdot \text{second}_{px}$, donde
-$\text{second}_{px}$ es el conteo mayor \textit{en ese mismo patch} entre las
-clases objetivo, excluyendo Meadow, Background~(0) y Void~(19) por identificador
-literal (no via \texttt{ignore\_index}) para no contaminar la razon. La
-comparacion es inclusiva ($\leq$): un patch exactamente 3:1 se conserva.
+PASTIS-R is dominated by \textit{Meadow} (class 1) and \textit{Background}
+(class 0), which together can cover $>80\%$ of a patch. Extracting
+\textit{features} over such patches contaminates the embedding space with
+low-information signal. The previous filter operated in \texttt{coverage} mode
+(legacy): it kept a patch if the combined coverage of the target classes over the
+valid pixels exceeded a global threshold. The present work introduces the
+\texttt{dominance\_ratio} mode in \texttt{ml/data/pastis\_filter.py}: it keeps a
+patch if $\text{Meadow}_{px} \leq 3 \cdot \text{second}_{px}$, where
+$\text{second}_{px}$ is the largest count \textit{within that same patch} among
+the target classes, excluding Meadow, Background~(0) and Void~(19) by literal
+identifier (not via \texttt{ignore\_index}) so as not to contaminate the ratio.
+The comparison is inclusive ($\leq$): a patch that is exactly 3:1 is kept.
 
-La diferencia con el filtro \texttt{coverage} es conceptual: \texttt{coverage}
-mide pureza \textit{global} de clases objetivo; \texttt{dominance\_ratio} acota
-el desbalance \textit{local} de Meadow respecto a la segunda clase de cada patch,
-descartando solo los patches sobre-dominados por prado sin tirar la senal
-minoritaria del resto. Casos borde explicitos y testeados:
-$\text{Meadow}_{px}=0$ conserva (metrica $0.0$); $\text{Meadow}_{px}>0$ con
-$\text{second}_{px}=0$ (sin clase competidora) descarta (metrica $\infty$).
+The difference from the \texttt{coverage} filter is conceptual: \texttt{coverage}
+measures \textit{global} purity of target classes; \texttt{dominance\_ratio}
+bounds the \textit{local} Meadow imbalance relative to the second class of each
+patch, discarding only patches over-dominated by meadow without throwing away the
+minority signal of the rest. Explicit, tested edge cases:
+$\text{Meadow}_{px}=0$ is kept (metric $0.0$); $\text{Meadow}_{px}>0$ with
+$\text{second}_{px}=0$ (no competing class) is discarded (metric $\infty$).
 
 % ------------------------------------------------------------------------------
-\subsection{F4 --- Ablacion de bandas (rgb / nir\_rgb / 4band)}
+\subsection{F4 --- Band Ablation (rgb / nir\_rgb / 4band)}
 \label{sec:farslip_f4}
 
-Se evaluaron tres variantes de seleccion de bandas (US-035), implementadas como
-\textit{transform} por recorte en \texttt{ml/farslip/bands.py}: \textit{rgb}
-(B04-B03-B02, 3 canales), \textit{nir\_rgb} (B08-B04-B03 falso color, 3 canales)
-y \textit{4band} (B02-B03-B04-B08 identidad, 4 canales). La variante 4band
-reutiliza la adaptacion $3\rightarrow4$ del \texttt{patch\_embed} con
-NIR\,=\,mean(RGB) (US-034) para evitar neuronas muertas al ampliar el primer
-bloque convolucional.
+Three band-selection variants were evaluated (US-035), implemented as a crop
+\textit{transform} in \texttt{ml/farslip/bands.py}: \textit{rgb}
+(B04-B03-B02, 3 channels), \textit{nir\_rgb} (B08-B04-B03 false color, 3
+channels) and \textit{4band} (B02-B03-B04-B08 identity, 4 channels). The 4band
+variant reuses the $3\rightarrow4$ adaptation of the \texttt{patch\_embed} with
+NIR\,=\,mean(RGB) (US-034) to avoid dead neurons when widening the first
+convolutional block.
 
 \input{../tables/farslip-method/band_ablation.tex}
 
-\paragraph{Caveat de evaluacion (resultado parcial honesto).}
-Las tres corridas existen y convergen en perdida de destilacion
-(Tabla~\ref{tab:band_ablation}): la perdida total final es muy similar entre
-\textit{rgb} ($2.2893$) y \textit{nir\_rgb} ($2.2858$), y algo mayor en
-\textit{4band} ($2.3553$), con una perdida de \textit{patch} notablemente mas
-alta en 4band ($0.0786$ frente a $\approx0.018$) coherente con el canal NIR
-adicional. Sin embargo, los logs no registran la metrica de evaluacion
-consolidada (F1-macro/mIoU) por variante; por tanto NO reportamos un ganador de
-clasificacion entre bandas. Reportar una cifra de F1 inexistente seria inventar
-datos. El cierre de esta tabla con la metrica de evaluacion queda como tarea
-pendiente documentada en los \textit{blockers} de la epica.
+\paragraph{Evaluation caveat (honest partial result).}
+The three runs exist and converge in distillation loss
+(Table~\ref{tab:band_ablation}): the final total loss is very similar between
+\textit{rgb} ($2.2893$) and \textit{nir\_rgb} ($2.2858$), and somewhat higher in
+\textit{4band} ($2.3553$), with a notably higher \textit{patch} loss in 4band
+($0.0786$ versus $\approx0.018$) consistent with the additional NIR channel.
+However, the logs do not record the consolidated evaluation metric
+(macro-F1/mIoU) per variant; we therefore do NOT report a classification winner
+across bands. Reporting a non-existent F1 figure would be fabricating data.
+Closing this table with the evaluation metric remains a pending task documented
+in the epic \textit{blockers}.
 
 % ------------------------------------------------------------------------------
-\subsection{F5 --- Protocolo incremental 4$\rightarrow$18 y fusion en el ensamble}
+\subsection{F5 --- Incremental 4$\rightarrow$18 Protocol and Ensemble Fusion}
 \label{sec:farslip_f5}
 
-El clasificador FarSLIP se construye de forma incremental
-(\texttt{ml/farslip/incremental\_curriculum.py}): se parte de las 4 clases mas
-cardinales (Stage-1) y se anaden 2 clases por paso hasta 18 (Stage-2), inicializando
-cada etapa desde la anterior con \texttt{strict=False} para permitir el cambio de
-dimension del cabezal. El criterio de parada (\texttt{stop\_criterion}) contempla
-tres razones explicitas: \textit{(i)} clases nuevas inaceptables
-(F1$<0.30$), \textit{(ii)} degradacion de clases previas
-($\text{drop}>0.05$, olvido catastrofico), \textit{(iii)} maximo de clases
-alcanzado.
+The FarSLIP classifier is built incrementally
+(\texttt{ml/farslip/incremental\_curriculum.py}): it starts from the 4 most
+cardinal classes (Stage-1) and adds 2 classes per step up to 18 (Stage-2),
+initializing each stage from the previous one with \texttt{strict=False} to allow
+the head dimension to change. The stopping criterion (\texttt{stop\_criterion})
+considers three explicit reasons: \textit{(i)} unacceptable new classes
+(F1$<0.30$), \textit{(ii)} degradation of previous classes
+($\text{drop}>0.05$, catastrophic forgetting), \textit{(iii)} maximum number of
+classes reached.
 
-La Tabla~\ref{tab:cardinality_sweep} muestra el barrido de cardinalidad por
-parcela --- la evidencia empirica que motiva el protocolo. La dificultad crece
-monotonicamente con el numero de clases: F1-macro $0.7025$ con 4 clases,
-$0.4579$ con 6, $0.4075$ con 8, $0.3589$ con 10 y $0.3328$ con 12. El numero de
-parcelas evaluables crece (de 1301 a 3200) al admitir clases mas raras, pero la
-calidad promedio cae: las clases minoritarias con fenologia ambigua arrastran el
-F1-macro.
+Table~\ref{tab:cardinality_sweep} shows the per-parcel cardinality sweep --- the
+empirical evidence that motivates the protocol. Difficulty grows monotonically
+with the number of classes: macro-F1 $0.7025$ with 4 classes, $0.4579$ with 6,
+$0.4075$ with 8, $0.3589$ with 10 and $0.3328$ with 12. The number of evaluable
+parcels grows (from 1301 to 3200) as rarer classes are admitted, but the average
+quality falls: minority classes with ambiguous phenology drag the macro-F1 down.
 
 \input{../tables/farslip-method/cardinality_sweep.tex}
 
-\paragraph{Fallback honesto a 18 clases desde cero.}
-El baseline fiel de 18 clases sin pesos de clase (variante
-\texttt{faithful\_v2}, \textit{region\_category} MPCL + $L_{glo}$) alcanza
-F1-macro $0.164$ y mIoU $0.111$, con 4 clases de senal clara
-(Meadow $0.761$, Orchard $0.516$, Grapevine $0.489$, Corn $0.464$) y 14 clases
-en cero o muy bajo. La variante con pesos de clase \textit{inverse-frequency}
-(\texttt{faithful\_v2\_cw}) EMPEORA el balance neto a F1-macro $0.102$: desinfla
-los dominantes mas de lo que rescata a los raros. Estos resultados se reportan
-sin maquillaje; las 18 clases son $\approx4.5\times$ mas dificiles que las 4
-faciles ($0.576$ en US-036-a, no comparable directamente).
+\paragraph{Honest 18-class-from-scratch fallback.}
+The faithful 18-class baseline without class weights (variant
+\texttt{faithful\_v2}, \textit{region\_category} MPCL + $L_{glo}$) reaches
+macro-F1 $0.164$ and mIoU $0.111$, with 4 clear-signal classes
+(Meadow $0.761$, Orchard $0.516$, Grapevine $0.489$, Corn $0.464$) and 14 classes
+at zero or very low. The variant with \textit{inverse-frequency} class weights
+(\texttt{faithful\_v2\_cw}) WORSENS the net balance to macro-F1 $0.102$: it
+deflates the dominant classes more than it rescues the rare ones. These results
+are reported without embellishment; the 18 classes are $\approx4.5\times$ harder
+than the 4 easy ones ($0.576$ in US-036-a, not directly comparable).
 
-\paragraph{Fusion en el ensamble heterogeneo.}
-El aporte neto de FarSLIP se mide en el meta-modelo de \textit{stacking}. El
-ensamble de 5 miembros (TSViT-pheno, U-TAE, XGB-AlphaEarth, FarSLIP-ft18,
-FarSLIP-zeroshot) sobre probabilidades \textit{out-of-fold} alcanza F1-macro
-$0.6477$ (\textit{accuracy} $0.7935$) frente a $0.6359$ del ensamble de 3
-miembros sin FarSLIP: un delta de $+0.0118$ atribuible a las dos ramas FarSLIP en
-el \textit{stacking} OOF. El manuscrito principal reporta la cifra del ensamble
-final consolidado (F1-macro $0.749$); la magnitud exacta de la mejora atribuible
-a FarSLIP en esa cifra final difiere de este delta OOF y se trata como decision
-editorial (ver \textit{blockers}). En todo caso, la conclusion es estable: el
-aporte de FarSLIP es \textbf{positivo pero pequeno} ($\approx+0.3\%$ a $+1.2\%$
-segun la metrica), nunca el motor del clasificador.
+\paragraph{Fusion in the heterogeneous ensemble.}
+FarSLIP's net contribution is measured in the \textit{stacking} meta-model. The
+5-member ensemble (TSViT-pheno, U-TAE, XGB-AlphaEarth, FarSLIP-ft18,
+FarSLIP-zeroshot) over \textit{out-of-fold} probabilities reaches macro-F1
+$0.6477$ (\textit{accuracy} $0.7935$) versus $0.6359$ for the 3-member ensemble
+without FarSLIP: a delta of $+0.0118$ attributable to the two FarSLIP branches in
+the OOF \textit{stacking}. The main manuscript reports the figure of the final
+consolidated ensemble (macro-F1 $0.749$); the exact magnitude of the improvement
+attributable to FarSLIP in that final figure differs from this OOF delta and is
+treated as an editorial decision (see \textit{blockers}). In any case, the
+conclusion is stable: FarSLIP's contribution is \textbf{positive but small}
+($\approx+0.3\%$ to $+1.2\%$ depending on the metric), never the engine of the
+classifier.
 
 % ------------------------------------------------------------------------------
-\subsection{Marco \textit{Be My Eyes}: el LLM no clasifica pixeles}
+\subsection{\textit{Be My Eyes} Framework: The LLM Does Not Classify Pixels}
 \label{sec:farslip_bemyeyes}
 
-El resultado de que los prototipos fenologicos de texto aporten solo
-$\approx0.3\%$ como clasificador supervisado --- y no el $5\%$ que una lectura
-optimista sugeriria --- es un resultado \textit{esperado y correctamente
-enmarcado}, no un fracaso. Bajo el patron \textit{Be My Eyes} de Huang et
-al.~\cite{huang2025bemyeyes}, el sistema separa \textit{perceiver} y
-\textit{reasoner}: los \textit{perceivers} son nuestros modelos densos
-(TSViT-pheno, U-TAE) y FarSLIP, que \textit{ven} cada parcela y emiten
-observaciones; el \textit{reasoner} es un LLM frontera \textit{frozen}
-(Gemini~2.5-pro GA, 1M de contexto, o Qwen~3.5-35B-A3B on-prem para soberania de
-datos) que razona sobre esas observaciones en texto plano. El LLM \textbf{no es
-un clasificador de pixeles}; el clasificador final es el ensamble heterogeneo.
+The result that text phenological prototypes contribute only $\approx0.3\%$ as a
+supervised classifier --- and not the $5\%$ an optimistic reading would suggest
+--- is an \textit{expected and correctly framed} result, not a failure. Under the
+\textit{Be My Eyes} pattern of Huang et al.~\cite{huang2025bemyeyes}, the system
+separates \textit{perceiver} and \textit{reasoner}: the \textit{perceivers} are
+our dense models (TSViT-pheno, U-TAE) and FarSLIP, which \textit{see} each parcel
+and emit observations; the \textit{reasoner} is a \textit{frozen} frontier LLM
+(Gemini~2.5-pro GA, 1M context, or Qwen~3.5-35B-A3B on-prem for data sovereignty)
+that reasons over those observations in plain text. The LLM \textbf{is not a
+pixel classifier}; the final classifier is the heterogeneous ensemble.
 
-Por tanto, la descripcion fenologica de FarSLIP no debe juzgarse como cabezal de
-clasificacion supervisada (donde su aporte es marginal), sino como \textit{senal
-de anclaje} que enriquece la explicacion del \textit{reasoner} sin enviar
-tensores ni logits al LLM y sin anadir latencia perceptible. Esta separacion
-explica por que el resultado negativo de F2 como clasificador es compatible con
-el valor positivo de FarSLIP como componente visión-lenguaje del copiloto.
+Therefore, FarSLIP's phenological description should not be judged as a supervised
+classification head (where its contribution is marginal), but as a
+\textit{grounding signal} that enriches the \textit{reasoner}'s explanation
+without sending tensors or logits to the LLM and without adding perceptible
+latency. This separation explains why the negative result of F2 as a classifier
+is compatible with FarSLIP's positive value as the copilot's vision-language
+component.
 
 % ------------------------------------------------------------------------------
-\subsection{Caveats explicitos}
+\subsection{Explicit Caveats}
 \label{sec:farslip_caveats}
 
 \begin{itemize}[leftmargin=*]
-    \item \textbf{Reproyeccion cruda.} El lift ortogonal $384\rightarrow768$ es
-    un mapeo lineal que preserva norma y angulos, pero \textit{no} es el
-    \texttt{CLIPTextModel} nativo: es una aproximacion (caveat
-    \texttt{ortho\_proj\_crude\_approx} registrado en los parametros de MLflow).
-    La ruta con el codificador de texto nativo queda como trabajo posterior.
-    \item \textbf{Tamano de muestra.} La evaluacion FarSLIP-vs-AlphaEarth se
-    realiza sobre $n=567$ parcelas (orden $\approx500$--$700$ por fold), con
-    validacion cruzada espacial. Las cifras llevan su desviacion estandar.
-    \item \textbf{Pureza de parcela.} El filtro \texttt{dominance\_ratio} y la
-    agregacion a nivel de parcela mantienen una pureza alta ($\approx98\%$) tras
-    descartar los patches sobre-dominados por Meadow; el residual de mezcla se
-    asume en la etiqueta de parcela dominante.
-    \item \textbf{Saturacion del benchmark.} FarSLIP fiel no supera a AlphaEarth
-    como clasificador denso ($-0.0024$); su valor es complementario (ensamble) y
-    de transferibilidad, coherente con la transferibilidad espacial limitada
-    reportada para embeddings tipo AlphaEarth.
+    \item \textbf{Crude reprojection.} The orthogonal $384\rightarrow768$ lift is
+    a linear mapping that preserves norm and angles, but it is \textit{not} the
+    native \texttt{CLIPTextModel}: it is an approximation (caveat
+    \texttt{ortho\_proj\_crude\_approx} recorded in the MLflow parameters). The
+    path with the native text encoder remains future work.
+    \item \textbf{Sample size.} The FarSLIP-vs-AlphaEarth evaluation is performed
+    over $n=567$ parcels (order $\approx500$--$700$ per fold), with spatial
+    cross-validation. The figures carry their standard deviation.
+    \item \textbf{Parcel purity.} The \texttt{dominance\_ratio} filter and the
+    parcel-level aggregation maintain high purity ($\approx98\%$) after
+    discarding the patches over-dominated by Meadow; the residual mixing is
+    absorbed into the dominant-parcel label.
+    \item \textbf{Benchmark saturation.} Faithful FarSLIP does not beat AlphaEarth
+    as a dense classifier ($-0.0024$); its value is complementary (ensemble) and
+    in transferability, consistent with the limited spatial transferability
+    reported for AlphaEarth-type embeddings.
 \end{itemize}
