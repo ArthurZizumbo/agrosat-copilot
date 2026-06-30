@@ -1,0 +1,64 @@
+% Related Work --- NEW section (the Avance7 executive summary has none).
+% Every citation is anchored to its concrete use in the project; we make
+% no claims about papers beyond how they are used here.
+\section{Trabajo Relacionado}
+\label{sec:related}
+
+\subsection{Modelos de fundación para la observación de la Tierra}
+AlphaEarth Foundations~\cite{brown2025alphaearth} provee embeddings
+anuales globales listos para análisis, distribuidos en Google Earth
+Engine como el activo \texttt{SATELLITE\_EMBEDDING/V1/ANNUAL} (versión de
+datos~1.1, 64-dimensional, CC-BY-4.0). Usamos estos embeddings
+directamente como características tabulares en lugar de entrenar un
+modelo de fundación propio. DINOv3 en su variante
+satelital~\cite{oquab2023dinov3} aporta características congeladas
+autosupervisadas. AnySat~\cite{astruc2024anysat} es un modelo de
+observación de la Tierra multirresolución que evaluamos como backbone de
+segmentación. Para la comprensión fina y alineada con el lenguaje,
+FarSLIP~\cite{li2025farslip} adapta CLIP a la teledetección y aporta la
+rama contrastiva visión-lenguaje usada aquí. Trabajo reciente sobre la
+transferibilidad espacial de estos embeddings reporta que el desempeño
+se degrada entre regiones y que la adaptación few-shot es
+necesaria~\cite{harvesting2026alphaearth}; nuestros experimentos de
+transferencia lo corroboran.
+
+\subsection{Segmentación de series temporales de imágenes satelitales}
+Los modelos de atención temporal establecieron el estado del arte en el
+mapeo de cultivos a nivel de parcela sobre series temporales de
+imágenes. U-TAE introdujo un codificador ligero de autoatención temporal
+para SITS~\cite{garnot2021utae}, y el benchmark PASTIS / PASTIS-R
+formalizó la evaluación panóptica y semántica con folds espacialmente
+disjuntos~\cite{garnot2021pastis}. TSViT~\cite{tarasiou2023tsvit}
+factoriza la atención a lo largo de los ejes temporal y espacial y es el
+backbone más fuerte en nuestro estudio; lo extendemos con una rama
+fenológica (TSViT-pheno) inspirada en los transformadores conscientes de
+la fenología~\cite{wen2025phenology}. Como baselines puramente
+espaciales incluimos U-Net~\cite{ronneberger2015unet},
+DeepLabv3+~\cite{chen2018deeplabv3plus} y
+SegFormer~\cite{xie2021segformer} (variante B0, RGB de tres bandas).
+Señalamos que, a diferencia de planes previos del proyecto, no se
+entrenó ningún modelo volumétrico Swin-UNETR;
+AnySat~\cite{astruc2024anysat} ocupa el lugar del modelo de fundación en
+nuestra comparación.
+
+\subsection{Modelos visión-lenguaje para la agricultura}
+Benchmarks multimodales como AgroMind~\cite{ruan2025agromind} evalúan la
+comprensión de teledetección agrícola mediante respuesta a preguntas.
+AgroMind es solo de evaluación (sin partición de entrenamiento, alrededor
+de 28{,}482 pares de QA); el ajuste fino sobre él induciría fuga de
+datos, por lo que lo usamos estrictamente para la evaluación de la capa
+conversacional. Nos apoyamos en modelos de lenguaje abiertos ---
+Gemma~\cite{team2024gemma} y Qwen3~\cite{yang2025qwen3} (ambos
+Apache~2.0) --- y en el razonador frontera
+Gemini~2.5~Pro~\cite{google2025gemini25} para la operación en la nube.
+
+\subsection{Agentes LLM anclados}
+El patrón \emph{Be My Eyes}~\cite{huang2025bemyeyes} desacopla la
+percepción del razonamiento: los perceptores emiten observaciones
+textuales y un razonador congelado responde, lo que acota la
+alucinación porque cada cifra citada se origina en un resultado de
+herramienta auditable. Adoptamos este patrón al pie de la letra: nuestros
+modelos de segmentación y tabulares son los perceptores, y el LLM es un
+razonador congelado que nunca clasifica píxeles. Combinamos además un
+prefiltro espacial PostGIS con búsqueda semántica pgvector (Spatial-RAG)
+para anclar las respuestas en parcelas vecinas reales.

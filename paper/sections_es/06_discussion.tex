@@ -1,0 +1,92 @@
+% Discussion --- defensible claims and honest limitations. This section
+% is the guard against over-claiming; it states explicitly what we do NOT
+% claim.
+\section{Discusión}
+\label{sec:discussion}
+
+\subsection{Afirmaciones defendibles}
+Nuestros resultados sustentan cuatro afirmaciones, planteadas de forma
+conservadora.
+\begin{enumerate}[leftmargin=*]
+    \item Los transformadores temporales con una rama fenológica son los
+    perceptores individuales más fuertes sobre PASTIS-R (TSViT-pheno,
+    mIoU 0.6253), y el stacking heterogéneo sobre miembros
+    decorrelacionados eleva el F1 macro a nivel de parcela en el fold de
+    prueba a 0.7470 (exactitud 0.8490), $+12.3$ puntos sobre el mejor
+    modelo individual. El mismo campeón, usado como perceptor del agente,
+    eleva la exactitud a nivel de parcela de 0.8308 a 0.9413 ($+11$
+    puntos) sobre 13{,}481 parcelas reales, lo que confirma que la
+    separación Be My Eyes rinde frutos precisamente porque el razonador
+    congelado hereda la exactitud del campeón.
+    \item Una rama contrastiva visión-lenguaje~\cite{li2025farslip}
+    aporta una señal complementaria útil pero modesta (la ganancia del
+    stacking de cinco miembros sobre tres es $+0.0118$ de F1 macro). Es
+    un complemento, no un clasificador autónomo.
+    \item El patrón \emph{Be My Eyes}~\cite{huang2025bemyeyes} produce
+    una capa conversacional anclada en la que cada cifra citada es
+    trazable a un resultado de herramienta auditable, con un razonador
+    congelado intercambiable entre la nube (Gemini~2.5~Pro) y on-premises
+    (Qwen3.5-35B-A3B) para la soberanía de datos.
+    \item La transferencia espacial de Francia a Cataluña no es
+    zero-shot; el ajuste fino few-shot recupera mIoU 0.2468, en línea con
+    los límites de transferibilidad
+    reportados~\cite{harvesting2026alphaearth}.
+\end{enumerate}
+
+\subsection{Lo que explícitamente no afirmamos}
+Para evitar sobreafirmar, delimitamos las fronteras de nuestra
+evidencia.
+\begin{itemize}[leftmargin=*]
+    \item \emph{No} afirmamos que un VLM ajustado supere al razonador
+    congelado Gemini. La capa de lenguaje es un componente de
+    comunicación, explicación y orquestación de herramientas, no un
+    clasificador de píxeles; su valor es el anclaje, la auditabilidad y
+    la opción de soberanía on-premises.
+    \item \emph{No} afirmamos un umbral de clasificación
+    (p.\ ej.\ F1~$\geq$~0.80) para México. La demostración de
+    aguacate/guayaba sobre parcelas mexicanas es una demostración
+    metodológica cualitativa, zero-shot y sin verdad de terreno; ilustra
+    el pipeline, no una exactitud medida.
+    \item \emph{No} afirmamos que la transferencia zero-shot funcione
+    fuera de Francia. El experimento Francia$\rightarrow$Cataluña muestra
+    el fallo zero-shot y la recuperación few-shot; una curva de
+    $k$-shots sobre EuroCropsML~\cite{reuss2025eurocropsml} caracteriza
+    el presupuesto de datos requerido.
+    \item \emph{No} afirmamos una mIoU de TSViT superior a 0.75. PASTIS-R
+    se satura cerca de 0.70 mIoU para este conjunto de clases, y la rama
+    fenológica aporta del orden de $0.3$ puntos, no varios.
+\end{itemize}
+
+\subsection{Limitaciones}
+Permanecen tres limitaciones estructurales. Primero, seis clases
+minoritarias con fenología ambigua arrastran a la baja el F1 macro
+global; abordarlas requiere datos adicionales o aumentación dirigida, no
+más modelos del mismo tipo. Segundo, la cobertura nubosa puede ocultar
+una gran fracción de píxeles en las estaciones lluviosas, lo que motiva
+la fusión con el radar Sentinel-1. Tercero, el benchmark de la capa
+conversacional sobre AgroMind~\cite{ruan2025agromind} está pendiente de
+la evaluación en H100 (US-069); reportamos el protocolo y la estructura
+de columnas pero ninguna cifra sintética.
+
+\subsection{Eficiencia de costos (FinOps)}
+El sistema está diseñado para operar a bajo costo operativo. Los cuatro
+componentes de servicio (API, frontend, teselado, worker de inferencia)
+corren en Cloud Run con escalado a cero, y el razonador on-premises H100
+es una instancia spot de Azure activada solo bajo demanda
+(aproximadamente tres horas al día). El costo operativo en estado
+estacionario es de aproximadamente US\$115 al mes, mientras que el
+presupuesto único de entrenamiento --- las ventanas spot H100 y L4 usadas
+para ajustar los segmentadores y la destilación de FarSLIP --- totaliza
+US\$262--602. El diseño de razonador congelado es en sí mismo una palanca
+de costo: como el LLM nunca se ajusta finamente como clasificador, no hay
+un ajuste fino costoso en GPU de un modelo frontera en la ruta crítica, y
+el cómputo pesado se confina al entrenamiento único de la pila de
+percepción.
+
+\subsection{Reproducibilidad}
+Cada figura de la Sección~\ref{sec:results} está anclada a un artefacto
+versionado mediante comentarios \texttt{\% src:} en el código fuente
+LaTeX; los conjuntos de datos y los pesos se rastrean con DVC y las
+corridas de experimentos con MLflow bajo etiquetas
+\texttt{data\_version} y \texttt{code\_version}. El repositorio se
+publica bajo Apache~2.0.

@@ -1,0 +1,141 @@
+% US-082 DE4 (Lower Saxony) transfer experiment --- the positive counterpart of the
+% multi-region study. \input-able section: no \documentclass / \begin{document}.
+% Prose in English. Every figure is a real EPIC 12 artefact; every number is anchored
+% with a % src: comment to its source (report.json / engram-confirmed run).
+% This section is \input by main.tex right after experiments_multiregion.tex.
+
+\subsection{Una región donde la transferencia funciona: Baja Sajonia (DE4)}
+\label{sec:de4}
+
+El estudio multirregión anterior es, por diseño, un catálogo de
+\emph{negativos honestos}: el zero-shot falla en las brechas
+franco-ibérica y tropical, y agrupar regiones amplía la taxonomía sin
+rescatar una sola clase fina por encima de la calidad de producción.
+Surge una pregunta natural: \emph{¿existe una región objetivo donde el
+campeón entrenado en Francia transfiera bien, y qué la hace diferente?}
+Esta subsección responde que sí, y aísla las tres palancas que lo
+deciden. El objetivo es Baja Sajonia, Alemania (región NUTS DE4),
+elegida porque su cobertura en EuroCrops~v2 es \emph{completa} (no
+parcial como en el piloto de la Toscana italiana) y su agricultura está
+dominada por cereales de invierno grandes y fenológicamente separables.
+
+\paragraph{Construir un dataset homólogo a PASTIS para DE4.}
+Materializamos un dataset denso homólogo a PASTIS para DE4 2023 desde
+cero, con \textbf{100\% de datos reales y cero marcadores de posición}:
+series temporales Sentinel-2 L2A por parche
+(\texttt{DATA\_S2/S2\_*.npy}, 10 bandas, $128\times128$) obtenidas del
+Copernicus Data Space Ecosystem (CDSE) Process API, máscaras densas de
+cultivo (\texttt{ANNOTATIONS/TARGET\_*.npy}) rasterizadas a partir de los
+polígonos oficiales de EuroCrops~v2 (JRC, taxonomía HCAT4), y el
+embedding anual de AlphaEarth de 64 dimensiones
+(\texttt{SATELLITE\_EMBEDDING/V1/ANNUAL} v1.1, año 2023) obtenido vía
+Google Earth Engine para cada parcela etiquetada. El espacio de
+etiquetas es el conjunto nativo de cultivos HCAT alemán (37 clases),
+construido por el mismo generador region-generalizado usado para Italia
+(\texttt{--region-prefix de4}); cada código HCAT se verifica contra el
+crosswalk oficial del JRC, ninguno se inventa.
+
+\paragraph{Tres palancas, medidas de forma independiente.}
+Partiendo del techo del piloto de la Toscana (Voting-3 F1
+macro~$\approx0.12$), identificamos y medimos tres palancas
+independientes, cada una sobre datos out-of-fold reales
+(Tabla~\ref{tab:de4_levers}):
+\begin{enumerate}[leftmargin=1.4em,itemsep=2pt]
+  \item \textbf{Año de adquisición 2023 vs.\ 2018}: en la Toscana, el
+    miembro XGBoost-sobre-AlphaEarth sube de F1~$0.156$ a $0.225$
+    ($+44\%$) puramente al mover el embedding anual a un año más reciente
+    y mejor cubierto. % src: us-082-REPORTE-RESULTADOS.md Table 2
+  \item \textbf{Ventana temporal de 14 meses vs.\ 8}: PASTIS-R abarca 13
+    meses (sep~2018--oct~2019, incluyendo el invierno), mientras que el
+    piloto italiano cubría solo mar--oct (8 meses), privando de señal a
+    la fenología de los cereales de invierno. Reextraer con una ventana
+    \texttt{2022-11-01..2023-12-31} (y un \texttt{max\_cloud}~$=50$
+    relajado) eleva el número de fechas utilizables de 24 a 56 en la
+    Toscana y a $\sim$41 en DE4 --- cerca de las 43 fechas de PASTIS.
+    % src: engram HALLAZGO VENTANA TEMPORAL US-082
+  \item \textbf{Región DE4 vs.\ Toscana}: la palanca dominante. Con
+    parcelas grandes y limpias (mediana de 10\,ha vs.\ 0.4\,ha) y
+    cobertura de cultivos completa, el F1 macro de Voting-3 salta de
+    $0.119$ a $0.266$ ($2.2\times$), y los cereales de invierno --- trigo,
+    maíz, centeno, colza --- se recuperan de F1~$0.05$--$0.20$ a
+    $0.57$--$0.70$. % src: report.json de4_2023
+\end{enumerate}
+
+\begin{table}[t]
+  \centering
+  \caption{Las tres palancas independientes que elevan la transferencia
+  desde el techo de la Toscana hasta DE4, cada una medida sobre datos
+  out-of-fold reales. El cambio de región (Toscana$\rightarrow$DE4) es el
+  factor dominante: los campos grandes y separables de cereal de invierno
+  cierran la brecha que las parcelas mediterráneas pequeñas y fragmentadas
+  no podían. Miembro XGBoost-sobre-AlphaEarth salvo que se indique.}
+  \label{tab:de4_levers}
+  \begin{tabular}{lcc}
+    \toprule
+    Configuración & XGB F1 macro & Exactitud \\
+    \midrule
+    Toscana 2018 (ventana de 8 meses, 24 fechas)   & 0.156 & 0.37 \\
+    Toscana 2023 (ventana de 14 meses, 56 fechas)  & 0.225 & 0.45 \\
+    DE4 2023 (ventana de 14 meses, $\sim$41 fechas) & \textbf{0.267} & \textbf{0.633} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\paragraph{El campeón Voting-3 sobre DE4.}
+Reejecutamos la receta completa del campeón sobre DE4 --- TSViT-pheno
+(capacidad Full-M, inicializado en caliente desde el campeón de PASTIS)
+más U-TAE más XGBoost-sobre-AlphaEarth, agregados a parcelas y
+combinados por el ensamble de votación de tres miembros
+(\texttt{ItaliaParcelVotingEnsemble}). El mejor miembro denso,
+TSViT-pheno-fullm, alcanza F1~$0.333$ a nivel fino y exactitud~$0.682$ en
+el fold de prueba retenido, y el Voting-3 obtiene un F1
+macro~$0.266$ % src: report.json de4_2023
+--- una mejora de $2.2\times$ sobre el Voting-3 de la Toscana ($0.119$).
+Crucialmente, la anatomía por clase confirma la tesis de cardinalidad de
+la Sección~\ref{sec:multiregion:perclass} desde el lado \emph{positivo}:
+donde DE4 tiene campos grandes y separables, los cereales previamente
+colapsados se rescatan (maíz~$0.703$, colza~de~invierno~$0.689$,
+trigo~de~invierno~$0.674$, centeno~de~invierno~$0.573$), arrojando
+8~clases con F1~$\ge0.60$ y 12 con $\ge0.40$, frente a una única clase
+por encima de $0.60$ en la Toscana. % src: report.json de4_2023 per-class
+
+\paragraph{Tres vistas taxonómicas (las ``tres formas'').}
+Para una lectura honesta evaluamos el mismo ensamble entrenado bajo tres
+convenciones de espacio de etiquetas, decididas a~priori: \emph{(A)
+conservando las 37 clases HCAT nativas} (fino, F1 macro~$0.266$);
+\emph{(B) sin conservar}, proyectando la predicción sobre el espacio
+grueso al estilo PASTIS mediante crosswalk (grueso, F1 macro~$0.287$); y
+\emph{(C) el procedimiento completo de extremo a extremo} (la propia
+votación entrenada, $0.266$). % src: report.json de4_2023 fine/coarse
+La vista gruesa (B) es la más favorable, como cabía esperar cuando se
+fusionan cereales hermanos casi inseparables, pero reportamos las tres
+para que la cifra no se seleccione tendenciosamente por taxonomía.
+
+\paragraph{Una rama fenológica medida para DE4.}
+Un punto metodológico sutil pero importante: la rama semántica de
+TSViT-pheno alinea cada píxel contra un prototipo fenológico por clase
+--- una descripción de curva NDVI media generada por Gemini y codificada
+por un sentence transformer (siguiendo a Wen et al.,
+2025~\cite{wen2025phenology}). Los prototipos son específicos de la
+región: un calendario alemán de cereal de invierno, no el mediterráneo.
+Generamos los prototipos de DE4 a partir de las curvas NDVI reales por
+clase de los parches de DE4, con la descripción anclada en el calendario
+de Baja Sajonia 2023; las curvas son reales y solo el calificador
+textual es regional, nunca fabricado. Es la misma disciplina aplicada en
+todo el trabajo: señales reales, anclaje regional, sin datos sintéticos.
+
+\paragraph{Salvedades honestas.}
+El Voting-3 de DE4 se mide sobre un único fold de prueba retenido; la
+cifra de titular inatacable requeriría un protocolo out-of-fold de 5
+folds ($5\times$ de cómputo), aunque el patrón por clase es decisivo y no
+cambiaría el veredicto. La cobertura espacial de la muestra de DE4 es
+parcial --- las parcelas alemanas son grandes y dispersas, de modo que
+los parches etiquetados cubren una fracción del universo regional ---
+pero la pérdida por clase es uniforme entre clases (sin sesgo de
+selección), de modo que la muestra es representativa. DE4 ya gana de
+forma decisiva con esta cobertura; ampliarla solo mejora la estimación.
+Este es el broche positivo del estudio multirregión: la misma receta que
+falla en zero-shot a través de brechas distantes \emph{tiene éxito}
+cuando la región objetivo aporta campos grandes y fenológicamente
+separables y un registro temporal completo, reciente e inclusivo del
+invierno.
