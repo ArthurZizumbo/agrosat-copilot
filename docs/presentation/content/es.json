@@ -55,19 +55,56 @@
     },
     {
       "layout": "cards",
-      "title": "El problema de negocio",
+      "title": "Por qué importa la agricultura",
       "cols": "c3",
       "items": [
         {
-          "title": "Inspeccion fisica",
-          "body": "~20 inspectores · 15 dias para <strong>10,000 ha</strong> ≈ <strong>$600,000 MXN</strong>; lenta y no escala.",
+          "title": "En el mundo",
+          "body": "La agricultura es cerca del <strong>4% del PIB mundial</strong> y da trabajo a <strong>más de 1,200 millones de personas</strong> (FAO).",
           "variant": "s c3"
         },
         {
-          "title": "Sentinel-2",
-          "body": "Imágenes de satélite <strong>gratuitas y continuas</strong>, pero convertirlas en mapas confiables es un problema difícil de inteligencia artificial.",
+          "title": "En Europa",
+          "body": "La Política Agrícola Común (la gran política agrícola de la Unión Europea) es cerca del <strong>31% del presupuesto</strong> del bloque entre 2021 y 2027.",
+          "variant": "normal"
+        },
+        {
+          "title": "En Italia",
+          "body": "El sector agroalimentario es <strong>más del 4% del PIB</strong> nacional y emplea a cerca de <strong>900 mil personas</strong> (instituto de estadística ISTAT).",
           "variant": "normal"
         }
+      ]
+    },
+    {
+      "layout": "cards",
+      "title": "El problema de negocio",
+      "cols": "c2",
+      "items": [
+        {
+          "title": "Los datos ya existen y son gratis",
+          "body": "Los satélites Sentinel-2 fotografían cada parcela <strong>cada 5 días</strong> con un detalle de <strong>10 metros</strong>, sin costo. La materia prima está disponible para todos.",
+          "variant": "s c2"
+        },
+        {
+          "title": "Pero solo unos pocos los aprovechan",
+          "body": "Hoy solo los <strong>expertos en teledetección</strong>, con programas caros (ArcGIS, ENVI), convierten esas imágenes en mapas útiles, y tardan <strong>días o semanas</strong>. El agricultor de campo se queda fuera.",
+          "variant": "normal"
+        }
+      ]
+    },
+    {
+      "layout": "text",
+      "kicker": "El problema, en concreto",
+      "title": "Las preguntas que un agrónomo no puede responder solo",
+      "paras": [
+        "Estas son las preguntas reales que el copiloto responde en lenguaje natural, en menos de 10 segundos:"
+      ],
+      "bullets": [
+        "¿Qué cultivo hay en esta parcela y cuál es su <strong>superficie exacta en hectáreas</strong>?",
+        "¿Cómo ha evolucionado el <strong>vigor de la vegetación</strong> (qué tan verde y sana está) en las últimas 8 semanas?",
+        "¿Se detecta <strong>falta de agua</strong> o algo raro frente a años anteriores?",
+        "¿Cómo se compara esta parcela con las <strong>vecinas</strong> o con otras regiones del país?",
+        "¿En qué <strong>etapa de crecimiento</strong> está el cultivo y cuándo es el mejor momento de cosecha?"
       ]
     },
     {
@@ -101,6 +138,46 @@
           "body": "El copiloto permite analizar cómo crece el cultivo a lo largo del año, por voz o texto, a agrónomos sin experiencia en imágenes de satélite. Licencia abierta Apache 2.0.",
           "variant": "normal"
         }
+      ]
+    },
+    {
+      "layout": "cards",
+      "kicker": "Por qué importa",
+      "title": "Tres cambios concretos que habilita",
+      "cols": "c3",
+      "items": [
+        {
+          "title": "Democratizar el monitoreo",
+          "body": "Baja la barrera de entrada: pone el análisis satelital al alcance de <strong>pequeños y medianos productores</strong>, no solo de grandes empresas con expertos.",
+          "variant": "s c3"
+        },
+        {
+          "title": "Más sostenible",
+          "body": "Detectar a tiempo la falta de agua permite regar con precisión y <strong>ahorrar entre 20 y 30% de agua</strong> (FAO); detectar anomalías a tiempo reduce el uso de agroquímicos.",
+          "variant": "normal"
+        },
+        {
+          "title": "Cumplir la norma",
+          "body": "La política agrícola europea exige reportes con <strong>verificación por satélite</strong>; el copiloto los <strong>automatiza</strong> y reduce la carga administrativa.",
+          "variant": "normal"
+        }
+      ]
+    },
+    {
+      "layout": "twocol",
+      "kicker": "El corazón técnico",
+      "title": "Por qué la segmentación es la pieza clave",
+      "img": "",
+      "side": "right",
+      "caption": "",
+      "paras": [
+        "La segmentación semántica etiqueta cada píxel de 10 × 10 metros con el cultivo que le corresponde. Eso es lo que permite:"
+      ],
+      "bullets": [
+        "<strong>Medir la superficie exacta</strong>: con un solapamiento medio con la verdad de 0.70 o más, el error baja del 1%.",
+        "Trazar <strong>límites precisos</strong> entre cultivos distintos dentro de una misma parcela.",
+        "Detectar <strong>zonas con problemas</strong> (estrés o plaga) que un análisis a nivel de parcela no ve.",
+        "<strong>Validar</strong> contra los polígonos oficiales de las administraciones agrícolas."
       ]
     },
     {
@@ -263,6 +340,94 @@
           "num": "CC-BY-4.0",
           "accent": false,
           "label": "gratis en Google Earth Engine, para todo el mundo"
+        }
+      ],
+      "cards": [
+        {
+          "title": "Mucha información en poco espacio",
+          "body": "Esos <strong>64 valores por píxel</strong> resumen lo que DeepMind procesó a partir de <strong>petabytes</strong> de imágenes (satélite óptico, radar, relieve, clima). En nuestro proyecto ocupan solo cerca del <strong>6%</strong> del espacio total (~260 GB) y aportan la mayor densidad de información útil.",
+          "variant": "s c2"
+        }
+      ]
+    },
+    {
+      "layout": "table",
+      "kicker": "Datos",
+      "title": "Los datos que usamos (todos abiertos)",
+      "table": {
+        "headers": [
+          "Conjunto de datos",
+          "Qué aporta"
+        ],
+        "rows": [
+          {
+            "cells": [
+              "AlphaEarth Foundations",
+              "64 valores por píxel, 10 m, un resumen por año (2017-2025). La fuente principal."
+            ],
+            "highlight": true
+          },
+          {
+            "cells": [
+              "PASTIS-R (Francia)",
+              "18 tipos de cultivo etiquetados a mano. Nuestro banco de pruebas principal."
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Sentinel-2",
+              "Cámara óptica de 13 bandas de color, una imagen cada 5 días."
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Sentinel-1",
+              "Radar que ve a través de las nubes (robustez cuando el cielo está cubierto)."
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Dynamic World · Sen4AgriNet",
+              "Etiquetas extra de uso del suelo para validar en otras regiones."
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "AgroMind",
+              "28,482 preguntas y respuestas agrícolas para evaluar al copiloto."
+            ],
+            "highlight": false
+          }
+        ]
+      },
+      "paras": [
+        "En total cerca de 260 GB. Cada fuente cubre una debilidad de las demás."
+      ]
+    },
+    {
+      "layout": "cards",
+      "kicker": "Dónde lo probamos",
+      "title": "Tres regiones piloto de Italia",
+      "cols": "c3",
+      "items": [
+        {
+          "title": "Llanura Padana (norte)",
+          "body": "Arroz, maíz, soja y trigo. La zona con más nubes, donde el radar ayuda más.",
+          "variant": "s c3"
+        },
+        {
+          "title": "Toscana (centro)",
+          "body": "Olivo, vid, girasol y trigo duro.",
+          "variant": "normal"
+        },
+        {
+          "title": "Apulia (sur)",
+          "body": "Olivo, vid y hortalizas.",
+          "variant": "normal"
         }
       ]
     },

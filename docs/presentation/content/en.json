@@ -55,19 +55,56 @@
     },
     {
       "layout": "cards",
-      "title": "The business problem",
+      "title": "Why agriculture matters",
       "cols": "c3",
       "items": [
         {
-          "title": "Physical inspection",
-          "body": "~20 inspectors · 15 days for <strong>10,000 ha</strong> ≈ <strong>$600,000 MXN</strong>; slow and does not scale.",
+          "title": "Worldwide",
+          "body": "Agriculture is about <strong>4% of world GDP</strong> and provides work to <strong>over 1.2 billion people</strong> (FAO).",
           "variant": "s c3"
         },
         {
-          "title": "Sentinel-2",
-          "body": "Free, continuous satellite imagery, but turning it into reliable maps is a hard artificial-intelligence problem.",
+          "title": "In Europe",
+          "body": "The Common Agricultural Policy (the European Union's main farming policy) is about <strong>31% of the bloc's budget</strong> for 2021-2027.",
+          "variant": "normal"
+        },
+        {
+          "title": "In Italy",
+          "body": "The agri-food sector is <strong>over 4% of national GDP</strong> and employs nearly <strong>900,000 people</strong> (the ISTAT statistics institute).",
           "variant": "normal"
         }
+      ]
+    },
+    {
+      "layout": "cards",
+      "title": "The business problem",
+      "cols": "c2",
+      "items": [
+        {
+          "title": "The data already exists and is free",
+          "body": "Sentinel-2 satellites photograph every parcel <strong>every 5 days</strong> at a <strong>10-meter</strong> detail, at no cost. The raw material is available to everyone.",
+          "variant": "s c2"
+        },
+        {
+          "title": "But only a few make use of it",
+          "body": "Today only <strong>remote-sensing experts</strong>, with expensive software (ArcGIS, ENVI), turn those images into useful maps, and it takes them <strong>days or weeks</strong>. The field farmer is left out.",
+          "variant": "normal"
+        }
+      ]
+    },
+    {
+      "layout": "text",
+      "kicker": "The problem, concretely",
+      "title": "The questions an agronomist cannot answer alone",
+      "paras": [
+        "These are the real questions the copilot answers in natural language, in under 10 seconds:"
+      ],
+      "bullets": [
+        "Which crop is in this parcel and what is its <strong>exact area in hectares</strong>?",
+        "How has the <strong>vegetation vigor</strong> (how green and healthy it is) evolved over the last 8 weeks?",
+        "Is there a sign of <strong>water shortage</strong> or anything unusual compared with previous years?",
+        "How does this parcel compare with its <strong>neighbors</strong> or with other regions of the country?",
+        "What <strong>growth stage</strong> is the crop in, and when is the best time to harvest?"
       ]
     },
     {
@@ -101,6 +138,46 @@
           "body": "The copilot lets agronomists analyze how the crop grows through the year, by voice or text, with no experience in satellite imagery. Open Apache 2.0 license.",
           "variant": "normal"
         }
+      ]
+    },
+    {
+      "layout": "cards",
+      "kicker": "Why it matters",
+      "title": "Three concrete changes it enables",
+      "cols": "c3",
+      "items": [
+        {
+          "title": "Democratize monitoring",
+          "body": "It lowers the barrier to entry: it brings satellite analysis within reach of <strong>small and medium farmers</strong>, not just large companies with experts.",
+          "variant": "s c3"
+        },
+        {
+          "title": "More sustainable",
+          "body": "Spotting water shortage early enables precision irrigation and <strong>saves 20 to 30% of water</strong> (FAO); spotting anomalies early reduces the use of agrochemicals.",
+          "variant": "normal"
+        },
+        {
+          "title": "Meet the rules",
+          "body": "European farming policy requires reports with <strong>satellite verification</strong>; the copilot <strong>automates</strong> them and cuts the administrative load.",
+          "variant": "normal"
+        }
+      ]
+    },
+    {
+      "layout": "twocol",
+      "kicker": "The technical core",
+      "title": "Why segmentation is the key piece",
+      "img": "",
+      "side": "right",
+      "caption": "",
+      "paras": [
+        "Semantic segmentation labels every 10 × 10 meter pixel with the crop it belongs to. That is what makes it possible to:"
+      ],
+      "bullets": [
+        "<strong>Measure the exact area</strong>: with a mean overlap with the ground truth of 0.70 or more, the error drops below 1%.",
+        "Draw <strong>precise boundaries</strong> between different crops within the same parcel.",
+        "Detect <strong>problem spots</strong> (stress or pests) that a parcel-level analysis cannot see.",
+        "<strong>Validate</strong> against the official polygons of the farming administrations."
       ]
     },
     {
@@ -263,6 +340,94 @@
           "num": "CC-BY-4.0",
           "accent": false,
           "label": ""
+        }
+      ],
+      "cards": [
+        {
+          "title": "A lot of information in little space",
+          "body": "Those <strong>64 values per pixel</strong> summarize what DeepMind processed from <strong>petabytes</strong> of imagery (optical satellite, radar, terrain, climate). In our project they take up only about <strong>6%</strong> of the total space (~260 GB) and carry the highest density of useful information.",
+          "variant": "s c2"
+        }
+      ]
+    },
+    {
+      "layout": "table",
+      "kicker": "Data",
+      "title": "The data we use (all open)",
+      "table": {
+        "headers": [
+          "Dataset",
+          "What it brings"
+        ],
+        "rows": [
+          {
+            "cells": [
+              "AlphaEarth Foundations",
+              "64 values per pixel, 10 m, one summary per year (2017-2025). The main source."
+            ],
+            "highlight": true
+          },
+          {
+            "cells": [
+              "PASTIS-R (France)",
+              "18 crop types labeled by hand. Our main test bench."
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Sentinel-2",
+              "Optical camera with 13 color bands, one image every 5 days."
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Sentinel-1",
+              "Radar that sees through clouds (robust when the sky is overcast)."
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Dynamic World · Sen4AgriNet",
+              "Extra land-use labels to validate in other regions."
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "AgroMind",
+              "28,482 agricultural questions and answers to evaluate the copilot."
+            ],
+            "highlight": false
+          }
+        ]
+      },
+      "paras": [
+        "About 260 GB in total. Each source covers a weakness of the others."
+      ]
+    },
+    {
+      "layout": "cards",
+      "kicker": "Where we test it",
+      "title": "Three pilot regions of Italy",
+      "cols": "c3",
+      "items": [
+        {
+          "title": "Po Plain (north)",
+          "body": "Rice, maize, soybean and wheat. The cloudiest area, where radar helps most.",
+          "variant": "s c3"
+        },
+        {
+          "title": "Tuscany (center)",
+          "body": "Olive, grapevine, sunflower and durum wheat.",
+          "variant": "normal"
+        },
+        {
+          "title": "Apulia (south)",
+          "body": "Olive, grapevine and vegetables.",
+          "variant": "normal"
         }
       ]
     },

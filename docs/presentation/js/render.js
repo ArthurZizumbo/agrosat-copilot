@@ -196,16 +196,23 @@
   }
 
   async function setLang(lang) {
-    // Preservar la lamina actual: re-renderizamos el mismo indice tras cambiar
-    // el idioma (las laminas estan alineadas 1:1 entre es.json y en.json).
+    // Preservar la lamina actual y cambiar el idioma SIN animacion (instantaneo):
+    // las laminas estan alineadas 1:1 entre es.json y en.json, asi que solo
+    // intercambiamos el texto de la misma lamina. Desactivamos la transicion
+    // durante el swap para que no se vea un "deslizamiento" al traducir.
     const pos = revealReady && window.Reveal ? Reveal.getIndices() : { h: 0, v: 0 };
     const data = await loadLang(lang);
+    if (revealReady && window.Reveal) {
+      Reveal.configure({ transition: "none" });
+    }
     renderInto(data);
     localStorage.setItem("agrosat_lang", lang);
     markActive(lang);
     if (revealReady && window.Reveal) {
       Reveal.sync();
       Reveal.slide(pos.h, pos.v);
+      // restaurar la transicion normal para la navegacion entre laminas
+      setTimeout(() => Reveal.configure({ transition: "slide" }), 50);
     }
   }
 
