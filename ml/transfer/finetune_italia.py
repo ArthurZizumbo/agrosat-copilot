@@ -47,7 +47,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 import structlog
@@ -185,7 +185,7 @@ class DenseFineTuneConfig:
     #: weight 0.902 in the pinned vote). Pass ``--pastis-checkpoint`` of the matching
     #: capacity (the fullm best.pt for ``"fullm"``) or the loader raises a shape
     #: mismatch.
-    tsvit_capacity: str = "l4"
+    tsvit_capacity: Literal["l4", "fullm"] = "l4"
 
 
 @dataclass
@@ -353,7 +353,7 @@ def build_italia_finetune_model(
     device: str = "cuda",
     warm_start: bool = True,
     from_scratch: bool = False,
-    tsvit_capacity: str = "l4",
+    tsvit_capacity: Literal["l4", "fullm"] = "l4",
 ) -> nn.Module:
     """Build the dense model with an Italian head, backbone init from PASTIS.
 
@@ -433,7 +433,7 @@ def build_italia_finetune_model(
                 **fullm,
             )
             spec_key = "tsvit-pheno-fullm"
-        else:
+        elif tsvit_capacity == "l4":
             model = build_tsvit(
                 num_classes=k_new,
                 n_timesteps=n_timesteps,
@@ -446,6 +446,12 @@ def build_italia_finetune_model(
                 semantic_dim=384,
             )
             spec_key = "tsvit-pheno"
+        else:
+            # Fail-fast on a typo (e.g. "full"): the old `else`-is-l4 fallback
+            # would silently build the wrong capacity (code review, finding low).
+            raise ValueError(
+                f"tsvit_capacity must be 'l4' or 'fullm'; got {tsvit_capacity!r}."
+            )
         head_kind = "cls_tokens"
         # TSViT cls-token id namespace = the contiguous semantic-18 ids (0..17).
         pastis_head_ids = dict(pastis_names)

@@ -190,8 +190,11 @@ if ($WithVM) {
         Write-Warn2 "Llave $key ausente; omito el tunel on-prem"
         $summary["Qwen on-prem"] = "SIN LLAVE"
     } else {
+        # accept-new (no "no"): acepta la host key la primera vez y alerta si
+        # cambia inesperadamente dentro de una sesion; mejor postura que
+        # desactivar la verificacion por completo (security review, finding low).
         Start-Process -FilePath "ssh" -ArgumentList `
-            "-p","50022","-i",$key,"-o","IdentitiesOnly=yes","-o","StrictHostKeyChecking=no",`
+            "-p","50022","-i",$key,"-o","IdentitiesOnly=yes","-o","StrictHostKeyChecking=accept-new",`
             "-N","-L","${QWEN_LOCAL}:127.0.0.1:8002","User1@127.0.0.1" -WindowStyle Hidden
         if (Wait-Http "http://127.0.0.1:$QWEN_LOCAL/health" 50) {
             Write-Ok "Qwen on-prem alcanzable (http://127.0.0.1:$QWEN_LOCAL)"
