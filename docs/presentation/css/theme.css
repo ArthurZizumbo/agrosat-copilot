@@ -170,6 +170,9 @@ section.closing p { color: #d6e6d8; }
 section.divider {
   background: linear-gradient(135deg, var(--field-dk) 0%, var(--field) 60%, #357a4a 100%) !important;
   color: #fff; justify-content: center !important;
+  /* full-bleed: el degradado cubre TODO el lienzo, sin franja crema del padding */
+  position: absolute; inset: 0; width: 1600px; height: 900px;
+  padding: 64px 72px;
 }
 section.divider .divider-grid { display: grid; grid-template-columns: 1.2fr 0.8fr; align-items: center; gap: 48px; height: 100%; }
 section.divider .divider-text { display: flex; flex-direction: column; justify-content: center; }

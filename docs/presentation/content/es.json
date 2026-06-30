@@ -1,0 +1,1390 @@
+{
+  "meta": {
+    "title": "AgroSatCopilot",
+    "team": "Equipo 17 - MNA Tec de Monterrey"
+  },
+  "slides": [
+    {
+      "layout": "cover",
+      "paras": [
+        "Copiloto conversacional para cuantificar superficies de cultivo por satelite"
+      ],
+      "bullets": []
+    },
+    {
+      "layout": "cards",
+      "kicker": "Recorrido de 30 minutos",
+      "title": "Agenda",
+      "cols": "c3",
+      "items": [
+        {
+          "title": "1. <span data-lang-es>Negocio</span><span data-lang-en>Business</span>",
+          "body": "El problema, el impacto económico y cómo medir bien el acierto.",
+          "variant": "s c3"
+        },
+        {
+          "title": "2. <span data-lang-es>Datos y exploración</span><span data-lang-en>Data & exploration</span>",
+          "body": "Por qué lo que manda es cómo cambia el cultivo a lo largo del año; AlphaEarth, PASTIS.",
+          "variant": "normal"
+        },
+        {
+          "title": "3. <span data-lang-es>Modelado</span><span data-lang-en>Modeling</span>",
+          "body": "De los primeros modelos sencillos a 6 arquitecturas y a 4 combinaciones de modelos.",
+          "variant": "normal"
+        },
+        {
+          "title": "4. <span data-lang-es>Modelo final</span><span data-lang-en>Final model</span>",
+          "body": "Voting-3: el modelo ganador y cómo acierta cultivo por cultivo.",
+          "variant": "normal"
+        },
+        {
+          "title": "5. <span data-lang-es>Copiloto y app</span><span data-lang-en>Copilot & app</span>",
+          "body": "Be My Eyes, 10 herramientas, búsqueda con contexto geográfico (Spatial-RAG) y la aplicación web.",
+          "variant": "normal"
+        },
+        {
+          "title": "6. <span data-lang-es>Llevarlo a otras zonas y futuro</span><span data-lang-en>Moving to other areas & future</span>",
+          "body": "Varias regiones, Baja Sajonia, infraestructura, la tarjeta gráfica H100 y aprendizajes.",
+          "variant": "normal"
+        }
+      ]
+    },
+    {
+      "layout": "cards",
+      "title": "El problema de negocio",
+      "cols": "c3",
+      "items": [
+        {
+          "title": "Inspeccion fisica",
+          "body": "~20 inspectores · 15 dias para <strong>10,000 ha</strong> ≈ <strong>$600,000 MXN</strong>; lenta y no escala.",
+          "variant": "s c3"
+        },
+        {
+          "title": "Sentinel-2",
+          "body": "Imágenes de satélite <strong>gratuitas y continuas</strong>, pero convertirlas en mapas confiables es un problema difícil de inteligencia artificial.",
+          "variant": "normal"
+        },
+        {
+          "title": "Oportunidad",
+          "body": "Mismo territorio en <strong>minutos</strong>, costo marginal <strong><$100</strong>, inventario <strong>mensual</strong>.",
+          "variant": "normal"
+        }
+      ]
+    },
+    {
+      "layout": "kpi",
+      "title": "Beneficio e impacto",
+      "items": [
+        {
+          "num": ">1500%",
+          "label": "retorno de la inversión en el primer año (cliente de 50,000 ha)",
+          "accent": false
+        },
+        {
+          "num": "$115",
+          "label": "USD al mes de operación; los servidores se apagan solos cuando no se usan",
+          "accent": false
+        },
+        {
+          "num": "0.04 s",
+          "label": "para analizar cada parcela",
+          "accent": false
+        }
+      ],
+      "cards": [
+        {
+          "title": "Decisiones informadas",
+          "body": "Aseguradoras y gobiernos actualizan inventarios <strong>mensualmente</strong>, no una vez al ano: mejores subsidios, seguros y prevision.",
+          "variant": "normal"
+        },
+        {
+          "title": "Nuevo servicio en línea",
+          "body": "El copiloto permite analizar cómo crece el cultivo a lo largo del año, por voz o texto, a agrónomos sin experiencia en imágenes de satélite. Licencia abierta Apache 2.0.",
+          "variant": "normal"
+        }
+      ]
+    },
+    {
+      "layout": "divider",
+      "sec": "02",
+      "kicker": "2 · Datos y EDA",
+      "title": "Metodología CRISP-ML(Q)",
+      "paras": [
+        "La señal que separa los cultivos vive en el tiempo, no en una sola foto."
+      ],
+      "img": "assets/figs/data_pipeline.png"
+    },
+    {
+      "layout": "table",
+      "title": "CRISP-ML(Q) — lo ejecutado",
+      "paras": [],
+      "table": {
+        "headers": [
+          "Fase",
+          "Ejecutado"
+        ],
+        "rows": [
+          {
+            "cells": [
+              "Entender el negocio",
+              "Costo-beneficio; medimos con el puntaje F1 (acierto balanceado entre cultivos); éxito = poder distinguir 8 cultivos."
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Entender los datos",
+              "PASTIS-R + BreizhCrops; lo que cuenta es cómo cambia el cultivo en el año; hay muy pocos ejemplos de algunos cultivos."
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Preparar los datos",
+              "Índices de vegetación, señales del cambio anual (transformada de Fourier y etapas de crecimiento), AlphaEarth de 64 valores, validación cruzada espacial."
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Modelado",
+              "Modelos sencillos (bosque aleatorio y XGBoost, un árbol de decisión potenciado) → mapas detallados → combinaciones de modelos → llevarlo a otras zonas."
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Evaluación",
+              "Solapamiento medio con la verdad (mIoU) + puntaje F1 detallado y agrupado, cuántos cultivos comprometer, pruebas quitando piezas."
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Puesta en producción",
+              "Servidores que se apagan solos cuando no se usan + tarjeta H100 a precio reducido; copiloto con respuestas en vivo; versionado de datos y de experimentos."
+            ],
+            "highlight": false
+          }
+        ]
+      }
+    },
+    {
+      "layout": "kpi",
+      "title": "Dataset PASTIS-R",
+      "items": [
+        {
+          "num": "2433",
+          "label": "imágenes Sentinel-2 tomadas en distintas fechas",
+          "accent": false
+        },
+        {
+          "num": "128×128",
+          "label": "píxeles por recorte de imagen",
+          "accent": false
+        },
+        {
+          "num": "18",
+          "label": "cultivos etiquetados",
+          "accent": false
+        }
+      ]
+    },
+    {
+      "layout": "twocol",
+      "kicker": "EDA · Hallazgo 1",
+      "title": "Lo que manda es cómo cambia el cultivo en el año",
+      "paras": [],
+      "bullets": [
+        "El indice de verdor de la vegetación (NDVI) a lo largo del año separa los cultivos; una sola foto no.",
+        "Maíz de verano frente a cereales de invierno: crecen en épocas distintas → se distinguen bien.",
+        "Variedades de cereal de invierno que crecen casi igual se confunden, incluso con redes neuronales avanzadas."
+      ],
+      "caption": "Mapa que agrupa las parcelas parecidas (UMAP) usando los datos de AlphaEarth.",
+      "img": "assets/figs/ae_umap.png",
+      "side": "right"
+    },
+    {
+      "layout": "twocol",
+      "kicker": "EDA · Hallazgo 2",
+      "title": "Desbalance severo de clases",
+      "paras": [],
+      "bullets": [
+        "Pradera: cerca del 30 al 45% de las parcelas.",
+        "Colza, sorgo y huerto: menos del 1% cada uno.",
+        "Por eso usamos el puntaje F1 (que da el mismo peso a todos los cultivos) y no el porcentaje simple de aciertos."
+      ],
+      "caption": "Cuántas parcelas hay de cada cultivo.",
+      "img": "assets/figs/class_balance.png",
+      "side": "right"
+    },
+    {
+      "layout": "text",
+      "kicker": "EDA · Hallazgo 3",
+      "title": "Los errores no se agrupan geográficamente",
+      "paras": [],
+      "bullets": [
+        "El problema está en los cultivos difíciles de distinguir, no en zonas con pocos datos.",
+        "Esto implica que sumar más datos de una sola región no lo resuelve.",
+        "Hay que lograr que los cultivos se distingan mejor, no recoger más muestras."
+      ]
+    },
+    {
+      "layout": "cards",
+      "title": "¿Por qué usamos el puntaje F1?",
+      "cols": "c2",
+      "items": [
+        {
+          "title": "El porcentaje de aciertos engaña",
+          "body": "Cuando un cultivo domina, decir siempre ese cultivo da un porcentaje de aciertos alto pero engañoso.",
+          "variant": "s c2"
+        },
+        {
+          "title": "El puntaje F1 trata igual a todos",
+          "body": "Cultivos raros y comunes valen lo mismo → alineado con el negocio. Un seguro de colza importa aunque la colza sea solo el 1%.",
+          "variant": "hero"
+        }
+      ]
+    },
+    {
+      "layout": "kpi",
+      "title": "AlphaEarth Foundations",
+      "items": [
+        {
+          "num": "64",
+          "label": "valores que resumen cada lugar cada año",
+          "accent": false
+        },
+        {
+          "num": "10 m",
+          "label": "de detalle por píxel",
+          "accent": false
+        },
+        {
+          "num": "CC-BY-4.0",
+          "label": "gratis en Google Earth Engine, para todo el mundo",
+          "accent": false
+        }
+      ]
+    },
+    {
+      "layout": "cards",
+      "title": "Preparación de los datos",
+      "cols": "c3",
+      "items": [
+        {
+          "title": "Índices de vegetación",
+          "body": "Medidas de verdor y humedad de la planta (NDVI, NDWI, EVI, MSAVI2, NDRE…).",
+          "variant": "s c3"
+        },
+        {
+          "title": "Señales del cambio anual",
+          "body": "Ritmos de crecimiento con la transformada de Fourier; etapas de la planta: cuándo reverdece, su punto máximo y cuándo se seca.",
+          "variant": "normal"
+        },
+        {
+          "title": "Los 64 valores de AlphaEarth",
+          "body": "Ajustes Yeo-Johnson para corregir valores torcidos.",
+          "variant": "normal"
+        }
+      ]
+    },
+    {
+      "layout": "text",
+      "title": "Validación cruzada espacial — sin que el modelo haga trampa",
+      "paras": [],
+      "bullets": [
+        "Dividimos el mapa en zonas (con celdas H3 y agrupamiento) y dejamos 1 km de separación entre las zonas de entrenamiento y de prueba.",
+        "Pasamos de cada píxel a cada parcela completa.",
+        "El sistema se detiene solo si descubre que esas zonas se solapan."
+      ]
+    },
+    {
+      "layout": "divider",
+      "sec": "03",
+      "kicker": "3 · Modelado",
+      "title": "Del modelo sencillo a la combinación de modelos",
+      "paras": [
+        "De modelos sencillos a seis arquitecturas y cuatro formas de combinarlas."
+      ],
+      "img": "assets/figs/hero_modeling.png"
+    },
+    {
+      "layout": "cards",
+      "title": "Combinar modelos frente a usar uno solo",
+      "cols": "c2",
+      "items": [
+        {
+          "title": "Voting",
+          "body": "Promedia las opiniones de varios modelos distintos.",
+          "variant": "s c2"
+        },
+        {
+          "title": "Bagging",
+          "body": "Muchos XGBoost con AlphaEarth, cada uno entrenado con una muestra distinta.",
+          "variant": "normal"
+        },
+        {
+          "title": "Stacking",
+          "body": "Un modelo árbitro decide, cultivo por cultivo, a qué modelo hacer caso.",
+          "variant": "normal"
+        },
+        {
+          "title": "Blending",
+          "body": "Pesos ajustados automáticamente con la herramienta Optuna.",
+          "variant": "normal"
+        }
+      ]
+    },
+    {
+      "layout": "twocol",
+      "title": "Primer modelo sencillo: bosque aleatorio + XGBoost",
+      "paras": [],
+      "bullets": [
+        "Usando los 64 valores de AlphaEarth más los índices de vegetación.",
+        "Puntaje F1 cercano a 0.59 (XGBoost con AlphaEarth = 0.5913)."
+      ],
+      "caption": "Bosque aleatorio frente a XGBoost.",
+      "img": "assets/figs/baseline_barplot.png",
+      "side": "right"
+    },
+    {
+      "layout": "fig",
+      "title": "Entender en qué se fija el modelo (SHAP)",
+      "bullets": [],
+      "caption": "Qué datos pesan más en las decisiones de XGBoost con AlphaEarth, según el método SHAP.",
+      "img": "assets/figs/shap_xgb.png"
+    },
+    {
+      "layout": "table",
+      "kicker": "EPIC 5",
+      "title": "Las 6 arquitecturas que dibujan el mapa de cultivos",
+      "paras": [],
+      "table": {
+        "headers": [
+          "Arquitectura",
+          "Puntaje F1 / solapamiento con la verdad",
+          "En qué se fija"
+        ],
+        "rows": [
+          {
+            "cells": [
+              "TSViT-pheno",
+              "0.75 / 0.6253",
+              "Cambio en el tiempo"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "TSViT-base",
+              "— / 0.622",
+              "Cambio en el tiempo"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "U-TAE",
+              "— / 0.474",
+              "Cambio en el tiempo"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "AnySat",
+              "— / 0.446",
+              "Modelo base general"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "DeepLabv3+",
+              "— / 0.271",
+              "Forma en la imagen"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "U-Net",
+              "— / 0.242",
+              "Forma en la imagen"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "SegFormer-B0",
+              "— / 0.232",
+              "Forma en la imagen"
+            ],
+            "highlight": false
+          }
+        ]
+      }
+    },
+    {
+      "layout": "twocol",
+      "title": "Lectura clave de segmentación",
+      "paras": [
+        "Los modelos que miran el cambio a lo largo del año (TSViT, U-TAE) ganan por mucho a los que solo miran la forma en la imagen."
+      ],
+      "bullets": [
+        "Confirma que lo que distingue al cultivo es cómo cambia en el tiempo, no su textura."
+      ],
+      "caption": "Aciertos de las 6 arquitecturas (solapamiento con la verdad y puntaje F1).",
+      "img": "assets/figs/seg_barplot.png",
+      "side": "right"
+    },
+    {
+      "layout": "text",
+      "title": "TSViT, en palabras sencillas",
+      "paras": [],
+      "bullets": [
+        "Es un modelo que analiza por separado cómo cambia cada zona en el tiempo y cómo se ve en la imagen.",
+        "Su versión TSViT-pheno compara cada píxel con el patrón típico de crecimiento de cada cultivo.",
+        "Toma la curva de verdor promedio, pide a Gemini una descripción y la convierte en números. Método de Wen y colaboradores, 2025."
+      ]
+    },
+    {
+      "layout": "twocol",
+      "title": "Acierto cultivo por cultivo del modelo ganador TSViT",
+      "paras": [],
+      "bullets": [
+        "Cebada de invierno 0.89 · trigo blando de invierno 0.86 · vid 0.86 · pradera 0.81.",
+        "Cereal mezclado 0.24 (el peor).",
+        "Conclusión: ganan los cultivos con un crecimiento anual claro y muchos ejemplos."
+      ],
+      "caption": "Acierto por cultivo (solapamiento con la verdad).",
+      "img": "assets/figs/seg_iou_tsvit.png",
+      "side": "right"
+    },
+    {
+      "layout": "fig",
+      "title": "Dónde se equivoca TSViT",
+      "bullets": [],
+      "caption": "Los errores se concentran entre cereales de invierno muy parecidos entre sí.",
+      "img": "assets/figs/seg_confusion_tsvit.png"
+    },
+    {
+      "layout": "fig",
+      "title": "Ajuste fino del modelo con Optuna",
+      "bullets": [],
+      "caption": "Cómo la búsqueda automática de la mejor configuración va mejorando hasta estabilizarse.",
+      "img": "assets/figs/optuna.png"
+    },
+    {
+      "layout": "table",
+      "kicker": "EPIC 6",
+      "title": "Las 4 formas de combinar modelos",
+      "paras": [
+        "Añadir FarSLIP al stacking sube el puntaje F1 a 0.749."
+      ],
+      "table": {
+        "headers": [
+          "Combinación",
+          "Puntaje F1",
+          "Porcentaje de aciertos"
+        ],
+        "rows": [
+          {
+            "cells": [
+              "Stacking de modelos distintos (por parcela)",
+              "0.747",
+              "0.849"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Blending (Optuna)",
+              "0.741",
+              "—"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "TSViT-pheno (modelo solo)",
+              "0.625",
+              "—"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Voting (por píxel)",
+              "0.623",
+              "—"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Bagging",
+              "0.586",
+              "—"
+            ],
+            "highlight": false
+          }
+        ]
+      }
+    },
+    {
+      "layout": "fig",
+      "title": "Dónde se equivoca el stacking",
+      "bullets": [],
+      "caption": "El modelo árbitro decide, cultivo por cultivo, a qué modelo hacer caso.",
+      "img": "assets/figs/ens_confusion_stacking.png"
+    },
+    {
+      "layout": "table",
+      "title": "Comparativa de todos los modelos",
+      "paras": [],
+      "table": {
+        "headers": [
+          "Modelo",
+          "Puntaje F1",
+          "Porcentaje de aciertos"
+        ],
+        "rows": [
+          {
+            "cells": [
+              "Stacking-5",
+              "0.7470",
+              "0.849"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Voting-3 (EN PRODUCCIÓN)",
+              "0.7444",
+              "0.863"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Blending",
+              "0.7436",
+              "—"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "TSViT-pheno",
+              "0.7367",
+              "mIoU 0.6253"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "XGBoost-AlphaEarth",
+              "0.5913",
+              "—"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "U-TAE",
+              "0.474",
+              "—"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "AnySat",
+              "0.446",
+              "—"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "DeepLabv3+",
+              "0.271",
+              "—"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "U-Net",
+              "0.242",
+              "—"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "SegFormer",
+              "0.232",
+              "—"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "FarSLIP (sin entrenar en estos cultivos)",
+              "0.031",
+              "—"
+            ],
+            "highlight": false
+          }
+        ]
+      }
+    },
+    {
+      "layout": "cards",
+      "title": "FarSLIP: ayuda, pero no es el motor",
+      "cols": "c3",
+      "items": [
+        {
+          "title": "Una opinión más",
+          "body": "Suma +0.002 al combinar modelos.",
+          "variant": "s c3"
+        },
+        {
+          "title": "Descripción del crecimiento",
+          "body": "Para los modelos que ven (el perceiver del copiloto).",
+          "variant": "normal"
+        },
+        {
+          "title": "Prueba sin entrenamiento previo",
+          "body": "3 cultivos fáciles de distinguir a la vista: 0.40 a 0.60.",
+          "variant": "normal"
+        }
+      ]
+    },
+    {
+      "layout": "divider",
+      "sec": "04",
+      "kicker": "4 · Modelo final",
+      "title": "Voting-3, el modelo en producción",
+      "paras": [
+        "Doce cultivos bien resueltos, listos para producción."
+      ],
+      "img": "assets/figs/hero_winner.png"
+    },
+    {
+      "layout": "table",
+      "title": "¿Por qué Voting-3 y no Stacking-5?",
+      "paras": [
+        "3 ajustes frente a 54: más sencillo, más confiable y mejor cuando se prueba en zonas nuevas."
+      ],
+      "table": {
+        "headers": [
+          "Criterio"
+        ],
+        "rows": [
+          {
+            "cells": [
+              "Puntaje F1",
+              "0.744",
+              "0.747"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Número de ajustes internos",
+              "3",
+              "54"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Prueba en zonas nuevas",
+              "0.558",
+              "0.536"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Tiempo de respuesta",
+              "0.04 s",
+              "—"
+            ],
+            "highlight": false
+          }
+        ]
+      }
+    },
+    {
+      "layout": "cards",
+      "title": "Los 3 miembros de Voting-3",
+      "cols": "c3",
+      "items": [
+        {
+          "title": "TSViT-pheno",
+          "body": "Mira todo el cambio del cultivo a lo largo del año.",
+          "variant": "s c3"
+        },
+        {
+          "title": "U-TAE",
+          "body": "Una segunda opinión del cambio anual, distinta a la anterior.",
+          "variant": "normal"
+        },
+        {
+          "title": "XGBoost-AlphaEarth",
+          "body": "Resumen del color y el verdor en los 64 valores de AlphaEarth.",
+          "variant": "normal"
+        }
+      ]
+    },
+    {
+      "layout": "twocol",
+      "title": "¿Cuántos cultivos conviene clasificar?",
+      "paras": [
+        "Mientras a menos cultivos se compromete el modelo, más alto es su acierto:"
+      ],
+      "bullets": [
+        "18 cultivos → puntaje F1 0.749 (cubre el 100% de las parcelas).",
+        "12 cultivos → 0.860 (cubre el 90%).",
+        "9 cultivos → 0.912 (cubre el 82%).",
+        "8 cultivos → más de 0.90 (cubre el 80%). El mejor equilibrio está en 8 o 9 cultivos."
+      ],
+      "caption": "Puntaje F1 según cuántos cultivos se intenta clasificar.",
+      "img": "assets/figs/voting_cardinalidad.png",
+      "side": "right"
+    },
+    {
+      "layout": "text",
+      "title": "Sin volver a entrenar",
+      "paras": [],
+      "bullets": [
+        "El modelo entrega, para cada parcela, la probabilidad de cada cultivo.",
+        "Cuántos cultivos clasificar se elige en el momento de usarlo, sin tocar el modelo.",
+        "Un mismo modelo, cuatro formas de usarlo."
+      ]
+    },
+    {
+      "layout": "table",
+      "title": "4 formas de usar el modelo",
+      "paras": [
+        "La cobertura es el porcentaje de parcelas reales que el modelo se compromete a clasificar."
+      ],
+      "table": {
+        "headers": [
+          "Modo",
+          "Cultivos",
+          "Puntaje F1",
+          "Cobertura"
+        ],
+        "rows": [
+          {
+            "cells": [
+              "Completo",
+              "18",
+              "0.749",
+              "100%"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Produccion (recomendado)",
+              "12",
+              "0.860",
+              "90%"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Alta precision",
+              "9",
+              "0.912",
+              "82%"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Maxima confianza",
+              "8",
+              ">0.90",
+              "80%"
+            ],
+            "highlight": false
+          }
+        ]
+      }
+    },
+    {
+      "layout": "kpi",
+      "sec": "Modelo ganador",
+      "kicker": "El modelo que llevamos a produccion",
+      "title": "El ganador: doce cultivos bien resueltos",
+      "items": [
+        {
+          "num": "0.86",
+          "label": "Puntaje de acierto balanceado (de 0 a 1)",
+          "accent": false
+        },
+        {
+          "num": "90%",
+          "label": "De las parcelas reales quedan cubiertas",
+          "accent": true
+        },
+        {
+          "num": "12",
+          "label": "Cultivos de mayor valor agricola",
+          "accent": false
+        }
+      ],
+      "cards": [
+        {
+          "title": "Por que doce y no dieciocho",
+          "body": "Al enfocarse en los doce cultivos que el sistema separa con claridad, el acierto sube de 0.75 a 0.86 sin perder el grueso del valor de negocio: esos doce cubren el 90% de las parcelas. Los seis restantes son cultivos raros y parecidos entre si que conviene revisar a mano.",
+          "variant": "s c2"
+        },
+        {
+          "title": "Mejora con cada nueva region",
+          "body": "Este modelo no es estatico: se realimenta con datos de nuevas regiones mediante aprendizaje por transferencia. Al sumar Baja Sajonia (Alemania), los cereales de invierno (trigo, maiz, centeno, colza) subieron de un acierto bajo a entre 0.57 y 0.70. Cada region nueva lo hace mas robusto.",
+          "variant": "accent"
+        }
+      ]
+    },
+    {
+      "layout": "twocol",
+      "title": "Acierto cultivo por cultivo de Voting-3",
+      "paras": [],
+      "bullets": [
+        "Pradera 0.961 · maíz 0.954 · colza 0.945.",
+        "Vid 0.944 · trigo blando 0.940 · cebada 0.879.",
+        "Modo de 9 o 10 cultivos en Francia: los cultivos que mejor distingue."
+      ],
+      "caption": "Puntaje F1 por cultivo, Voting-3.",
+      "img": "assets/figs/voting_perclass.png",
+      "side": "right"
+    },
+    {
+      "layout": "kpi",
+      "title": "Modos de 9 y de 10 cultivos en Francia",
+      "items": [
+        {
+          "num": "0.92",
+          "label": "Puntaje F1 con 9 cultivos (aciertos 0.9471, cubre 82%)",
+          "accent": false
+        },
+        {
+          "num": "0.9069",
+          "label": "Puntaje F1 con 10 cultivos (aciertos 0.9421, cubre 84%)",
+          "accent": false
+        }
+      ]
+    },
+    {
+      "layout": "fig",
+      "title": "Indicadores del modelo en producción",
+      "bullets": [],
+      "caption": "Resumen de los resultados de Voting-3 en producción.",
+      "img": "assets/figs/voting_kpis.png"
+    },
+    {
+      "layout": "divider",
+      "sec": "05",
+      "kicker": "5 · Copiloto y app",
+      "title": "El copiloto que conversa",
+      "paras": [
+        "Los modelos ven los cultivos; un modelo de lenguaje razona y responde."
+      ],
+      "img": "assets/figs/hero_copilot.png"
+    },
+    {
+      "layout": "cards",
+      "title": "Patrón Be My Eyes",
+      "cols": "c2",
+      "items": [
+        {
+          "title": "Los modelos VEN",
+          "body": "Describen en texto sencillo: qué cultivo es, en qué etapa de crecimiento está, qué tan vigoroso luce y cuánta confianza hay.",
+          "variant": "s c2"
+        },
+        {
+          "title": "El modelo de lenguaje RAZONA",
+          "body": "Usa las herramientas y redacta la respuesta. Nunca clasifica los píxeles ni ve los datos internos del modelo. Además, no se modifica.",
+          "variant": "hero"
+        }
+      ]
+    },
+    {
+      "layout": "cards",
+      "title": "Dos modelos de lenguaje a elegir — control de los datos",
+      "cols": "c2",
+      "items": [
+        {
+          "title": "Gemini 2.5 Pro (en la nube)",
+          "body": "Disponible para todos, puede leer textos muy largos (hasta un millón de palabras), es el cerebro que razona en el copiloto.",
+          "variant": "s c2"
+        },
+        {
+          "title": "Qwen3.5-35B-A3B (en servidor propio)",
+          "body": "Corre en una sola tarjeta gráfica, comprimido para ir rápido. Los datos no salen de casa.",
+          "variant": "normal"
+        }
+      ]
+    },
+    {
+      "layout": "table",
+      "title": "Las 10 herramientas del mapa",
+      "paras": [
+        "Todas son reales, revisan que los datos de entrada sean válidos y solo acceden a la información de la sesión de cada usuario."
+      ],
+      "table": {
+        "headers": [
+          "Herramienta",
+          "Qué hace"
+        ],
+        "rows": [
+          {
+            "cells": [
+              "list_parcels",
+              "Lista las parcelas dentro de una zona"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "get_parcel_timeseries",
+              "Da las fechas clave reales del crecimiento"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "get_aoi_stats",
+              "Superficie real + cultivo predominante"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "search_stac",
+              "Busca imágenes en el servicio de datos de Copernicus"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "get_tiles",
+              "Prepara las capas del mapa"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "classify_new_parcel",
+              "Clasifica una parcela con Voting-3 (puntaje F1 0.9069)"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "add_aoi",
+              "Añade un área de interés"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "compare_models",
+              "Compara modelos"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "explain_prediction",
+              "Explica el crecimiento del cultivo (método Wen 2025)"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "retrieve_context",
+              "Busca información de parcelas cercanas (Spatial-RAG)"
+            ],
+            "highlight": false
+          }
+        ]
+      }
+    },
+    {
+      "layout": "cards",
+      "title": "Búsqueda con contexto geográfico (Spatial-RAG)",
+      "cols": "c2",
+      "items": [
+        {
+          "title": "Primero, filtrar por cercanía",
+          "body": "PostGIS busca solo las parcelas que están cerca.",
+          "variant": "s c2"
+        },
+        {
+          "title": "Después, buscar por parecido",
+          "body": "pgvector encuentra las parcelas más parecidas usando los 64 valores de AlphaEarth.",
+          "variant": "normal"
+        }
+      ]
+    },
+    {
+      "layout": "twocol",
+      "title": "Mejora al cambiar los modelos que ven",
+      "paras": [
+        "Cambiar los modelos que ven (el perceiver), del modelo sencillo al ganador Voting-3:"
+      ],
+      "bullets": [
+        "Porcentaje de aciertos: 0.8308 → 0.9413 (+11 puntos).",
+        "Puntaje F1: 0.6868 → 0.9007.",
+        "Medido sobre 13,481 parcelas reales."
+      ],
+      "caption": "Mejora al cambiar los modelos que ven del copiloto.",
+      "img": "assets/figs/agent_uplift.png",
+      "side": "right"
+    },
+    {
+      "layout": "cards",
+      "title": "Arquitectura del sistema",
+      "cols": "c3",
+      "items": [
+        {
+          "title": "FastAPI",
+          "body": "El servidor que atiende el chat en vivo, las zonas, las series de tiempo, las imágenes, las capas del mapa y las sesiones.",
+          "variant": "s c3"
+        },
+        {
+          "title": "Nuxt 4",
+          "body": "La aplicación web: mapa MapLibre, chat en vivo, cambio de modelo y tres idiomas (italiano, español e inglés).",
+          "variant": "normal"
+        },
+        {
+          "title": "PostgreSQL 15",
+          "body": "Base de datos con PostGIS y pgvector. Cada usuario solo ve sus propios datos, gracias a la seguridad a nivel de fila.",
+          "variant": "normal"
+        }
+      ]
+    },
+    {
+      "layout": "text",
+      "title": "La aplicación web",
+      "paras": [],
+      "bullets": [
+        "Mapa MapLibre para dibujar el área de interés.",
+        "Panel de chat que muestra la respuesta a medida que se escribe.",
+        "Panel que muestra qué está haciendo el copiloto paso a paso.",
+        "Tres idiomas (italiano, español e inglés) con 91 textos sincronizados."
+      ]
+    },
+    {
+      "layout": "twocol",
+      "title": "Seguridad",
+      "paras": [],
+      "bullets": [
+        "Cada usuario solo accede a los datos de su sesión (seguridad a nivel de fila, sin excepciones).",
+        "Las herramientas están limitadas y se rechazan los datos de entrada fuera de rango.",
+        "Todo queda registrado y se puede revisar.",
+        "Mensajes maliciosos → las herramientas están limitadas.",
+        "Información envenenada en la búsqueda → usamos solo fuentes controladas.",
+        "Exceso de confianza → avisa cuando la confianza es menor a 0.60."
+      ],
+      "caption": "",
+      "img": "",
+      "side": "right"
+    },
+    {
+      "layout": "text",
+      "title": "Una aplicación honesta",
+      "paras": [
+        "Cuando falta información lo dice claramente, en vez de inventar datos:"
+      ],
+      "bullets": [
+        "Series de tiempo: solo muestra las fechas reales medidas.",
+        "Búsqueda de imágenes: aparece vacía si ese catálogo aún no está disponible.",
+        "Tareas en segundo plano: avisa explícitamente que aún no están implementadas."
+      ]
+    },
+    {
+      "layout": "divider",
+      "sec": "06",
+      "kicker": "6 · Transfer, MLOps y futuro",
+      "title": "¿Se extiende a otras regiones?",
+      "paras": [
+        "Aprendizaje por transferencia, buenas prácticas y lo aprendido."
+      ],
+      "img": "assets/figs/transfer_map.png"
+    },
+    {
+      "layout": "cards",
+      "title": "¿Funciona en otras regiones?",
+      "cols": "c3",
+      "items": [
+        {
+          "title": "Francia → Cataluña",
+          "body": "Sin ningún ejemplo nuevo: acierto 0.0000. Con unos pocos ejemplos: 0.2468. El salto entre Francia y la Península Ibérica es enorme si no se le da nada.",
+          "variant": "s c3"
+        },
+        {
+          "title": "EuroCropsML (Letonia → Estonia)",
+          "body": "AlphaEarth gana a Sentinel-2 con cualquier cantidad de ejemplos; +0.111 de puntaje F1 con un solo ejemplo por cultivo.",
+          "variant": "normal"
+        },
+        {
+          "title": "Trópico (Brasil)",
+          "body": "WorldCereal: sin ejemplos, el maíz da 0.0095; con 20 ejemplos sube a 0.626.",
+          "variant": "normal"
+        }
+      ]
+    },
+    {
+      "layout": "twocol",
+      "title": "AlphaEarth logra lo mismo con menos ejemplos etiquetados",
+      "paras": [],
+      "bullets": [
+        "AlphaEarth supera a las imágenes Sentinel-2 sin procesar con cualquier cantidad de ejemplos.",
+        "Llega al mismo nivel con unas 10 veces menos etiquetas."
+      ],
+      "caption": "AlphaEarth frente a Sentinel-2 con pocos ejemplos.",
+      "img": "assets/figs/ae_vs_s2.png",
+      "side": "right"
+    },
+    {
+      "layout": "twocol",
+      "title": "Mejora region por región",
+      "paras": [],
+      "bullets": [],
+      "caption": "Qué tan bien se traslada a otras zonas.",
+      "img": "assets/figs/multiregion_delta.png",
+      "side": "right"
+    },
+    {
+      "layout": "text",
+      "title": "Un resultado negativo que reportamos con honestidad",
+      "paras": [
+        "Con un solo modelo para varias regiones, ampliar la lista de cultivos de 18 a 30 sin forzar equivalencias…",
+        "…no logra que ningún cultivo nuevo supere el puntaje F1 de 0.85. El problema es que los cultivos no se distinguen bien con solo el resumen anual, no el número de regiones."
+      ],
+      "bullets": []
+    },
+    {
+      "layout": "kpi",
+      "title": "Italia (US-078/079)",
+      "items": [
+        {
+          "num": "1438",
+          "label": "recortes de imagen",
+          "accent": false
+        },
+        {
+          "num": "103,350",
+          "label": "parcelas",
+          "accent": false
+        }
+      ]
+    },
+    {
+      "layout": "table",
+      "title": "DE4 Baja Sajonia (US-082)",
+      "paras": [
+        "La región donde llevar el modelo a otra zona SÍ funciona. 3 factores medidos:"
+      ],
+      "table": {
+        "headers": [
+          "Factor",
+          "Efecto"
+        ],
+        "rows": [
+          {
+            "cells": [
+              "Año 2023 frente a 2018",
+              "XGBoost +44% (0.156 → 0.225)",
+              "XGBoost +44% (0.156 → 0.225)"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Observar 14 meses en vez de 8",
+              "24 → 56 fechas"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Región Baja Sajonia frente a Toscana",
+              "Voting-3 0.119 → 0.266 (2.2 veces)",
+              "Voting-3 0.119 → 0.266 (2.2 times)"
+            ],
+            "highlight": false
+          }
+        ]
+      }
+    },
+    {
+      "layout": "text",
+      "title": "DE4 — cereales rescatados",
+      "paras": [
+        "Las 3 formas de hacerlo: A conservar los cultivos propios de la zona (0.266) · B traducir los cultivos a una lista común sin conservarlos (0.287) · C el procedimiento completo.",
+        "Parcelas grandes (10 hectáreas frente a 0.4) + imágenes de todo el año + observar el invierno = los cultivos se distinguen mejor."
+      ],
+      "bullets": [
+        "Maíz 0.703 · colza 0.689 · trigo de invierno 0.674 · centeno 0.573.",
+        "8 cultivos con puntaje 0.6 o más, frente a solo 1 en Toscana."
+      ]
+    },
+    {
+      "layout": "cards",
+      "title": "Todo el proceso se puede reproducir",
+      "cols": "c3",
+      "items": [
+        {
+          "title": "DVC",
+          "body": "Guarda cada versión de los datos y de los modelos.",
+          "variant": "s c3"
+        },
+        {
+          "title": "MLflow",
+          "body": "Anota qué versión de datos y de código usó cada experimento.",
+          "variant": "normal"
+        },
+        {
+          "title": "Dagster",
+          "body": "Organiza el flujo de datos paso a paso.",
+          "variant": "normal"
+        },
+        {
+          "title": "dbmate",
+          "body": "Cambios de base de datos que se pueden deshacer.",
+          "variant": "normal"
+        },
+        {
+          "title": "Terraform",
+          "body": "Crea la infraestructura en GCP y Azure de forma automática.",
+          "variant": "normal"
+        },
+        {
+          "title": "100%",
+          "body": "reproducible.",
+          "variant": "hero"
+        }
+      ]
+    },
+    {
+      "layout": "kpi",
+      "title": "La tarjeta gráfica H100 — costo y uso",
+      "items": [
+        {
+          "num": "80 h",
+          "label": "de uso en ventanas reservadas",
+          "accent": false
+        },
+        {
+          "num": "$262-602",
+          "label": "gasto único de entrenamiento",
+          "accent": false
+        },
+        {
+          "num": "$115/mes",
+          "label": "de operación; los servidores se apagan solos cuando no se usan",
+          "accent": false
+        }
+      ]
+    },
+    {
+      "layout": "cards",
+      "title": "Cómo organizamos el trabajo con asistentes de IA",
+      "cols": "c2",
+      "items": [
+        {
+          "title": "Organización del asistente",
+          "body": "Una sola guía central, 30 habilidades especializadas, 9 asistentes expertos, guías por carpeta que se cargan cuando se necesitan y una memoria que no se borra entre sesiones.",
+          "variant": "s c2"
+        },
+        {
+          "title": "Buenas prácticas",
+          "body": "Código en inglés y textos en español, sin emojis, registros ordenados, tipos declarados, no repetir código, separar responsabilidades, varios clientes aislados, varios idiomas, contraseñas en un gestor seguro, datos versionados y cambios de base de datos controlados.",
+          "variant": "normal"
+        }
+      ]
+    },
+    {
+      "layout": "text",
+      "title": "Buenas prácticas seguidas",
+      "paras": [],
+      "bullets": [
+        "Validación cruzada espacial para que el modelo no haga trampa.",
+        "Datos 100% reales (cero datos de relleno en producción).",
+        "Cuadernos de análisis ejecutados de principio a fin, con sus resultados visibles.",
+        "Revisiones automáticas de calidad y seguridad antes de cada entrega; más del 70% del código del servidor cubierto con pruebas."
+      ]
+    },
+    {
+      "layout": "text",
+      "title": "Aprendizajes",
+      "paras": [],
+      "bullets": [
+        "Cómo cambia el cultivo en el año importa más que su forma en la imagen.",
+        "Los modelos base de Google valen la pena cuando hay unos pocos ejemplos, pero no hacen magia sin ningún ejemplo.",
+        "Que el modelo funcione en otra región depende más de cuántos cultivos intenta distinguir que de la región misma.",
+        "Combinar 3 modelos de forma sencilla puede ser más confiable que combinar 54 de forma compleja.",
+        "Ser honestos con las cifras (reportar también lo que no funcionó entre regiones) es parte de nuestra aportación."
+      ]
+    },
+    {
+      "layout": "twocol",
+      "title": "Trabajo futuro",
+      "paras": [],
+      "bullets": [
+        "Mirar cómo cambia el cultivo dentro del año para separar cereales muy parecidos.",
+        "Validación fuera de muestra con 5 divisiones, para una cifra aún más sólida.",
+        "Conectar al servidor el cambio entre los dos modelos de lenguaje.",
+        "Dejar desplegado el catálogo de imágenes.",
+        "Búsqueda con contexto geográfico completa.",
+        "Inicio de sesión de usuarios; tareas en segundo plano.",
+        "Publicar nuestro conjunto de preguntas AgroMind-IT/ES con identificador permanente en Zenodo.",
+        "Enviar el artículo a una conferencia o revista."
+      ],
+      "caption": "",
+      "img": "",
+      "side": "right"
+    },
+    {
+      "layout": "text",
+      "title": "Agradecimientos",
+      "paras": [],
+      "bullets": [
+        "Dr. Gerardo Jesús Camacho — sponsor académico.",
+        "Equipo AgroSatCopilot.",
+        "Datasets abiertos: AlphaEarth/DeepMind, Copernicus, JRC EuroCrops.",
+        "La comunidad open-source."
+      ]
+    },
+    {
+      "layout": "text",
+      "title": "Gracias",
+      "paras": [
+        "AgroSatCopilot — análisis agrícola por satélite que conversa, es honesto y se puede reproducir paso a paso."
+      ],
+      "bullets": []
+    },
+    {
+      "layout": "closing",
+      "title": "Gracias",
+      "paras": [
+        "AgroSatCopilot · Equipo 17 · open-source (Apache 2.0 / MIT)",
+        "Datos: AlphaEarth (CC-BY-4.0), Copernicus Sentinel, PASTIS-R, EuroCrops, Sen4AgriNet, EuroCropsML, WorldCereal. Modelos: TSViT, U-TAE, FarSLIP, Gemini 2.5 Pro, Qwen3.5."
+      ],
+      "bullets": []
+    }
+  ]
+}
