@@ -297,6 +297,24 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="US-079 Italian transfer + Voting-3.")
     parser.add_argument("--members", nargs="+", default=list(DEFAULT_MEMBERS))
     parser.add_argument("--italia-root", type=Path, default=_DEFAULT_ITALIA_ROOT)
+    parser.add_argument(
+        "--parcels-parquet",
+        type=Path,
+        default=None,
+        help="EuroCrops parcels parquet for the dense->parcel join (e.g. "
+        "de4_2023.parquet); defaults to the Italy reference.",
+    )
+    parser.add_argument(
+        "--mapping-csv",
+        type=Path,
+        default=None,
+        help="EuroCrops crosswalk CSV (eurocrops.csv); defaults to the Italy mapping.",
+    )
+    parser.add_argument(
+        "--region-prefix",
+        default="it",
+        help="NUTS prefix for the crosswalk region (it, de4, nl, ...).",
+    )
     parser.add_argument("--test-fold", type=int, default=3)
     parser.add_argument("--n-timesteps", type=int, default=10)
     # US-079 fix A: converged defaults (the F1 0.108 run sub-converged at 12 ep /
@@ -391,7 +409,12 @@ def main() -> None:
     if args.parcel_strategy == "eurocrops":
         from ml.transfer.dense_to_parcel_italia import load_eurocrops_parcel_rasters
 
-        parcel_rasters = load_eurocrops_parcel_rasters(args.italia_root)
+        parcel_rasters = load_eurocrops_parcel_rasters(
+            args.italia_root,
+            parcels_parquet=args.parcels_parquet,
+            mapping_csv=args.mapping_csv,
+            region_prefix=args.region_prefix,
+        )
 
     # 1) Fine-tune the DENSE members (the xgb member's OOF is produced upstream).
     member_summaries: dict[str, dict[str, object]] = {}

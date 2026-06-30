@@ -266,6 +266,9 @@ def load_eurocrops_parcel_rasters(
     italia_root: Path = DEFAULT_ITALIA_ROOT,
     *,
     patch_ids: list[int] | None = None,
+    parcels_parquet: Path | None = None,
+    mapping_csv: Path | None = None,
+    region_prefix: str = "it",
 ) -> dict[int, tuple[np.ndarray, dict[int, str]]]:
     """Build per-patch EuroCrops ParcelID rasters from the US-078 metadata.
 
@@ -309,7 +312,12 @@ def load_eurocrops_parcel_rasters(
     # over 32 parcels instead of ~22k). FIX: ALWAYS build the parcels over the FULL
     # metadata so the canonical ids match the xgb 1:1, then keep only the rasters of
     # the requested patches AFTER rasterisation.
-    parcels = parcels_in_patches(bboxes, name_to_id)
+    pip_kwargs: dict[str, object] = {"region_prefix": region_prefix}
+    if parcels_parquet is not None:
+        pip_kwargs["parcels_parquet"] = parcels_parquet
+    if mapping_csv is not None:
+        pip_kwargs["mapping_csv"] = mapping_csv
+    parcels = parcels_in_patches(bboxes, name_to_id, **pip_kwargs)
     if patch_ids is not None:
         keep = set(int(p) for p in patch_ids)
         bboxes = bboxes.filter(pl.col("patch_id").is_in(list(keep)))
