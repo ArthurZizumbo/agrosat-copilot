@@ -49,11 +49,24 @@ export interface Finding {
   /** Parcel boundary as a GeoJSON Polygon, when available (for the map). */
   geometry?: { type: "Polygon"; coordinates: number[][][] } | null;
   citation: Citation;
+  /** Ground-truth crop, when known (prediction demo only). Lets the map toggle
+   *  between predicted (`crop_class`) and true crop, and compute hits/errors. */
+  true_class?: string | null;
+  /** Whether the prediction matched the ground truth (prediction demo only). */
+  correct?: boolean | null;
 }
 
 // ---------------------------------------------------------------------------
 // Wire events — discriminated by `type` (mirror of ml/agent/events.py).
 // ---------------------------------------------------------------------------
+
+/** A live per-cell crop segment painted on the map (prediction overlay). */
+export interface MapSegment {
+  crop_class?: string | null;
+  confidence?: number | null;
+  area_ha?: number | null;
+  geometry?: { type: "Polygon"; coordinates: number[][][] } | null;
+}
 
 /** The perceiver's initial TEXT observation, injected before the reasoner. */
 export interface PerceiverObservationEvent {
@@ -62,8 +75,9 @@ export interface PerceiverObservationEvent {
   text?: string;
   /** Real shape emitted by chat_service.py (rendered grounding block). */
   prompt_block?: string;
-  /** Real shape emitted by chat_service.py (structured fields). */
-  observation?: Record<string, unknown>;
+  /** Real shape emitted by chat_service.py (structured fields). Carries
+   *  `map_segments` for an AOI: the live per-cell crop polygons to paint. */
+  observation?: Record<string, unknown> & { map_segments?: MapSegment[] };
 }
 
 /** The reasoner decided to call a tool (one event per requested call). */

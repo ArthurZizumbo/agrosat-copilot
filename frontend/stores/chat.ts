@@ -164,6 +164,10 @@ export const useChatStore = defineStore("chat", {
     /** Latest assistant message, if any (handy for tests/UI). */
     lastAssistant: (state): ChatMessage | undefined =>
       [...state.messages].reverse().find((m) => m.role === "assistant"),
+    /** True when findings carry ground truth (prediction demo): drives the
+     *  map's predicted/true/hits-errors toggle and the accuracy badge. */
+    hasPrediction: (state): boolean =>
+      state.findings.some((f) => f.true_class != null),
     /** Conversation history in the backend's `{role, content}` shape. */
     historyForRequest: (
       state,
@@ -229,6 +233,25 @@ export const useChatStore = defineStore("chat", {
           if (text.trim().length > 0) {
             this.toolSeq += 1;
             this.perceiverNotes.push({ id: `note-${this.toolSeq}`, text });
+          }
+          // Live AOI segmentation: paint the recognised crop cells on the map.
+          // These replace any prior findings (the observation is for the freshly
+          // drawn AOI). Each segment carries its own Polygon geometry.
+          const segments = event.observation?.map_segments ?? [];
+          if (segments.length > 0) {
+            this.findings = segments.map((s, i) => ({
+              parcel_id: i + 1,
+              crop_class: s.crop_class ?? null,
+              confidence: s.confidence ?? null,
+              area_ha: s.area_ha ?? null,
+              ndvi_mean: null,
+              metrics: {},
+              geometry: s.geometry ?? null,
+              citation: {
+                tool_call_id: "segment_aoi",
+                source: "AlphaEarth+XGBoost (segmentacion por celda)",
+              },
+            }));
           }
           break;
         }

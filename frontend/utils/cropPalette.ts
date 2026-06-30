@@ -19,6 +19,28 @@ export const CROP_COLORS = [
 /** Neutral grey for parcels with an unknown/missing crop class. */
 export const CROP_UNKNOWN_COLOR = "#6b7280";
 
+/** Hits/errors view colours (prediction demo): correct = green, wrong = red. */
+export const CORRECT_COLOR = "#16a34a";
+export const ERROR_COLOR = "#dc2626";
+
+/** Which crop the map paints in the prediction demo. */
+export type DemoView = "pred" | "truth" | "errors";
+
+/**
+ * Colour for a parcel under a given demo view: by predicted crop, by true crop,
+ * or green/red by whether the prediction was correct. Used by the map fill layer
+ * and the legend so both stay in sync.
+ */
+export function colorForDemo(
+  view: DemoView,
+  predCrop: string | null | undefined,
+  trueCrop: string | null | undefined,
+  correct: boolean | null | undefined,
+): string {
+  if (view === "errors") return correct ? CORRECT_COLOR : ERROR_COLOR;
+  return colorForCrop(view === "truth" ? trueCrop : predCrop);
+}
+
 /** Deterministic colour for a crop label (matches legacy MapView hashing). */
 export function colorForCrop(crop: string | null | undefined): string {
   if (!crop) return CROP_UNKNOWN_COLOR;

@@ -31,10 +31,10 @@ import type {
 import { useChatStore } from "~/stores/chat";
 import { useMapStore } from "~/stores/map";
 import type { Finding } from "~/types/agent";
-import type { Aoi, AoiPolygon, LngLat } from "~/types/map";
-import { colorForCrop } from "~/utils/cropPalette";
+import type { AoiPolygon, LngLat } from "~/types/map";
+import { colorForCrop, colorForDemo } from "~/utils/cropPalette";
 import { buildBasemapStyle } from "~/composables/useBasemap";
-import { DEMO_AOI_BBOX, demoAoiPolygon, demoFindings } from "~/utils/demoPreview";
+import { loadPredictionParcels } from "~/utils/demoPreview";
 
 const FINDINGS_SOURCE = "findings";
 const FINDINGS_FILL = "findings-fill";
@@ -72,7 +72,8 @@ export function useMap(opts: UseMapOptions = {}): UseMapHandle {
   const chatStore = useChatStore();
   const mapStore = useMapStore();
   const { findings } = storeToRefs(chatStore);
-  const { basemap, drawMode, parcelsVisible, activeAoi } = storeToRefs(mapStore);
+  const { basemap, drawMode, parcelsVisible, activeAoi, demoView } =
+    storeToRefs(mapStore);
   const { selectDrawnAoi, rectToPolygon } = useAoi();
   const { t } = useI18n();
 
@@ -90,9 +91,15 @@ export function useMap(opts: UseMapOptions = {}): UseMapHandle {
 
   function findingsToGeoJSON(items: Finding[]): GeoJSON.FeatureCollection {
     const features: GeoJSON.Feature[] = [];
+    // In the prediction demo, colour by the active view (predicted / true /
+    // hits-errors); otherwise keep the plain per-crop colour for live data.
+    const prediction = chatStore.hasPrediction;
     for (const f of items) {
       const geometry = (f as unknown as { geometry?: GeoJSON.Geometry }).geometry;
       if (!geometry) continue;
+      const color = prediction
+        ? colorForDemo(demoView.value, f.crop_class, f.true_class, f.correct)
+        : colorForCrop(f.crop_class);
       features.push({
         type: "Feature",
         id: f.parcel_id,
@@ -100,11 +107,13 @@ export function useMap(opts: UseMapOptions = {}): UseMapHandle {
         properties: {
           parcel_id: f.parcel_id,
           crop_class: f.crop_class ?? null,
+          true_class: f.true_class ?? null,
+          correct: f.correct ?? null,
           confidence: f.confidence ?? null,
           area_ha: f.area_ha ?? null,
           ndvi_mean: f.ndvi_mean ?? null,
           source: f.citation?.source ?? null,
-          color: colorForCrop(f.crop_class),
+          color,
         },
       });
     }
@@ -208,10 +217,17 @@ export function useMap(opts: UseMapOptions = {}): UseMapHandle {
       const conf = p.confidence != null ? `${Math.round(Number(p.confidence) * 100)}%` : "—";
       const ndvi = p.ndvi_mean != null ? Number(p.ndvi_mean).toFixed(2) : "—";
       const area = p.area_ha != null ? `${Number(p.area_ha).toFixed(1)} ha` : "—";
+      // Prediction demo: show predicted vs true crop and a hit/error mark.
+      const hasTruth = p.true_class != null;
+      const cropLine = hasTruth
+        ? `${t("map.predicted")}: <strong>${p.crop_class ?? "—"}</strong><br/>
+           ${t("map.true_crop")}: ${p.true_class}
+           ${p.correct ? "✓" : "✗"}<br/>`
+        : `${t("map.crop")}: ${p.crop_class ?? "—"}<br/>`;
       const html = `
         <div style="font-size:12px;line-height:1.5;min-width:150px">
           <strong>${t("chat.parcel")} ${p.parcel_id ?? "—"}</strong><br/>
-          ${t("map.crop")}: ${p.crop_class ?? "—"}<br/>
+          ${cropLine}
           ${t("map.confidence")}: <span style="font-variant-numeric:tabular-nums">${conf}</span><br/>
           ${t("map.ndvi")}: <span style="font-variant-numeric:tabular-nums">${ndvi}</span><br/>
           ${t("map.area")}: <span style="font-variant-numeric:tabular-nums">${area}</span><br/>
@@ -304,25 +320,30 @@ export function useMap(opts: UseMapOptions = {}): UseMapHandle {
   }
 
   // --- Public flyTo helpers ----------------------------------------------
-  function flyToDemoAoi() {
+  async function flyToDemoAoi() {
     if (!map) return;
-    // Select the seeded demo AOI and paint its parcels so the action has clear,
-    // visible feedback (active-area chip + coloured parcels + legend), then fly.
-    const demoAoi: Aoi = {
+    // Load REAL PASTIS-R parcels carrying the MODEL'S PREDICTION (out-of-sample
+    // fold) and paint them; the legend toggles predicted / true / hits-errors.
+    // Replaces the old synthetic Tuscany rectangles (no meaning).
+    const real = await loadPredictionParcels();
+    if (!real || !map) return;
+    mapStore.setActiveAoi({
       id: -1,
       label: t("tools.demo"),
-      area_ha: 1.0,
-      geometry: demoAoiPolygon(),
-    };
-    mapStore.setActiveAoi(demoAoi);
+      area_ha: null,
+      geometry: real.aoiPolygon,
+    });
     mapStore.setPreviewActive(true);
-    chatStore.loadDemoParcels(demoFindings());
+    mapStore.setDemoView("pred");
+    mapStore.setPredictionAccuracy(real.accuracy);
+    chatStore.loadDemoParcels(real.findings);
+    const [minLng, minLat, maxLng, maxLat] = real.bbox;
     map.fitBounds(
       [
-        [DEMO_AOI_BBOX.minLng, DEMO_AOI_BBOX.minLat],
-        [DEMO_AOI_BBOX.maxLng, DEMO_AOI_BBOX.maxLat],
+        [minLng, minLat],
+        [maxLng, maxLat],
       ],
-      { padding: 80, duration: 900, maxZoom: 15 },
+      { padding: 60, duration: 900, maxZoom: 16 },
     );
   }
   function locateParcel(parcelId: number) {
@@ -385,6 +406,8 @@ export function useMap(opts: UseMapOptions = {}): UseMapHandle {
       }),
     );
     stopHandles.push(watch(findings, () => syncFindings(), { deep: true }));
+    // Re-colour (no re-fit) when the prediction demo view toggles.
+    stopHandles.push(watch(demoView, () => syncFindings(false)));
     stopHandles.push(watch(activeAoi, () => syncAoi(), { deep: true }));
     stopHandles.push(
       watch(parcelsVisible, (v) => {
