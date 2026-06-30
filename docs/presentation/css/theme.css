@@ -166,6 +166,28 @@ section.closing { background: linear-gradient(140deg, var(--field-dk), #1c3d26) 
 section.closing h1 { color: #fff; font-size: 3em; }
 section.closing p { color: #d6e6d8; }
 
+/* ---- Lamina DIVISORIA de seccion (estilo hero, como ara2) ---- */
+section.divider {
+  background: linear-gradient(135deg, var(--field-dk) 0%, var(--field) 60%, #357a4a 100%) !important;
+  color: #fff; justify-content: center !important;
+}
+section.divider .divider-grid { display: grid; grid-template-columns: 1.2fr 0.8fr; align-items: center; gap: 48px; height: 100%; }
+section.divider .divider-text { display: flex; flex-direction: column; justify-content: center; }
+section.divider .sec-num { font-family: "Fraunces", serif; font-size: 7em; font-weight: 600; line-height: 0.9; color: rgba(255,255,255,0.22); margin-bottom: 0.1em; }
+section.divider h2 { color: #fff; font-size: 2.6em; margin: 0 0 0.3em 0; }
+section.divider .kicker { color: #ffd9a8; }
+section.divider .kicker::before { background: #ffd9a8; }
+section.divider p { color: #e3f0e5; font-size: 1.05em; max-width: 16em; }
+section.divider .divider-art { display: flex; align-items: center; justify-content: center; }
+section.divider .divider-art img { max-height: 56vh; max-width: 100%; border-radius: var(--radius); box-shadow: 0 12px 40px rgba(0,0,0,0.28); border: 1px solid rgba(255,255,255,0.2); }
+section.divider .chips .chip { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.25); color: #eef6ef; }
+
+/* card hover con elevacion (estado claro, guia ui-ux) */
+.card:hover { transform: translateY(-3px); box-shadow: var(--shadow); }
+
+/* regla de acento bajo el titulo en laminas de contenido */
+.reveal .slides section > h2:first-of-type { position: relative; }
+
 /* ---- Pildoras / chips ---- */
 .chips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 0.6em; }
 .chip { background: var(--bg-card); border: 1px solid var(--line); border-radius: 999px; padding: 6px 16px; font-size: 0.6em; color: var(--ink-soft); box-shadow: var(--shadow-sm); }
@@ -180,6 +202,28 @@ section.closing p { color: #d6e6d8; }
   content: attr(data-sec); position: absolute; right: 56px; bottom: 28px;
   font-family: "Fraunces", serif; font-size: 0.6em; color: var(--ink-faint); opacity: 0.5; letter-spacing: 0.05em;
 }
+
+/* ---- Marca institucional persistente (esquina inferior izquierda) ---- */
+/* margen amplio para que NUNCA se corte contra el borde; ancho acotado */
+#brand { position: fixed; left: 28px; bottom: 22px; z-index: 55; display: flex; align-items: center; pointer-events: none; max-width: 40%; }
+#brand-logo { height: 32px; width: auto; opacity: 0.92; }
+#brand-wordmark { display: flex; flex-direction: column; line-height: 1.25; font-family: "Inter", sans-serif; gap: 1px; }
+#brand-wordmark .bw-1 { font-size: 12px; font-weight: 700; color: var(--field-dk); letter-spacing: 0.01em; white-space: nowrap; }
+#brand-wordmark .bw-2 { font-size: 9px; font-weight: 500; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
+/* sobre fondos oscuros (portada/cierre/divisorias) la marca usa tinta clara */
+.reveal:has(section.present.divider) ~ #brand .bw-1,
+.reveal:has(section.present.closing) ~ #brand .bw-1 { color: #fff; }
+.reveal:has(section.present.divider) ~ #brand .bw-2,
+.reveal:has(section.present.closing) ~ #brand .bw-2 { color: rgba(255,255,255,0.7); }
+
+/* ---- Controles de navegacion Reveal: tematizados (verde campo, no azul) ---- */
+.reveal .controls { color: var(--field); bottom: 18px; right: 22px; }
+.reveal .controls button { color: var(--field) !important; opacity: 0.55; transition: opacity 150ms ease; }
+.reveal .controls button:hover { opacity: 1; }
+.reveal .controls .navigate-left,
+.reveal .controls .navigate-right,
+.reveal .controls .navigate-up,
+.reveal .controls .navigate-down { border-color: var(--field) !important; }
 
 /* ---- Switch de idioma (pildora flotante) ---- */
 #lang-toggle { position: fixed; top: 18px; right: 22px; z-index: 60; display: flex; border: 1px solid var(--earth); border-radius: 999px; overflow: hidden; font-family: "Inter", sans-serif; font-size: 13px; box-shadow: var(--shadow-sm); background: var(--bg-card); }
