@@ -6,6 +6,9 @@
   <title>AgroSatCopilot --- Equipo 17 (MNA Tec de Monterrey)</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/white.css" id="reveal-base-theme">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/theme.css">
 </head>
 <body>
@@ -19,7 +22,7 @@
   <div class="slides">
 
     <!-- ============ 1. PORTADA ============ -->
-    <section data-background-color="#faf8f2">
+    <section class="center" data-background-color="#f7f4ec">
       <div class="cover">
         <div class="cover-text">
           <h1>AgroSatCopilot</h1>
@@ -1155,9 +1158,10 @@
 
 
     <!-- ============ CIERRE ============ -->
-    <section data-background-color="#2f5d3a">
-      <h1 style="color:#fff" data-lang-es>Gracias</h1>
-      <h1 style="color:#fff" data-lang-en>Thank you</h1>
+    <section class="closing center">
+      <div class="kicker" style="color:#e8b87a">AgroSatCopilot &middot; Equipo 17</div>
+      <h1 data-lang-es>Gracias</h1>
+      <h1 data-lang-en>Thank you</h1>
       <p style="color:#e8f0e8;font-size:0.9em" data-lang-es>AgroSatCopilot &middot; Equipo 17 &middot; open-source (Apache 2.0 / MIT)</p>
       <p style="color:#e8f0e8;font-size:0.9em" data-lang-en>AgroSatCopilot &middot; Team 17 &middot; open-source (Apache 2.0 / MIT)</p>
       <p style="color:#bcd4bc;font-size:0.62em;margin-top:1em" data-lang-es>Datos: AlphaEarth (CC-BY-4.0), Copernicus Sentinel, PASTIS-R, EuroCrops, Sen4AgriNet, EuroCropsML, WorldCereal. Modelos: TSViT, U-TAE, FarSLIP, Gemini 2.5 Pro, Qwen3.5.</p>
@@ -1171,8 +1175,12 @@
 <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/notes/notes.js"></script>
 <script>
   Reveal.initialize({
-    hash: true, slideNumber: "c/t", transition: "fade",
-    width: 1280, height: 720, margin: 0.06,
+    hash: true, slideNumber: "c/t", transition: "slide", transitionSpeed: "default",
+    // Lienzo 16:9 grande con margen 0: el padding lo da el CSS (.section),
+    // asi cada lamina usa la PANTALLA COMPLETA sin marco muerto alrededor.
+    width: 1600, height: 900, margin: 0,
+    minScale: 0.2, maxScale: 2.0,
+    center: false, controls: true, progress: true,
     plugins: [ RevealNotes ]
   });
 </script>
