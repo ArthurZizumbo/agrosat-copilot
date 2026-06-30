@@ -22,32 +22,32 @@
       "cols": "c3",
       "items": [
         {
-          "title": "1. <span data-lang-es>Negocio</span><span data-lang-en>Business</span>",
+          "title": "1. Negocio",
           "body": "El problema, el impacto económico y cómo medir bien el acierto.",
           "variant": "s c3"
         },
         {
-          "title": "2. <span data-lang-es>Datos y exploración</span><span data-lang-en>Data & exploration</span>",
+          "title": "2. Datos y exploración",
           "body": "Por qué lo que manda es cómo cambia el cultivo a lo largo del año; AlphaEarth, PASTIS.",
           "variant": "normal"
         },
         {
-          "title": "3. <span data-lang-es>Modelado</span><span data-lang-en>Modeling</span>",
+          "title": "3. Modelado",
           "body": "De los primeros modelos sencillos a 6 arquitecturas y a 4 combinaciones de modelos.",
           "variant": "normal"
         },
         {
-          "title": "4. <span data-lang-es>Modelo final</span><span data-lang-en>Final model</span>",
+          "title": "4. Modelo final",
           "body": "Voting-3: el modelo ganador y cómo acierta cultivo por cultivo.",
           "variant": "normal"
         },
         {
-          "title": "5. <span data-lang-es>Copiloto y app</span><span data-lang-en>Copilot & app</span>",
+          "title": "5. Copiloto y app",
           "body": "Be My Eyes, 10 herramientas, búsqueda con contexto geográfico (Spatial-RAG) y la aplicación web.",
           "variant": "normal"
         },
         {
-          "title": "6. <span data-lang-es>Llevarlo a otras zonas y futuro</span><span data-lang-en>Moving to other areas & future</span>",
+          "title": "6. Llevarlo a otras zonas y futuro",
           "body": "Varias regiones, Baja Sajonia, infraestructura, la tarjeta gráfica H100 y aprendizajes.",
           "variant": "normal"
         }
@@ -130,7 +130,7 @@
       "cards": [
         {
           "title": "Decisiones informadas",
-          "body": "Aseguradoras y gobiernos actualizan inventarios <strong>mensualmente</strong>, no una vez al ano: mejores subsidios, seguros y prevision.",
+          "body": "Aseguradoras y gobiernos actualizan inventarios <strong>mensualmente</strong>, no una vez al año: mejores subsidios, seguros y previsión.",
           "variant": "normal"
         },
         {
@@ -167,9 +167,9 @@
       "layout": "twocol",
       "kicker": "El corazón técnico",
       "title": "Por qué la segmentación es la pieza clave",
-      "img": "",
+      "img": "seg_triptych.png",
       "side": "right",
-      "caption": "",
+      "caption": "Entrada Sentinel-2 (RGB) · verdad de campo · predicción de TSViT-pheno, píxel a píxel.",
       "paras": [
         "La segmentación semántica etiqueta cada píxel de 10 × 10 metros con el cultivo que le corresponde. Eso es lo que permite:"
       ],
@@ -448,7 +448,7 @@
         },
         {
           "title": "Los 64 valores de AlphaEarth",
-          "body": "Ajustes Yeo-Johnson para corregir valores torcidos.",
+          "body": "Ajustes Yeo-Johnson para corregir valores sesgados (asimétricos).",
           "variant": "normal"
         }
       ]
@@ -1238,9 +1238,9 @@
     {
       "layout": "twocol",
       "title": "Seguridad",
-      "img": "",
+      "img": "security_rls.png",
       "side": "right",
-      "caption": "",
+      "caption": "Defensa en capas: de la sesión del usuario a las fuentes controladas.",
       "bullets": [
         "Cada usuario solo accede a los datos de su sesión (seguridad a nivel de fila, sin excepciones).",
         "Las herramientas están limitadas y se rechazan los datos de entrada fuera de rango.",
@@ -1492,9 +1492,9 @@
     {
       "layout": "twocol",
       "title": "Trabajo futuro",
-      "img": "",
+      "img": "roadmap_future.png",
       "side": "right",
-      "caption": "",
+      "caption": "Próximos hitos del proyecto.",
       "bullets": [
         "Mirar cómo cambia el cultivo dentro del año para separar cereales muy parecidos.",
         "Validación fuera de muestra con 5 divisiones, para una cifra aún más sólida.",

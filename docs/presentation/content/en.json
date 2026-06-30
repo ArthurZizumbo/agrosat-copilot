@@ -22,32 +22,32 @@
       "cols": "c3",
       "items": [
         {
-          "title": "1. <span data-lang-es>Negocio</span><span data-lang-en>Business</span>",
+          "title": "1. Business",
           "body": "The problem, the economic impact and how to measure success well.",
           "variant": "s c3"
         },
         {
-          "title": "2. <span data-lang-es>Datos y exploración</span><span data-lang-en>Data & exploration</span>",
+          "title": "2. Data & exploration",
           "body": "Why what matters is how the crop changes through the year; AlphaEarth, PASTIS.",
           "variant": "normal"
         },
         {
-          "title": "3. <span data-lang-es>Modelado</span><span data-lang-en>Modeling</span>",
+          "title": "3. Modeling",
           "body": "From the first simple models to 6 architectures and 4 model combinations.",
           "variant": "normal"
         },
         {
-          "title": "4. <span data-lang-es>Modelo final</span><span data-lang-en>Final model</span>",
+          "title": "4. Final model",
           "body": "Voting-3: the winning model and how it scores crop by crop.",
           "variant": "normal"
         },
         {
-          "title": "5. <span data-lang-es>Copiloto y app</span><span data-lang-en>Copilot & app</span>",
+          "title": "5. Copilot & app",
           "body": "Be My Eyes, 10 tools, search with geographic context (Spatial-RAG) and the web app.",
           "variant": "normal"
         },
         {
-          "title": "6. <span data-lang-es>Llevarlo a otras zonas y futuro</span><span data-lang-en>Moving to other areas & future</span>",
+          "title": "6. Other areas & future",
           "body": "Several regions, Lower Saxony, infrastructure, the H100 graphics card and lessons.",
           "variant": "normal"
         }
@@ -167,9 +167,9 @@
       "layout": "twocol",
       "kicker": "The technical core",
       "title": "Why segmentation is the key piece",
-      "img": "",
+      "img": "seg_triptych.png",
       "side": "right",
-      "caption": "",
+      "caption": "Sentinel-2 input (RGB) · ground truth · TSViT-pheno prediction, pixel by pixel.",
       "paras": [
         "Semantic segmentation labels every 10 × 10 meter pixel with the crop it belongs to. That is what makes it possible to:"
       ],
@@ -1238,9 +1238,9 @@
     {
       "layout": "twocol",
       "title": "Security",
-      "img": "",
+      "img": "security_rls.png",
       "side": "right",
-      "caption": "",
+      "caption": "Layered defense: from the user session to controlled sources.",
       "bullets": [
         "Each user only reaches their own session data (row-level security, no exceptions).",
         "The tools are limited and out-of-range inputs are rejected.",
@@ -1492,9 +1492,9 @@
     {
       "layout": "twocol",
       "title": "Future work",
-      "img": "",
+      "img": "roadmap_future.png",
       "side": "right",
-      "caption": "",
+      "caption": "Upcoming project milestones.",
       "bullets": [
         "Look at how the crop changes within the year to separate very similar cereals.",
         "Out-of-sample validation with 5 splits, for an even more solid number.",
