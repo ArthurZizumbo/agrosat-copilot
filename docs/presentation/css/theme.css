@@ -1,0 +1,134 @@
+/* AgroSatCopilot --- tema de presentacion (Reveal.js).
+   Paleta agro-satelital: crema calido + verde campo + tierra, serif para
+   titulos (autoridad academica) y sans legible para cuerpo. Disenado con la
+   guia /ui-ux-pro-max: contraste AA, jerarquia tipografica clara, densidad
+   controlada (una idea por lamina). */
+
+:root {
+  --bg:        #faf8f2;  /* crema */
+  --bg-card:   #efe9dd;  /* tarjeta tierra clara */
+  --ink:       #2b2b28;  /* texto principal */
+  --ink-soft:  #5d5a52;  /* texto secundario */
+  --field:     #3f7d4e;  /* verde campo */
+  --field-dk:  #2f5d3a;
+  --earth:     #9c8f78;  /* tierra */
+  --accent:    #c87b2d;  /* naranja cosecha (highlights, F1-macro en barras) */
+  --good:      #2f8f5b;  /* verde metrica positiva */
+  --line:      #ded6c5;
+}
+
+.reveal {
+  font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+  font-size: 30px;
+  color: var(--ink);
+}
+.reveal .slides { text-align: left; }
+.reveal section { background: var(--bg); }
+
+.reveal h1, .reveal h2, .reveal h3 {
+  font-family: "Georgia", "Times New Roman", serif;
+  color: var(--ink);
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+}
+.reveal h1 { font-size: 2.2em; }
+.reveal h2 { font-size: 1.5em; margin-bottom: 0.5em; }
+.reveal h3 { font-size: 1.05em; color: var(--field-dk); }
+
+.reveal strong { color: var(--field-dk); }
+.reveal em { color: var(--ink-soft); }
+.reveal a { color: var(--field); }
+
+/* Barra superior de seccion */
+.reveal .kicker {
+  font-family: "Inter", sans-serif;
+  font-size: 0.5em;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 600;
+  margin-bottom: 0.3em;
+}
+
+/* Tarjetas (grids de 2-3 columnas) */
+.cards { display: grid; gap: 18px; margin-top: 0.4em; }
+.cards.c2 { grid-template-columns: 1fr 1fr; }
+.cards.c3 { grid-template-columns: 1fr 1fr 1fr; }
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 18px 22px;
+}
+.card h3 { margin: 0 0 0.3em 0; }
+.card p  { font-size: 0.78em; color: var(--ink-soft); margin: 0; line-height: 1.4; }
+
+/* Tarjeta destacada (modelo desplegado, metrica clave) */
+.card.hero { background: var(--earth); color: #fff; }
+.card.hero h3 { color: #fff; }
+.card.hero p  { color: #f4efe6; }
+
+/* KPIs grandes */
+.kpi-row { display: flex; gap: 30px; margin: 0.5em 0; }
+.kpi { text-align: center; }
+.kpi .num { font-family: "Georgia", serif; font-size: 2.2em; color: var(--field); font-weight: 700; line-height: 1; }
+.kpi .lbl { font-size: 0.6em; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.08em; }
+
+/* Tablas */
+.reveal table { font-size: 0.62em; border-collapse: collapse; width: 100%; }
+.reveal table th {
+  background: var(--earth); color: #fff; font-family: "Inter", sans-serif;
+  padding: 8px 12px; text-align: left; font-weight: 600;
+}
+.reveal table td { padding: 7px 12px; border-bottom: 1px solid var(--line); }
+.reveal table tr:nth-child(even) td { background: #f3eee3; }
+.reveal table tr.highlight td { background: #e3efe6; font-weight: 600; }
+
+/* Figuras */
+.reveal .fig { text-align: center; }
+.reveal .fig img {
+  max-height: 60vh; border-radius: 8px;
+  background: #fff; border: 1px solid var(--line);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+}
+.reveal .fig .cap { font-size: 0.5em; color: var(--ink-soft); margin-top: 0.4em; font-style: italic; }
+
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; align-items: center; }
+.two-col.wide-right { grid-template-columns: 0.9fr 1.1fr; }
+
+/* Portada */
+.cover { display: grid; grid-template-columns: 1.1fr 0.9fr; height: 100%; align-items: center; }
+.cover-text { padding-right: 30px; }
+.cover h1 { font-size: 2.8em; margin-bottom: 0.2em; }
+.cover .sub { font-size: 0.95em; color: var(--ink-soft); }
+.cover .meta { font-size: 0.65em; color: var(--ink-soft); margin-top: 1.2em; }
+.cover-img { height: 100%; background-size: cover; background-position: center; border-radius: 0; }
+
+/* Pildoras / chips */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 0.5em; }
+.chip {
+  background: var(--bg-card); border: 1px solid var(--line);
+  border-radius: 999px; padding: 4px 14px; font-size: 0.6em; color: var(--ink-soft);
+}
+.chip.on { background: var(--field); color: #fff; border-color: var(--field); }
+
+/* Footer de progreso por seccion */
+.reveal .slide-number { background: transparent; color: var(--earth); }
+
+/* Switch de idioma (boton flotante) */
+#lang-toggle {
+  position: fixed; top: 16px; right: 18px; z-index: 60;
+  display: flex; gap: 0; border: 1px solid var(--earth); border-radius: 999px;
+  overflow: hidden; font-family: "Inter", sans-serif; font-size: 13px;
+}
+#lang-toggle button {
+  border: 0; background: var(--bg); color: var(--ink-soft);
+  padding: 6px 14px; cursor: pointer; font-weight: 600;
+}
+#lang-toggle button.active { background: var(--field); color: #fff; }
+
+/* Mostrar/ocultar por idioma: el JS pone data-lang en <html> */
+html[data-lang="es"] [data-lang-en] { display: none; }
+html[data-lang="en"] [data-lang-es] { display: none; }

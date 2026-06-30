@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="es" data-lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgroSatCopilot --- Equipo 17 (MNA Tec de Monterrey)</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/white.css" id="reveal-base-theme">
+  <link rel="stylesheet" href="css/theme.css">
+</head>
+<body>
+
+<div id="lang-toggle">
+  <button data-lang="es" class="active">ES</button>
+  <button data-lang="en">EN</button>
+</div>
+
+<div class="reveal">
+  <div class="slides">
+
+    <!-- ============ 1. PORTADA ============ -->
+    <section data-background-color="#faf8f2">
+      <div class="cover">
+        <div class="cover-text">
+          <h1>AgroSatCopilot</h1>
+          <p class="sub" data-lang-es>Copiloto conversacional para cuantificar superficies de cultivo por satelite</p>
+          <p class="sub" data-lang-en>A conversational copilot for satellite-based crop area quantification</p>
+          <p class="meta">
+            MNA &middot; <span data-lang-es>Proyecto Integrador</span><span data-lang-en>Integrator Project</span> &middot; Tec de Monterrey &middot; 2026<br>
+            Carlos Isaac &Aacute;vila &middot; Carlos Aaron Bocanegra &middot; Arthur Jafed Zizumbo<br>
+            <span data-lang-es>Sponsor</span><span data-lang-en>Sponsor</span>: Dr. Gerardo Jes&uacute;s Camacho
+          </p>
+        </div>
+        <div class="cover-img" style="background-image:url('assets/figs/cover.png');"></div>
+      </div>
+    </section>
+
+    <!-- ============ 2. AGENDA ============ -->
+    <section>
+      <div class="kicker" data-lang-es>Recorrido de 30 minutos</div>
+      <div class="kicker" data-lang-en>A 30-minute tour</div>
+      <h2 data-lang-es>Agenda</h2>
+      <h2 data-lang-en>Agenda</h2>
+      <div class="cards c3">
+        <div class="card"><h3>1. <span data-lang-es>Negocio</span><span data-lang-en>Business</span></h3><p data-lang-es>El problema, el impacto economico y la metrica correcta.</p><p data-lang-en>The problem, the economic impact and the right metric.</p></div>
+        <div class="card"><h3>2. <span data-lang-es>Datos y EDA</span><span data-lang-en>Data &amp; EDA</span></h3><p data-lang-es>Por que la senal temporal manda; AlphaEarth, PASTIS.</p><p data-lang-en>Why the temporal signal rules; AlphaEarth, PASTIS.</p></div>
+        <div class="card"><h3>3. <span data-lang-es>Modelado</span><span data-lang-en>Modeling</span></h3><p data-lang-es>De baselines a 6 arquitecturas a 4 ensambles.</p><p data-lang-en>From baselines to 6 architectures to 4 ensembles.</p></div>
+        <div class="card"><h3>4. <span data-lang-es>Modelo final</span><span data-lang-en>Final model</span></h3><p data-lang-es>Voting-3: el campeon y su lectura por clase.</p><p data-lang-en>Voting-3: the champion and its per-class reading.</p></div>
+        <div class="card"><h3>5. <span data-lang-es>Copiloto y app</span><span data-lang-en>Copilot &amp; app</span></h3><p data-lang-es>Be My Eyes, 10 herramientas, Spatial-RAG, frontend.</p><p data-lang-en>Be My Eyes, 10 tools, Spatial-RAG, frontend.</p></div>
+        <div class="card"><h3>6. <span data-lang-es>Transfer y futuro</span><span data-lang-en>Transfer &amp; future</span></h3><p data-lang-es>Multi-region, DE4, MLOps, H100, aprendizajes.</p><p data-lang-en>Multi-region, DE4, MLOps, H100, lessons.</p></div>
+      </div>
+    </section>
+
+    <!-- ============ SECCION 1: NEGOCIO ============ -->
+    <section>
+      <div class="kicker">1 &middot; <span data-lang-es>Contexto de negocio</span><span data-lang-en>Business context</span></div>
+      <h2 data-lang-es>El problema de negocio</h2>
+      <h2 data-lang-en>The business problem</h2>
+      <div class="cards c3">
+        <div class="card"><h3 data-lang-es>Inspeccion fisica</h3><h3 data-lang-en>Physical inspection</h3><p data-lang-es>~20 inspectores &middot; 15 dias para <strong>10,000 ha</strong> &asymp; <strong>$600,000 MXN</strong>; lenta y no escala.</p><p data-lang-en>~20 inspectors &middot; 15 days for <strong>10,000 ha</strong> &asymp; <strong>$600,000 MXN</strong>; slow and does not scale.</p></div>
+        <div class="card"><h3>Sentinel-2</h3><p data-lang-es>Cobertura <strong>gratuita y continua</strong>, pero convertirla en mapas fiables es un problema de ML dificil.</p><p data-lang-en>Free, continuous coverage, but turning it into reliable maps is a hard ML problem.</p></div>
+        <div class="card"><h3 data-lang-es>Oportunidad</h3><h3 data-lang-en>Opportunity</h3><p data-lang-es>Mismo territorio en <strong>minutos</strong>, costo marginal <strong>&lt;$100</strong>, inventario <strong>mensual</strong>.</p><p data-lang-en>Same territory in <strong>minutes</strong>, marginal cost <strong>&lt;$100</strong>, <strong>monthly</strong> inventory.</p></div>
+      </div>
+      <p style="margin-top:0.6em;color:var(--ink-soft);font-size:0.8em" data-lang-es>Aseguradoras, gobiernos y cooperativas necesitan <strong>inventarios de cultivo</strong> para subsidios, seguros y prevision de cosecha.</p>
+      <p style="margin-top:0.6em;color:var(--ink-soft);font-size:0.8em" data-lang-en>Insurers, governments and cooperatives need <strong>crop inventories</strong> for subsidies, insurance and harvest forecasting.</p>
+    </section>
+
+    <!-- ROI -->
+    <section>
+      <div class="kicker">1 &middot; <span data-lang-es>Caso de negocio</span><span data-lang-en>Business case</span></div>
+      <h2 data-lang-es>Beneficio e impacto</h2>
+      <h2 data-lang-en>Benefit and impact</h2>
+      <div class="kpi-row">
+        <div class="kpi"><div class="num">&gt;1500%</div><div class="lbl" data-lang-es>ROI ano 1 (cliente 50,000 ha)</div><div class="lbl" data-lang-en>Year-1 ROI (50,000 ha client)</div></div>
+        <div class="kpi"><div class="num">$115</div><div class="lbl" data-lang-es>USD/mes operativo (scale-to-zero)</div><div class="lbl" data-lang-en>USD/mo operating (scale-to-zero)</div></div>
+        <div class="kpi"><div class="num">0.04 s</div><div class="lbl" data-lang-es>por inferencia a parcela</div><div class="lbl" data-lang-en>per parcel inference</div></div>
+      </div>
+      <div class="cards c2" style="margin-top:0.4em">
+        <div class="card"><h3 data-lang-es>Decisiones informadas</h3><h3 data-lang-en>Informed decisions</h3><p data-lang-es>Aseguradoras y gobiernos actualizan inventarios <strong>mensualmente</strong>, no una vez al ano: mejores subsidios, seguros y prevision.</p><p data-lang-en>Insurers and governments refresh inventories <strong>monthly</strong>, not yearly: better subsidies, insurance and forecasting.</p></div>
+        <div class="card"><h3 data-lang-es>Nuevo canal SaaS</h3><h3 data-lang-en>New SaaS channel</h3><p data-lang-es>El copiloto abre analisis fenologico por voz/texto a agronomos sin experiencia en teledeteccion. Apache 2.0.</p><p data-lang-en>The copilot opens phenological analysis by voice/text to agronomists with no remote-sensing expertise. Apache 2.0.</p></div>
+      </div>
+    </section>
+
+    <!-- ============ placeholder: el resto de secciones se inyectan abajo ============ -->
+    <!--SECTIONS-->
+
+    <!-- ============ CIERRE ============ -->
+    <section data-background-color="#2f5d3a">
+      <h1 style="color:#fff" data-lang-es>Gracias</h1>
+      <h1 style="color:#fff" data-lang-en>Thank you</h1>
+      <p style="color:#e8f0e8;font-size:0.9em" data-lang-es>AgroSatCopilot &middot; Equipo 17 &middot; open-source (Apache 2.0 / MIT)</p>
+      <p style="color:#e8f0e8;font-size:0.9em" data-lang-en>AgroSatCopilot &middot; Team 17 &middot; open-source (Apache 2.0 / MIT)</p>
+      <p style="color:#bcd4bc;font-size:0.62em;margin-top:1em" data-lang-es>Datos: AlphaEarth (CC-BY-4.0), Copernicus Sentinel, PASTIS-R, EuroCrops, Sen4AgriNet, EuroCropsML, WorldCereal. Modelos: TSViT, U-TAE, FarSLIP, Gemini 2.5 Pro, Qwen3.5.</p>
+      <p style="color:#bcd4bc;font-size:0.62em;margin-top:1em" data-lang-en>Data: AlphaEarth (CC-BY-4.0), Copernicus Sentinel, PASTIS-R, EuroCrops, Sen4AgriNet, EuroCropsML, WorldCereal. Models: TSViT, U-TAE, FarSLIP, Gemini 2.5 Pro, Qwen3.5.</p>
+    </section>
+
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/notes/notes.js"></script>
+<script>
+  Reveal.initialize({
+    hash: true, slideNumber: "c/t", transition: "fade",
+    width: 1280, height: 720, margin: 0.06,
+    plugins: [ RevealNotes ]
+  });
+</script>
+<script src="js/i18n.js"></script>
+</body>
+</html>
