@@ -11,6 +11,19 @@ classes, metropolitan France, with five spatially disjoint folds.
 Unless stated otherwise, segmentation models are evaluated on a
 held-out fold and ensemble combiners on out-of-fold predictions.
 
+\paragraph{Self-built PASTIS-style datasets (Italy, Germany).}
+To measure transfer with real data where no PASTIS-format benchmark exists,
+we built two datasets by hand in the same format as PASTIS-R. \emph{Italy
+(Tuscany/Pianura, 2018)}: $1{,}438$ patches of $128\times128$\,px and
+$103{,}350$ labeled parcels. \emph{Germany (Lower Saxony, DE4, 2023)}:
+$1{,}246$ patches and $53{,}460$ parcels over a 14-month window ($\approx156$k
+labeled parcels combined). Both follow the same recipe: EuroCrops declared-crop
+polygons as labels, the full Sentinel-2 time series per patch (24 dates for Italy, ~41 for Germany) with a pixel-wise crop mask, an AlphaEarth summary per
+parcel via Google Earth Engine, and a split into five geographic blocks for
+leak-free evaluation. Constructing these datasets is what makes the
+France$\rightarrow$Italy and France$\rightarrow$Germany transfer measurable at
+all; they are versioned with DVC.
+
 \paragraph{Sen4AgriNet (Catalonia)}~\cite{sykas2022sen4agrinet}
 (CC-BY-SA-4.0) is used for the France$\rightarrow$Catalonia transfer
 study. A Catalonia subset is versioned with DVC
@@ -46,27 +59,16 @@ tracked with DVC and runs with MLflow.
 
 \subsection{Conversational-layer benchmark protocol}
 \label{sec:experiments-llm}
-The conversational layer is evaluated on AgroMind with an
-LLM-as-judge protocol comparing the frozen Gemini~2.5~Pro reasoner
-against the on-premises Qwen multimodal reasoner served via vLLM. The
-quantitative benchmark table is produced by a separate evaluation run
-on the H100 GPU (US-069) and is intentionally left as a structured
-placeholder here; numbers are not fabricated.
-Table~\ref{tab:llm-bench} fixes the column structure.
-
-\begin{table}[htbp]
-\caption{Conversational-layer benchmark (structure only; numbers
-pending the H100 evaluation, US-069).}
-\label{tab:llm-bench}
-\centering
-\begin{tabular}{lccc}
-\toprule
-\textbf{Reasoner (frozen)} & \textbf{Accuracy} & \textbf{Grounding}
-  & \textbf{LLM-judge} \\
-\midrule
-Gemini~2.5~Pro (cloud)      & --- & --- & --- \\
-Qwen3.5-35B-A3B (on-prem)   & --- & --- & --- \\
-\bottomrule
-\end{tabular}
-% src: pending US-069 (H100 eval) -- do not fill with synthetic numbers.
-\end{table}
+We evaluate the conversational layer along two independent axes. The
+first is an \emph{engineering} axis --- backend interchangeability ---
+which is already measured: behind a fixed perceiver, an identical
+grounded query is issued to the three serving backends actually deployed
+(Gemini~3.5~Flash in the cloud, plus Qwen~3.5~MoE and Qwen~3.6-VL
+on-premises), and we record whether the answer is identical and its
+end-to-end latency. The measured result is reported in
+Section~\ref{sec:results} (Table~\ref{tab:backend-switch}). The second
+is a \emph{quality} axis --- an AgroMind LLM-as-judge protocol scoring the
+frozen reasoner's answers for accuracy and grounding --- which depends on
+a separate evaluation run on the H100 GPU (US-069) and is still pending;
+we report the protocol here and defer the numbers rather than fabricate
+them. No synthetic AgroMind scores are reported anywhere in this paper.

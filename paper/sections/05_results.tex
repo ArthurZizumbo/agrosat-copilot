@@ -1,5 +1,5 @@
 % Results --- every number anchored to a real repo artefact via % src:.
-% Claims kept defensible: no "VLM beats Gemini", no F1>=0.80 in Mexico,
+% Claims kept defensible: no "VLM beats Gemini", no F1>=0.80 in the tropics,
 % no zero-shot outside France, no TSViT 0.75+ mIoU.
 \section{Results}
 \label{sec:results}
@@ -85,24 +85,28 @@ Blending, 3 members & 0.5651 & 0.7697 \\
 % (stacking_5_oof_cv f1_macro 0.6477; delta_5_vs_3 +0.0118; n_universe 16640)
 \end{table}
 
-\paragraph{Final consolidated model (held-out fold).}
+\paragraph{Best-scoring combiner vs.\ deployed model (held-out fold).}
 On the parcel-level held-out comparison
 (\texttt{comparison\_us040.csv}, fold-5, 18 classes), the
 heterogeneous Stacking-5 ensemble (TSViT-pheno, U-TAE,
-XGBoost-on-AlphaEarth, FarSLIP-ft18, FarSLIP-zeroshot) is the chosen
-final model with macro F1 \textbf{0.7470} and accuracy \textbf{0.8490},
-at an inference cost of 0.042\,s per parcel; Optuna blending reaches
-macro F1 0.7414 (accuracy 0.8618) at 0.006\,s. This is
-$+12.3$ percentage points of macro F1 over the best individual member
-(TSViT-pheno, 0.6253 mIoU / 0.6253 held-out F1 in the same harness; the
-ensemble member arbitration recovers the rare classes that any single
-backbone misses). The stacking meta-model thus acts as a per-class
+XGBoost-on-AlphaEarth, FarSLIP-ft18, FarSLIP-zeroshot) is the
+highest-scoring combiner with macro F1 \textbf{0.7470} and accuracy
+\textbf{0.8490}, at an inference cost of 0.042\,s per parcel; Optuna
+blending reaches macro F1 0.7414 (accuracy 0.8618) at 0.006\,s. The
+model actually \emph{deployed} in production, however, is the simpler
+Voting-3 (macro F1 0.7444, on par with Stacking-5 but far simpler and
+more robust on new regions; see Section~\ref{sec:results-perceiver}).
+Measured like-for-like at
+parcel level (out-of-fold), the five-member stacking improves the macro
+F1 of the three-member stacking from 0.6359 to 0.6477; the heterogeneous
+member arbitration recovers the rare classes that any single backbone
+misses. The stacking meta-model thus acts as a per-class
 arbiter rather than an averager, which is what produces a macro gain
 disproportionate to the accuracy gain. Table~\ref{tab:individual}
 contrasts this with the best single perceiver; the out-of-fold
 cross-validated figure of 0.6477 (Table~\ref{tab:ensembles}) is the
 leakage-free comparison \emph{across combiners}, whereas 0.7470 is the
-performance of the deployed model on the held-out fold.
+held-out-fold score of the best combiner.
 
 \subsection{FarSLIP feature space}
 \label{sec:results-farslip}
@@ -164,44 +168,69 @@ $\Delta$   & $+0.2468$ & --- & --- \\
 % src: reports/segmentation/sen4agrinet_transfer_result.json
 \end{table}
 
-\subsection{Be My Eyes agent: re-cabling the perceiver to the champion}
+\subsection{Be My Eyes agent: re-cabling the perceiver to the deployed champion}
 \label{sec:results-perceiver}
 A central engineering result of the conversational layer is that the
-\emph{perceiver} feeding the frozen reasoner must be the consolidated
-champion ensemble, not the tabular baseline used in early agent
-prototypes. We re-cabled the agent's \texttt{classify\_parcel}
-perceiver from the XGBoost-on-AlphaEarth baseline to the Stacking-5
-champion and re-evaluated on 13{,}481 real parcels (fold-5, the
-\texttt{france-9} operational label space). Table~\ref{tab:perceiver}
-reports the effect: accuracy rises from 0.8308 to \textbf{0.9413}
-($+11.0$ percentage points) and macro F1 from 0.6868 to
-\textbf{0.9007} ($+21.4$ percentage points). The two perceivers agree
-on 83.7\% of parcels; over the disagreements the champion fixes
-1{,}746 baseline errors and breaks 256, a net of
-$+1{,}490$ corrected parcels. This confirms that the perceiver/reasoner
-separation pays off only when the perceiver behind the frozen reasoner
-is the strongest available classifier: the reasoner inherits the
-champion's accuracy without ever touching a pixel.
+\emph{perceiver} feeding the frozen reasoner must be the deployed
+production ensemble, not the tabular baseline used in early agent
+prototypes. The deployed champion is \textbf{Voting-3} (a weighted vote of
+TSViT-pheno, U-TAE and XGBoost-on-AlphaEarth): it is statistically on par
+with the heavier five-member stacking ensemble on the 18-class task
+($0.7444$ vs.\ $0.7470$ macro F1), yet far simpler and more robust ($3$
+internal settings against $54$, a $0.04$\,s response time, and a better
+held-out new-region score of $0.558$ vs.\ $0.536$), so it is the model
+actually put into production. We re-cabled the agent's
+\texttt{classify\_parcel} perceiver from the XGBoost-on-AlphaEarth
+baseline to Voting-3 and re-evaluated on $14{,}688$ real parcels
+(\texttt{france-12} production label space). Table~\ref{tab:perceiver}
+reports the effect: accuracy rises from 0.8539 to \textbf{0.9375}
+($+8.4$ percentage points) and macro F1 from 0.7480 to
+\textbf{0.8992} ($+15.1$ percentage points). The two perceivers agree
+on 87.1\% of parcels; over the disagreements Voting-3 fixes
+1{,}465 baseline errors and breaks 237, a net of
+$+1{,}228$ corrected parcels. This confirms that the perceiver/reasoner
+separation pays off precisely because the frozen reasoner inherits the
+deployed perceiver's accuracy without ever touching a pixel.
 
 \begin{table}[htbp]
 \caption{Be My Eyes perceiver re-cabling: agent classifier swapped from
-the XGBoost-AlphaEarth baseline to the Stacking-5 champion, evaluated on
-13{,}481 real parcels (fold-5, \texttt{france-9} label space).}
+the XGBoost-AlphaEarth baseline to the deployed Voting-3 champion,
+evaluated on $14{,}688$ real parcels (\texttt{france-12} production label
+space).}
 \label{tab:perceiver}
 \centering
 \begin{tabular}{lcc}
 \toprule
 \textbf{Agent perceiver} & \textbf{Accuracy} & \textbf{Macro F1} \\
 \midrule
-XGBoost-AlphaEarth (baseline) & 0.8308 & 0.6868 \\
-Stacking-5 (champion)         & \textbf{0.9413} & \textbf{0.9007} \\
-$\Delta$                      & $+0.1105$ & $+0.2139$ \\
+XGBoost-AlphaEarth (baseline) & 0.8539 & 0.7480 \\
+Voting-3 (deployed champion)  & \textbf{0.9375} & \textbf{0.8992} \\
+$\Delta$                      & $+0.0836$ & $+0.1512$ \\
 \bottomrule
 \end{tabular}
-% src: reports/agent_bench/perceiver_champion_eval.json
-% (baseline_xgb acc 0.8308 / f1 0.6868; champion_stacking5 acc 0.9413 /
-%  f1 0.9007; delta_accuracy 0.1105; agreement 0.837; net_fixed 1490)
+% src: reports/agent_bench/perceiver_champion_eval_v2.json
+% (v2_champion_france12: baseline_xgb acc 0.8539 / f1 0.7480;
+%  champion_voting3 acc 0.9375 / f1 0.8992; delta_accuracy 0.0836;
+%  agreement 0.8711; net_fixed 1228; n 14688)
 \end{table}
+
+\subsection{Per-scene in-domain inference}
+\label{sec:results-deployed}
+The aggregate uplift is corroborated by parcel-by-parcel inference
+with the same deployed Voting-3 model
+on real French scenes at $10$\,m/px (Sentinel-2 RGB, ground truth, Voting-3
+prediction and a hit/error/out-of-scope map), scored against ground truth.
+On scene 40039 the model classifies
+$67/68$ in-scope parcels correctly ($99\%$); on 40005, $89/92$ ($97\%$) while
+honestly abstaining on $22$ parcels of crops outside its label space; on 40175,
+$73/75$ ($97\%$). The out-of-scope abstention is the key deployed behaviour:
+rather than forcing a wrong label on a crop the model was never trained on, the
+deployed system marks it \emph{out of scope}, matching the honesty principle that
+runs through the whole system.
+% src: reports/agent_bench/perceiver_champion_eval_v2.json (v2_champion_france12:
+% baseline acc 0.8539/f1 0.7480; voting3 acc 0.9375/f1 0.8992; net_fixed 1228;
+% agreement 0.8711; n 14688) and reports/voting_new/inference_parcel/
+% paper_inference_{40039,40005,40175}.png
 
 \subsection{Domain gap: why few-shot is required}
 \label{sec:results-domaingap}
@@ -241,10 +270,42 @@ decision boundary does not transfer without local adaptation.
 \subsection{Conversational-layer evaluation}
 The conversational layer is evaluated on AgroMind~\cite{ruan2025agromind}
 with an LLM-as-judge protocol (Section~\ref{sec:experiments-llm}). The
-quantitative benchmark depends on the H100 evaluation run (US-069) and
-is reported in Table~\ref{tab:llm-bench} once available; we do not
-report fabricated numbers here. We stress that the language layer is a
+quantitative quality benchmark depends on the H100 evaluation run
+(US-069) and is still pending; we do not report fabricated numbers here.
+The measured engineering result --- backend interchangeability --- is
+reported below. We stress that the language layer is a
 communication and tool-orchestration component: we do \emph{not} claim
 that any fine-tuned VLM outperforms the frozen Gemini reasoner at
-classification, nor do we claim an F1 threshold for the qualitative
-Mexico demonstration (Section~\ref{sec:discussion}).
+classification.
+
+\paragraph{Backend interchangeability.}
+Independently of the pending quality benchmark, an engineering result is already
+measurable: the reasoner is pluggable, and switching backends is transparent to
+the agronomist. Behind a fixed perceiver, we issue an identical grounded query
+(``what crop is in parcel~52?'') to the three interchangeable serving backends
+actually deployed --- Gemini~3.5~Flash in the cloud (the deployed default, a
+conscious cost/latency choice relative to the higher-context Gemini~2.5~Pro
+reference reasoner) and two on-premises Qwen variants --- and record the answer and
+end-to-end latency (Table~\ref{tab:backend-switch}). All three return the
+\emph{same} grounded answer --- soft winter wheat, $97.9\%$ confidence --- and only
+the latency differs; the cloud/on-premises choice therefore trades response time and
+data sovereignty without changing the result.
+
+\begin{table}[htbp]
+\caption{Backend interchangeability: the same grounded query answered identically
+by the three pluggable serving backends behind a fixed perceiver; only latency
+differs (all return soft winter wheat, $97.9\%$).}
+\label{tab:backend-switch}
+\centering
+\begin{tabular}{lc}
+\toprule
+\textbf{Serving backend} & \textbf{Latency (ms)} \\
+\midrule
+Gemini~3.5~Flash (cloud)      & $2{,}995$ \\
+Qwen~3.5~MoE (on-prem)        & $2{,}391$ \\
+Qwen~3.6-VL (on-prem)         & $\mathbf{1{,}952}$ \\
+\bottomrule
+\end{tabular}
+% src: reports/copilot_backends/{gemini-3.5-flash,qwen35,qwen36-vl}.json
+% (same answer "soft winter wheat 97.9%"; latency_ms 2994.8 / 2391.1 / 1951.9)
+\end{table}

@@ -5,13 +5,16 @@ of Italy (Po valley / Pianura Padana) on the AlphaEarth Satellite Embedding V1
 Annual (v1.1) collection, exports the AOI footprint + sampled pixels to GeoJSON,
 and renders it two ways:
 
-- ``paper/figures/us-070/aoi_italy.{png,svg}`` -- a static map: the AlphaEarth
-  embedding visualised as a false-colour PCA-RGB scatter of the real sampled
-  pixels over an OpenStreetMap basemap tile (via :mod:`xyzservices`, the same tile
-  provider :mod:`contextily` uses; contextily itself is not a project dependency).
-- ``paper/figures/us-070/aoi_italy.html`` -- an interactive :mod:`folium` map with
-  the AOI rectangle + a heat of the sampled pixels (the project's canonical web
-  map stack).
+- ``paper/figures/us-070/aoi_italy.{png,svg}`` -- a static map (English, canonical
+  for the English paper): the AlphaEarth embedding visualised as a false-colour
+  PCA-RGB scatter of the real sampled pixels over an OpenStreetMap basemap tile
+  (via :mod:`xyzservices`, the same tile provider :mod:`contextily` uses; contextily
+  itself is not a project dependency).
+- ``paper/figures/us-070/aoi_italy_es.{png,svg}`` -- the same static map with every
+  visible string translated to Spanish, for the Spanish paper.
+- ``paper/figures/us-070/aoi_italy.html`` / ``aoi_italy_es.html`` -- interactive
+  :mod:`folium` maps (English base, Spanish ``_es``) with the AOI rectangle + a heat
+  of the sampled pixels (the project's canonical web map stack).
 - ``data/aoi/italy_aois.geojson`` -- the AOI footprint as a real GeoJSON
   (EPSG:4326), the artefact the notebook B-070-1 cell consumes.
 
@@ -24,8 +27,13 @@ Attributions (also in the figure footer / GeoJSON properties):
   GEE ``GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL`` (v1.1), CC-BY-4.0.
 - Basemap tiles: OpenStreetMap contributors (ODbL).
 
-Project conventions: Polars, structlog, type hints, English docstrings, Spanish
-visible prose in the figure, no emojis, never fabricate a missing value.
+Every figure is emitted in two languages: the English version is the canonical
+base file (``aoi_italy.*``) for the English paper, and the Spanish version carries
+the ``_es`` suffix (``aoi_italy_es.*``) for the Spanish paper. Only the visible
+strings differ between the two; the plotted data and geometry are identical.
+
+Project conventions: Polars, structlog, type hints, English docstrings, no emojis,
+never fabricate a missing value.
 
 Usage::
 
@@ -37,7 +45,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 import matplotlib
 
@@ -68,10 +76,58 @@ AOI_NAME = "pianura_padana_po_valley"
 AOI_YEAR = 2024
 ALPHAEARTH_DIM_COLS: list[str] = [f"dim_{i:02d}" for i in range(64)]
 
-_ATTRIB = (
-    "AlphaEarth GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL v1.1 (CC-BY-4.0), pixeles reales "
-    "2024 | basemap (c) OpenStreetMap contributors (ODbL)"
-)
+#: Languages emitted by the builder. English is canonical (base filename); Spanish
+#: carries the ``_es`` suffix.
+Lang = Literal["en", "es"]
+LANGS: tuple[Lang, ...] = ("en", "es")
+
+#: Every visible string of the figure, per language. English is natural scientific
+#: English; Spanish uses correct accents and enie. ``{n}`` is the real pixel count.
+STRINGS: dict[Lang, dict[str, str]] = {
+    "en": {
+        "title_line1": (
+            "Italian agricultural AOI (Pianura Padana, Po valley) over AlphaEarth v1.1"
+        ),
+        "title_line2": (
+            "{n} real 2024 AlphaEarth pixels, coloured by their 64-dim embedding"
+        ),
+        "attrib": (
+            "AlphaEarth GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL v1.1 (CC-BY-4.0), real "
+            "2024 pixels | basemap (c) OpenStreetMap contributors (ODbL)"
+        ),
+        "basemap_on": "OSM basemap",
+        "basemap_off": "no basemap (tiles unavailable)",
+        "folium_popup": "Pianura Padana AOI ({n} px AlphaEarth v1.1, 2024)",
+    },
+    "es": {
+        "title_line1": (
+            "AOI agricola Italia (Pianura Padana, valle del Po) sobre AlphaEarth v1.1"
+        ),
+        "title_line2": (
+            "{n} pixeles reales 2024 de AlphaEarth, coloreados por su embedding 64-dim"
+        ),
+        "attrib": (
+            "AlphaEarth GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL v1.1 (CC-BY-4.0), pixeles "
+            "reales 2024 | basemap (c) OpenStreetMap contributors (ODbL)"
+        ),
+        "basemap_on": "basemap OSM",
+        "basemap_off": "sin basemap (tiles no disponibles)",
+        "folium_popup": "AOI Pianura Padana ({n} px AlphaEarth v1.1, 2024)",
+    },
+}
+
+
+def _stem(base: str, lang: Lang) -> str:
+    """Return the language-suffixed filename stem (English base, ``_es`` for Spanish).
+
+    Args:
+        base: Language-neutral stem (e.g. ``"aoi_italy"``).
+        lang: Target language.
+
+    Returns:
+        ``base`` for English, ``f"{base}_es"`` for Spanish.
+    """
+    return base if lang == "en" else f"{base}_es"
 
 
 def _load_alphaearth_aoi(*, n_pixels: int) -> pl.DataFrame:
@@ -262,18 +318,26 @@ def _add_osm_basemap(ax: plt.Axes, bbox: list[float]) -> bool:
     return True
 
 
-def build_static_map(df: pl.DataFrame, *, out_dir: Path, dpi: int) -> dict[str, Path]:
-    """Render the static Italy AOI map (PCA-RGB pixels over OSM basemap).
+def build_static_map(
+    df: pl.DataFrame, *, out_dir: Path, dpi: int, lang: Lang
+) -> dict[str, Path]:
+    """Render the static Italy AOI map (PCA-RGB pixels over OSM basemap) in one language.
+
+    Only the visible strings (title, footer attribution) depend on ``lang``; the
+    scatter, projection and data are identical across languages.
 
     Args:
         df: Real AlphaEarth AOI frame.
         out_dir: Destination directory.
         dpi: Raster resolution.
+        lang: Language of the visible text; drives the ``_es`` filename suffix.
 
     Returns:
         Mapping ``{"png": path, "svg": path}``.
     """
     from pyproj import Transformer
+
+    txt = STRINGS[lang]
 
     rgb = _pca_rgb(df)
     transformer = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
@@ -299,34 +363,41 @@ def build_static_map(df: pl.DataFrame, *, out_dir: Path, dpi: int) -> dict[str, 
     ax.set_xticks([])
     ax.set_yticks([])
     ax.set_title(
-        "AOI agricola Italia (Pianura Padana, valle del Po) sobre AlphaEarth v1.1\n"
-        f"{df.height} pixeles reales 2024, embebido 64-dim como PCA-RGB falso color"
+        f"{txt['title_line1']}\n{txt['title_line2'].format(n=df.height)}"
     )
-    base_note = "OSM basemap" if has_base else "sin basemap (tiles no disponibles)"
-    fig.text(0.5, 0.005, f"{_ATTRIB} | {base_note}", ha="center", fontsize=6, color="0.35")
+    base_note = txt["basemap_on"] if has_base else txt["basemap_off"]
+    fig.text(
+        0.5, 0.005, f"{txt['attrib']} | {base_note}", ha="center", fontsize=6, color="0.35"
+    )
     fig.tight_layout()
     out_dir.mkdir(parents=True, exist_ok=True)
-    png = out_dir / "aoi_italy.png"
-    svg = out_dir / "aoi_italy.svg"
+    stem = _stem("aoi_italy", lang)
+    png = out_dir / f"{stem}.png"
+    svg = out_dir / f"{stem}.svg"
     fig.savefig(png, dpi=dpi, bbox_inches="tight")
     fig.savefig(svg, bbox_inches="tight")
     plt.close(fig)
-    logger.info("aoi_static_map_saved", png=str(png), svg=str(svg), basemap=has_base)
+    logger.info(
+        "aoi_static_map_saved", lang=lang, png=str(png), svg=str(svg), basemap=has_base
+    )
     return {"png": png, "svg": svg}
 
 
-def build_folium_map(df: pl.DataFrame, *, out_dir: Path) -> Path:
-    """Render the interactive folium AOI map (rectangle + sampled-pixel heat).
+def build_folium_map(df: pl.DataFrame, *, out_dir: Path, lang: Lang) -> Path:
+    """Render the interactive folium AOI map (rectangle + sampled-pixel heat) per language.
 
     Args:
         df: Real AlphaEarth AOI frame.
         out_dir: Destination directory.
+        lang: Language of the popup text; drives the ``_es`` filename suffix.
 
     Returns:
-        Path to the saved ``aoi_italy.html``.
+        Path to the saved ``aoi_italy.html`` (or ``aoi_italy_es.html`` for Spanish).
     """
     import folium
     from folium.plugins import HeatMap
+
+    txt = STRINGS[lang]
 
     clat = float(df.get_column("lat").mean())  # type: ignore[arg-type]
     clon = float(df.get_column("lon").mean())  # type: ignore[arg-type]
@@ -340,7 +411,7 @@ def build_folium_map(df: pl.DataFrame, *, out_dir: Path) -> Path:
         color="#d62728",
         weight=2,
         fill=False,
-        popup=f"AOI Pianura Padana ({df.height} px AlphaEarth v1.1, 2024)",
+        popup=txt["folium_popup"].format(n=df.height),
     ).add_to(fmap)
     HeatMap(
         [[r["lat"], r["lon"]] for r in df.select("lat", "lon").iter_rows(named=True)],
@@ -357,14 +428,18 @@ def build_folium_map(df: pl.DataFrame, *, out_dir: Path) -> Path:
         ),
     ).add_to(fmap)
     out_dir.mkdir(parents=True, exist_ok=True)
-    html = out_dir / "aoi_italy.html"
+    html = out_dir / f"{_stem('aoi_italy', lang)}.html"
     fmap.save(str(html))
-    logger.info("aoi_folium_map_saved", html=str(html))
+    logger.info("aoi_folium_map_saved", lang=lang, html=str(html))
     return html
 
 
 def build_all(*, out_dir: Path = FIGURES_DIR, dpi: int = 200, n_pixels: int = 2000) -> None:
     """Build the Italy AOI GeoJSON + static + interactive maps from real AlphaEarth.
+
+    Emits every figure in both languages: the English base files (``aoi_italy.*``)
+    and the Spanish ``_es`` variants (``aoi_italy_es.*``). The GeoJSON is data-only
+    (no visible figure text) and is written once.
 
     Args:
         out_dir: Destination directory for the figures.
@@ -373,13 +448,18 @@ def build_all(*, out_dir: Path = FIGURES_DIR, dpi: int = 200, n_pixels: int = 20
     """
     df = _load_alphaearth_aoi(n_pixels=n_pixels)
     _write_aoi_geojson(df, out=AOI_GEOJSON)
-    static_paths = build_static_map(df, out_dir=out_dir, dpi=dpi)
-    html = build_folium_map(df, out_dir=out_dir)
+    outputs: dict[Lang, dict[str, Path]] = {}
+    for lang in LANGS:
+        static_paths = build_static_map(df, out_dir=out_dir, dpi=dpi, lang=lang)
+        html = build_folium_map(df, out_dir=out_dir, lang=lang)
+        outputs[lang] = {**static_paths, "html": html}
     logger.info(
         "us070_italy_aoi_done",
         geojson=str(AOI_GEOJSON),
-        png=str(static_paths["png"]),
-        html=str(html),
+        png_en=str(outputs["en"]["png"]),
+        png_es=str(outputs["es"]["png"]),
+        html_en=str(outputs["en"]["html"]),
+        html_es=str(outputs["es"]["html"]),
     )
 
 

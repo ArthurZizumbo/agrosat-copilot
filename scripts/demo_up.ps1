@@ -53,6 +53,7 @@ $FRONT_PORT    = 3010
 $TITILER_PORT  = 8011
 $MLFLOW_PORT   = 5010
 $QWEN_LOCAL    = 8002
+$QWENVL_LOCAL  = 8003   # Qwen3.6-VL multimodal on-prem (tunel a la VM H100 :8003)
 
 function Write-Step($msg)  { Write-Host "`n==> $msg" -ForegroundColor Cyan }
 function Write-Ok($msg)    { Write-Host "  [OK] $msg" -ForegroundColor Green }
@@ -131,12 +132,16 @@ $inUse = Get-NetTCPConnection -LocalPort $API_NATIVE -State Listen -ErrorAction 
 if ($inUse) {
     Write-Warn2 "Puerto $API_NATIVE ya en uso; reutilizo el backend existente"
 } else {
-    # poetry debe correr DESDE backend/ para resolver el env y el modulo `app`.
-    # Start-Process -WorkingDirectory fija el cwd del proceso hijo (Push-Location
-    # no se hereda al proceso lanzado).
+    # El backend lee su config de .env.local (DB, Redis, CORS_ALLOWED_ORIGINS=:3010,
+    # claves) via Pydantic Settings con env_file=".env.local" RELATIVO al cwd. Si
+    # uvicorn corre desde backend/, Pydantic busca backend/.env.local -- que NO
+    # existe (el real esta en la raiz) -- y cae a los defaults: CORS :3000, no :3010.
+    # Eso provoca que el navegador en :3010 reciba CORS-block en /sessions.
+    # Solucion: correr DESDE la raiz (donde vive .env.local). El paquete usa imports
+    # absolutos backend.app..., asi que el target es backend.app.main:app.
     Start-Process -FilePath "poetry" `
-        -ArgumentList "run","uvicorn","app.main:app","--host","127.0.0.1","--port","$API_NATIVE" `
-        -WorkingDirectory "$repo\backend" `
+        -ArgumentList "run","uvicorn","backend.app.main:app","--host","127.0.0.1","--port","$API_NATIVE" `
+        -WorkingDirectory "$repo" `
         -WindowStyle Hidden -RedirectStandardOutput "$repo\_demo_api.log" -RedirectStandardError "$repo\_demo_api.err.log"
 }
 if (Wait-Http "http://127.0.0.1:$API_NATIVE/healthz" 60) {
@@ -164,8 +169,13 @@ if (-not $SkipFrontend) {
             Start-Process -FilePath $psExe -ArgumentList "-NoProfile","-Command","pnpm install" `
                 -WorkingDirectory "$repo\frontend" -Wait -WindowStyle Hidden
         }
+        # El frontend toma la URL del backend de NUXT_PUBLIC_API_BASE_URL; sin esto
+        # cae al default http://localhost:8000 (nuxt.config.ts) y choca con
+        # ERR_CONNECTION_REFUSED, porque el backend de la demo corre en :8010, no
+        # en :8000. Fijamos la env var ANTES de pnpm dev (el proceso hijo la hereda).
+        $front = "`$env:NUXT_PUBLIC_API_BASE_URL='http://localhost:$API_NATIVE'; pnpm dev --port $FRONT_PORT"
         Start-Process -FilePath $psExe `
-            -ArgumentList "-NoProfile","-Command","pnpm dev --port $FRONT_PORT" `
+            -ArgumentList "-NoProfile","-Command",$front `
             -WorkingDirectory "$repo\frontend" `
             -WindowStyle Hidden -RedirectStandardOutput "$repo\_demo_front.log" -RedirectStandardError "$repo\_demo_front.err.log"
     }
@@ -193,15 +203,25 @@ if ($WithVM) {
         # accept-new (no "no"): acepta la host key la primera vez y alerta si
         # cambia inesperadamente dentro de una sesion; mejor postura que
         # desactivar la verificacion por completo (security review, finding low).
+        # UN solo proceso SSH con DOS reenvios -L: :8002 (Qwen texto) y :8003
+        # (Qwen-VL multimodal). El tunel sale por cloudflared local (User1@127.0.0.1
+        # :50022) hacia la VM H100, donde llama-server sirve ambos GGUF.
         Start-Process -FilePath "ssh" -ArgumentList `
             "-p","50022","-i",$key,"-o","IdentitiesOnly=yes","-o","StrictHostKeyChecking=accept-new",`
-            "-N","-L","${QWEN_LOCAL}:127.0.0.1:8002","User1@127.0.0.1" -WindowStyle Hidden
+            "-N","-L","${QWEN_LOCAL}:127.0.0.1:8002","-L","${QWENVL_LOCAL}:127.0.0.1:8003","User1@127.0.0.1" -WindowStyle Hidden
         if (Wait-Http "http://127.0.0.1:$QWEN_LOCAL/health" 50) {
-            Write-Ok "Qwen on-prem alcanzable (http://127.0.0.1:$QWEN_LOCAL)"
-            $summary["Qwen on-prem"] = "OK :$QWEN_LOCAL"
+            Write-Ok "Qwen texto on-prem alcanzable (http://127.0.0.1:$QWEN_LOCAL)"
+            $summary["Qwen texto"] = "OK :$QWEN_LOCAL"
         } else {
-            Write-Warn2 "Qwen no respondio /health (tarda ~40s en cargar el GGUF, o la tarea qwen_serve no esta corriendo en la VM)"
-            $summary["Qwen on-prem"] = "REVISAR"
+            Write-Warn2 "Qwen texto no respondio /health (tarea qwen_serve en la VM, o GGUF cargando ~40s)"
+            $summary["Qwen texto"] = "REVISAR"
+        }
+        if (Wait-Http "http://127.0.0.1:$QWENVL_LOCAL/health" 50) {
+            Write-Ok "Qwen-VL on-prem alcanzable (http://127.0.0.1:$QWENVL_LOCAL)"
+            $summary["Qwen-VL"] = "OK :$QWENVL_LOCAL"
+        } else {
+            Write-Warn2 "Qwen-VL no respondio /health (tarea qwen36_serve en la VM, o GGUF+mmproj cargando)"
+            $summary["Qwen-VL"] = "REVISAR"
         }
     }
 } else {

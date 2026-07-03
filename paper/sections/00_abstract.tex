@@ -1,12 +1,14 @@
 % Abstract --- <= 250 words. Corrects the Avance7 source:
-%   - reasoner is Gemini 2.5 Pro (GA, 1M ctx) / Qwen3.5-35B-A3B on-prem,
+%   - deployed reasoner is Gemini 3.5 Flash (cloud) / Qwen3.5-35B-A3B on-prem,
 %     NOT "Gemini 2.5-Flash"; the reasoner is frozen (Be My Eyes).
-%   - final deployed model = Stacking-5, held-out parcel macro F1 0.7470 /
-%     accuracy 0.8490 (comparison_us040.csv); the 0.6477 figure is the
-%     out-of-fold CV comparison across combiners (us043_farslip_summary.json).
+%   - best-scoring combiner = Stacking-5, held-out parcel macro F1 0.7470 /
+%     accuracy 0.8490 (comparison_us040.csv); DEPLOYED model = Voting-3
+%     (0.7444, simpler); 0.6477 is the out-of-fold CV comparison across
+%     combiners (us043_farslip_summary.json).
 %     Best individual = TSViT-pheno (mIoU 0.6253 / F1 0.7500, held-out fold).
-%   - agent perceiver re-cabling to the champion: acc 0.8308 -> 0.9413
-%     (+11 pp), macro F1 0.6868 -> 0.9007 (perceiver_champion_eval.json).
+%   - agent perceiver re-cabling to the deployed Voting-3 champion:
+%     acc 0.8539 -> 0.9375 (+8.4 pp), macro F1 0.7480 -> 0.8992 on 14,688
+%     parcels (perceiver_champion_eval_v2.json, v2_champion_france12).
 \begin{abstract}
 Accurate quantification of cultivated land without physical field
 inspection is a high-impact challenge for the agri-tech sector.
@@ -21,21 +23,25 @@ benchmark (18 crop classes, metropolitan
 France)~\cite{garnot2021pastis}, our best individual model,
 TSViT-pheno~\cite{tarasiou2023tsvit}, reaches a mean intersection over
 union (mIoU) of 0.6253 and macro F1 of 0.7500 on the held-out fold,
-and a heterogeneous five-member stacking ensemble lifts the held-out
-parcel-level macro F1 to 0.7470 (accuracy 0.8490), a gain of
-$+12.3$ percentage points of macro F1 over the best individual model.
+and a heterogeneous five-member stacking ensemble reaches a held-out
+parcel-level macro F1 of 0.7470 (accuracy 0.8490), improving the
+three-member stacking baseline (0.6359 to 0.6477 out-of-fold) by
+arbitrating the rare classes that individual backbones miss.
 The conversational layer follows the
 \emph{Be My Eyes} pattern~\cite{huang2025bemyeyes}: the team's models
 \emph{perceive} each parcel and emit plain-text observations, while a
-frozen frontier reasoner --- Gemini~2.5~Pro in the cloud or
+frozen frontier reasoner --- Gemini~3.5~Flash in the cloud or
 Qwen3.5-35B-A3B on-premises for data sovereignty --- reasons over those
 observations, invokes geospatial tools, and answers. The reasoner is
 never used as a pixel classifier; re-cabling the agent's perceiver from
-the tabular baseline to this champion ensemble raises its parcel
-accuracy from 0.8308 to 0.9413 ($+11$ points) on 13{,}481 real parcels. We further study spatial
+the tabular baseline to the deployed Voting-3 champion ensemble raises its
+parcel accuracy from 0.8539 to 0.9375 ($+8.4$ points) on 14{,}688 real
+parcels. We further study spatial
 transferability: a France-trained segmenter is zero-shot inapplicable
 to Catalonia (Sen4AgriNet)~\cite{sykas2022sen4agrinet} but recovers a
-mIoU of 0.2468 after few-shot fine-tuning, consistent with reported
+mIoU of 0.2468 after few-shot fine-tuning, and even a within-country
+France$\rightarrow$Brittany transfer (BreizhCrops)~\cite{russwurm2020breizhcrops}
+drops to F1-macro 0.21 without retraining --- consistent with reported
 limits on the transferability of foundation-model
 embeddings~\cite{harvesting2026alphaearth}. All datasets, code, and
 figures are released under permissive licenses for reproducibility.

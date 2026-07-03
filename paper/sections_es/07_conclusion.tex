@@ -18,16 +18,29 @@ El patrón \emph{Be My Eyes}~\cite{huang2025bemyeyes} establece una
 separación limpia entre los modelos que \emph{ven} y un razonador
 congelado que \emph{comunica}, garantizando la auditabilidad y la
 resistencia a la alucinación, mientras que un backend dual
-nube/on-premises preserva la soberanía de datos. Nuestro estudio de
-transferencia es deliberadamente honesto: la generalización zero-shot de
-Francia a Cataluña falla, y el ajuste fino few-shot recupera mIoU 0.2468,
-consistente con los límites reportados sobre la transferibilidad espacial
-de los embeddings de modelos de
-fundación~\cite{harvesting2026alphaearth}.
+nube/on-premises preserva la soberanía de datos; los tres backends de
+servicio intercambiables responden idéntico a una misma consulta anclada
+y solo difieren en latencia. El perceptor de producción desplegado es el
+más simple Voting-3, cuya inferencia parcela por parcela acierta el
+97--99\% de las parcelas dentro de su alcance en escenas francesas reales,
+absteniéndose honestamente en los cultivos fuera de alcance.
 
-El principal desafío pendiente son las seis clases minoritarias con F1
-bajo, que requieren datos adicionales o aumentación dirigida en lugar de
-más modelos del mismo tipo. El trabajo futuro incluye el estudio
-fenológico completo de FarSLIP (US-072), el crosswalk del espacio de
-etiquetas multirregión y la curva de $k$-shots (US-073), y el benchmark
-cuantitativo de la capa conversacional en la H100 (US-069).
+Nuestro estudio de transferencia multirregión es deliberadamente honesto y
+ahora abarca cinco regiones. La generalización zero-shot falla (Francia a
+Cataluña mIoU 0.0000; incluso dentro del mismo país, Francia a Bretaña cae
+a F1 0.21), y un presupuesto few-shot es lo que cierra la brecha; el modelo
+de fundación reduce ese presupuesto en aproximadamente un orden de magnitud
+en etiquetas locales. La transferencia \emph{sí} funciona donde la
+fenología es separable (Baja Sajonia DE4, F1 macro 0.266), y agrupar
+regiones amplía la taxonomía de 18 a 30 hojas sin rescatar ninguna clase
+fina por encima de 0.85 --- porque el cuello de botella es la separabilidad
+fenológica, no el número de regiones. Para construir estos estudios
+publicamos dos datasets propios tipo PASTIS (Toscana 2018 y Baja Sajonia
+2023).
+
+El principal desafío pendiente son las clases minoritarias con F1 bajo, que
+requieren rasgos temporales intra-anuales o aumentación dirigida en lugar
+de más regiones. El único ítem genuinamente pendiente es el benchmark
+cuantitativo de calidad de la capa conversacional en la H100 (US-069); el
+estudio de FarSLIP (US-072) y los estudios de transferencia multirregión y
+DE4 (US-073) se entregan en este artículo.

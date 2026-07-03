@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="es" data-lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgroSatCopilot --- imprimible (una lamina por pagina)</title>
+  <!-- Fuentes auto-alojadas (base64) + el mismo tema que la presentacion. -->
+  <link rel="stylesheet" href="css/fonts.css">
+  <link rel="stylesheet" href="css/theme.css">
+  <style>
+    /* Pagina de impresion estandar (estilo del deck de referencia que imprime
+       bien): cada lamina es una pagina FIJA de 1600x900, apiladas, una por
+       hoja. NO se usa el pipeline print-pdf de reveal.js -> cero conflictos. */
+    html, body { margin: 0; padding: 0; background: #555; }
+    #stack { display: flex; flex-direction: column; align-items: center; gap: 24px; padding: 24px 0; }
+    /* cada pagina reproduce el lienzo de una lamina de reveal (1600x900) */
+    .print-page {
+      width: 1600px; height: 900px; position: relative; overflow: hidden;
+      background: var(--paper); box-shadow: 0 2px 18px rgba(0, 0, 0, 0.35);
+    }
+    /* la seccion llena la pagina; el tema (theme.css) le da el layout flex
+       centrado EXACTO de la pantalla. */
+    .print-page > section {
+      width: 1600px; height: 900px; box-sizing: border-box;
+      padding: 60px 84px 76px 84px;
+      display: flex; flex-direction: column; justify-content: center;
+      background: var(--paper);
+    }
+    /* portada/divisoria/cierre: composicion propia a sangre completa */
+    .print-page > section.cover-slide { display: block; padding: 0; }
+    .print-page > section.divider {
+      position: absolute; inset: 0; width: 1600px; height: 900px;
+      padding: 64px 84px; justify-content: center;
+    }
+    .print-page > section.closing { justify-content: center; }
+
+    /* impresion real: 1 lamina = 1 hoja horizontal, sin margenes, con fondos */
+    @page { size: 1600px 900px; margin: 0; }
+    @media print {
+      html, body { background: #fff; }
+      #stack { display: block; gap: 0; padding: 0; }
+      .print-page {
+        box-shadow: none; margin: 0;
+        break-after: page; page-break-after: always;
+      }
+      .print-page:last-child { break-after: auto; page-break-after: auto; }
+      * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    }
+  </style>
+</head>
+<body>
+  <!-- .reveal .slides envuelve el stack para que apliquen los selectores del
+       tema (que estan scopeados a `.reveal .slides section`). No se carga
+       reveal.js: es HTML estatico. -->
+  <div class="reveal"><div class="slides"><div id="stack"></div></div></div>
+
+  <script src="js/slides.js"></script>
+  <script>
+    (async function () {
+      const params = new URLSearchParams(location.search);
+      const lang = params.get("lang") === "en" ? "en" : "es";
+      document.documentElement.setAttribute("lang", lang);
+      document.documentElement.setAttribute("data-lang", lang);
+      const res = await fetch(`content/${lang}.json`, { cache: "no-cache" });
+      const data = await res.json();
+      const stack = document.getElementById("stack");
+      stack.innerHTML = data.slides
+        .map((s) => `<div class="print-page">${window.AgroDeck.renderSlide(s)}</div>`)
+        .join("");
+      // marca listo cuando fuentes + imagenes esten cargadas (lo usa el exportador)
+      await document.fonts.ready;
+      const imgs = [...document.images].filter((i) => !i.complete);
+      await Promise.all(imgs.map((i) => new Promise((r) => { i.onload = i.onerror = r; })));
+      document.documentElement.setAttribute("data-print-ready", "1");
+    })();
+  </script>
+</body>
+</html>

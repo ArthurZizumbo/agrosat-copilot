@@ -72,8 +72,8 @@ Eyes}~\cite{huang2025bemyeyes}.
 
 \paragraph{Razonador dual congelado y soberanía de datos.}
 El mismo agente soporta dos backends congelados e intercambiables:
-Gemini~2.5~Pro en la nube (disponible de forma general, contexto de
-1M tokens)~\cite{google2025gemini25}, o
+Gemini~3.5~Flash en la nube (el backend desplegado por defecto, elegido
+por su perfil de costo/latencia)~\cite{google2025gemini25}, o
 Qwen3.5-35B-A3B~\cite{yang2025qwen3} on-premises vía vLLM
 (GPTQ-Int4, una sola GPU) para clientes que requieren que sus datos
 nunca salgan de su perímetro. La selección del backend la maneja una

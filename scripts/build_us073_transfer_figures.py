@@ -17,6 +17,11 @@ no hand-typed numbers:
   Mexico avocado/guava NDVI phenological curves from the real GEE pulls
   (``data/transfer/mexico_demo_ndvi.parquet``, US-077). NO classifier, NO F1.
 
+Every figure is emitted in two languages: the English version is the canonical base
+name (``<name>.{png,svg}``, for the English paper) and the Spanish version carries an
+``_es`` suffix (``<name>_es.{png,svg}``, for the Spanish paper). Only the visible
+strings differ between the two -- the plotted numbers and logic are identical.
+
 The script is deterministic (fixed seed, ``matplotlib`` Agg backend) and idempotent:
 re-running overwrites the artefacts byte-for-byte. Every number traces back to a real
 file; if an input is missing the script raises an explicit error and never fabricates
@@ -72,11 +77,75 @@ SCENARIO_LABELS: dict[str, str] = {
     "LV->EE": "LV $\\rightarrow$ EE (pre-train)",
     "sin-pretrain->EE": "LV $\\rightarrow$ EE (no pre-train)",
 }
-# Plot-only labels (matplotlib, no LaTeX math escaping).
-SCENARIO_PLOT_LABELS: dict[str, str] = {
-    "LV+PT->EE": "LV+PT -> EE (pre-train)",
-    "LV->EE": "LV -> EE (pre-train)",
-    "sin-pretrain->EE": "LV -> EE (sin pre-train)",
+
+# Languages emitted for every figure. The canonical (base) name is English; the
+# Spanish variant gets an ``_es`` suffix on the output stem.
+LANGS: tuple[str, ...] = ("en", "es")
+
+# Per-language plot-only scenario labels (matplotlib legends, no LaTeX escaping).
+SCENARIO_PLOT_LABELS: dict[str, dict[str, str]] = {
+    "en": {
+        "LV+PT->EE": "LV+PT -> EE (pre-train)",
+        "LV->EE": "LV -> EE (pre-train)",
+        "sin-pretrain->EE": "LV -> EE (no pre-train)",
+    },
+    "es": {
+        "LV+PT->EE": "LV+PT -> EE (pre-entrenado)",
+        "LV->EE": "LV -> EE (pre-entrenado)",
+        "sin-pretrain->EE": "LV -> EE (sin pre-entrenar)",
+    },
+}
+
+# Per-language visible strings for the k-shot curve figure.
+KSHOT_STRINGS: dict[str, dict[str, str]] = {
+    "en": {
+        "xlabel": "k (labelled samples per class in the target country)",
+        "ylabel": "F1-macro (Estonia, query set)",
+        "title": "EuroCropsML few-shot curve: LV[+PT] -> EE",
+        "footnote": "EuroCropsML (Reuter et al. 2025, CC-BY-SA-4.0). 3 seeds, bars = std.",
+    },
+    "es": {
+        "xlabel": "k (muestras etiquetadas por clase del país objetivo)",
+        "ylabel": "F1-macro (Estonia, conjunto de consulta)",
+        "title": "Curva few-shot EuroCropsML: LV[+PT] -> EE",
+        "footnote": (
+            "EuroCropsML (Reuter et al. 2025, CC-BY-SA-4.0). 3 semillas, barras = std."
+        ),
+    },
+}
+
+# Per-language visible strings for the Mexico phenology figure.
+MEXICO_STRINGS: dict[str, dict[str, str]] = {
+    "en": {
+        "xlabel": "Day of year (DOY)",
+        "ylabel": "Zonal mean NDVI (Sentinel-2)",
+        "title": "Mexico qualitative demo: perennial woody phenological signature",
+        "footnote": (
+            "Zero-shot methodological demo, no ground truth: F1/accuracy NOT reported. "
+            "AlphaEarth (CC-BY-4.0) + Sentinel-2 (Copernicus)."
+        ),
+    },
+    "es": {
+        "xlabel": "Día del año (DOY)",
+        "ylabel": "NDVI medio zonal (Sentinel-2)",
+        "title": "Demo cualitativa México: firma fenológica perenne arbórea",
+        "footnote": (
+            "Demo metodológica zero-shot, sin ground-truth: NO se reporta F1/accuracy. "
+            "AlphaEarth (CC-BY-4.0) + Sentinel-2 (Copernicus)."
+        ),
+    },
+}
+
+# Per-language AOI legend labels for the Mexico phenology figure.
+MEXICO_AOI_LABELS: dict[str, dict[str, str]] = {
+    "en": {
+        "aguacate_uruapan": "Avocado (Uruapan, Michoacán)",
+        "guayaba_calvillo": "Guava (Calvillo, Aguascalientes)",
+    },
+    "es": {
+        "aguacate_uruapan": "Aguacate (Uruapan, Michoacán)",
+        "guayaba_calvillo": "Guayaba (Calvillo, Aguascalientes)",
+    },
 }
 
 
@@ -165,7 +234,6 @@ def build_dense_table(result: dict[str, Any]) -> str:
         "zero-shot mIoU and the recovered few-shot mIoU yield "
         f"$\\Delta$mIoU $= +{delta:.4f}$ -- the measured Franco-Iberian domain gap "
         "is the deliverable, not a high accuracy. "
-        "Source: \\texttt{reports/segmentation/sen4agrinet\\_transfer\\_result.json}. "
         "Sen4AgriNet (Sykas et al. 2022, CC-BY-SA-4.0)."
     )
     return (
@@ -258,11 +326,10 @@ def build_kshot_table(curve: pl.DataFrame) -> str:
         "parcel Sentinel-2 series, HCAT macro label-space, "
         f"{n_classes} classes). F1-macro mean $\\pm$ std over 3 seeds per k-shot. "
         "France is NOT in EuroCropsML; the protocol is LV[+PT] $\\rightarrow$ EE "
-        "(Reuter et al. 2025, Table II), not France $\\rightarrow$ Estonia. The "
+        "(Reuss et al. 2025, Table II), not France $\\rightarrow$ Estonia. The "
         "no-pre-train column quantifies how source pre-training closes the gap at "
-        "low k. Source: "
-        "\\texttt{data/transfer/eurocropsml\\_fewshot\\_results.parquet}. "
-        "EuroCropsML (Reuter et al. 2025, CC-BY-SA-4.0)."
+        "low k. "
+        "EuroCropsML (Reuss et al. 2025, CC-BY-SA-4.0)."
     )
     return (
         "\\begin{table}[t]\n"
@@ -280,14 +347,23 @@ def build_kshot_table(curve: pl.DataFrame) -> str:
     )
 
 
-def build_kshot_figure(curve: pl.DataFrame, out_stem: Path, *, dpi: int) -> None:
+def build_kshot_figure(
+    curve: pl.DataFrame, out_stem: Path, *, dpi: int, lang: str = "en"
+) -> None:
     """Plot the k-shot F1-macro curve with per-seed error bars (PNG + SVG).
+
+    All visible text is resolved from :data:`KSHOT_STRINGS` and
+    :data:`SCENARIO_PLOT_LABELS` for the requested language; only strings change,
+    never the plotted numbers or plotting logic.
 
     Args:
         curve: Raw long frame from the US-076 parquet.
         out_stem: Output path stem (``.png`` and ``.svg`` are appended).
         dpi: Raster resolution for the PNG.
+        lang: Language code for the visible text (``"en"`` or ``"es"``).
     """
+    txt = KSHOT_STRINGS[lang]
+    scenario_labels = SCENARIO_PLOT_LABELS[lang]
     summary = _kshot_summary(curve)
     fig, ax = plt.subplots(figsize=(6.4, 4.2))
     markers = {"LV+PT->EE": "o", "LV->EE": "s", "sin-pretrain->EE": "^"}
@@ -306,44 +382,41 @@ def build_kshot_figure(curve: pl.DataFrame, out_stem: Path, *, dpi: int) -> None
             capsize=3,
             linewidth=1.6,
             markersize=5,
-            label=SCENARIO_PLOT_LABELS[scenario],
+            label=scenario_labels[scenario],
         )
     ax.set_xscale("log")
     ax.set_xticks(sorted(summary.get_column("k").unique().to_list()))
     ax.get_xaxis().set_major_formatter(plt.matplotlib.ticker.ScalarFormatter())
-    ax.set_xlabel("k (muestras etiquetadas por clase del pais objetivo)")
-    ax.set_ylabel("F1-macro (Estonia, conjunto de consulta)")
-    ax.set_title("Curva few-shot EuroCropsML: LV[+PT] -> EE")
+    ax.set_xlabel(txt["xlabel"])
+    ax.set_ylabel(txt["ylabel"])
+    ax.set_title(txt["title"])
     ax.grid(True, which="both", linestyle=":", alpha=0.5)
     ax.legend(loc="lower right", fontsize=9)
-    fig.text(
-        0.01,
-        0.01,
-        "EuroCropsML (Reuter et al. 2025, CC-BY-SA-4.0). 3 semillas, barras = std.",
-        fontsize=7,
-        color="0.4",
-    )
+    fig.text(0.01, 0.01, txt["footnote"], fontsize=7, color="0.4")
     fig.tight_layout()
     _save_fig(fig, out_stem, dpi=dpi)
 
 
-def build_mexico_figure(ndvi: pl.DataFrame, out_stem: Path, *, dpi: int) -> None:
+def build_mexico_figure(
+    ndvi: pl.DataFrame, out_stem: Path, *, dpi: int, lang: str = "en"
+) -> None:
     """Plot the qualitative Mexico avocado/guava NDVI phenology (PNG + SVG).
 
     Purely qualitative: shows the real GEE-derived per-AOI NDVI time series of the
     two perennial-woody Mexican crops. NO classifier, NO F1, NO accuracy is computed
-    or implied (US-077 honesty rule).
+    or implied (US-077 honesty rule). All visible text is resolved from
+    :data:`MEXICO_STRINGS` and :data:`MEXICO_AOI_LABELS` for the requested language;
+    only strings change, never the plotted numbers or plotting logic.
 
     Args:
         ndvi: Frame from ``mexico_demo_ndvi.parquet`` with ``aoi, date, doy, ndvi``.
         out_stem: Output path stem (``.png`` and ``.svg`` are appended).
         dpi: Raster resolution for the PNG.
+        lang: Language code for the visible text (``"en"`` or ``"es"``).
     """
+    txt = MEXICO_STRINGS[lang]
+    labels = MEXICO_AOI_LABELS[lang]
     fig, ax = plt.subplots(figsize=(6.4, 4.2))
-    labels = {
-        "aguacate_uruapan": "Aguacate (Uruapan, Michoacan)",
-        "guayaba_calvillo": "Guayaba (Calvillo, Aguascalientes)",
-    }
     for aoi in sorted(ndvi.get_column("aoi").unique().to_list()):
         sub = ndvi.filter(pl.col("aoi") == aoi).sort("doy")
         ax.plot(
@@ -355,19 +428,12 @@ def build_mexico_figure(ndvi: pl.DataFrame, out_stem: Path, *, dpi: int) -> None
             alpha=0.85,
             label=labels.get(aoi, aoi),
         )
-    ax.set_xlabel("Dia del anio (DOY)")
-    ax.set_ylabel("NDVI medio zonal (Sentinel-2)")
-    ax.set_title("Demo cualitativa Mexico: firma fenologica perenne arborea")
+    ax.set_xlabel(txt["xlabel"])
+    ax.set_ylabel(txt["ylabel"])
+    ax.set_title(txt["title"])
     ax.grid(True, linestyle=":", alpha=0.5)
     ax.legend(loc="upper right", fontsize=9)
-    fig.text(
-        0.01,
-        0.01,
-        "Demo metodologica zero-shot, sin ground-truth: NO se reporta F1/accuracy. "
-        "AlphaEarth (CC-BY-4.0) + Sentinel-2 (Copernicus).",
-        fontsize=7,
-        color="0.4",
-    )
+    fig.text(0.01, 0.01, txt["footnote"], fontsize=7, color="0.4")
     fig.tight_layout()
     _save_fig(fig, out_stem, dpi=dpi)
 
@@ -384,6 +450,24 @@ def _save_fig(fig: plt.Figure, out_stem: Path, *, dpi: int) -> None:
     fig.savefig(out_stem.with_suffix(".png"), dpi=dpi, bbox_inches="tight")
     fig.savefig(out_stem.with_suffix(".svg"), bbox_inches="tight")
     plt.close(fig)
+
+
+def _lang_stem(out_stem: Path, lang: str) -> Path:
+    """Return the language-specific output stem for a figure.
+
+    English is canonical and keeps the bare base name; every other language gets a
+    ``_<lang>`` suffix (e.g. ``kshot_curve`` -> ``kshot_curve_es`` for Spanish).
+
+    Args:
+        out_stem: Base (English) output path stem, extension-less.
+        lang: Language code (``"en"`` for the canonical base name).
+
+    Returns:
+        The stem to hand to :func:`_save_fig` for this language.
+    """
+    if lang == "en":
+        return out_stem
+    return out_stem.with_name(f"{out_stem.name}_{lang}")
 
 
 def _write_text(path: Path, content: str) -> None:
@@ -413,17 +497,30 @@ def build_all(repo_root: Path = Path("."), *, dpi: int = 150) -> None:
 
     dense = _read_json(root / DENSE_RESULT_JSON)
     curve = _read_parquet(root / KSHOT_PARQUET)
-    ndvi = _read_parquet(root / MEXICO_NDVI_PARQUET)
 
     _write_text(root / DENSE_TABLE, build_dense_table(dense))
     _write_text(root / KSHOT_TABLE, build_kshot_table(curve))
-    build_kshot_figure(curve, root / KSHOT_FIGURE, dpi=dpi)
-    build_mexico_figure(ndvi, root / MEXICO_FIGURE, dpi=dpi)
+
+    # Emit every figure in each supported language: English is the canonical base
+    # name (<name>.{png,svg}); other languages get an ``_<lang>`` suffix.
+    # NOTE: the Mexico avocado/guava figure is intentionally NOT built anymore --
+    # the paper standardizes on real-metric experiments only, so the metric-less
+    # qualitative Mexico demo was removed from the manuscript.
+    figures: list[str] = []
+    for lang in LANGS:
+        kshot_stem = _lang_stem(root / KSHOT_FIGURE, lang)
+        build_kshot_figure(curve, kshot_stem, dpi=dpi, lang=lang)
+        figures.extend(
+            [
+                f"{kshot_stem}.png",
+                f"{kshot_stem}.svg",
+            ]
+        )
 
     logger.info(
         "us073_build_done",
         tables=[str(DENSE_TABLE), str(KSHOT_TABLE)],
-        figures=[f"{KSHOT_FIGURE}.png", f"{MEXICO_FIGURE}.png"],
+        figures=figures,
     )
 
 

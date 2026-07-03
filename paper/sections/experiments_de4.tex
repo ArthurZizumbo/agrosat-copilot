@@ -16,6 +16,22 @@ levers that decide it. The target is Lower Saxony, Germany (NUTS region DE4), ch
 its EuroCrops~v2 coverage is \emph{complete} (not partial as in the Italian Tuscany pilot)
 and its agriculture is dominated by large, phenologically separable winter cereals.
 
+\paragraph{How the Tuscany ceiling was reached: three transfer strategies.}
+Before DE4, the same France-trained backbone (TSViT-pheno) was carried to the Italian
+Tuscany dataset ($39$ native classes, test fold-3) under three transfer strategies, to
+separate what the transfer actually buys. \emph{(i)} Training from scratch with Italian
+data only reaches macro F1~$0.095$. \emph{(ii)} Pure transfer --- reusing France's temporal
+encoder and learning a fresh classifier head for the Italian crops --- lifts it to $0.120$.
+\emph{(iii)} Keeping the French classes (warm-starting the head from the French crops) or
+replicating the full PASTIS training mode reaches $0.130$--$0.132$. The temporal encoder is
+therefore the load-bearing transferred component; warm-starting the head adds little on
+average ($+0.012$) and is \emph{not} universal --- it helps crops that look alike across
+France and Italy (durum wheat $+0.08$, barley $+0.07$, alfalfa $+0.05$) and hurts those with
+a different Mediterranean phenology (oats $-0.08$, sunflower $-0.06$). This $\approx0.13$
+best-case Tuscany ceiling is the baseline that the DE4 levers below lift to $0.266$.
+% src: reports/us079_figs/ablation_compare.json (A_warmstart 0.132, B_nowarmstart 0.120,
+% original 0.130; from-scratch 0.095; per-class warm-start deltas)
+
 \paragraph{Building a PASTIS-homologous dataset for DE4.}
 We materialise a dense PASTIS-homologous dataset for DE4 2023 from first principles, with
 \textbf{100\% real data and zero placeholders}: per-patch Sentinel-2 L2A time series
@@ -79,7 +95,7 @@ rescue (maize~$0.703$, winter~rapeseed~$0.689$, winter~wheat~$0.674$, winter~rye
 yielding 8~classes at F1~$\ge0.60$ and 12 at $\ge0.40$, against a single class over $0.60$ on
 Tuscany. % src: report.json de4_2023 per-class
 
-\paragraph{Three taxonomic views (the ``three ways'').}
+\paragraph{Three label-space conventions.}
 For an honest reading we evaluate the same trained ensemble under three label-space
 conventions, decided a~priori: \emph{(A) conserving the native 37 HCAT classes}
 (fine, macro~F1~$0.266$); \emph{(B) without conserving}, crosswalking the prediction onto the

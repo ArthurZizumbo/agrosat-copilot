@@ -3,10 +3,10 @@
 % Prose in English (the manuscript is EN). Every number is rendered from the real
 % EPIC 12 artefacts by scripts/build_us073_transfer_figures.py; nothing is hand-typed.
 % Tables : paper/tables/us-073-transfer/{sen4agrinet_domain_gap,eurocropsml_kshot}.tex
-% Figures: paper/figures/us-073-transfer/{kshot_curve,mexico_phenology,worldcereal_tropical_transfer}.{png,svg}
+% Figures: paper/figures/us-073-transfer/{kshot_curve,worldcereal_tropical_transfer}.{png,svg}
 %          paper/figures/us-075/sen4agrinet_per_class_iou_f1.png
 %          paper/figures/us-076/eurocropsml_per_class_f1_vs_k.png
-%          ../docs/us-planning/figures/eurocropsml_alphaearth_vs_s2_fewshot.png
+%          figures/us-070/eurocropsml_ae_vs_s2.png
 % Required packages in the host preamble: booktabs, graphicx, amsmath, hyperref, url.
 
 \section{Multi-Region Transfer: Train in France, Extend Elsewhere}
@@ -15,8 +15,8 @@
 A crop-mapping copilot trained only on French labels (PASTIS-R) is, by construction,
 a French expert. This section turns that limitation into a measured capability: we
 document the \emph{recipe} ``train in France $\rightarrow$ extend elsewhere'' along two
-real transfer paths that were executed end-to-end and versioned with DVC, plus a
-qualitative zero-shot demonstration over Mexico and an explicitly out-of-scope tropical
+real transfer paths that were executed end-to-end and versioned with DVC, plus an
+explicitly out-of-scope tropical
 extension. The thesis we defend is deliberately conservative: the model \emph{receives
 new classes from other datasets via few-shot adaptation}, and the Franco-Iberian domain
 gap is \emph{catastrophic in zero-shot}. Consequently, the \textbf{$\Delta$mIoU between
@@ -28,7 +28,7 @@ budget for few-shot finetuning rather than promise zero-shot magic.
 All embeddings are AlphaEarth Foundations~\cite{brown2025alphaearth} (Google DeepMind),
 accessed through the Google Earth Engine asset \texttt{SATELLITE\_EMBEDDING/V1/ANNUAL},
 data version~1.1, 64-dimensional, CC-BY-4.0. The frozen reasoner that turns model outputs
-into explanations is Gemini~2.5~Pro~\cite{google2025gemini25} (GA, 1M-token context);
+into explanations is Gemini~3.5~Flash~\cite{google2025gemini25} (the deployed cloud default);
 following the ``Be My Eyes'' pattern~\cite{huang2025bemyeyes}, our trained models are the
 \emph{perceiver} and the LLM is a frozen \emph{reasoner} for communication and data
 sovereignty, never a pixel classifier.
@@ -38,18 +38,21 @@ areas of interest --- the Italian agricultural region used for the
 FarSLIP contrastive distillation (\texttt{farslip-clip-italy-v1}) ---
 within the multi-region footprint that spans France (PASTIS-R),
 Catalonia (Sen4AgriNet), the EuroCropsML countries
-(Estonia/Latvia/Portugal), and the qualitative Mexican demonstration
-areas.
+(Estonia/Latvia/Portugal), and the tropical WorldCereal regions
+(Brazil, India).
 
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=0.75\linewidth]{figures/us-070/aoi_italy.png}
-  \caption{Italian area of interest used for the FarSLIP contrastive
-  distillation (\texttt{farslip-clip-italy-v1}), one node of the
-  multi-region footprint of AgroSatCopilot. Basemap and AOI overlay;
-  contains modified Copernicus Sentinel data. AlphaEarth
+  \caption{Italian area of interest (Pianura Padana, Po valley) used for
+  the FarSLIP contrastive distillation (\texttt{farslip-clip-italy-v1}),
+  one node of the multi-region footprint of AgroSatCopilot. Real sampled
+  AlphaEarth pixels are coloured by their 64-dimensional annual embedding
+  over an OpenStreetMap basemap, to locate the AOI and show that the
+  embedding varies spatially across the region. AlphaEarth
   \texttt{SATELLITE\_EMBEDDING/V1/ANNUAL} v1.1
-  (CC-BY-4.0)~\cite{brown2025alphaearth}.}
+  (CC-BY-4.0)~\cite{brown2025alphaearth}; basemap \textcopyright{}
+  OpenStreetMap contributors.}
   \label{fig:aoi-italy}
 \end{figure}
 
@@ -114,13 +117,36 @@ executed notebook \texttt{notebooks/segmentation/5c\_transfer\_sen4agrinet.ipynb
 
 \input{tables/us-073-transfer/sen4agrinet_domain_gap.tex}
 
+\subsection{Within-Country Transfer: France $\rightarrow$ Brittany (BreizhCrops)}
+\label{sec:multiregion:breizhcrops}
+
+Before crossing a border, we ask the cheapest possible transfer question: does the model
+hold within the \emph{same country}? Brittany is French but agronomically distinct --- an
+oceanic climate, a different crop calendar and a different year --- so it isolates the
+region shift from the country shift. We train the project's tabular classifier (XGBoost
+\texttt{multi:softprob} over the 185 shared per-parcel features) on PASTIS-R (France, 2019)
+and evaluate it \emph{directly}, without retraining, on BreizhCrops~\cite{russwurm2020breizhcrops} (Brittany, 2017; regions \texttt{frh01}$+$\texttt{frh04}),
+over the seven crops both datasets share ($64{,}121$ train / $2{,}145$ test parcels).
+BreizhCrops carries no AlphaEarth embedding, so this is a raw-feature test, not a
+Voting-3 evaluation.
+
+The direct-transfer F1-macro is only $0.2057$ (accuracy $0.2956$): even inside France,
+moving region is a real jump. The per-crop split is the honest signal (Table is rendered
+from \texttt{data/transfer/pastis\_to\_breizhcrops.parquet}): transfer \emph{holds} where a
+crop looks phenologically alike across regions --- rapeseed $0.70$, permanent meadow $0.51$
+--- and \emph{collapses} on the cereals whose intra-annual dynamics differ --- maize $0.14$,
+barley $0.07$, soft wheat $0.01$, sunflower $0.00$. This within-France result is the
+strongest, cheapest illustration of the limited-transferability caveat
+(Sec.~\ref{sec:multiregion:caveat}): the failure is driven by the region and its phenology,
+not merely by the change of country.
+
 \subsection{Tabular Few-Shot Path: EuroCropsML (Transnational)}
 \label{sec:multiregion:fewshot}
 
 The dense path measures a within-Europe domain gap pixel-wise; the tabular path measures
 how many local labels close a \emph{transnational} gap. Two factual clarifications are
 mandatory. First, \textbf{France is not part of EuroCropsML}: the benchmark~\cite{reuss2025eurocropsml} covers Estonia (EE), Latvia (LV) and Portugal (PT),
-so the real protocol is LV$+$PT~$\rightarrow$~EE and LV~$\rightarrow$~EE (Reuter et al.
+so the real protocol is LV$+$PT~$\rightarrow$~EE and LV~$\rightarrow$~EE (Reuss et al.
 2025, Table~II), not ``France~$\rightarrow$~Estonia''.
 Second, EuroCropsML carries \textbf{no AlphaEarth embedding}: each datapoint is an annual
 Sentinel-2 L1C median time series (13 bands, B10 excluded) per parcel. We therefore reuse
@@ -151,7 +177,7 @@ EuroCropsML splits.
   on the Estonian query set versus $k$ shots per class, mean over three seeds with std
   error bars. Source pre-training dominates at low $k$ and all curves converge as local
   supervision grows: the gap is closed by few-shot data, not by zero-shot transfer.
-  EuroCropsML (Reuss et al. 2024, CC-BY-SA-4.0).}
+  EuroCropsML (Reuss et al. 2025, CC-BY-SA-4.0).}
   \label{fig:eurocropsml_kshot}
 \end{figure}
 
@@ -184,7 +210,7 @@ cheaper. All numbers are rendered from
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=0.9\linewidth]{../docs/us-planning/figures/eurocropsml_alphaearth_vs_s2_fewshot.png}
+  \includegraphics[width=0.9\linewidth]{figures/us-070/eurocropsml_ae_vs_s2.png}
   \caption{AlphaEarth foundation-model embedding vs.\ raw Sentinel-2 on the EuroCropsML
   LV$\rightarrow$EE transnational few-shot task (F1-macro vs.\ $k$, mean over three seeds).
   AlphaEarth dominates at every $k$, with the largest margin in the low-label regime
@@ -242,35 +268,6 @@ global, decision. The full tables live in
   Sen4AgriNet (CC-BY-SA-4.0)~\cite{sykas2022sen4agrinet}.}
   \label{fig:eurocropsml_perclass}
   \label{fig:sen4agrinet_perclass}
-\end{figure}
-
-\subsection{Qualitative Zero-Shot Demonstration: Mexico}
-\label{sec:multiregion:mexico}
-
-To show the same pipeline replicates outside Europe, we apply it to two real Mexican
-producing areas with \emph{no} curated ground truth: avocado around Uruapan/Tancitaro
-(Michoacan) and guava around Calvillo (Aguascalientes). For each area-of-interest we pull
-the real 64-dimensional AlphaEarth zonal embedding and the real Sentinel-2 NDVI time
-series from Google Earth Engine, and align the phenological narrative to the
-\texttt{PERMANENT\_WOODY} family of the HCAT macro space as a qualitative analogy.
-Figure~\ref{fig:mexico_phenology} shows the two NDVI curves: both crops are perennial
-woody (orchard-like), with a relatively high and stable signal rather than the
-sow--harvest cycle of an annual cereal, and the guava AOI shows the expected late-season
-modulation from irrigation and pruning. This demonstration is purely methodological:
-because there is no ground truth, \textbf{we never report an F1, accuracy or classifier
-over Mexico} -- a meta-test in the codebase enforces that no classification metric is
-imported in this path. It illustrates the mechanism of ``receiving new classes'', not a
-performance claim. AlphaEarth (Satellite Embedding V1 Annual, CC-BY-4.0);
-contains modified Copernicus Sentinel data.
-
-\begin{figure}[t]
-  \centering
-  \includegraphics[width=0.9\linewidth]{figures/us-073-transfer/mexico_phenology.png}
-  \caption{Qualitative Mexico demonstration: real Sentinel-2 NDVI phenology of avocado
-  (Uruapan, Michoacan) and guava (Calvillo, Aguascalientes), both perennial-woody crops.
-  No ground truth exists for these AOIs, so no F1/accuracy is computed or implied. The
-  figure illustrates the methodology of extending to a new region, not a metric.}
-  \label{fig:mexico_phenology}
 \end{figure}
 
 \subsection{Out of Europe: Tropical Transfer with WorldCereal (Brazil and India)}
@@ -398,10 +395,8 @@ embedding}: telling spring barley from winter barley, or oats from wheat, needs 
 intra-annual phenology that a single 64-dimensional annual vector averages away. Pooling more
 \emph{regions} does not help a class that no region can separate at this temporal resolution;
 the indicated next step is multi-date intra-annual temporal features over the cereal/legume
-leaves, not more regions. The model remains useful as a richer \emph{macro} vocabulary and a
-fine-grained hypothesis generator (the Mexico qualitative demo confidently, and wrongly, maps
-tropical orchards to \texttt{grassland}, with no tropical-orchard class to offer), but not yet
-as a production fine classifier. We report this so the limit is on record, not hidden.
+leaves, not more regions. The model remains useful as a richer \emph{macro} vocabulary, but
+not yet as a production fine classifier. We report this so the limit is on record, not hidden.
 
 \subsection{Caveat: Limited Spatial Transferability}
 \label{sec:multiregion:caveat}
@@ -421,7 +416,7 @@ phenological separability in an annual embedding, not the number of regions. We 
 \emph{not} claim that zero-shot works outside France, that pooling regions rescues new fine
 classes, that the LLM layer ``beats'' Gemini at classification (its role is communication,
 explanation and on-premise data sovereignty via Qwen3.5-35B-A3B~\cite{yang2025qwen3} served
-with vLLM GPTQ-Int4 on a single GPU), nor any $\geq$0.80 F1 in Mexico or the tropics. The
+with vLLM GPTQ-Int4 on a single GPU), nor any $\geq$0.80 F1 in the tropics. The
 deliverables of this section are the \emph{measured} $\Delta$mIoU, the few-shot curves, the
 FM-vs-raw advantage and the negative pooled-model finding --- honest evidence of how, and how
 far, the copilot becomes a multi-region expert.

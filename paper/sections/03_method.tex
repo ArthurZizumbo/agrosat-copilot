@@ -70,8 +70,8 @@ Eyes} pattern~\cite{huang2025bemyeyes}.
 
 \paragraph{Frozen dual reasoner and data sovereignty.}
 The same agent supports two interchangeable, frozen backends:
-Gemini~2.5~Pro in the cloud (generally available, 1M-token
-context)~\cite{google2025gemini25}, or
+Gemini~3.5~Flash in the cloud (the deployed default, chosen for its
+cost/latency profile)~\cite{google2025gemini25}, or
 Qwen3.5-35B-A3B~\cite{yang2025qwen3} on-premises via vLLM
 (GPTQ-Int4, single GPU) for clients that require their data never to
 leave their perimeter. Backend selection is handled by a factory

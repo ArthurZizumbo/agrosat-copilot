@@ -22,28 +22,30 @@ post-hoc. La Figura~\ref{fig:cardinality} muestra la curva completa.
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=0.9\columnwidth]
-      {../reports/ensemble/figures/us043_farslip/winner_cardinality_curve.png}
-    \caption{Curva de cardinalidad del modelo final (Stacking~+~FarSLIP).
+      {figures/us-070/cardinality_curve_es.png}
+    \caption{Curva de cardinalidad del modelo Voting-3 desplegado.
     El codo alrededor de $K=8$--$9$ marca el equilibrio óptimo entre
     calidad y cobertura para la mayoría de los casos de uso.}
     \label{fig:cardinality}
 \end{figure}
-% src(figure): reports/ensemble/figures/us043_farslip/winner_cardinality_curve.png
-% src(curve data): reports/ensemble/metrics/us043_winner_cardinality_curve.csv
+% src(figure): reports/voting_new/cardinalidad.json (Voting-3 desplegado)
+% src(curve data): reports/voting_new/cardinalidad.json ["new"]:
+%   F1 macro acumulado por K (K=18 0.786; K=12 0.900; K=9 0.940; K=8 0.949)
 
-La curva arroja puntos de operación concretos (F1 macro por $K$ y
-fracción de soporte acumulada leídas del análisis de cardinalidad en el
-fold de prueba retenido). En cardinalidad plena ($K=18$) el modelo
-alcanza un F1 macro de 0.7486 sobre el 100\% de las parcelas. Reducir a
-los 12 cultivos mejor resueltos eleva el F1 macro a 0.8574 cubriendo aún
-el 90.5\% de las parcelas reales; el punto de operación
-\texttt{france-9} ($K=9$) alcanza un F1 macro de 0.8912 con 81.9\% de
-cobertura; y un modo enfocado de alta precisión en $K=8$ supera un F1
-macro de 0.9029 sobre el 80.0\% de las parcelas. El codo se sitúa
-alrededor de $K=8$--$9$, el equilibrio óptimo entre calidad y cobertura
-para la mayoría de los casos de uso. No se requiere reentrenamiento: el
-metamodelo de stacking ya produce probabilidades por clase, de modo que
-el umbral de categorías se aplica dinámicamente en producción.
+La curva arroja puntos de operación concretos (F1 macro acumulado por $K$
+y la fracción de parcelas reales cubierta). En cardinalidad plena
+($K=18$) el modelo Voting-3 desplegado alcanza un F1 macro de 0.786 sobre
+el 100\% de las parcelas. Reducir a los 12 cultivos mejor resueltos eleva
+el F1 macro a 0.900 cubriendo aún alrededor del 90\% de las parcelas
+reales --- el punto de operación de producción recomendado, justo donde
+la calidad cruza el umbral de 0.90; el modo de alta precisión ($K=9$)
+alcanza un F1 macro de 0.940 con cerca del 82\% de cobertura; y un modo
+de máxima confianza en $K=8$ alcanza un F1 macro de 0.949 sobre cerca del
+80\% de las parcelas. El codo se sitúa alrededor de $K=8$--$9$, el
+equilibrio óptimo entre calidad y cobertura para la mayoría de los casos
+de uso. No se requiere reentrenamiento: el ensamble ya produce
+probabilidades por clase, de modo que el umbral de categorías se aplica
+dinámicamente en producción.
 
 \section{Mezcla por vecindad espacial: un resultado nulo}
 \label{app:neighbourhood}
