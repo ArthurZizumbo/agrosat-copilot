@@ -2507,6 +2507,11 @@ Las US completas de cada épica siguen a continuación, en formato **Como/quiero
 
 **Subtotal EPIC 12: 30 story points** (US-074 HCAT 5 + US-075 Sen4AgriNet 8 + US-076 EuroCropsML 5 + US-077 México 3 + US-078 WorldCereal 8 + US-079 licencias 1). De ese total, US-076 y US-078 (13 SP) son FUTURE/diferidos.
 
+> **US asíncronas post-v8 (EPIC 12, post-presentación — creadas después de ratificar este plan):**
+> - **US-080** — Refinador FarSLIP open-set de segunda etapa (`ml/agent/refine.py`). Andamiaje; ejecución GPU diferida.
+> - **US-081 — RESUELTA** ([docs/us-resolved/us-081.md](../docs/us-resolved/us-081.md), 2026-07-02). Copiloto sobre el campeón desplegado **Voting-3 v2** (12 clases, `france-12`): default `xgb→voting3` con degradación limpia, `/chat` SSE con out-of-vocab handoff, tercer backend on-prem **Qwen3.6-VL** (`qwen-vl`) + UI de selector/gráfica, y 4 mejoras (hedge A/B, open-set, routing availability-aware, calibración). QA Fase 6 `ok`. Uplift real france-12 0.7480→**0.8992** (n=14,688). Bloqueos residuales: deploy Cloud Run + scorecard LLM real (creds).
+> - **US-082 — CERRADA (andamiaje + QA), KPIs de métrica PENDIENTES de VM/GEE** ([docs/us-resolved/us-082.md](../docs/us-resolved/us-082.md), 2026-07-02). Diagnóstico de la causa raíz del TL Italia 0.13 (piloto del 1 %, no bug) + andamiaje de re-extracción full-1438 / EDA / 3-vías / separabilidad + consolidación del TL en el paper (es+en) + corrección de fechas DE4 en la presentación (56→~41). La extracción full + re-entreno (KPI-1/2/3) sigue bloqueada por VM H100/GEE.
+
 ---
 
 ## Roadmap de Sprints (vigente, ADR-008)
