@@ -131,7 +131,7 @@ export function useChat() {
   const mapStore = useMapStore();
   const sessionsStore = useSessionsStore();
   const { apiUrl } = useSession();
-  const { locale } = useI18n();
+  const { locale, t } = useI18n();
 
   let abort: AbortController | null = null;
 
@@ -203,6 +203,12 @@ export function useChat() {
       year: 2019,
       locale: activeLocale,
     };
+
+    // Crop-classification model the user pinned (US-081). Sent only when set so
+    // the body stays minimal and the backend's `voting3` tool default applies
+    // otherwise. The reasoner forwards it to `classify_new_parcel` (see the
+    // system instruction injected by chat_service.py).
+    if (store.cropModel) body.crop_model = store.cropModel;
 
     abort = new AbortController();
     const signal = abort.signal;
@@ -379,16 +385,55 @@ export function useChat() {
   }
 
   /**
-   * Switch the active LLM backend (display only).
+   * Switch the active per-session reasoner backend (E12, real).
    *
-   * APORTE PENDIENTE: the team's `/chat` does NOT accept a per-request
-   * `llm_variant`; the reasoner backend is fixed by `settings.llm_variant_default`
-   * on the server. We keep the store flag in sync so the segmented control
-   * reflects a choice, but no request is sent. The LlmSwitch is rendered
-   * disabled with a "server configuration" tooltip.
+   * Persists the choice on the session via `POST /llm/switch` (header
+   * `X-Session-ID`): the backend writes it to `chat_sessions.llm_model` and the
+   * NEXT `/chat` reads it back and builds the matching backend. We update the
+   * store OPTIMISTICALLY so the segmented control reacts instantly, then revert
+   * (and surface a transient toast) if the POST fails — the on-prem variants
+   * (`qwen-onprem` / `qwen-vl`) are only reachable behind the demo VM tunnel, so
+   * a failed switch must degrade gracefully, never break the chat. (When the host
+   * is up but a later `/chat` finds it down, the backend itself degrades to
+   * `gemini` via availability-aware routing; that path is not surfaced here.)
+   *
+   * SSR-safe: runs only on the client (the switch is a user gesture). The unit
+   * tests have no `fetch`/Nuxt session, so a missing session id or `import.meta`
+   * client guard simply mirrors the variant locally without a network call.
    */
-  function switchLlm(variant: LlmVariant): void {
+  async function switchLlm(variant: LlmVariant): Promise<void> {
+    const previous = store.llmVariant;
+    if (variant === previous) return;
+
+    // Optimistic: reflect the choice immediately and clear any stale notice.
     store.setLlmVariant(variant);
+    store.setLlmSwitchError(null);
+
+    if (!import.meta.client) return;
+    const sessionId = sessionsStore.activeId;
+    if (!sessionId) return; // no session yet: keep the local mirror only.
+
+    try {
+      const res = await fetch(apiUrl("/llm/switch"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Session-ID": sessionId,
+        },
+        body: JSON.stringify({ model: variant }),
+      });
+      if (!res.ok) throw new HttpStatusError(res.status);
+    } catch (err) {
+      // Revert the optimistic change and surface a non-blocking notice. The
+      // chat stays fully usable on the previous (working) backend.
+      store.setLlmVariant(previous);
+      store.setLlmSwitchError(t("llm.switch_failed"));
+      console.warn(
+        "[useChat] llm switch failed; reverted to",
+        previous,
+        (err as Error)?.message,
+      );
+    }
   }
 
   /** Tear down any in-flight stream (call from onBeforeUnmount). */

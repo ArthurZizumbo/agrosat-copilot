@@ -127,6 +127,12 @@ class Settings(BaseSettings):
     gemma_api_url: str = ""
     gemma_api_key: str = ""
     gemma_model: str = ""
+    # ``qwen-vl`` (E12): on-prem multimodal Qwen3.6-VL served by llama.cpp + mmproj
+    # (OpenAI-compatible, served-model alias ``qwen36-vl``). Empty by default: an
+    # unset host degrades to ``gemini`` at request time (availability-aware probe
+    # logs ``llm_route_onprem_unreachable``). Reachable only behind the demo VM
+    # tunnel (``make demo-vm``), so leave it blank in dev.
+    qwen36_vl_url: str = ""
     # Gemini / google-genai credentials (read by the SDK via the environment;
     # declared here so ``extra="forbid"`` accepts them in ``.env.local``).
     gemini_api_key: str = ""

@@ -7,7 +7,7 @@
 import { storeToRefs } from "pinia";
 import { useChatStore } from "~/stores/chat";
 import { useMapStore } from "~/stores/map";
-import type { LlmVariant } from "~/types/agent";
+import type { CropModel } from "~/types/agent";
 import { demoFindings } from "~/utils/demoPreview";
 
 const emit = defineEmits<{
@@ -18,11 +18,17 @@ const emit = defineEmits<{
 const { t } = useI18n();
 const store = useChatStore();
 const mapStore = useMapStore();
-const { messages, perceiverNotes, toolCalls, findings, status, llmVariant } =
-  storeToRefs(store);
+const {
+  messages,
+  perceiverNotes,
+  toolCalls,
+  findings,
+  status,
+  cropModel,
+} = storeToRefs(store);
 const { previewActive } = storeToRefs(mapStore);
 
-const { sendMessage, switchLlm, dispose } = useChat();
+const { sendMessage, dispose } = useChat();
 const { ensureActiveSession } = useSessions();
 
 // On open, guarantee a valid active session (create the first one, or restore
@@ -37,6 +43,44 @@ const isBusy = computed(
 const isEmpty = computed(
   () => messages.value.length === 0 && !isBusy.value,
 );
+
+/** Map the requested crop model (tool argument) to a human-readable label. */
+const CROP_MODEL_LABELS: Record<string, string> = {
+  voting3: "Voting-3",
+  xgb: "XGBoost",
+  stacking5: "Stacking-5",
+};
+
+/** A running `classify_new_parcel` tool call, if any. When present we swap the
+ *  generic "thinking" loader for a model-aware "classifying" message. The model
+ *  label comes from the tool argument when the reasoner forwarded one, else from
+ *  the user-pinned `cropModel` in the store (default `voting3`). */
+const isClassifying = computed(() =>
+  toolCalls.value.some(
+    (c) => c.tool === "classify_new_parcel" && c.status === "running",
+  ),
+);
+
+const classifyingLabel = computed<string | null>(() => {
+  if (!isClassifying.value) return null;
+  const call = toolCalls.value.find(
+    (c) => c.tool === "classify_new_parcel" && c.status === "running",
+  );
+  const requested = call?.args?.model;
+  const key =
+    typeof requested === "string" && requested.length > 0
+      ? requested
+      : cropModel.value;
+  return CROP_MODEL_LABELS[key] ?? key ?? null;
+});
+
+/** Loader text shown while busy: model-aware while classifying, else generic. */
+const busyText = computed(() => {
+  if (!isClassifying.value) return t("chat.thinking");
+  return classifyingLabel.value
+    ? t("chat.classifying_with", { model: classifyingLabel.value })
+    : t("chat.classifying");
+});
 
 // WS status dot: connected (streaming), idle, error.
 const wsStatus = computed(() => {
@@ -62,9 +106,11 @@ async function onSubmit(text: string) {
   await sendMessage(text);
 }
 
-async function onSwitchLlm(variant: LlmVariant) {
-  if (variant === llmVariant.value || isBusy.value) return;
-  await switchLlm(variant);
+/** Pin the crop-classification model the next POST /chat forwards to
+ *  `classify_new_parcel` (US-081). Persisted in the chat store. */
+function onSelectCropModel(model: CropModel) {
+  if (model === cropModel.value || isBusy.value) return;
+  store.setCropModel(model);
 }
 
 function loadExample() {
@@ -98,15 +144,8 @@ onBeforeUnmount(() => {
         </h2>
       </div>
       <div class="flex items-center gap-1.5">
-        <!-- APORTE PENDIENTE: the team `/chat` ignores a per-request llm_variant
-             (server uses settings.llm_variant_default). The switch stays visible
-             but disabled, with a "server configuration" tooltip. -->
-        <ChatLlmSwitch
-          :variant="llmVariant"
-          disabled
-          server-fixed
-          @update:variant="onSwitchLlm"
-        />
+        <!-- The reasoner backend switch (Gemini / Qwen / Qwen-VL) lives in the
+             global AppHeader; it is intentionally NOT duplicated here. -->
         <button
           type="button"
           class="inline-flex size-9 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-muted-fg)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-fg)] lg:hidden"
@@ -120,6 +159,18 @@ onBeforeUnmount(() => {
 
     <!-- Chat tabs: one tab per session, each with its own transcript + map AOI -->
     <ChatTabs />
+
+    <!-- Crop-model selector: the user pins which model classify_new_parcel uses
+         (US-081). Wired end-to-end via ChatRequest.crop_model. -->
+    <div
+      class="flex items-center justify-end gap-2 border-b border-[var(--color-border)] px-3 py-1.5"
+    >
+      <ChatCropModelSwitch
+        :model="cropModel"
+        :disabled="isBusy"
+        @update:model="onSelectCropModel"
+      />
+    </div>
 
     <!-- Preview banner -->
     <div
@@ -213,9 +264,15 @@ onBeforeUnmount(() => {
         <p
           v-if="isBusy"
           class="flex items-center gap-1.5 text-xs italic text-[var(--color-muted-fg)]"
+          :class="isClassifying ? 'text-agro-700 dark:text-agro-400' : ''"
         >
-          <UIcon name="i-lucide-loader-circle" class="size-3.5 animate-spin" aria-hidden="true" />
-          {{ t("chat.thinking") }}
+          <UIcon
+            :name="isClassifying ? 'i-lucide-sprout' : 'i-lucide-loader-circle'"
+            class="size-3.5"
+            :class="isClassifying ? 'animate-pulse' : 'animate-spin'"
+            aria-hidden="true"
+          />
+          {{ busyText }}
         </p>
 
         <!-- Error -->

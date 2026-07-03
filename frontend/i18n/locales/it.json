@@ -56,6 +56,11 @@
     "placeholder": "Chiedi qualcosa sulle tue colture...",
     "send": "Invia",
     "thinking": "Sto ragionando...",
+    "classifying": "Classificazione...",
+    "classifying_with": "Classificazione con {model}...",
+    "served_model": "Modello",
+    "model_label": "Modello",
+    "probabilities": "Probabilità per coltura",
     "switch_llm": "Cambia LLM",
     "panel_label": "Pannello di conversazione",
     "assistant_title": "Assistente",
@@ -105,6 +110,7 @@
     "prediction_legend": "Previsione del modello",
     "predicted": "Previsto",
     "true_crop": "Reale",
+    "true_class": "Verità di campo",
     "view_label": "Vista della mappa",
     "view_predicted": "Previsione",
     "view_true": "Verità",
@@ -118,9 +124,18 @@
     "clear_selection": "Rimuovi selezione"
   },
   "llm": {
-    "gemini": "Gemini 2.5 Pro (cloud)",
-    "qwen": "Qwen3.5-35B-A3B (on-prem)",
+    "gemini": "Gemini (cloud)",
+    "qwen": "Qwen (locale)",
+    "qwen_vl": "Qwen-VL (locale, visivo)",
+    "switch_failed": "Impossibile cambiare modello (il servizio locale potrebbe essere offline). Si mantiene il modello precedente.",
     "server_fixed": "Impostato dalla configurazione del server"
+  },
+  "crop_model": {
+    "label": "Modello di coltura",
+    "hint": "Scegli il modello con cui il copilota classifica le colture",
+    "voting3": "Voting-3 (vincitore)",
+    "xgb": "XGBoost",
+    "stacking5": "Stacking-5"
   },
   "errors": {
     "generic": "Si è verificato un errore. Riprova.",

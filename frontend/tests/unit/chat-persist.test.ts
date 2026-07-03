@@ -43,14 +43,14 @@ describe("chatStore persistence (pick: llmVariant only; transcript is server-sid
       STORE_KEY,
       JSON.stringify({
         messages: [{ id: "user-1", role: "user", text: "stale", createdAt: 1 }],
-        llmVariant: "qwen35",
+        llmVariant: "qwen-onprem",
       }),
     );
 
     mountPinia();
     const store = useChatStore();
 
-    expect(store.llmVariant).toBe("qwen35");
+    expect(store.llmVariant).toBe("qwen-onprem");
     // The transcript is no longer persisted -> not rehydrated from storage.
     expect(store.messages).toHaveLength(0);
   });

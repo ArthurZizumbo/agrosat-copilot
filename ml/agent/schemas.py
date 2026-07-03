@@ -517,6 +517,13 @@ class ClassificationResult(BaseModel):
             explicit cue that ``crop_class`` may be a renormalization artifact and
             should be hedged with neighbouring-parcel grounding, not reported as
             confident. ``None`` when the raw top class is in vocabulary.
+        served_model: The ensemble member that actually produced this posterior
+            (``"voting-3"``, ``"xgb-alphaearth"`` or ``"stacking-5"``), reflecting
+            any degradation. When the caller requested Voting-3 but the parcel
+            fell outside the fold-5 OOF universe, this is exactly
+            ``"xgb-alphaearth"`` (not ``"voting-3"``) so the reasoner and the UI
+            stay honest about the active model. Empty string for sentinel results
+            (e.g. ``needs_gee_sampling``) that did not run a model.
     """
 
     model_config = _STRICT_CONFIG
@@ -526,6 +533,7 @@ class ClassificationResult(BaseModel):
     class_probabilities: dict[str, float]
     out_of_vocabulary_classes: list[str] = Field(default_factory=list)
     unresolved_candidate: str | None = None
+    served_model: str = ""
 
 
 # ---------------------------------------------------------------------------

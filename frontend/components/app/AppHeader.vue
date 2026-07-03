@@ -14,8 +14,16 @@ const emit = defineEmits<{
 const { t, locale, locales, setLocale } = useI18n();
 const colorMode = useColorMode();
 const chatStore = useChatStore();
-const { llmVariant, isBusy } = storeToRefs(chatStore);
+const { llmVariant, isBusy, llmSwitchError } = storeToRefs(chatStore);
 const { switchLlm } = useChat();
+
+// Auto-dismiss the LLM-switch notice a few seconds after it appears (E12). The
+// notice is transient: it only signals that persisting the choice failed (e.g.
+// the on-prem host is down); the chat keeps working on the previous backend.
+watch(llmSwitchError, (msg) => {
+  if (!msg || !import.meta.client) return;
+  window.setTimeout(() => chatStore.setLlmSwitchError(null), 5000);
+});
 
 const isDark = computed({
   get: () => colorMode.value === "dark",
@@ -71,8 +79,26 @@ async function onSwitchLlm(v: LlmVariant) {
 
     <!-- Right: LLM switch + theme + locale + chat toggle -->
     <div class="flex items-center gap-1.5">
-      <div class="hidden sm:block">
-        <ChatLlmSwitch :variant="llmVariant" :disabled="isBusy" @update:variant="onSwitchLlm" />
+      <div class="relative hidden sm:block">
+        <!-- ClientOnly: llmVariant comes from localStorage (persisted store), which
+             the server cannot know -> SSR would render the default and the client
+             the persisted value, triggering a hydration class mismatch. Rendering
+             this switch client-only removes the mismatch (the switch is a user
+             gesture anyway, never needed at first paint). -->
+        <ClientOnly>
+          <ChatLlmSwitch :variant="llmVariant" :disabled="isBusy" @update:variant="onSwitchLlm" />
+          <template #fallback>
+            <div class="h-9 w-54 rounded-md bg-surface-2" />
+          </template>
+        </ClientOnly>
+        <!-- Transient notice when persisting the switch failed (E12). -->
+        <p
+          v-if="llmSwitchError"
+          role="status"
+          class="absolute right-0 top-full z-40 mt-1 max-w-[16rem] rounded-[var(--radius-sm)] border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-800 shadow-[var(--shadow-panel)] dark:border-amber-500/40 dark:bg-amber-950/60 dark:text-amber-200"
+        >
+          {{ llmSwitchError }}
+        </p>
       </div>
 
       <button

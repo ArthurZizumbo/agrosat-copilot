@@ -22,7 +22,8 @@ __all__ = [
 ]
 
 #: Allowed reasoner variants, mirroring the ``chat_sessions.llm_model`` CHECK.
-LlmModel = Literal["gemini", "qwen-api", "qwen-onprem", "gemma"]
+#: ``qwen-vl`` is the on-prem multimodal Qwen3.6-VL host (E12).
+LlmModel = Literal["gemini", "qwen-api", "qwen-onprem", "gemma", "qwen-vl"]
 
 
 class SessionCreate(BaseModel):

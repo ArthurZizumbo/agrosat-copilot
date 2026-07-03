@@ -955,6 +955,7 @@ def _build_result(
     *,
     restrict: bool,
     label_space: LabelSpace,
+    served_model: str,
 ) -> ClassificationResult:
     """Assemble a :class:`ClassificationResult` from an 18-class posterior.
 
@@ -971,6 +972,10 @@ def _build_result(
             for the full path it should cover all 18 ids.
         restrict: Whether to mask + renormalize over ``label_space``.
         label_space: The active label-space (used only when ``restrict``).
+        served_model: The member that actually produced ``proba`` (``"voting-3"``,
+            ``"xgb-alphaearth"`` or ``"stacking-5"``), stamped onto the result so
+            the reasoner and the UI report the real active model after any
+            degradation.
 
     Returns:
         The typed :class:`ClassificationResult`. When restricting and no mass
@@ -997,6 +1002,7 @@ def _build_result(
                 class_probabilities=named,
                 out_of_vocabulary_classes=out_of_vocab,
                 unresolved_candidate=unresolved_candidate,
+                served_model=served_model,
             )
         top_name = max(named, key=lambda k: named[k])
         return ClassificationResult(
@@ -1005,6 +1011,7 @@ def _build_result(
             class_probabilities=named,
             out_of_vocabulary_classes=out_of_vocab,
             unresolved_candidate=unresolved_candidate,
+            served_model=served_model,
         )
 
     named = {class_names.get(idx, str(idx)): float(proba[idx]) for idx in range(_NUM_CLASSES)}
@@ -1012,6 +1019,7 @@ def _build_result(
         crop_class=class_names.get(raw_top_idx, str(raw_top_idx)),
         confidence=float(proba[raw_top_idx]),
         class_probabilities=named,
+        served_model=served_model,
     )
 
 
@@ -1147,6 +1155,12 @@ async def run(inp: ClassifyParcelInput, ctx: ToolContext) -> ClassificationResul
     With ``inp.restrict_to_resolved_classes=False`` the full 18-class posterior is
     returned (legacy).
 
+    The result's ``served_model`` field records the member that actually produced
+    the posterior (``"voting-3"``, ``"xgb-alphaearth"`` or ``"stacking-5"``), so it
+    reflects degradation: a Voting-3 request on a parcel outside the fold-5 OOF
+    universe reports ``served_model="xgb-alphaearth"``, never ``"voting-3"``. This
+    lets the reasoner and the UI stay honest about the active model.
+
     Args:
         inp: Validated arguments (session id, AOI polygon, year, and the
             ``restrict_to_resolved_classes`` / ``model`` / ``use_stacking`` /
@@ -1154,10 +1168,11 @@ async def run(inp: ClassifyParcelInput, ctx: ToolContext) -> ClassificationResul
         ctx: Tool execution context (asyncpg pool, settings, session id).
 
     Returns:
-        A :class:`ClassificationResult`. When no AlphaEarth embedding is available
-        for the session's parcel (a fresh AOI), a controlled ``needs_gee_sampling``
-        result is returned instead of a guessed class -- the model is NOT evaluated
-        before the embedding is resolved.
+        A :class:`ClassificationResult` whose ``served_model`` names the member that
+        actually ran. When no AlphaEarth embedding is available for the session's
+        parcel (a fresh AOI), a controlled ``needs_gee_sampling`` result is returned
+        instead of a guessed class -- the model is NOT evaluated before the
+        embedding is resolved.
     """
     requested_model = inp.resolved_model
     logger.info(
@@ -1220,6 +1235,7 @@ async def run(inp: ClassifyParcelInput, ctx: ToolContext) -> ClassificationResul
         classifier.class_names,
         restrict=inp.restrict_to_resolved_classes,
         label_space=label_space,
+        served_model=member,
     )
     logger.info(
         "classify_new_parcel_finished",

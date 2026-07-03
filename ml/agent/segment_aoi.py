@@ -141,9 +141,7 @@ def segment_aoi_live(
         init_ee(service_account_json=service_account_json, project=project)
         coords = pl.DataFrame({"px_id": px_ids, "lon": lons, "lat": lats})
         cache_key = f"seg_{minx:.4f}_{miny:.4f}_{maxx:.4f}_{maxy:.4f}"
-        sampled = sample_alphaearth_at_coords(
-            coords, year=year, cache_key=cache_key, scale=scale
-        )
+        sampled = sample_alphaearth_at_coords(coords, year=year, cache_key=cache_key, scale=scale)
         if sampled.is_empty():
             return []
 
@@ -182,23 +180,16 @@ def segment_aoi_live(
         mid_lat = (miny + maxy) / 2.0
 
         segments: list[dict[str, Any]] = []
-        for geom, value in rasterio.features.shapes(
-            class_grid, mask=mask, transform=transform
-        ):
+        for geom, value in rasterio.features.shapes(class_grid, mask=mask, transform=transform):
             cid = int(value)
             if cid < 0 or cid >= len(SEMANTIC18_CLASS_NAMES):
                 continue
-            rings = [
-                [[round(x, 6), round(y, 6)] for x, y in ring]
-                for ring in geom["coordinates"]
-            ]
+            rings = [[[round(x, 6), round(y, 6)] for x, y in ring] for ring in geom["coordinates"]]
             class_conf = conf_sum[cid] / conf_cnt[cid] if conf_cnt[cid] else None
             segments.append(
                 {
                     "crop_class": SEMANTIC18_CLASS_NAMES[cid],
-                    "confidence": (
-                        round(float(class_conf), 3) if class_conf is not None else None
-                    ),
+                    "confidence": (round(float(class_conf), 3) if class_conf is not None else None),
                     "area_ha": round(_polygon_area_ha(rings[0], mid_lat), 2),
                     "geometry": {"type": "Polygon", "coordinates": rings},
                 }

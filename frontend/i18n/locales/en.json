@@ -56,6 +56,11 @@
     "placeholder": "Ask anything about your crops...",
     "send": "Send",
     "thinking": "Thinking...",
+    "classifying": "Classifying...",
+    "classifying_with": "Classifying with {model}...",
+    "served_model": "Model",
+    "model_label": "Model",
+    "probabilities": "Crop probabilities",
     "switch_llm": "Switch LLM",
     "panel_label": "Conversation panel",
     "assistant_title": "Assistant",
@@ -105,6 +110,7 @@
     "prediction_legend": "Model prediction",
     "predicted": "Predicted",
     "true_crop": "True",
+    "true_class": "Ground truth",
     "view_label": "Map view",
     "view_predicted": "Prediction",
     "view_true": "Ground truth",
@@ -118,9 +124,18 @@
     "clear_selection": "Clear selection"
   },
   "llm": {
-    "gemini": "Gemini 2.5 Pro (cloud)",
-    "qwen": "Qwen3.5-35B-A3B (on-prem)",
+    "gemini": "Gemini (cloud)",
+    "qwen": "Qwen (local)",
+    "qwen_vl": "Qwen-VL (local, visual)",
+    "switch_failed": "Could not switch model (the local service may be offline). Keeping the previous model.",
     "server_fixed": "Set by server configuration"
+  },
+  "crop_model": {
+    "label": "Crop model",
+    "hint": "Choose the model the copilot uses to classify crops",
+    "voting3": "Voting-3 (champion)",
+    "xgb": "XGBoost",
+    "stacking5": "Stacking-5"
   },
   "errors": {
     "generic": "Something went wrong. Please try again.",

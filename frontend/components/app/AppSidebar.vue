@@ -18,10 +18,16 @@ const emit = defineEmits<{
 const { t } = useI18n();
 const mapStore = useMapStore();
 const chatStore = useChatStore();
-const { activeAoi, drawMode, parcelsVisible } = storeToRefs(mapStore);
+const { activeAoi, drawMode, parcelsVisible, previewActive } = storeToRefs(mapStore);
 const { findings } = storeToRefs(chatStore);
 
 const legend = computed(() => buildCropLegend(findings.value.map((f) => f.crop_class)));
+
+// "Limpiar" is enabled whenever there is visual-exploration state to clear:
+// an AOI, the demo preview, or painted parcels (findings).
+const canClear = computed(
+  () => activeAoi.value != null || previewActive.value || findings.value.length > 0,
+);
 
 // The team backend has NO `/aois` endpoint: AOIs are not persisted. The AOIs
 // section therefore lists only the active drawn/demo AOI held in the map store.
@@ -29,6 +35,15 @@ const aois = computed(() => (activeAoi.value ? [activeAoi.value] : []));
 
 function startDraw() {
   mapStore.setDrawMode(!drawMode.value);
+}
+
+// "Limpiar seleccion": full reset of the visual-exploration session. Clears the
+// AOI rectangle + draw mode + clicked parcel + preview flag (map store) AND the
+// painted parcels / result card (chat findings). The chat transcript is kept on
+// purpose (clearing the AOI must not wipe the conversation history).
+function clearAll() {
+  mapStore.resetView();
+  chatStore.clearFindings();
 }
 
 const rail = computed(() => props.collapsed);
@@ -91,8 +106,8 @@ const rail = computed(() => props.collapsed);
             type="button"
             class="flex w-full items-center gap-2.5 rounded-[var(--radius-sm)] px-2.5 py-2 text-sm font-medium text-[var(--color-fg)] transition-colors hover:bg-[var(--color-surface-2)] disabled:opacity-40"
             :title="t('tools.clear')"
-            :disabled="!activeAoi"
-            @click="mapStore.clearSelection()"
+            :disabled="!canClear"
+            @click="clearAll()"
           >
             <UIcon name="i-lucide-eraser" class="size-4 shrink-0" aria-hidden="true" />
             <span v-if="!rail">{{ t("tools.clear") }}</span>

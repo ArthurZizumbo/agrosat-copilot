@@ -14,7 +14,8 @@ Events:
    from ``chat_sessions.llm_model`` (per-request, RLS-scoped), resolves it through
    the backend-agnostic routing table (:mod:`ml.agent.llm_routing`) and builds the
    matching :class:`~ml.agent.backends.LLMBackend` (``gemini`` -> Gemini,
-   ``qwen-api`` / ``qwen-onprem`` -> OpenAI-compatible vLLM, ``gemma`` -> Ollama),
+   ``qwen-api`` / ``qwen-onprem`` -> OpenAI-compatible vLLM, ``gemma`` -> Ollama,
+   ``qwen-vl`` -> multimodal Ollama/llama.cpp, E12),
    wires it into a real :class:`~ml.agent.agent.Agent`, runs its manual
    function-calling loop, and forwards every :data:`~ml.agent.events.AgentEvent`
    it yields (``tool_call``, ``tool_result``, ``text_delta``, ``done``,
@@ -63,7 +64,11 @@ from backend.app.core.db import get_pool
 from backend.app.services.session_service import SessionService
 from backend.app.utils.chat_metrics import ChatMetricsAccumulator, emit_chat_turn_metrics
 from ml.agent.context import ToolContext
-from ml.agent.llm_routing import DEFAULT_VARIANT, VARIANTS, make_backend_for_variant
+from ml.agent.llm_routing import (
+    DEFAULT_VARIANT,
+    VARIANTS,
+    make_backend_for_variant_available,
+)
 from ml.agent.perceiver import PerceiverLayer, PerceiverObservation
 from ml.agent.schemas import GeoJSONGeometry
 
@@ -85,6 +90,22 @@ _LOCALE_INSTRUCTION: dict[str, str] = {
     "en": "Always answer in English.",
 }
 
+#: Crop-classification models the user can pin for ``classify_new_parcel``
+#: (mirror of :data:`ml.agent.schemas.ClassifyParcelInput.model`). When the
+#: request carries one, a leading ``system`` turn instructs the reasoner to pass
+#: ``model='<value>'`` to the tool, so the choice is honoured WITHOUT hardcoding
+#: the model in the tool itself (the tool keeps its ``voting3`` default).
+CropModel = Literal["voting3", "xgb", "stacking5"]
+
+#: System instruction injected (as a leading ``system`` turn, same mechanism as
+#: ``_LOCALE_INSTRUCTION``) when the request pins a crop model. ``{model}`` is the
+#: validated :data:`CropModel` value, so the reasoner forwards it verbatim to the
+#: ``classify_new_parcel`` tool's ``model`` argument.
+_CROP_MODEL_INSTRUCTION = (
+    "When you call the classify_new_parcel tool, you MUST pass model='{model}' "
+    "as its argument; the user explicitly selected this crop-classification model."
+)
+
 #: Default campaign year for an AOI observation (matches the perceiver default).
 _DEFAULT_YEAR: int = 2019
 
@@ -94,8 +115,9 @@ _DEFAULT_YEAR: int = 2019
 _SELECT_VARIANT_SQL = "SELECT llm_model FROM chat_sessions WHERE id = $1"
 
 #: Signature of the injectable reasoner factory: it receives the resolved LLM
-#: VARIANT tag (``gemini`` / ``qwen-api`` / ``qwen-onprem`` / ``gemma``) and the
-#: typed ``settings`` keyword and returns a ready-to-stream :class:`Agent`. The
+#: VARIANT tag (``gemini`` / ``qwen-api`` / ``qwen-onprem`` / ``gemma`` /
+#: ``qwen-vl``) and the typed ``settings`` keyword and returns a ready-to-stream
+#: :class:`Agent`. The
 #: default adapter (:func:`_default_agent_factory`) resolves the variant through
 #: the backend-agnostic routing table (:mod:`ml.agent.llm_routing`) and wires the
 #: matching backend into the agent; tests pass a stub so the stream runs without
@@ -116,11 +138,19 @@ PoolFactory = Callable[[], "Awaitable[asyncpg.Pool]"]
 def _default_agent_factory(variant: str, *, settings: Settings) -> Agent:
     """Build the production reasoner for a persisted LLM ``variant``.
 
-    Resolves the variant through the backend-agnostic routing table
-    (:func:`~ml.agent.llm_routing.make_backend_for_variant`, US-054 AC-4: host is
-    env-driven, zero code to swap H100 -> L4 -> hosted API) and wires the
-    resulting :class:`~ml.agent.backends.LLMBackend` into an
-    :class:`~ml.agent.agent.Agent` with the default tool set and analyst prompt.
+    Resolves the variant through the AVAILABILITY-AWARE routing table
+    (:func:`~ml.agent.llm_routing.make_backend_for_variant_available`, US-081
+    AC10 / E12) and wires the resulting :class:`~ml.agent.backends.LLMBackend`
+    into an :class:`~ml.agent.agent.Agent` with the default tool set and analyst
+    prompt.
+
+    Honest degradation (E12): the on-prem variants (``qwen-onprem`` / ``qwen-vl``
+    / ``gemma``) are reachable only behind the demo VM tunnel (``make demo-vm``).
+    The availability-aware resolver PROBES the on-prem host and, when it is
+    unreachable, falls back to the always-resolvable ``gemini`` route instead of
+    failing the ``/chat`` request at request time. The ``/llm/switch`` endpoint
+    only persists the chosen variant (it does not probe), so this is where a dead
+    host is caught -- the user keeps a working reasoner rather than a timeout.
 
     The agent is assembled here (rather than via
     :func:`~ml.agent.agent.create_agent`, which selects the backend by
@@ -139,7 +169,7 @@ def _default_agent_factory(variant: str, *, settings: Settings) -> Agent:
     from ml.agent.prompts import ANALYST_SYSTEM_PROMPT
     from ml.agent.tools import get_sync_tools
 
-    backend = make_backend_for_variant(variant, settings)
+    backend, _decision = make_backend_for_variant_available(variant, settings)
     return Agent(
         backend=backend,
         tools=get_sync_tools(),
@@ -190,6 +220,13 @@ class ChatRequest(BaseModel):
     #: trilingual frontend gets replies in the user's language. ``None`` -> the
     #: agent answers in its default (Spanish, per the analyst system prompt).
     locale: Literal["it", "es", "en"] | None = None
+    #: Crop-classification model the USER pinned for ``classify_new_parcel``
+    #: (mirror of :data:`ml.agent.schemas.ClassifyParcelInput.model`). When set, a
+    #: leading ``system`` turn instructs the reasoner to forward ``model=<value>``
+    #: to the tool (see :data:`_CROP_MODEL_INSTRUCTION`); the model is never
+    #: hardcoded in the tool. ``None`` -> the tool keeps its ``voting3`` default
+    #: and the LLM may still choose another model on its own.
+    crop_model: CropModel | None = None
 
 
 def _sse_event(event: str, data: dict[str, Any]) -> str:
@@ -341,15 +378,18 @@ class ChatService:
         perceiver = PerceiverLayer(ctx)
         if request.parcel_id is not None:
             return await perceiver.observe(request.parcel_id)
-        # ``aoi`` is non-None here by the guard above.
+        # ``aoi`` is non-None here by the guard above. Forward the user-picked crop
+        # model so the AOI observation runs (and reports) the SAME model the user
+        # selected in the UI -- voting3 by default -- instead of always XGBoost.
         assert request.aoi is not None
-        return await perceiver.observe_aoi(request.aoi, request.year)
+        return await perceiver.observe_aoi(request.aoi, request.year, request.crop_model)
 
     @staticmethod
     def _agent_messages(
         messages: Sequence[ChatMessage],
         observation: PerceiverObservation | None,
         locale: Literal["it", "es", "en"] | None = None,
+        crop_model: CropModel | None = None,
     ) -> list[dict[str, str]]:
         """Build the reasoner's message history, grounded by the perceiver.
 
@@ -359,7 +399,10 @@ class ChatService:
         logits. The agent maps any non ``user``/``model`` role into the ``user``
         role, so a ``system`` grounding turn reaches the model as context. When a
         ``locale`` is supplied (US-057) a language-instruction ``system`` turn is
-        prepended so the reasoner answers in the user's UI language.
+        prepended so the reasoner answers in the user's UI language. When a
+        ``crop_model`` is supplied a second ``system`` turn instructs the reasoner
+        to forward ``model='<crop_model>'`` to the ``classify_new_parcel`` tool, so
+        the user's choice is honoured without hardcoding the model in the tool.
 
         Args:
             messages: The validated conversation history.
@@ -367,6 +410,9 @@ class ChatService:
                 or ``None`` when there is no subject to observe.
             locale: Active UI locale (``it``/``es``/``en``) or ``None`` for the
                 agent's default answer language.
+            crop_model: Crop-classification model the user pinned for
+                ``classify_new_parcel`` (``voting3``/``xgb``/``stacking5``), or
+                ``None`` to leave the tool's own default in place.
 
         Returns:
             A list of ``{"role", "content"}`` dicts for
@@ -375,6 +421,13 @@ class ChatService:
         history: list[dict[str, str]] = []
         if locale is not None:
             history.append({"role": "system", "content": _LOCALE_INSTRUCTION[locale]})
+        if crop_model is not None:
+            history.append(
+                {
+                    "role": "system",
+                    "content": _CROP_MODEL_INSTRUCTION.format(model=crop_model),
+                }
+            )
         if observation is not None:
             # Frame the perceiver block so the reasoner treats it as the answer
             # source for the area the user already selected, instead of asking the
@@ -459,7 +512,13 @@ class ChatService:
             )
 
         async for frame in self._stream_reasoner(
-            messages, observation, session_id, ctx, locale=request.locale, start=start
+            messages,
+            observation,
+            session_id,
+            ctx,
+            locale=request.locale,
+            crop_model=request.crop_model,
+            start=start,
         ):
             yield frame
 
@@ -478,6 +537,7 @@ class ChatService:
         ctx: ToolContext,
         *,
         locale: Literal["it", "es", "en"] | None = None,
+        crop_model: CropModel | None = None,
         start: float,
     ) -> AsyncIterator[str]:
         """Run the reasoner loop and forward its events as SSE frames.
@@ -504,6 +564,9 @@ class ChatService:
             session_id: Effective tenant session.
             ctx: Shared, session-scoped tool execution context.
             locale: Active UI locale conditioning the answer language, if any.
+            crop_model: Crop-classification model the user pinned for
+                ``classify_new_parcel``, forwarded to the reasoner as a system
+                instruction, if any.
             start: The ``time.perf_counter`` mark taken by :meth:`stream` at the
                 turn's start, reused so the SLO latency is not double-measured.
 
@@ -524,7 +587,7 @@ class ChatService:
             model=model,
             latency_ms=round((time.perf_counter() - resolve_start) * 1000.0, 2),
         )
-        agent_messages = self._agent_messages(messages, observation, locale)
+        agent_messages = self._agent_messages(messages, observation, locale, crop_model)
 
         metrics = ChatMetricsAccumulator(variant=variant, model=model)
         answer_parts: list[str] = []

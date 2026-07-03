@@ -107,6 +107,18 @@ export const useMapStore = defineStore("map", {
       this.activeAoi = null;
       this.drawMode = false;
     },
+    /** Full reset of the visual-exploration view: clears the AOI + draw mode
+     *  (via clearSelection), the clicked parcel, the preview flag and the demo
+     *  view toggle/accuracy. Map-side only; the chat findings are cleared by
+     *  chatStore.clearFindings (the sidebar "Limpiar" button calls both). Does
+     *  NOT move the camera: the map stays at the current position. */
+    resetView() {
+      this.clearSelection();
+      this.selectedParcel = null;
+      this.previewActive = false;
+      this.demoView = "pred";
+      this.predictionAccuracy = null;
+    },
     setPreviewActive(on: boolean) {
       this.previewActive = on;
     },

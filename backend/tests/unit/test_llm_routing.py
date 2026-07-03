@@ -42,9 +42,9 @@ def _settings(**overrides: str) -> Settings:
 # ---------------------------------------------------------------------------
 # AC-3: the four variants all resolve to the expected backend type.
 # ---------------------------------------------------------------------------
-def test_variants_tuple_is_the_four_supported_tags() -> None:
-    """``VARIANTS`` is exactly the four hybrid variants (1:1 with the DB CHECK)."""
-    assert VARIANTS == ("gemini", "qwen-api", "qwen-onprem", "gemma")
+def test_variants_tuple_is_the_supported_tags() -> None:
+    """``VARIANTS`` is exactly the hybrid variants (1:1 with the DB CHECK, E12)."""
+    assert VARIANTS == ("gemini", "qwen-api", "qwen-onprem", "gemma", "qwen-vl")
     assert DEFAULT_VARIANT == "gemini"
 
 
@@ -117,10 +117,33 @@ def test_resolve_unknown_variant_degrades_to_gemini() -> None:
 
 @pytest.mark.parametrize("variant", VARIANTS)
 def test_every_variant_resolves_without_error(variant: str) -> None:
-    """All four variants resolve even with empty env (defensive, AC-3)."""
+    """Every variant resolves even with empty env (defensive, AC-3 / E12)."""
     resolved = resolve_route(variant, _settings())
     assert resolved.variant == variant
-    assert resolved.backend_type in {"gemini", "openai_compat"}
+    assert resolved.backend_type in {"gemini", "openai_compat", "ollama"}
+
+
+def test_resolve_qwen_vl_reads_env_and_serves_multimodal_alias() -> None:
+    """``qwen-vl`` reads ``QWEN36_VL_URL`` and serves the multimodal alias (E12)."""
+    resolved = resolve_route(
+        "qwen-vl",
+        _settings(qwen36_vl_url="http://127.0.0.1:8003/v1"),
+    )
+    assert resolved.backend_type == "ollama"
+    assert resolved.base_url == "http://127.0.0.1:8003/v1"
+    assert resolved.model_id == "qwen36-vl"
+
+
+def test_make_backend_for_qwen_vl_builds_ollama_backend() -> None:
+    """``qwen-vl`` builds the image-forwarding ``OllamaBackend`` (E12)."""
+    from ml.agent.backends import OllamaBackend
+    from ml.agent.llm_routing import make_backend_for_variant
+
+    settings = _settings(qwen36_vl_url="http://127.0.0.1:8003/v1")
+    backend = make_backend_for_variant("qwen-vl", settings)
+    assert isinstance(backend, OllamaBackend)
+    assert backend.model == "qwen36-vl"
+    assert "127.0.0.1:8003" in str(backend._base_url)
 
 
 # ---------------------------------------------------------------------------

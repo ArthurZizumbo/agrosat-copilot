@@ -57,17 +57,21 @@ __all__ = [
     "resolve_route_available",
 ]
 
-#: The four supported persisted variant tags (1:1 with the DB CHECK constraint
-#: of US-054). Order matters only for documentation / iteration.
-VARIANTS: tuple[str, ...] = ("gemini", "qwen-api", "qwen-onprem", "gemma")
+#: The supported persisted variant tags (1:1 with the DB CHECK constraint of
+#: US-054 / E12). Order matters only for documentation / iteration. ``qwen-vl`` is
+#: the on-prem multimodal Qwen3.6-VL host added in E12.
+VARIANTS: tuple[str, ...] = ("gemini", "qwen-api", "qwen-onprem", "gemma", "qwen-vl")
 
 #: Honest degradation target when a session carries no variant or an unknown one
 #: (AC-2 fallback). ``gemini`` is always resolvable from settings.
 DEFAULT_VARIANT: str = "gemini"
 
 #: The kinds of backend the agent loop can drive. ``gemini`` is the native SDK
-#: path; ``openai_compat`` is every OpenAI-compatible HTTP endpoint.
-BackendType = Literal["gemini", "openai_compat"]
+#: path; ``openai_compat`` is every OpenAI-compatible HTTP endpoint served by a
+#: :class:`~ml.agent.backends.VLLMOpenAIBackend`; ``ollama`` is the multimodal
+#: OpenAI-compatible host (llama.cpp + mmproj) driven by the image-forwarding
+#: :class:`~ml.agent.backends.OllamaBackend` (E12, ``qwen-vl``).
+BackendType = Literal["gemini", "openai_compat", "ollama"]
 
 
 @dataclass(frozen=True)
@@ -156,6 +160,16 @@ _ROUTES: dict[str, Route] = {
         api_key_env="gemma_api_key",
         model_id_env="gemma_model",
     ),
+    "qwen-vl": Route(
+        variant="qwen-vl",
+        # Multimodal on-prem host (llama.cpp + mmproj) served by the
+        # image-forwarding OllamaBackend; speaks the OpenAI image_url protocol.
+        backend_type="ollama",
+        base_url_env="qwen36_vl_url",
+        api_key_env=None,
+        model_id_env=None,
+        model_id_const="qwen36-vl",
+    ),
 }
 
 #: Fallback served-model id for the ``qwen-onprem`` variant (the vLLM alias of
@@ -165,6 +179,11 @@ _DEFAULT_QWEN_ONPREM_MODEL: str = "qwen35"
 #: Last-resort base URL for an OpenAI-compatible variant whose URL env is unset
 #: (matches the US-048 vLLM serving default; the resolver already warned).
 _FALLBACK_OPENAI_BASE_URL: str = "http://127.0.0.1:8002/v1"
+
+#: Last-resort base URL for the ``qwen-vl`` (Ollama / llama.cpp) variant when its
+#: URL env is unset (matches the multimodal serving default of
+#: :mod:`ml.agent.backends`; the resolver already warned).
+_FALLBACK_OLLAMA_BASE_URL: str = "http://127.0.0.1:8003/v1"
 
 #: Default Gemini model id mirrored from the backend so resolving ``gemini``
 #: never returns an empty model when ``settings.gemini_model`` is blank.
@@ -240,9 +259,12 @@ def resolve_route(variant: str, settings: Settings) -> ResolvedRoute:
     model_id = _setting(settings, route.model_id_env) or (
         route.model_id_const or _DEFAULT_QWEN_ONPREM_MODEL
     )
+    # Preserve the route's declared backend_type so the multimodal ``ollama``
+    # variant (``qwen-vl``) is not coerced to the plain ``openai_compat`` path
+    # (it must build the image-forwarding OllamaBackend, not VLLMOpenAIBackend).
     return ResolvedRoute(
         variant=route.variant,
-        backend_type="openai_compat",
+        backend_type="ollama" if route.backend_type == "ollama" else "openai_compat",
         base_url=base_url,
         api_key=_setting(settings, route.api_key_env),
         model_id=model_id,
@@ -286,6 +308,25 @@ def make_backend_for_variant(variant: str, settings: Settings) -> LLMBackend:
             model=resolved.model_id,
         )
         return backend
+
+    if resolved.backend_type == "ollama":
+        # Multimodal on-prem host (llama.cpp + mmproj): the OllamaBackend forwards
+        # image_url blocks (a plain vLLM backend would drop them) and disables the
+        # unbounded thinking trace so a long prompt still returns an answer (E12).
+        from ml.agent.backends import OllamaBackend
+
+        logger.info(
+            "backend_for_variant_selected",
+            variant=resolved.variant,
+            backend_type=resolved.backend_type,
+            model=resolved.model_id,
+            base_url=resolved.base_url,
+        )
+        return OllamaBackend(
+            base_url=resolved.base_url or _FALLBACK_OLLAMA_BASE_URL,
+            model=resolved.model_id,
+            disable_thinking=True,
+        )
 
     logger.info(
         "backend_for_variant_selected",
@@ -510,6 +551,29 @@ def make_backend_for_variant_available(
             reason=decision.reason,
         )
         return backend, decision
+
+    if resolved.backend_type == "ollama":
+        # Multimodal on-prem host reached only when its tunnel is up; the probe in
+        # resolve_route_available already degraded to gemini when unreachable, so
+        # this branch only runs for a live host (E12).
+        from ml.agent.backends import OllamaBackend
+
+        logger.info(
+            "backend_for_variant_available_selected",
+            requested_variant=decision.requested_variant,
+            variant=resolved.variant,
+            backend_type=resolved.backend_type,
+            model=resolved.model_id,
+            base_url=resolved.base_url,
+            fell_back=decision.fell_back,
+            reason=decision.reason,
+        )
+        ollama_backend = OllamaBackend(
+            base_url=resolved.base_url or _FALLBACK_OLLAMA_BASE_URL,
+            model=resolved.model_id,
+            disable_thinking=True,
+        )
+        return ollama_backend, decision
 
     logger.info(
         "backend_for_variant_available_selected",

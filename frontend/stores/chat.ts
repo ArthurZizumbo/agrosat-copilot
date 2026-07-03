@@ -19,6 +19,7 @@
 import { defineStore } from "pinia";
 import type {
   AgentEvent,
+  CropModel,
   Finding,
   LlmVariant,
   ToolResultEvent,
@@ -102,6 +103,20 @@ function parseToolResult(event: ToolResultEvent): {
 
   // ClassificationResult -> one card (no parcel id; use 0 as a sentinel).
   if (typeof r.crop_class === "string" && typeof r.confidence === "number") {
+    // `class_probabilities` is a free dict on the wire; keep only numeric
+    // entries so the chart never receives malformed values.
+    const probs =
+      r.class_probabilities != null && typeof r.class_probabilities === "object"
+        ? Object.fromEntries(
+            Object.entries(
+              r.class_probabilities as Record<string, unknown>,
+            ).filter(
+              ([, p]) => typeof p === "number" && Number.isFinite(p),
+            ) as Array<[string, number]>,
+          )
+        : null;
+    const servedModel =
+      typeof r.served_model === "string" ? r.served_model : null;
     return {
       findings: [
         {
@@ -113,6 +128,8 @@ function parseToolResult(event: ToolResultEvent): {
           metrics: {},
           geometry: null,
           citation: { tool_call_id: source, source },
+          class_probabilities: probs,
+          served_model: servedModel,
         },
       ],
       summary: r.crop_class,
@@ -128,8 +145,18 @@ interface ChatState {
   perceiverNotes: PerceiverNote[];
   toolCalls: TrackedToolCall[];
   findings: Finding[];
-  /** Display-only; the backend ignores per-request variant (server config). */
+  /** Active per-session reasoner backend. Persisted server-side via
+   *  `POST /llm/switch` (see useChat.switchLlm) and mirrored here so the
+   *  segmented control reflects the choice across reloads (E12). */
   llmVariant: LlmVariant;
+  /** Transient notice when `POST /llm/switch` could not be persisted (e.g. the
+   *  on-prem host is down). Null when there is none; the UI shows a dismissable
+   *  toast and the chat is never blocked (E12, honest degradation). */
+  llmSwitchError: string | null;
+  /** Crop-classification model the user pinned for `classify_new_parcel`; sent
+   *  as `ChatRequest.crop_model` on the next POST /chat so the reasoner forwards
+   *  it to the tool. `"voting3"` (the champion) is the default. */
+  cropModel: CropModel;
   status: ChatStatus;
   /** Id of the assistant turn currently being streamed, if any. */
   activeAssistantId: string | null;
@@ -149,6 +176,8 @@ export const useChatStore = defineStore("chat", {
     toolCalls: [],
     findings: [],
     llmVariant: "gemini",
+    llmSwitchError: null,
+    cropModel: "voting3",
     status: "idle",
     activeAssistantId: null,
     errorMessage: null,
@@ -178,9 +207,22 @@ export const useChatStore = defineStore("chat", {
   },
 
   actions: {
-    /** Display-only; transport does not send this (see useChat.switchLlm). */
+    /** Mirror the active reasoner variant locally. The server persistence is
+     *  owned by `useChat.switchLlm` (POST /llm/switch); this only keeps the
+     *  segmented control in sync (E12). */
     setLlmVariant(variant: LlmVariant) {
       this.llmVariant = variant;
+    },
+
+    /** Set (or clear, with null) the transient LLM-switch notice. */
+    setLlmSwitchError(message: string | null) {
+      this.llmSwitchError = message;
+    },
+
+    /** Set the crop-classification model sent as `ChatRequest.crop_model` on the
+     *  next POST /chat (the reasoner forwards it to `classify_new_parcel`). */
+    setCropModel(model: CropModel) {
+      this.cropModel = model;
     },
 
     /** Set the active parcel (clicked on the map) that the next POST /chat
@@ -249,7 +291,10 @@ export const useChatStore = defineStore("chat", {
               geometry: s.geometry ?? null,
               citation: {
                 tool_call_id: "segment_aoi",
-                source: "AlphaEarth+XGBoost (segmentacion por celda)",
+                // Proper-noun model identifier only (no translatable prose): the
+                // parenthetical descriptor was hardcoded Spanish and shown verbatim
+                // to it/en users, so it is dropped (FindingCard renders source raw).
+                source: "AlphaEarth+XGBoost",
               },
             }));
           }
@@ -397,6 +442,21 @@ export const useChatStore = defineStore("chat", {
     loadDemoParcels(findings: Finding[]) {
       this.findings = [...findings];
     },
+
+    /**
+     * Clear the visual-exploration state of a turn: the parcel findings (which
+     * unpaint the map, since findingsToGeoJSON then yields an empty collection)
+     * plus the transient perceiver notes and tool calls. Used by the sidebar
+     * "Limpiar" button. By design this KEEPS the conversation transcript
+     * (`messages`) and the persisted Postgres session intact: clearing the AOI
+     * and parcels must not wipe the user's chat history. Use `reset()` for a
+     * full wipe (e.g. tab switch).
+     */
+    clearFindings() {
+      this.findings = [];
+      this.perceiverNotes = [];
+      this.toolCalls = [];
+    },
   },
 
   // Persist only durable conversation state. Transient per-turn state
@@ -414,6 +474,6 @@ export const useChatStore = defineStore("chat", {
   // unpainted before the ClientOnly fix.
   persist: {
     storage: piniaPluginPersistedstate.localStorage(),
-    pick: ["llmVariant"],
+    pick: ["llmVariant", "cropModel"],
   },
 });

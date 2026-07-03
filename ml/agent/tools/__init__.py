@@ -145,7 +145,12 @@ TOOL_SPECS: dict[str, _ToolDescriptor] = {
         "weighted-vote deployment champion (france-10 F1 0.9069), or "
         "model='stacking5' for the legacy Stacking-5 meta; both use the cached "
         "fold-5 OOF and degrade to xgb-alphaearth for an unresolved parcel. Not a "
-        "generic 'stacking ensemble' by default.",
+        "generic 'stacking ensemble' by default. The result's served_model field "
+        "names the member that ACTUALLY ran (voting-3, xgb-alphaearth or "
+        "stacking-5) after any degradation: you MUST tell the user which model was "
+        "used, and if served_model degraded to xgb-alphaearth despite requesting "
+        "voting3, explain that the parcel fell outside the PASTIS-R fold-5 OOF "
+        "universe so the weighted vote could not be served.",
     ),
     "add_aoi": (
         "ml.agent.tools.add_aoi",

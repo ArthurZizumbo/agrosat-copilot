@@ -73,7 +73,9 @@ export async function loadRealParcels(): Promise<RealParcels | null> {
     metrics: {},
     citation: {
       tool_call_id: "demo-real",
-      source: "PASTIS-R (verdad de campo)",
+      // Dataset proper noun only; the "ground truth" descriptor was hardcoded
+      // Spanish shown verbatim to it/en users (FindingCard renders source raw).
+      source: "PASTIS-R",
       parcel_id: f.properties.parcel_id ?? i,
     },
     geometry: f.geometry,
@@ -112,17 +114,22 @@ export async function loadPredictionParcels(): Promise<PredictionParcels | null>
   interface PredFeature {
     geometry: PolygonGeometry;
     properties: {
+      // The Voting-3 demo writes the canonical PASTIS id "{patch}_{local}" (a
+      // string); older artifacts wrote a small numeric instance id. Accept both.
       parcel_id?: number | string;
       crop_class?: string | null;
       pred_class?: string | null;
       true_class?: string | null;
       correct?: boolean | null;
       confidence?: number | null;
+      // Voting-3 demo: per-class posterior over the resolved label-space, so the
+      // FindingCard can render the probability chart for the demo parcels too.
+      class_probabilities?: Record<string, number> | null;
     };
   }
   let fc: {
     bbox: [number, number, number, number];
-    metadata?: { accuracy?: number | null };
+    metadata?: { accuracy?: number | null; model?: string | null };
     features: PredFeature[];
   };
   try {
@@ -132,9 +139,24 @@ export async function loadPredictionParcels(): Promise<PredictionParcels | null>
   } catch {
     return null;
   }
+  // The artifact's own metadata declares the model it was built with (Voting-3),
+  // so the citation reflects what is actually painted instead of hardcoding XGBoost.
+  const builtModel = fc.metadata?.model ?? "Voting-3";
   const findings = fc.features.map((f, i) => {
-    const pid =
-      typeof f.properties.parcel_id === "number" ? f.properties.parcel_id : i;
+    // Finding.parcel_id is numeric (activeParcelId: number). Derive a stable
+    // numeric id from the canonical "{patch}_{local}" string (the local instance
+    // part), falling back to the array index; keep the canonical id in the
+    // citation so the real PASTIS id is not lost.
+    const rawId = f.properties.parcel_id;
+    const canonicalId = rawId != null ? String(rawId) : String(i);
+    let pid: number;
+    if (typeof rawId === "number") {
+      pid = rawId;
+    } else {
+      const local = canonicalId.includes("_") ? canonicalId.split("_").pop() : canonicalId;
+      const parsed = Number.parseInt(local ?? "", 10);
+      pid = Number.isFinite(parsed) ? parsed : i;
+    }
     return {
       parcel_id: pid,
       crop_class: f.properties.pred_class ?? f.properties.crop_class ?? null,
@@ -144,9 +166,13 @@ export async function loadPredictionParcels(): Promise<PredictionParcels | null>
       metrics: {},
       true_class: f.properties.true_class ?? null,
       correct: f.properties.correct ?? null,
+      class_probabilities: f.properties.class_probabilities ?? null,
+      served_model: builtModel,
       citation: {
         tool_call_id: "demo-pred",
-        source: "XGBoost+AlphaEarth (prediccion, fold reservado)",
+        // Model proper noun only; the parenthetical descriptor was hardcoded
+        // Spanish shown verbatim to it/en users (FindingCard renders source raw).
+        source: builtModel,
         parcel_id: pid,
       },
       geometry: f.geometry,

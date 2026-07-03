@@ -20,6 +20,12 @@ const confidencePct = computed(() =>
 const cropLabel = computed(
   () => props.finding.crop_class ?? t("map.crop_unknown"),
 );
+
+/** Whether the finding carries usable per-class probabilities for the chart. */
+const hasProbabilities = computed(() => {
+  const p = props.finding.class_probabilities;
+  return p != null && Object.keys(p).length > 0;
+});
 </script>
 
 <template>
@@ -44,6 +50,27 @@ const cropLabel = computed(
       </span>
     </header>
 
+    <!-- Served model chip + ground-truth label (prediction context) -->
+    <div
+      v-if="finding.served_model || finding.true_class"
+      class="mt-2 flex flex-wrap items-center gap-1.5"
+    >
+      <span
+        v-if="finding.served_model"
+        class="inline-flex items-center gap-1 rounded-full bg-agro-50 px-2 py-0.5 text-[0.625rem] font-medium text-agro-700 dark:bg-agro-900/40 dark:text-agro-400"
+      >
+        <UIcon name="i-lucide-cpu" class="size-3" aria-hidden="true" />
+        {{ t("chat.served_model") }}: {{ finding.served_model }}
+      </span>
+      <span
+        v-if="finding.true_class"
+        class="inline-flex items-center gap-1 rounded-full bg-[var(--color-surface-2)] px-2 py-0.5 text-[0.625rem] font-medium text-[var(--color-muted-fg)]"
+      >
+        <UIcon name="i-lucide-flag" class="size-3" aria-hidden="true" />
+        {{ t("map.true_class") }}: {{ finding.true_class }}
+      </span>
+    </div>
+
     <!-- Confidence -->
     <div v-if="confidencePct != null" class="mt-2.5">
       <div class="mb-1 flex items-center justify-between text-[0.6875rem]">
@@ -65,6 +92,18 @@ const cropLabel = computed(
           :style="{ width: `${confidencePct}%` }"
         />
       </div>
+    </div>
+
+    <!-- Per-class probability chart -->
+    <div v-if="hasProbabilities" class="mt-2.5">
+      <p class="mb-1 text-[0.6875rem] text-[var(--color-muted-fg)]">
+        {{ t("chat.probabilities") }}
+      </p>
+      <ChatCropProbabilityChart
+        :class-probabilities="finding.class_probabilities!"
+        :crop-class="finding.crop_class"
+        :true-class="finding.true_class"
+      />
     </div>
 
     <!-- Metrics -->
