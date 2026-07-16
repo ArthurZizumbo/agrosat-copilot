@@ -10,7 +10,7 @@ Web app **Nuxt 4 SSR** trilingüe (it/es/en). Mapa MapLibre, chat SSE y switch A
 
 - Componentes reales: `ChatDock.vue` (chat, refactor del legacy `ChatPanel.vue`), `MessageBubble.vue` (markdown via `marked` + `isomorphic-dompurify`), `ToolActivity.vue`, `MapCanvas.vue`, `AppHeader.vue`.
 - Composables reales: `useChat` (SSE + `parseSseFrame`), `useMap`, `useAoi`, `useBasemap`, `useSession`. **NO** existe `useSSE.ts` (el parser vive en `useChat`).
-- Stores Pinia: `chat.ts` (persistido via `pinia-plugin-persistedstate`, pick `messages`+`llmVariant`), `map.ts`.
+- Stores Pinia: `chat.ts` (persistido via `pinia-plugin-persistedstate`, pick `llmVariant`+`cropModel`; el transcript vive en Postgres desde US-080, ya NO se persiste), `map.ts`.
 - La validacion E2E en navegador real (Playwright) requiere `backend/.env.local` + sesion sembrada; pendiente de entorno (no de codigo).
 
 ## Comandos
@@ -61,7 +61,7 @@ make bootstrap      # poetry install + (cd frontend && pnpm install)
 - `pnpm-lock.yaml` — solo cambia vía `pnpm add`/`pnpm install`.
 - `.nuxt/`, `.output/`, `node_modules/` — generados; nunca editar ni commitear.
 - Nunca agregar una clave i18n a un solo locale: rompe `i18n:check` y bloquea el merge.
-- `pinia-plugin-persistedstate` SI esta en `package.json` (lo usa `stores/chat.ts`). `vue-echarts` NO esta; agregarlo requiere `pnpm add` y acuerdo de equipo.
+- `pinia-plugin-persistedstate` SI esta en `package.json` (lo usa `stores/chat.ts`). `vue-echarts` + `echarts` **YA estan** (E12, via `pnpm add`): los usa `components/chat/CropProbabilityChart.vue`, que registra solo los modulos necesarios (BarChart + Grid + Tooltip + Canvas) y monta client-only. Importar otro modulo de echarts = registrarlo ahi, no anadir dependencia.
 
 ## Tests
 

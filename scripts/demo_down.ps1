@@ -25,9 +25,11 @@ Write-Host "==> Deteniendo servicios nativos" -ForegroundColor Cyan
 Stop-Port 8010 "backend uvicorn"
 Stop-Port 3010 "frontend nuxt"
 
-Write-Host "==> Cerrando tuneles SSH al Qwen on-prem (:8002)" -ForegroundColor Cyan
+Write-Host "==> Cerrando tuneles SSH al Qwen on-prem (:8002 texto + :8003 VL)" -ForegroundColor Cyan
+# El tunel de demo_up reenvia 8002 (texto) y 8003 (VL) en un solo proceso ssh;
+# emparejamos por cualquiera de los dos reenvios para cerrarlo.
 Get-CimInstance Win32_Process -Filter "Name='ssh.exe'" -ErrorAction SilentlyContinue |
-    Where-Object { $_.CommandLine -match '8002:127.0.0.1:8002' } |
+    Where-Object { $_.CommandLine -match '8002:127.0.0.1:8002' -or $_.CommandLine -match '8003:127.0.0.1:8003' } |
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue; Write-Host "  tunel cerrado (pid $($_.ProcessId))" -ForegroundColor Yellow }
 
 if (-not $KeepDocker) {

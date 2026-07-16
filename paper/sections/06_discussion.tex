@@ -10,12 +10,15 @@ Our results support four claims, stated conservatively.
     \item Temporal transformers with a phenological branch are the
     strongest individual perceivers on PASTIS-R (TSViT-pheno, mIoU
     0.6253), and heterogeneous stacking over decorrelated members
-    lifts the held-out parcel-level macro F1 to 0.7470
-    (accuracy 0.8490), $+12.3$ points over the best single model. The
-    same champion, used as the agent's perceiver, raises parcel accuracy
-    from 0.8308 to 0.9413 ($+11$ points) on 13{,}481 real parcels,
-    confirming that the Be My Eyes separation pays off precisely because
-    the frozen reasoner inherits the champion's accuracy.
+    reaches a held-out parcel-level macro F1 of 0.7470
+    (accuracy 0.8490), improving the three-member stacking baseline
+    (0.6359 to 0.6477 out-of-fold) by arbitrating rare classes. The
+    deployed production perceiver is the simpler Voting-3 (on-par macro
+    F1, better on new regions); used as the agent's perceiver it raises
+    parcel accuracy from 0.8539 to 0.9375 ($+8.4$ points) on 14{,}688 real
+    parcels. This confirms that the Be My Eyes separation pays off
+    precisely because the frozen reasoner inherits the deployed
+    perceiver's accuracy.
     \item A contrastive vision-language branch~\cite{li2025farslip}
     contributes a useful but modest complementary signal (the
     five-member stacking gain over three members is $+0.0118$ macro
@@ -23,11 +26,24 @@ Our results support four claims, stated conservatively.
     \item The \emph{Be My Eyes} pattern~\cite{huang2025bemyeyes} yields
     a grounded conversational layer in which every cited figure is
     traceable to an auditable tool result, with a frozen reasoner that
-    is interchangeable between cloud (Gemini~2.5~Pro) and on-premises
+    is interchangeable between cloud (Gemini~3.5~Flash) and on-premises
     (Qwen3.5-35B-A3B) for data sovereignty.
-    \item Spatial transfer from France to Catalonia is not zero-shot;
-    few-shot fine-tuning recovers mIoU 0.2468, in line with reported
-    transferability limits~\cite{harvesting2026alphaearth}.
+    \item Spatial transfer is region-limited, not zero-shot: France to
+    Catalonia recovers mIoU 0.2468 only after few-shot fine-tuning, and
+    even a within-country France to Brittany transfer drops to F1 0.21,
+    in line with reported transferability
+    limits~\cite{harvesting2026alphaearth}. Yet transfer \emph{does}
+    work where the phenology is separable --- the France-trained champion
+    reaches macro F1 0.266 on Lower Saxony (DE4), rescuing winter cereals
+    --- and the foundation model pays down the few-shot label budget by
+    roughly an order of magnitude (AlphaEarth beats raw Sentinel-2 by
+    $+0.111$ F1 at $k{=}1$ on EuroCropsML LV$\rightarrow$EE).
+    \item Pooling regions into a single multi-region classifier widens
+    the taxonomy from 18 to 30 leaves without degrading the coarse
+    reading, yet rescues \emph{no} fine class above the 0.85 production
+    threshold: the bottleneck is phenological separability in an annual
+    embedding, not the number of regions. We report this honest negative
+    to bound the claim.
 \end{enumerate}
 
 \subsection{What we explicitly do not claim}
@@ -39,10 +55,10 @@ To avoid over-claiming, we delimit the boundaries of our evidence.
     classifier; its value is grounding, auditability, and the
     on-premises sovereignty option.
     \item We do \emph{not} claim a classification threshold
-    (e.g.\ F1~$\geq$~0.80) for Mexico. The avocado/guava demonstration
-    over Mexican parcels is a qualitative, zero-shot methodological
-    demo without ground truth; it illustrates the pipeline, not a
-    measured accuracy.
+    (e.g.\ F1~$\geq$~0.80) in the tropics. The
+    Europe$\rightarrow$Brazil/India WorldCereal transfer is measured
+    with real ground-truth labels and does not exceed F1~0.72 even after
+    few-shot adaptation; zero-shot maize collapses to F1~0.0095.
     \item We do \emph{not} claim that zero-shot transfer works outside
     France. The France$\rightarrow$Catalonia experiment shows zero-shot
     failure and few-shot recovery; a $k$-shot curve on

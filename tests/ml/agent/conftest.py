@@ -158,15 +158,18 @@ def make_ctx(fake_settings: FakeSettings):
     directly).
 
     Returns:
-        A callable ``(session_id=SESSION_A, defer=None) -> ToolContext``.
+        A callable ``(session_id=SESSION_A, defer=None, crop_model=None) ->
+        ToolContext``. ``crop_model`` mirrors the model the user pinned in the UI,
+        which ``classify.run`` enforces over the reasoner's argument.
     """
 
-    def _make(session_id: UUID = SESSION_A, defer=None) -> ToolContext:
+    def _make(session_id: UUID = SESSION_A, defer=None, crop_model=None) -> ToolContext:
         return ToolContext(
             pool=None,  # type: ignore[arg-type]
             settings=fake_settings,  # type: ignore[arg-type]
             session_id=session_id,
             defer=defer,
+            crop_model=crop_model,
         )
 
     return _make

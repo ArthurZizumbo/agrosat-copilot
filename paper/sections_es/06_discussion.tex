@@ -11,13 +11,15 @@ conservadora.
     \item Los transformadores temporales con una rama fenológica son los
     perceptores individuales más fuertes sobre PASTIS-R (TSViT-pheno,
     mIoU 0.6253), y el stacking heterogéneo sobre miembros
-    decorrelacionados eleva el F1 macro a nivel de parcela en el fold de
-    prueba a 0.7470 (exactitud 0.8490), $+12.3$ puntos sobre el mejor
-    modelo individual. El mismo campeón, usado como perceptor del agente,
-    eleva la exactitud a nivel de parcela de 0.8308 a 0.9413 ($+11$
-    puntos) sobre 13{,}481 parcelas reales, lo que confirma que la
+    decorrelacionados alcanza un F1 macro a nivel de parcela en el fold de
+    prueba de 0.7470 (exactitud 0.8490), mejorando el stacking de tres
+    miembros (de 0.6359 a 0.6477 out-of-fold) al arbitrar clases raras.
+    El perceptor de producción desplegado es el más simple Voting-3 (F1
+    macro a la par, mejor en regiones nuevas); usado como perceptor del
+    agente eleva la exactitud a nivel de parcela de 0.8539 a 0.9375
+    ($+8.4$ puntos) sobre 14{,}688 parcelas reales. Esto confirma que la
     separación Be My Eyes rinde frutos precisamente porque el razonador
-    congelado hereda la exactitud del campeón.
+    congelado hereda la exactitud del perceptor desplegado.
     \item Una rama contrastiva visión-lenguaje~\cite{li2025farslip}
     aporta una señal complementaria útil pero modesta (la ganancia del
     stacking de cinco miembros sobre tres es $+0.0118$ de F1 macro). Es
@@ -25,12 +27,25 @@ conservadora.
     \item El patrón \emph{Be My Eyes}~\cite{huang2025bemyeyes} produce
     una capa conversacional anclada en la que cada cifra citada es
     trazable a un resultado de herramienta auditable, con un razonador
-    congelado intercambiable entre la nube (Gemini~2.5~Pro) y on-premises
+    congelado intercambiable entre la nube (Gemini~3.5~Flash) y on-premises
     (Qwen3.5-35B-A3B) para la soberanía de datos.
-    \item La transferencia espacial de Francia a Cataluña no es
-    zero-shot; el ajuste fino few-shot recupera mIoU 0.2468, en línea con
-    los límites de transferibilidad
-    reportados~\cite{harvesting2026alphaearth}.
+    \item La transferencia espacial es limitada por región, no zero-shot:
+    de Francia a Cataluña recupera mIoU 0.2468 solo tras ajuste fino
+    few-shot, e incluso una transferencia dentro del mismo país de Francia
+    a Bretaña cae a F1 0.21, en línea con los límites de transferibilidad
+    reportados~\cite{harvesting2026alphaearth}. Aun así, la transferencia
+    \emph{sí} funciona donde la fenología es separable --- el campeón
+    entrenado en Francia alcanza F1 macro 0.266 en Baja Sajonia (DE4),
+    rescatando los cereales de invierno --- y el modelo de fundación
+    reduce el presupuesto de etiquetas few-shot en aproximadamente un
+    orden de magnitud (AlphaEarth supera a Sentinel-2 crudo en $+0.111$ de
+    F1 con $k{=}1$ en EuroCropsML LV$\rightarrow$EE).
+    \item Agrupar regiones en un único clasificador multirregión amplía la
+    taxonomía de 18 a 30 hojas sin degradar la lectura gruesa, pero no
+    rescata \emph{ninguna} clase fina por encima del umbral de producción
+    de 0.85: el cuello de botella es la separabilidad fenológica en un
+    embedding anual, no el número de regiones. Reportamos este resultado
+    negativo honesto para acotar la afirmación.
 \end{enumerate}
 
 \subsection{Lo que explícitamente no afirmamos}
@@ -43,10 +58,10 @@ evidencia.
     clasificador de píxeles; su valor es el anclaje, la auditabilidad y
     la opción de soberanía on-premises.
     \item \emph{No} afirmamos un umbral de clasificación
-    (p.\ ej.\ F1~$\geq$~0.80) para México. La demostración de
-    aguacate/guayaba sobre parcelas mexicanas es una demostración
-    metodológica cualitativa, zero-shot y sin verdad de terreno; ilustra
-    el pipeline, no una exactitud medida.
+    (p.\ ej.\ F1~$\geq$~0.80) en los trópicos. La transferencia
+    Europa$\rightarrow$Brasil/India con WorldCereal se mide con etiquetas
+    reales de verdad de terreno y no supera F1~0.72 ni siquiera tras
+    adaptación few-shot; el maíz zero-shot colapsa a F1~0.0095.
     \item \emph{No} afirmamos que la transferencia zero-shot funcione
     fuera de Francia. El experimento Francia$\rightarrow$Cataluña muestra
     el fallo zero-shot y la recuperación few-shot; una curva de

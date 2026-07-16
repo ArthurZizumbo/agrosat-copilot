@@ -1,0 +1,1799 @@
+{
+  "meta": {
+    "title": "AgroSatCopilot",
+    "team": "Equipo 17 - MNA Tec de Monterrey"
+  },
+  "slides": [
+    {
+      "layout": "cover",
+      "brand": "AgroSatCopilot",
+      "subtitle": "A conversational copilot for satellite-based crop area quantification",
+      "meta": [
+        "MNA · Integrator Project · Tec de Monterrey · 2026",
+        "Carlos Isaac Ávila · Carlos Aaron Bocanegra · Arthur Jafed Zizumbo",
+        "Sponsor: Dr. Gerardo Jesús Camacho"
+      ],
+      "img": "cover.png"
+    },
+    {
+      "layout": "cards",
+      "kicker": "A 30-minute tour",
+      "title": "Agenda",
+      "cols": "c3",
+      "items": [
+        {
+          "title": "1. Business",
+          "body": "The problem, the economic impact and how to measure success well.",
+          "variant": "s c3"
+        },
+        {
+          "title": "2. Data & exploration",
+          "body": "Why what matters is how the crop changes through the year; AlphaEarth, PASTIS.",
+          "variant": "normal"
+        },
+        {
+          "title": "3. Modeling",
+          "body": "From the first simple models to 6 architectures and 4 model combinations.",
+          "variant": "normal"
+        },
+        {
+          "title": "4. Final model",
+          "body": "Voting-3: the winning model and how it scores crop by crop.",
+          "variant": "normal"
+        },
+        {
+          "title": "5. Copilot & app",
+          "body": "Be My Eyes, 10 tools, search with geographic context (Spatial-RAG) and the web app.",
+          "variant": "normal"
+        },
+        {
+          "title": "6. Other areas & future",
+          "body": "Several regions, Lower Saxony, infrastructure, the H100 graphics card and lessons.",
+          "variant": "normal"
+        }
+      ]
+    },
+    {
+      "layout": "cards",
+      "title": "The business problem",
+      "cols": "c2",
+      "items": [
+        {
+          "title": "The data already exists and is free",
+          "body": "Sentinel-2 satellites photograph every parcel <strong>every 5 days</strong> at a <strong>10-meter</strong> detail, at no cost. The raw material is available to everyone.",
+          "variant": "s c2"
+        },
+        {
+          "title": "But only a few make use of it",
+          "body": "Today only <strong>remote-sensing experts</strong>, with expensive software (ArcGIS, ENVI), turn those images into useful maps, and it takes them <strong>days or weeks</strong>. The field farmer is left out.",
+          "variant": "normal"
+        }
+      ],
+      "sub2": "Why it matters",
+      "cols2": "c3",
+      "items2": [
+        {
+          "title": "Worldwide",
+          "body": "Agriculture is about <strong>4% of world GDP</strong> and provides work to <strong>over 1.2 billion people</strong> (FAO).",
+          "variant": "normal"
+        },
+        {
+          "title": "In Europe",
+          "body": "The Common Agricultural Policy (the European Union's main farming policy) is about <strong>31% of the bloc's budget</strong> for 2021-2027.",
+          "variant": "normal"
+        },
+        {
+          "title": "In Italy",
+          "body": "The agri-food sector is <strong>over 4% of national GDP</strong> and employs nearly <strong>900,000 people</strong> (the ISTAT statistics institute).",
+          "variant": "normal"
+        }
+      ]
+    },
+    {
+      "layout": "text",
+      "kicker": "The problem, concretely",
+      "title": "The questions an agronomist cannot answer alone",
+      "paras": [
+        "These are the real questions the copilot answers in natural language, in under 10 seconds:"
+      ],
+      "bullets": [
+        "Which crop is in this parcel and what is its <strong>exact area in hectares</strong>?",
+        "How has the <strong>vegetation vigor</strong> (how green and healthy it is) evolved over the last 8 weeks?",
+        "Is there a sign of <strong>water shortage</strong> or anything unusual compared with previous years?",
+        "How does this parcel compare with its <strong>neighbors</strong> or with other regions of the country?",
+        "What <strong>growth stage</strong> is the crop in, and when is the best time to harvest?"
+      ]
+    },
+    {
+      "layout": "kpi",
+      "title": "Benefit and impact",
+      "items": [
+        {
+          "num": ">1500%",
+          "accent": false,
+          "label": ""
+        },
+        {
+          "num": "$115",
+          "accent": false,
+          "label": ""
+        },
+        {
+          "num": "0.04 s",
+          "accent": false,
+          "label": ""
+        }
+      ],
+      "cards": [
+        {
+          "title": "Informed decisions",
+          "body": "Insurers and governments refresh inventories <strong>monthly</strong>, not yearly: better subsidies, insurance and forecasting.",
+          "variant": "normal"
+        },
+        {
+          "title": "New online service",
+          "body": "The copilot lets agronomists analyze how the crop grows through the year, by voice or text, with no experience in satellite imagery. Open Apache 2.0 license.",
+          "variant": "normal"
+        }
+      ]
+    },
+    {
+      "layout": "twocol",
+      "kicker": "The technical core",
+      "title": "Why segmentation is the key piece",
+      "img": "seg_triptych.png",
+      "side": "right",
+      "caption": "Sentinel-2 input (RGB) · ground truth · TSViT-pheno prediction, pixel by pixel.",
+      "paras": [
+        "Semantic segmentation labels every 10 × 10 meter pixel with the crop it belongs to. That is what makes it possible to:"
+      ],
+      "bullets": [
+        "<strong>Measure the exact area</strong>: with a mean overlap with the ground truth of 0.70 or more, the error drops below 1%.",
+        "Draw <strong>precise boundaries</strong> between different crops within the same parcel.",
+        "Detect <strong>problem spots</strong> (stress or pests) that a parcel-level analysis cannot see.",
+        "<strong>Validate</strong> against the official polygons of the farming administrations."
+      ]
+    },
+    {
+      "layout": "divider",
+      "sec": "02",
+      "kicker": "2 · Data & EDA",
+      "title": "CRISP-ML(Q) methodology",
+      "img": "data_pipeline.png",
+      "paras": [
+        "The signal that separates crops lives in time, not in a single photo."
+      ]
+    },
+    {
+      "layout": "table",
+      "title": "CRISP-ML(Q) — what we executed",
+      "table": {
+        "headers": [
+          "Phase",
+          "Executed"
+        ],
+        "rows": [
+          {
+            "cells": [
+              "Understand the business",
+              "Cost-benefit; we measure with the F1 score (balanced accuracy across crops); success = being able to tell 8 crops apart."
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Understand the data",
+              "PASTIS-R + BreizhCrops; what counts is how the crop changes over the year; some crops have very few examples."
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Prepare the data",
+              "Vegetation indices, signals of the yearly change (Fourier transform and growth stages), AlphaEarth with 64 values, spatial cross-validation."
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Modeling",
+              "Simple models (random forest and XGBoost, a boosted decision tree) → detailed maps → model combinations → moving it to other areas."
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Evaluation",
+              "Mean overlap with ground truth (mIoU) + detailed and grouped F1 score, how many crops to commit to, tests removing parts."
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Deployment",
+              "Servers that switch off on their own when idle + H100 card; copilot with live answers; data and experiment versioning."
+            ],
+            "highlight": false
+          }
+        ]
+      },
+      "paras": []
+    },
+    {
+      "layout": "table",
+      "kicker": "Data",
+      "title": "The data we use (all open)",
+      "table": {
+        "headers": [
+          "Dataset",
+          "What it brings"
+        ],
+        "rows": [
+          {
+            "cells": [
+              "AlphaEarth Foundations",
+              "64 values per pixel, 10 m, one summary per year (2017-2025). The main source."
+            ],
+            "highlight": true
+          },
+          {
+            "cells": [
+              "PASTIS-R (France)",
+              "18 crop types labeled by hand. Our main test bench."
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Sentinel-2",
+              "Optical camera with 13 color bands, one image every 5 days."
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Sentinel-1",
+              "Radar that sees through clouds (robust when the sky is overcast)."
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Dynamic World · Sen4AgriNet",
+              "Extra land-use labels to validate in other regions."
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "AgroMind",
+              "28,482 agricultural questions and answers to evaluate the copilot."
+            ],
+            "highlight": false
+          }
+        ]
+      },
+      "paras": [
+        "About 260 GB in total. Each source covers a weakness of the others."
+      ]
+    },
+    {
+      "layout": "kpi",
+      "kicker": "The main benchmark",
+      "title": "PASTIS-R dataset (France, 2019)",
+      "items": [
+        {
+          "num": "2,433",
+          "accent": false,
+          "label": "patches of 128 × 128 pixels (1.28 × 1.28 km each)"
+        },
+        {
+          "num": "10 m",
+          "accent": false,
+          "label": "detail per pixel"
+        },
+        {
+          "num": "18 + 1",
+          "accent": true,
+          "label": "labeled crops plus a background class"
+        }
+      ],
+      "sub2": "What each patch contains",
+      "cards2": "c4",
+      "cards": [
+        {
+          "title": "Sentinel-2 optical series",
+          "body": "Between <strong>38 and 61 dates</strong> per patch (mean ~48), from Sep-2018 to Nov-2019, with a <strong>5 to 10-day</strong> revisit and <strong>10</strong> spectral bands. This is where the crop growth curve comes from.",
+          "variant": "normal"
+        },
+        {
+          "title": "Sentinel-1 radar (the \"R\")",
+          "body": "About <strong>70 radar observations</strong> per patch (ascending and descending orbits), in 3 channels (VV, VH and their ratio). Radar <strong>sees through clouds</strong>.",
+          "variant": "normal"
+        },
+        {
+          "title": "Pixel-by-pixel labels",
+          "body": "<strong>Semantic segmentation</strong> (which crop is in each pixel) and <strong>panoptic</strong> (each parcel as an instance with its own id). Hand-annotated.",
+          "variant": "normal"
+        },
+        {
+          "title": "Four regions of France",
+          "body": "Auvergne-Rhône-Alpes, Grand Est, Hauts-de-France and Occitanie: <strong>four distinct agro-climatic zones</strong>, which forces the model to generalize.",
+          "variant": "normal"
+        }
+      ]
+    },
+    {
+      "layout": "kpi",
+      "kicker": "The main data source",
+      "title": "AlphaEarth Foundations (Google DeepMind)",
+      "items": [
+        {
+          "num": "64",
+          "accent": true,
+          "label": "values per pixel that summarize each place each year"
+        },
+        {
+          "num": "10 m",
+          "accent": false,
+          "label": "detail per pixel · global coverage, including Mexico"
+        },
+        {
+          "num": "2017-2025",
+          "accent": false,
+          "label": "one annual image per year (9 years available)"
+        }
+      ],
+      "sub2": "Why it is our main source",
+      "cards2": "c4",
+      "cards": [
+        {
+          "title": "An already-digested summary",
+          "body": "DeepMind fuses <strong>optical, radar, Landsat, terrain and climate</strong> into 64 values per pixel. Instead of processing petabytes of imagery, we start from the ready-made summary.",
+          "variant": "normal"
+        },
+        {
+          "title": "Stable across years",
+          "body": "For the same parcel, the 64 values barely change from one year to the next (about <strong>95%</strong> similarity between consecutive years). That makes it reliable for comparison and for moving the model to new areas.",
+          "variant": "normal"
+        },
+        {
+          "title": "Free and open",
+          "body": "<strong>CC-BY-4.0</strong> license on Google Earth Engine: anyone can use it just by giving credit. No compute cost to generate it.",
+          "variant": "normal"
+        },
+        {
+          "title": "Much information, little space",
+          "body": "In our project it takes up only about <strong>6%</strong> of the total (~260 GB) and carries the highest density of useful information. It powers the simple model and is a member of the final ensemble.",
+          "variant": "normal"
+        }
+      ]
+    },
+    {
+      "layout": "twocol",
+      "kicker": "EDA · Finding 1",
+      "title": "What matters is how the crop changes over the year",
+      "img": "ae_umap.png",
+      "side": "right",
+      "caption": "Map that groups similar parcels (UMAP) using AlphaEarth data.",
+      "bullets": [
+        "The vegetation greenness index (NDVI) over the year separates crops; a single photo does not.",
+        "Summer maize versus winter cereals: they grow in different seasons → they are easy to tell apart.",
+        "Winter-cereal varieties that grow almost the same get confused, even with advanced neural networks."
+      ],
+      "paras": []
+    },
+    {
+      "layout": "twocol",
+      "kicker": "EDA · Finding 2",
+      "title": "Severe class imbalance",
+      "img": "class_balance_named.png",
+      "side": "left",
+      "caption": "Number of parcels per crop in PASTIS-R (18 classes).",
+      "bullets": [
+        "<strong>Meadow</strong> alone is about 30 to 45% of parcels.",
+        "Rapeseed, sorghum, mixed cereal and potato: <strong>less than 1%</strong> each.",
+        "That is why we use the F1 score (which weighs every crop the same) and not the plain percentage of hits."
+      ],
+      "paras": []
+    },
+    {
+      "layout": "text",
+      "kicker": "EDA · Finding 3",
+      "title": "Errors do not cluster geographically",
+      "paras": [],
+      "bullets": [
+        "The problem is in the crops that are hard to tell apart, not in areas with little data.",
+        "This means adding more data from a single region does not solve it.",
+        "We must make the crops easier to tell apart, not collect more samples."
+      ]
+    },
+    {
+      "layout": "cards",
+      "title": "Data preparation",
+      "cols": "c3",
+      "items": [
+        {
+          "title": "Vegetation indices",
+          "body": "Measures of plant greenness and moisture (NDVI, NDWI, EVI, MSAVI2, NDRE…).",
+          "variant": "s c3"
+        },
+        {
+          "title": "Signals of the yearly change",
+          "body": "Growth rhythms with the Fourier transform; plant stages: when it greens up, its peak and when it dries out.",
+          "variant": "normal"
+        },
+        {
+          "title": "The 64 AlphaEarth values",
+          "body": "Yeo-Johnson adjustments to fix skewed values.",
+          "variant": "normal"
+        }
+      ]
+    },
+    {
+      "layout": "twocol",
+      "title": "Spatial cross-validation — without letting the model cheat",
+      "img": "concept_spatial_cv.png",
+      "side": "left",
+      "caption": "The map is split into blocks; the test blocks (lighter) are set apart from the training ones, with a gap between them.",
+      "paras": [],
+      "bullets": [
+        "We split the map into zones (with H3 cells and clustering) and leave a 1 km gap between training and test zones.",
+        "We go from each pixel up to each whole parcel.",
+        "The system stops on its own if it finds those zones overlapping."
+      ]
+    },
+    {
+      "layout": "divider",
+      "sec": "03",
+      "kicker": "3 · Modeling",
+      "title": "From the simple model to the model combination",
+      "img": "hero_modeling.png",
+      "paras": [
+        "From simple models to six architectures and four ways to combine them."
+      ]
+    },
+    {
+      "layout": "cards",
+      "title": "Why do we use the F1 score?",
+      "cols": "c2",
+      "items": [
+        {
+          "title": "The percentage of hits misleads",
+          "body": "When one crop dominates, always saying that crop gives a high but misleading percentage of hits.",
+          "variant": "s c2"
+        },
+        {
+          "title": "The F1 score treats all crops equally",
+          "body": "Rare and common crops count the same → aligned with the business. Rapeseed insurance matters even if rapeseed is just 1%.",
+          "variant": "hero"
+        }
+      ]
+    },
+    {
+      "layout": "twocol",
+      "title": "First simple model: random forest + XGBoost",
+      "img": "baseline_barplot.png",
+      "side": "right",
+      "caption": "Random forest versus XGBoost.",
+      "bullets": [
+        "Using AlphaEarth's 64 values plus the vegetation indices.",
+        "F1 score around 0.59 (XGBoost with AlphaEarth = 0.5913)."
+      ],
+      "paras": []
+    },
+    {
+      "layout": "fig",
+      "title": "Understanding what the model looks at (SHAP)",
+      "img": "shap_xgb.png",
+      "caption": "Which data weigh most in XGBoost-with-AlphaEarth decisions, according to the SHAP method.",
+      "bullets": []
+    },
+    {
+      "layout": "table",
+      "kicker": "EPIC 5",
+      "title": "The 6 architectures that draw the crop map",
+      "table": {
+        "headers": [
+          "Architecture",
+          "F1 score / overlap with ground truth",
+          "What it focuses on"
+        ],
+        "rows": [
+          {
+            "cells": [
+              "TSViT-pheno",
+              "0.75 / 0.6253",
+              "Change over time"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "TSViT-base",
+              "— / 0.622",
+              "Change over time"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "U-TAE",
+              "— / 0.474",
+              "Change over time"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "AnySat",
+              "— / 0.446",
+              "General base model"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "DeepLabv3+",
+              "— / 0.271",
+              "Shape in the image"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "U-Net",
+              "— / 0.242",
+              "Shape in the image"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "SegFormer-B0",
+              "— / 0.232",
+              "Shape in the image"
+            ],
+            "highlight": false
+          }
+        ]
+      },
+      "paras": []
+    },
+    {
+      "layout": "twocol",
+      "title": "Key segmentation takeaway",
+      "img": "seg_barplot.png",
+      "side": "right",
+      "caption": "Scores of the 6 architectures (overlap with ground truth and F1 score).",
+      "bullets": [
+        "It confirms that what tells crops apart is how they change over time, not their texture."
+      ],
+      "paras": [
+        "Models that watch the change over the year (TSViT, U-TAE) beat by far those that only look at the shape in the image."
+      ]
+    },
+    {
+      "layout": "twocol",
+      "title": "TSViT, in simple words",
+      "img": "concept_phenology.png",
+      "side": "left",
+      "caption": "Each crop has a typical greenness pattern across the year: it sprouts, grows, ripens. The model learns that curve.",
+      "paras": [],
+      "bullets": [
+        "It is a model that analyzes separately how each area changes over time and how it looks in the image.",
+        "Its TSViT-pheno version compares each pixel with the typical growth pattern of each crop.",
+        "It takes the average greenness curve, asks Gemini for a description and turns it into numbers. Method by Wen and colleagues, 2025."
+      ]
+    },
+    {
+      "layout": "twocol",
+      "title": "Crop-by-crop score of the winning model TSViT",
+      "img": "seg_iou_tsvit.png",
+      "side": "right",
+      "caption": "Score per crop (overlap with ground truth).",
+      "bullets": [
+        "Winter barley 0.89 · soft winter wheat 0.86 · grapevine 0.86 · meadow 0.81.",
+        "Mixed cereal 0.24 (the worst).",
+        "Takeaway: crops with a clear yearly growth and many examples win."
+      ],
+      "paras": []
+    },
+    {
+      "layout": "fig",
+      "title": "Where TSViT makes mistakes",
+      "img": "seg_confusion_tsvit.png",
+      "caption": "Errors concentrate among winter cereals that look very much alike.",
+      "bullets": []
+    },
+    {
+      "layout": "fig",
+      "title": "Fine-tuning the model with Optuna",
+      "img": "optuna.png",
+      "caption": "How the automatic search for the best configuration keeps improving until it settles.",
+      "bullets": []
+    },
+    {
+      "layout": "cards",
+      "title": "Combining models versus using a single one",
+      "cols": "c2",
+      "items": [
+        {
+          "title": "Voting",
+          "body": "Averages the opinions of several different models.",
+          "variant": "s c2"
+        },
+        {
+          "title": "Bagging",
+          "body": "Many XGBoost models with AlphaEarth, each trained on a different sample.",
+          "variant": "normal"
+        },
+        {
+          "title": "Stacking",
+          "body": "An arbiter model decides, crop by crop, which model to trust.",
+          "variant": "normal"
+        },
+        {
+          "title": "Blending",
+          "body": "Weights tuned automatically with the Optuna tool.",
+          "variant": "normal"
+        }
+      ]
+    },
+    {
+      "layout": "table",
+      "kicker": "EPIC 6",
+      "title": "The 4 ways to combine models",
+      "table": {
+        "headers": [
+          "Combination",
+          "F1 score",
+          "Percentage of hits"
+        ],
+        "rows": [
+          {
+            "cells": [
+              "Stacking of different models (per parcel)",
+              "0.747",
+              "0.849"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Blending (Optuna)",
+              "0.741",
+              "—"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "TSViT-pheno (single model)",
+              "0.625",
+              "—"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Voting (per pixel)",
+              "0.623",
+              "—"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Bagging",
+              "0.586",
+              "—"
+            ],
+            "highlight": false
+          }
+        ]
+      },
+      "paras": [
+        "Adding FarSLIP to the stacking raises the F1 score to 0.749."
+      ]
+    },
+    {
+      "layout": "fig",
+      "title": "Where the stacking makes mistakes",
+      "img": "ens_confusion_stacking.png",
+      "caption": "The arbiter model decides, crop by crop, which model to trust.",
+      "bullets": []
+    },
+    {
+      "layout": "table",
+      "title": "Comparison of all models",
+      "table": {
+        "headers": [
+          "Model",
+          "F1 score",
+          "Percentage of hits"
+        ],
+        "rows": [
+          {
+            "cells": [
+              "Stacking-5",
+              "0.7470",
+              "0.849"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Voting-3 (IN PRODUCTION)",
+              "0.7444",
+              "0.863"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Blending",
+              "0.7436",
+              "—"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "TSViT-pheno",
+              "0.7367",
+              "mIoU 0.6253"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "XGBoost-AlphaEarth",
+              "0.5913",
+              "—"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "U-TAE",
+              "0.474",
+              "—"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "AnySat",
+              "0.446",
+              "—"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "DeepLabv3+",
+              "0.271",
+              "—"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "U-Net",
+              "0.242",
+              "—"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "SegFormer",
+              "0.232",
+              "—"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "FarSLIP (untrained on these crops)",
+              "0.031",
+              "—"
+            ],
+            "highlight": false
+          }
+        ]
+      },
+      "paras": []
+    },
+    {
+      "layout": "cards",
+      "title": "FarSLIP: it helps, but it is not the engine",
+      "cols": "c3",
+      "items": [
+        {
+          "title": "One more opinion",
+          "body": "Adds +0.002 when combining models.",
+          "variant": "s c3"
+        },
+        {
+          "title": "Growth description",
+          "body": "For the models that see (the copilot's perceiver).",
+          "variant": "normal"
+        },
+        {
+          "title": "Test with no prior training",
+          "body": "3 crops easy to tell apart by eye: 0.40 to 0.60.",
+          "variant": "normal"
+        }
+      ]
+    },
+    {
+      "layout": "divider",
+      "sec": "04",
+      "kicker": "4 · Final model",
+      "title": "Voting-3, the model in production",
+      "img": "hero_winner.png",
+      "paras": [
+        "Twelve well-resolved crops, ready for production."
+      ]
+    },
+    {
+      "layout": "table",
+      "title": "Why Voting-3 and not Stacking-5?",
+      "table": {
+        "headers": [
+          "Criterion",
+          "Voting-3 (chosen)",
+          "Stacking-5"
+        ],
+        "rows": [
+          {
+            "cells": [
+              "Production F1 score (12 crops)",
+              "0.90",
+              "—"
+            ],
+            "highlight": true
+          },
+          {
+            "cells": [
+              "F1 score with all 18 crops",
+              "0.744",
+              "0.747"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Number of internal settings",
+              "3",
+              "54"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Test on new areas",
+              "0.558",
+              "0.536"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Response time",
+              "0.04 s",
+              "—"
+            ],
+            "highlight": false
+          }
+        ]
+      },
+      "paras": [
+        "Almost the same accuracy with all 18 crops (0.744 vs 0.747), but with only <strong>3 internal settings instead of 54</strong>: simpler, more reliable and better on new areas. In its production mode (12 crops) it reaches <strong>0.90</strong>."
+      ]
+    },
+    {
+      "layout": "fig",
+      "title": "Indicators of the model in production",
+      "img": "voting_kpis.png",
+      "caption": "Summary of Voting-3 results in production.",
+      "bullets": []
+    },
+    {
+      "layout": "cards",
+      "title": "The 3 members of Voting-3",
+      "cols": "c3",
+      "items": [
+        {
+          "title": "TSViT-pheno",
+          "body": "Looks at the whole crop change across the year.",
+          "variant": "s c3"
+        },
+        {
+          "title": "U-TAE",
+          "body": "A second opinion on the yearly change, different from the first.",
+          "variant": "normal"
+        },
+        {
+          "title": "XGBoost-AlphaEarth",
+          "body": "Summary of color and greenness in AlphaEarth's 64 values.",
+          "variant": "normal"
+        }
+      ]
+    },
+    {
+      "layout": "twocol",
+      "title": "How many crops is it worth classifying?",
+      "img": "voting_cardinalidad.png",
+      "side": "right",
+      "caption": "Voting-3 cumulative macro-F1 by how many crops are kept.",
+      "bullets": [
+        "With all <strong>18 crops</strong> → F1 score <strong>0.786</strong>.",
+        "With <strong>12 crops</strong> → <strong>0.900</strong>: the point where it crosses production quality (F1 ≥ 0.90).",
+        "With <strong>9 crops</strong> → <strong>0.940</strong>; with <strong>8</strong> → <strong>0.949</strong>.",
+        "The 12 crops kept above 0.90 are exactly the ones with the highest agricultural value."
+      ],
+      "paras": [
+        "The fewer crops the model tries to separate, the higher its score:"
+      ]
+    },
+    {
+      "layout": "twocol",
+      "title": "Without retraining",
+      "img": "concept_onemodel.png",
+      "side": "left",
+      "caption": "One single trained model, four ways to use it: the number of crops is chosen at the moment of use.",
+      "paras": [],
+      "bullets": [
+        "For each parcel, the model gives the probability of each crop.",
+        "How many crops to classify is chosen at the moment of use, without touching the model.",
+        "One single model, four ways to use it."
+      ]
+    },
+    {
+      "layout": "table",
+      "title": "4 ways to use the model",
+      "table": {
+        "headers": [
+          "Mode",
+          "Crops",
+          "F1 score",
+          "Coverage"
+        ],
+        "rows": [
+          {
+            "cells": [
+              "Full",
+              "18",
+              "0.786",
+              "100%"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Production (recommended)",
+              "12",
+              "0.900",
+              "90%"
+            ],
+            "highlight": true
+          },
+          {
+            "cells": [
+              "High precision",
+              "9",
+              "0.940",
+              "82%"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Maximum confidence",
+              "8",
+              "0.949",
+              "80%"
+            ],
+            "highlight": false
+          }
+        ]
+      },
+      "paras": [
+        "Coverage is the percentage of real parcels the model commits to classifying."
+      ]
+    },
+    {
+      "layout": "kpi",
+      "sec": "Modelo ganador",
+      "kicker": "The model we take to production",
+      "title": "The winner: twelve well-resolved crops",
+      "items": [
+        {
+          "num": "0.90",
+          "accent": true,
+          "label": "Balanced accuracy score (from 0 to 1)"
+        },
+        {
+          "num": "90%",
+          "accent": false,
+          "label": "Of real parcels are covered"
+        },
+        {
+          "num": "12",
+          "accent": false,
+          "label": "Crops of highest agricultural value"
+        }
+      ],
+      "cards": [
+        {
+          "title": "Why twelve and not eighteen",
+          "body": "By focusing on the twelve crops the system separates clearly, accuracy rises from 0.79 to 0.90 without losing the bulk of business value: those twelve cover 90% of parcels. The remaining six are rare, lookalike crops better reviewed by hand.",
+          "variant": "s c2"
+        },
+        {
+          "title": "It improves with each new region",
+          "body": "This model is not static: it is refreshed with data from new regions through transfer learning. Adding Lower Saxony (Germany) lifted winter cereals (wheat, maize, rye, rapeseed) from a low score to between 0.57 and 0.70. Each new region makes it more robust.",
+          "variant": "accent"
+        }
+      ]
+    },
+    {
+      "layout": "twocol",
+      "title": "Crop-by-crop score of Voting-3",
+      "img": "voting_perclass.png",
+      "side": "right",
+      "caption": "F1 score per crop, Voting-3.",
+      "bullets": [
+        "Meadow 0.961 · maize 0.954 · rapeseed 0.945.",
+        "Grapevine 0.944 · soft wheat 0.940 · barley 0.879.",
+        "9 or 10-crop mode in France: the crops it tells apart best."
+      ],
+      "paras": []
+    },
+    {
+      "layout": "fig",
+      "kicker": "Real results on the ground",
+      "title": "Voting-3, parcel by parcel: almost all right",
+      "img": "inference_real_40039.png",
+      "caption": "Real scene 40039 (France, 10 m/px). Left to right: (a) Sentinel-2 image, (b) ground truth, (c) Voting-3 prediction, (d) hits (green), errors (red) and parcels out of the model's scope (grey). 67 of 68 parcels correct (99%).",
+      "bullets": []
+    },
+    {
+      "layout": "fig",
+      "kicker": "Evidence 2 · honest when something is out of scope",
+      "title": "Scene 40005: 89 of 92 (97%)",
+      "img": "inference_real_40005.png",
+      "caption": "Another real scene. Here 22 parcels are crops outside the model's universe (in grey): instead of guessing them, it leaves them marked as \"out of scope\". Of the 92 it is meant to handle, it gets 89 right.",
+      "bullets": []
+    },
+    {
+      "layout": "fig",
+      "kicker": "Evidence 3 · holds up on edges and hard landscape",
+      "title": "Scene 40175: 73 of 75 (97%)",
+      "img": "inference_real_40175.png",
+      "caption": "A third scene, with a village and irregular parcels. Voting-3 still gets 97% of the parcels within its scope right, with only 2 errors. Three different scenes, the same solid behaviour.",
+      "bullets": []
+    },
+    {
+      "layout": "divider",
+      "sec": "05",
+      "kicker": "5 · Copilot & app",
+      "title": "The copilot that converses",
+      "img": "app_inicio.png",
+      "paras": [
+        "The models see the crops; a language model reasons and answers."
+      ]
+    },
+    {
+      "layout": "cards",
+      "kicker": "The copilot's key pattern",
+      "title": "Be My Eyes pattern: one sees, the other reasons",
+      "cols": "c2",
+      "items": [
+        {
+          "title": "The models SEE (the perceiver)",
+          "body": "The vision models look at the satellite imagery and <strong>describe it in plain text</strong>: which crop it is, its growth stage, how vigorous it looks and how much confidence there is. They don't decide: they just report what they see, and the answer always says <strong>which model looked</strong> (the Voting-3 winner or, outside its universe, XGBoost).",
+          "variant": "s c2"
+        },
+        {
+          "title": "The language model REASONS",
+          "body": "Gemini or Qwen take that description, query the <strong>10 map tools</strong> and answer the agronomist's question in natural language. Like a guide who <strong>describes what the camera sees</strong> to someone who cannot see it.",
+          "variant": "normal"
+        }
+      ]
+    },
+    {
+      "layout": "cards",
+      "title": "Three language models to choose from — control of the data",
+      "cols": "c3",
+      "items": [
+        {
+          "title": "Gemini 3.5 Flash (in the cloud)",
+          "body": "Generally available, can read very long texts and answers fast. It is the brain that <strong>reasons by default</strong> in the copilot.",
+          "variant": "s c3"
+        },
+        {
+          "title": "Qwen 3.5 MoE (on our own server)",
+          "body": "Runs on our own graphics card: the data <strong>never leaves home</strong>. A language model to reason without depending on the cloud.",
+          "variant": "normal"
+        },
+        {
+          "title": "Qwen 3.6 VL (on our own server)",
+          "body": "A model that also <strong>sees images</strong> (vision-language). You switch between the three with a toggle, without touching the code.",
+          "variant": "normal"
+        }
+      ]
+    },
+    {
+      "layout": "kpi",
+      "kicker": "The toggle works · same question, same eyes",
+      "title": "Three brains, the same answer",
+      "items": [
+        {
+          "num": "2,995 ms",
+          "accent": false,
+          "label": "Gemini 3.5 Flash (cloud)"
+        },
+        {
+          "num": "2,391 ms",
+          "accent": false,
+          "label": "Qwen 3.5 MoE (our own server)"
+        },
+        {
+          "num": "1,952 ms",
+          "accent": true,
+          "label": "Qwen 3.6 VL (our own server)"
+        }
+      ],
+      "sub2": "Real question: \"What crop is in parcel 52?\"",
+      "cards2": "c1",
+      "cards": [
+        {
+          "title": "All three agree",
+          "body": "With the same fixed perceiver, all three models answer the same: <strong>soft winter wheat, 97.9% confidence</strong>. What changes is the response time, not the result: switching between cloud and our own server is transparent to the agronomist.",
+          "variant": "s c1"
+        }
+      ]
+    },
+    {
+      "layout": "table",
+      "title": "The 10 map tools",
+      "table": {
+        "headers": [
+          "Tool",
+          "What it does"
+        ],
+        "rows": [
+          {
+            "cells": [
+              "list_parcels",
+              "Lists the parcels inside an area"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "get_parcel_timeseries",
+              "Gives the real key dates of the growth"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "get_aoi_stats",
+              "Real surface + dominant crop"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "search_stac",
+              "Searches images in the Copernicus data service"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "get_tiles",
+              "Prepares the map layers"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "classify_new_parcel",
+              "Classifies a parcel with the Voting-3 winner (F1 0.90, 12 crops)"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "add_aoi",
+              "Adds an area of interest"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "compare_models",
+              "Compares models"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "explain_prediction",
+              "Explains the crop growth (Wen 2025 method)"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "retrieve_context",
+              "Looks up info from nearby parcels (Spatial-RAG)"
+            ],
+            "highlight": false
+          }
+        ]
+      },
+      "paras": [
+        "All are real, they check that the input data is valid and only access each user's own session data."
+      ]
+    },
+    {
+      "layout": "cards",
+      "kicker": "How the agent answers, step by step",
+      "title": "It acts on real data first, then writes",
+      "cols": "c4",
+      "items": [
+        {
+          "title": "1 · Plans",
+          "body": "Given the agronomist's question, the agent decides <strong>which tools</strong> it needs (for example, list the parcels and explain their prediction).",
+          "variant": "s c4"
+        },
+        {
+          "title": "2 · Calls the tool",
+          "body": "It runs those tools <strong>on the session's real database</strong>: no made-up data. Every call is logged.",
+          "variant": "normal"
+        },
+        {
+          "title": "3 · Gets the result",
+          "body": "The tool returns real figures (crop, confidence, dates, hectares) that the agent <strong>can cite</strong>.",
+          "variant": "normal"
+        },
+        {
+          "title": "4 · Writes and cites",
+          "body": "Only then it writes the answer in natural language, with <strong>each figure tied to its source</strong>. If something is missing, it says so.",
+          "variant": "normal"
+        }
+      ]
+    },
+    {
+      "layout": "cards",
+      "kicker": "So it does not make up data",
+      "title": "Search with geographic context (Spatial-RAG)",
+      "cols": "c3",
+      "items": [
+        {
+          "title": "1. Filter by closeness",
+          "body": "PostGIS (<strong>ST_DWithin</strong>) keeps only the parcels that are <strong>near the queried area</strong>. The \"where\" first.",
+          "variant": "s c3"
+        },
+        {
+          "title": "2. Rank by similarity",
+          "body": "Among those nearby parcels, pgvector finds the <strong>most similar</strong> to the question (similarity over the embeddings) and returns the best ones. Then the \"what\".",
+          "variant": "normal"
+        },
+        {
+          "title": "3. Answer on real grounding",
+          "body": "The language model reasons <strong>only over those real parcels</strong> from the session, not over what it thinks it knows. That way it <strong>reduces hallucinations</strong>.",
+          "variant": "normal"
+        }
+      ]
+    },
+    {
+      "layout": "twocol",
+      "kicker": "The winner also improves the copilot",
+      "title": "Better eyes, better answers",
+      "img": "agent_uplift.png",
+      "side": "right",
+      "caption": "Before (simple XGBoost) vs after (Voting-3, the winner) over 14,688 real parcels (production mode, 12 crops).",
+      "bullets": [
+        "<strong>Accuracy: 0.85 → 0.94</strong> (+8 points).",
+        "F1 score: <strong>0.75 → 0.90</strong> (+15 points).",
+        "Fixes 1,465 parcels and only worsens 237: <strong>+1,228 correctly classified</strong>."
+      ],
+      "paras": [
+        "The copilot's \"eyes\" are the model that classifies each parcel's crop. Switching them from the simple model (XGBoost) to the Voting-3 winner makes the copilot answer far more accurately, without changing anything else:"
+      ]
+    },
+    {
+      "layout": "cards",
+      "title": "System architecture",
+      "cols": "c3",
+      "items": [
+        {
+          "title": "FastAPI",
+          "body": "The server handling the live chat, the areas, the time series, the images, the map layers and the sessions.",
+          "variant": "s c3"
+        },
+        {
+          "title": "Nuxt 4",
+          "body": "The web app: MapLibre map, live chat, model switch and three languages (Italian, Spanish and English).",
+          "variant": "normal"
+        },
+        {
+          "title": "PostgreSQL 15",
+          "body": "Database with PostGIS and pgvector. Each user only sees their own data, thanks to row-level security.",
+          "variant": "normal"
+        }
+      ]
+    },
+    {
+      "layout": "text",
+      "title": "The web app",
+      "paras": [],
+      "bullets": [
+        "MapLibre map to draw the area of interest.",
+        "Chat panel that shows the answer as it is being written.",
+        "Panel that shows what the copilot is doing step by step.",
+        "Three languages (Italian, Spanish and English) with 91 synchronized texts."
+      ]
+    },
+    {
+      "layout": "fig",
+      "kicker": "The app in action · 1",
+      "title": "The agronomist draws the area and asks",
+      "img": "app_pregunta.png",
+      "caption": "An area of interest (2,534 ha) is drawn and the question is asked in natural language: \"What crops are in this area?\". The copilot reasons live.",
+      "bullets": []
+    },
+    {
+      "layout": "fig",
+      "kicker": "The app in action · 2",
+      "title": "The copilot answers with the crop, its confidence and what it saw",
+      "img": "app_resultado.png",
+      "caption": "Per-cell crop map + \"What the agent saw\" panel (perceiver observation) + result: Meadow, 100% confidence, 2,516.6 ha. AlphaEarth + XGBoost classification.",
+      "bullets": []
+    },
+    {
+      "layout": "twocol",
+      "title": "Security",
+      "img": "security_rls.png",
+      "side": "right",
+      "caption": "Layered defense: from the user session to controlled sources.",
+      "bullets": [
+        "Each user only reaches their own session data (row-level security, no exceptions).",
+        "The tools are limited and out-of-range inputs are rejected.",
+        "Everything is logged and can be reviewed.",
+        "Malicious messages → the tools are limited.",
+        "Poisoned information in the search → we use only controlled sources.",
+        "Over-confidence → it warns when confidence is below 0.60."
+      ],
+      "paras": []
+    },
+    {
+      "layout": "text",
+      "title": "An honest app",
+      "paras": [
+        "When information is missing it says so clearly, instead of making up data:"
+      ],
+      "bullets": [
+        "Time series: it only shows the real measured dates.",
+        "Image search: it shows up empty if that catalog is not available yet.",
+        "Background tasks: it explicitly states they are not implemented yet."
+      ]
+    },
+    {
+      "layout": "divider",
+      "sec": "06",
+      "kicker": "6 · Transfer, MLOps & future",
+      "title": "Does it extend to other regions?",
+      "img": "transfer_map.png",
+      "paras": [
+        "Transfer learning, good practices and lessons learned."
+      ]
+    },
+    {
+      "layout": "text",
+      "kicker": "The bar we set ourselves, and the honesty of missing it",
+      "title": "We wanted to repeat France's 0.90 in another region",
+      "paras": [
+        "The ambitious goal was clear: take the model trained in France (F1 score of 0.90 on 12 crops) to a new region and reach that 0.90 again with the same recipe, without retraining from scratch."
+      ],
+      "bullets": [
+        "Measuring it with real data required <strong>two datasets that did not exist</strong>: we built them ourselves (Italy and Germany).",
+        "Honest spoiler: in Italy we did NOT reach it (ceiling 0.12) and in Germany we got close (8 crops above 0.60), but France's 0.90 is <strong>not yet reached</strong> in a new region.",
+        "The limit is not the number of regions, but that many crops don't separate well from only the yearly image summary."
+      ]
+    },
+    {
+      "layout": "kpi",
+      "kicker": "Step 1 · Build the data to be able to measure",
+      "title": "We built our own PASTIS-style datasets",
+      "items": [
+        {
+          "num": "2",
+          "accent": true,
+          "label": "new datasets built by hand (Italy 2018 and Germany 2023), not downloaded"
+        },
+        {
+          "num": "1,438 + 1,246",
+          "accent": false,
+          "label": "128 × 128 patches (Italy + Germany DE4)"
+        },
+        {
+          "num": "156k+",
+          "accent": false,
+          "label": "labeled parcels in total (103,350 + 53,460)"
+        }
+      ],
+      "sub2": "The methodology, step by step (they did not exist in PASTIS format: building them is what lets us measure transfer)",
+      "cards2": "c3",
+      "cards": [
+        {
+          "title": "1 · Official labels",
+          "body": "We start from parcel polygons with their declared crop, from public European agricultural registries (EuroCrops): Tuscany 2018 and Lower Saxony 2023.",
+          "variant": "normal"
+        },
+        {
+          "title": "2 · PASTIS-style patches",
+          "body": "The area is split into 128 × 128 pixel patches with the <strong>full Sentinel-2 image series</strong> of the period (24 dates in Italy, ~41 in Germany) and a pixel-wise mask with each parcel's crop: the same format as the French dataset.",
+          "variant": "normal"
+        },
+        {
+          "title": "3 · Summaries and clean splits",
+          "body": "Each parcel gets its AlphaEarth summary (via Google Earth Engine) and the area is split into <strong>5 geographic blocks</strong>, so evaluation happens on areas the model has never seen.",
+          "variant": "normal"
+        }
+      ]
+    },
+    {
+      "layout": "cards",
+      "kicker": "Step 2 · The results on our own datasets",
+      "title": "Does it work in other regions?",
+      "cols": "c2",
+      "items": [
+        {
+          "title": "Italy (Tuscany) — hard",
+          "body": "Very small parcels (0.4 ha) and only 8 months observed: on the full dataset (103,350 parcels) the model barely reaches an F1 score of <strong>0.12</strong>. Except grapevine (0.64), Mediterranean crops get confused.",
+          "variant": "s c2"
+        },
+        {
+          "title": "Germany (Lower Saxony) — it works",
+          "body": "Large parcels (10 ha) and 14 months observed: the F1 score rises to <strong>0.266 (2.2× more than Tuscany)</strong>. Cereals are rescued: maize 0.70, rapeseed 0.69, wheat 0.67, rye 0.57.",
+          "variant": "normal"
+        }
+      ]
+    },
+    {
+      "layout": "twocol",
+      "kicker": "Not even within the same country is it automatic",
+      "title": "France → Brittany: the region already changes the result",
+      "img": "breizhcrops_transfer.png",
+      "side": "right",
+      "caption": "Tabular classifier trained in France (PASTIS 2019, the 185 shared features) and evaluated directly on Brittany (public BreizhCrops 2017 dataset, 2,145 parcels), without retraining. Since BreizhCrops has no AlphaEarth, this test uses the tabular model over the 7 shared crops, not Voting-3.",
+      "bullets": [
+        "Brittany is <strong>France</strong>, but it is another region: Atlantic climate, different calendar, different year, different parcels.",
+        "Even so, taking the classifier directly <strong>is not automatic</strong>: overall F1 score of only <strong>0.21</strong>.",
+        "<strong>It holds</strong> where the crop looks the same: rapeseed 0.70, meadow 0.51. <strong>It collapses</strong> on cereals: maize 0.14, barley 0.07, wheat 0.01.",
+        "The lesson that guides the whole chapter: changing region is a real jump, not just changing country."
+      ],
+      "paras": []
+    },
+    {
+      "layout": "twocol",
+      "kicker": "The transfer experiment, per dataset",
+      "title": "Italy: we tried transfer 3 ways",
+      "img": "transfer_3ways_italia.png",
+      "side": "right",
+      "caption": "Same model (TSViT-pheno) and same metric over the 39 Italian classes (test fold-3). How much each way of transferring adds.",
+      "bullets": [
+        "Training <strong>from scratch</strong>, only with Italian data: F1 score <strong>0.095</strong>.",
+        "<strong>Pure transfer</strong>: reuse what the model already learned in France about reading the image series, with a new classifier for the Italian crops: <strong>0.120</strong>.",
+        "<strong>Keeping the classes</strong>: also starting the classifier from the French crops, or <strong>replicating the PASTIS training mode</strong>: <strong>0.130–0.132</strong>.",
+        "What helps most is what it learned about reading the images; keeping the French classes adds little on average."
+      ],
+      "paras": []
+    },
+    {
+      "layout": "twocol",
+      "kicker": "The nuance of transfer",
+      "title": "Does keeping France's classes help?",
+      "img": "warmstart_nuance_italia.png",
+      "side": "right",
+      "caption": "F1-score difference per kept crop: how much it changes when starting from the French model instead of at random.",
+      "bullets": [
+        "On average keeping the classes helps a bit (+0.012), but it is <strong>not universal</strong>.",
+        "<strong>It helps</strong> where the crop looks alike France-Italy: durum wheat +0.08, barley +0.07, alfalfa +0.05.",
+        "<strong>It hurts</strong> where it differs: oats −0.08, sunflower −0.06, soft wheat −0.04 (different Mediterranean phenology).",
+        "Honest finding: France's knowledge transfers crop by crop, not as a block."
+      ],
+      "paras": []
+    },
+    {
+      "layout": "table",
+      "kicker": "The region where moving the model to a new area DOES work — 3 measured factors",
+      "title": "Germany (Lower Saxony): why it works",
+      "table": {
+        "headers": [
+          "Factor",
+          "Effect"
+        ],
+        "rows": [
+          {
+            "cells": [
+              "Year 2023 vs 2018",
+              "XGBoost +44% (0.156 → 0.225)"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Observing 14 months instead of 8",
+              "More usable dates (24 → 56 in Tuscany; ~41 in Germany): rescues cereals"
+            ],
+            "highlight": false
+          },
+          {
+            "cells": [
+              "Lower Saxony vs Tuscany",
+              "Voting-3 0.119 → 0.266 (2.2× more)"
+            ],
+            "highlight": true
+          }
+        ]
+      },
+      "paras": []
+    },
+    {
+      "layout": "twocol",
+      "title": "DE4 — rescued cereals",
+      "img": "de4_perclass.png",
+      "side": "right",
+      "caption": "F1 score per crop of Voting-3 in Germany DE4 (53,460 parcels). In green, the cereals that were sunk in Tuscany.",
+      "bullets": [
+        "Maize 0.70 · rapeseed 0.69 · grassland 0.68 · winter wheat 0.67 · rye 0.57.",
+        "<strong>8 crops</strong> scoring 0.6 or more, against just 1 in Tuscany.",
+        "The 3 evaluation ways agree: keeping the area's classes 0.266 · translating them to a common list 0.287 · full procedure 0.266.",
+        "Large parcels (10 ha versus 0.4) + full year + watching the winter = crops are easier to tell apart."
+      ],
+      "paras": []
+    },
+    {
+      "layout": "cards",
+      "kicker": "Step 3 · Now we validate the idea on other teams' public data",
+      "title": "Three supporting studies on public datasets",
+      "cols": "c2",
+      "items": [
+        {
+          "title": "So we don't depend only on our data",
+          "body": "So far we tested transfer with <strong>our</strong> datasets (Italy, Germany). Now we repeat the same idea on <strong>three third-party public datasets</strong>. All three confirm the lesson: changing region is a real jump and local examples are needed.",
+          "variant": "s c2"
+        },
+        {
+          "title": "France → Catalonia (Sen4AgriNet)",
+          "body": "With the public Sen4AgriNet dataset of Catalan parcels: with no local examples the French model gets nothing right (<strong>0.00</strong>); with a few examples per crop it reaches <strong>0.25</strong>.",
+          "variant": "normal"
+        },
+        {
+          "title": "Latvia → Estonia (EuroCropsML)",
+          "body": "With the public EuroCropsML dataset of Baltic parcels: when moving from one country to another, AlphaEarth summaries beat raw Sentinel-2 imagery with any number of examples (<strong>+0.111</strong> with a single example per crop).",
+          "variant": "normal"
+        },
+        {
+          "title": "Europe → Brazil (WorldCereal)",
+          "body": "With ESA WorldCereal public labels in the Brazilian Cerrado (only maize also exists in Europe): with no examples <strong>0.01</strong>; with 20 examples per crop <strong>0.63</strong>. The tropics need local examples.",
+          "variant": "normal"
+        }
+      ]
+    },
+    {
+      "layout": "twocol",
+      "kicker": "Zooming into the 2nd study: Latvia → Estonia",
+      "title": "Why we use AlphaEarth and not raw imagery",
+      "img": "ae_vs_s2.png",
+      "side": "right",
+      "caption": "Latvia → Estonia (EuroCropsML): F1 score on Estonia by number of examples per crop, mean of 3 seeds.",
+      "bullets": [
+        "The previous Latvia → Estonia study, in detail: we compare two ways of describing each parcel.",
+        "Google's <strong>AlphaEarth summaries</strong> vs <strong>raw Sentinel-2 imagery</strong>: with a <strong>single example</strong> per crop, AlphaEarth scores <strong>0.43</strong> and raw scores <strong>0.32</strong> (<strong>+0.111</strong>).",
+        "The edge holds with few examples (+0.087 at 5) and both converge once saturated.",
+        "Takeaway: AlphaEarth brings useful knowledge out of the box and reaches the same level with <strong>~10 times fewer labels</strong> — key for new regions where labeling is expensive."
+      ],
+      "paras": []
+    },
+    {
+      "layout": "twocol",
+      "kicker": "Another strategy: one single model for several regions",
+      "title": "Training with several regions at once improves many crops",
+      "img": "multiregion_delta.png",
+      "side": "right",
+      "caption": "F1-score difference per crop: multi-region model (30 crops) minus the France-only one (18), on the same test and budget.",
+      "bullets": [
+        "Instead of transferring the French model, we tried training <strong>one single classifier</strong> with several European regions together: the list grows from 18 to 30 crops.",
+        "Adding regions <strong>does improve</strong> many crops: potato <strong>+0.64</strong>, spring barley <strong>+0.38</strong>, grassland <strong>+0.28</strong>, winter soft wheat <strong>+0.28</strong>.",
+        "Only 2 of 30 get slightly worse (sunflower −0.11): the balance is clearly positive.",
+        "Looking only at a threshold (how many cross 0.85?) was hiding these real per-crop gains."
+      ],
+      "paras": []
+    },
+    {
+      "layout": "text",
+      "title": "A negative result we report honestly",
+      "paras": [
+        "With that multi-region strategy the crop list DOES grow (from 18 to 30, without forcing equivalences) and the per-crop balance is positive, but:",
+        "No NEW crop (exclusive to other regions) crosses an F1 score of 0.85: the 2 that do were already learnable in France. The bottleneck is that many crops don't separate well from only the yearly summary, not the number of regions."
+      ],
+      "bullets": [
+        "Multi-region (30 crops): 7 above 0.70, 2 above 0.85.",
+        "France only (18, same budget): 6 above 0.70, 2 above 0.85.",
+        "New crops rescued above 0.85: <strong>0</strong>.",
+        "Overall multi-region F1 score 0.65, on par with the single-region baseline (0.6535), despite predicting 30 crops instead of 18."
+      ]
+    },
+    {
+      "layout": "cards",
+      "title": "The whole process can be reproduced",
+      "cols": "c3",
+      "items": [
+        {
+          "title": "DVC",
+          "body": "Keeps every version of the data and the models.",
+          "variant": "s c3"
+        },
+        {
+          "title": "MLflow",
+          "body": "Records which data and code version each experiment used.",
+          "variant": "normal"
+        },
+        {
+          "title": "Dagster",
+          "body": "Organizes the data flow step by step.",
+          "variant": "normal"
+        },
+        {
+          "title": "dbmate",
+          "body": "Database changes that can be undone.",
+          "variant": "normal"
+        },
+        {
+          "title": "Terraform",
+          "body": "Builds the infrastructure on GCP and Azure automatically.",
+          "variant": "normal"
+        },
+        {
+          "title": "100%",
+          "body": "reproducible.",
+          "variant": "hero"
+        }
+      ]
+    },
+    {
+      "layout": "cards",
+      "title": "How we organize work with AI assistants",
+      "cols": "c2",
+      "items": [
+        {
+          "title": "Assistant organization",
+          "body": "A single central guide, 30 specialized skills, 9 expert assistants, per-folder guides loaded when needed and a memory that persists across sessions.",
+          "variant": "s c2"
+        },
+        {
+          "title": "Best practices",
+          "body": "English code and Spanish text, no emojis, tidy logs, declared types, no repeated code, separated responsibilities, several isolated clients, several languages, passwords in a secure manager, versioned data and controlled database changes.",
+          "variant": "normal"
+        }
+      ]
+    },
+    {
+      "layout": "text",
+      "title": "Rigor: how we avoided fooling ourselves",
+      "paras": [
+        "The decisions that keep the numbers credible, not inflated:"
+      ],
+      "bullets": [
+        "<strong>Spatial cross-validation</strong>: training and test in separate zones (1 km buffer), so the model can't memorize neighbors and the numbers are real.",
+        "<strong>Zero filler data</strong>: everything you see came from real data; when something was missing, the system says so rather than making it up.",
+        "<strong>Honest metric</strong>: we report balanced accuracy and its coverage, not just the nicest-looking number.",
+        "<strong>Verifiable reproducibility</strong>: notebooks run from start to finish with results visible, quality and security checks, and over 70% of the server code covered by tests."
+      ]
+    },
+    {
+      "layout": "text",
+      "title": "Lessons learned",
+      "paras": [
+        "Five things we learned along the way, each backed by an experiment in the project:"
+      ],
+      "bullets": [
+        "<strong>Time matters more than shape</strong>: how the crop changes over the year tells crops apart better than its appearance in a single image (that's why the winner is a temporal model, TSViT-pheno).",
+        "<strong>Changing region is a real jump</strong>: taking the model to a new area drops it hard (Tuscany 0.12, Brittany 0.21). It works where the crop looks alike and parcels are large (Germany), and needs local examples in every new zone.",
+        "<strong>Google's base models (AlphaEarth) pay off</strong>: they reach the same accuracy with ~10 times fewer labels, but they do no magic with no local examples at all.",
+        "<strong>Simple can win</strong>: combining 3 models with a simple vote was as accurate and more reliable than a 5-model ensemble with 54 internal settings (Voting-3 vs Stacking-5).",
+        "<strong>Honesty is part of the contribution</strong>: also reporting what did not work across regions leaves the real limit on the record, not hidden."
+      ]
+    },
+    {
+      "layout": "kpi",
+      "kicker": "Conclusions · what we deliver",
+      "title": "An agricultural copilot that works, is honest and reproduces",
+      "items": [
+        {
+          "num": "0.90",
+          "accent": true,
+          "label": "F1 score of the winning Voting-3 model (12 crops, in production)"
+        },
+        {
+          "num": "97-99%",
+          "accent": false,
+          "label": "Of parcels correct scene after scene, on the ground"
+        },
+        {
+          "num": "2",
+          "accent": false,
+          "label": "PASTIS-style datasets built by hand (Italy and Germany)"
+        }
+      ],
+      "sub2": "The message that ties the whole talk together",
+      "cards2": "c3",
+      "cards": [
+        {
+          "title": "It solves the real problem",
+          "body": "It turns free satellite imagery into answers an agronomist understands, in seconds and in natural language. The copilot <strong>sees with the models and reasons with an LLM</strong> (Be My Eyes pattern), always citing its source.",
+          "variant": "s c3"
+        },
+        {
+          "title": "It is honest about its limits",
+          "body": "It also reports what did <strong>not</strong> work: taking the model to a new region is a real jump. When it doesn't know, it says so; it never makes things up. That transparency is part of the contribution.",
+          "variant": "normal"
+        },
+        {
+          "title": "It reproduces end to end",
+          "body": "Versioned data and experiments (DVC · MLflow · Dagster), infrastructure as code and notebooks run with their results visible. Anyone can repeat it.",
+          "variant": "normal"
+        }
+      ]
+    },
+    {
+      "layout": "twocol",
+      "title": "Future work",
+      "img": "roadmap_future.png",
+      "side": "right",
+      "caption": "Upcoming project milestones.",
+      "bullets": [
+        "Look at how the crop changes within the year to separate very similar cereals.",
+        "Out-of-sample validation with 5 splits, for an even more solid number.",
+        "Connect to the server the switch between the two language models.",
+        "Deploy the image catalog.",
+        "Full search with geographic context.",
+        "User sign-in; background tasks.",
+        "Publish our AgroMind-IT/ES question set with a permanent identifier on Zenodo.",
+        "Submit the paper to a conference or journal."
+      ],
+      "paras": []
+    },
+    {
+      "layout": "text",
+      "title": "Acknowledgments",
+      "paras": [],
+      "bullets": [
+        "Dr. Gerardo Jesús Camacho — academic sponsor.",
+        "The AgroSatCopilot team.",
+        "Open datasets: AlphaEarth/DeepMind, Copernicus, JRC EuroCrops.",
+        "The open-source community."
+      ]
+    },
+    {
+      "layout": "closing",
+      "title": "Thank you",
+      "paras": [
+        "AgroSatCopilot — agricultural satellite analysis that converses, is honest and can be reproduced step by step.",
+        "AgroSatCopilot · Team 17 · open-source (Apache 2.0 / MIT)",
+        "Data: AlphaEarth (CC-BY-4.0), Copernicus Sentinel, PASTIS-R, EuroCrops, Sen4AgriNet, EuroCropsML, WorldCereal. Models: TSViT, U-TAE, FarSLIP, Gemini 3.5 Flash, Qwen 3.5 MoE, Qwen 3.6 VL."
+      ]
+    }
+  ]
+}

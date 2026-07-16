@@ -17,15 +17,28 @@ The \emph{Be My Eyes} pattern~\cite{huang2025bemyeyes} establishes a
 clean separation between the models that \emph{see} and a frozen
 reasoner that \emph{communicates}, guaranteeing auditability and
 resistance to hallucination, while a dual cloud/on-premises backend
-preserves data sovereignty. Our transfer study is deliberately honest:
-zero-shot generalisation from France to Catalonia fails, and few-shot
-fine-tuning recovers mIoU 0.2468, consistent with reported limits on
-the spatial transferability of foundation-model
-embeddings~\cite{harvesting2026alphaearth}.
+preserves data sovereignty; the three interchangeable serving backends
+answer an identical grounded query identically, differing only in
+latency. The deployed production perceiver is the simpler Voting-3,
+whose parcel-by-parcel inference reaches 97--99\% of in-scope parcels
+correct across real French scenes while honestly abstaining on
+out-of-scope crops.
 
-The main outstanding challenge is the six minority classes with low
-F1, which require additional data or targeted augmentation rather than
-more models of the same kind. Future work includes the full FarSLIP
-phenological study (US-072), the multi-region label-space crosswalk and
-$k$-shot curve (US-073), and the quantitative conversational-layer
-benchmark on the H100 (US-069).
+Our multi-region transfer study is deliberately honest and now spans
+five regions. Zero-shot generalisation fails (France to Catalonia mIoU
+0.0000; even within-country France to Brittany drops to F1 0.21), and a
+few-shot budget is what closes the gap; the foundation model lowers that
+budget by roughly an order of magnitude in local labels. Transfer
+\emph{does} work where phenology is separable (Lower Saxony DE4, macro
+F1 0.266), and pooling regions widens the taxonomy from 18 to 30 leaves
+without rescuing any fine class above 0.85 --- because the bottleneck is
+phenological separability, not the number of regions. To build these
+studies we released two self-built PASTIS-style datasets (Tuscany 2018
+and Lower Saxony 2023).
+
+The main outstanding challenge is the minority classes with low F1,
+which require intra-annual temporal features or targeted augmentation
+rather than more regions. The one genuinely pending item is the
+quantitative conversational-layer quality benchmark on the H100
+(US-069); the FarSLIP study (US-072) and the multi-region and DE4
+transfer studies (US-073) are delivered in this paper.

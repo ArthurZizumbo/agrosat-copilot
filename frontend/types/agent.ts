@@ -26,6 +26,10 @@ export interface Citation {
   source: string;
   scene_id?: string | null;
   parcel_id?: number | null;
+  /** Canonical PASTIS parcel id `"{patch}_{local}"` when the source carries one.
+   *  `parcel_id` above is numeric (it feeds `activeParcelId`), so the local part
+   *  alone is ambiguous across patches; this keeps the real, unique id. */
+  canonical_parcel_id?: string | null;
   aoi_id?: number | null;
   /** ISO dates backing the claim. */
   dates?: string[] | null;
@@ -54,6 +58,13 @@ export interface Finding {
   true_class?: string | null;
   /** Whether the prediction matched the ground truth (prediction demo only). */
   correct?: boolean | null;
+  /** Per-class posterior probabilities in [0, 1], keyed by crop label
+   *  (mirror of `ClassificationResult.class_probabilities`). Drives the
+   *  probability bar chart in the finding card. */
+  class_probabilities?: Record<string, number> | null;
+  /** Identifier of the model that produced the classification, e.g.
+   *  "Voting-3" (shown as a small chip in the finding card). */
+  served_model?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -126,13 +137,28 @@ export type AgentEvent =
   | DoneEvent
   | AgentErrorEvent;
 
-/** LLM backend shown in the A/B switch.
+/** LLM backend the per-session reasoner switch can activate.
  *
- * APORTE PENDIENTE: the team's `/chat` does NOT accept `llm_variant` per request
- * (the backend reads `settings.llm_variant_default`). The switch stays visible
- * but disabled; this type only drives the UI label/state.
+ * These three strings are EXACTLY the persisted variant tags the backend accepts
+ * (`chat_sessions.llm_model` CHECK / `ml.agent.llm_routing.VARIANTS` / the
+ * `POST /llm/switch` `Literal`): `gemini` (cloud), `qwen-onprem` (on-prem Qwen
+ * text vLLM) and `qwen-vl` (on-prem multimodal Qwen3.6-VL). The switch POSTs the
+ * chosen tag to `/llm/switch`, which persists it; the next `/chat` reads it back
+ * and builds the matching backend. The two on-prem variants are reachable only
+ * behind the demo VM tunnel (`make demo-vm`); when their host is down the backend
+ * degrades the request to `gemini` (availability-aware routing) rather than
+ * failing, and the switch surfaces a transient error toast if the POST itself
+ * cannot be persisted. The hosted `qwen-api` / `gemma` variants exist server-side
+ * but are intentionally NOT exposed in the UI (3-option product decision, E12).
+ *
+ * Declared as a runtime array so the persisted store can VALIDATE a rehydrated
+ * value against it (the tags changed in E12: the pre-E12 `qwen35` still lives in
+ * returning users' localStorage). The type is derived from the array, so the two
+ * can never drift.
  */
-export type LlmVariant = "gemini" | "qwen35";
+export const LLM_VARIANTS = ["gemini", "qwen-onprem", "qwen-vl"] as const;
+
+export type LlmVariant = (typeof LLM_VARIANTS)[number];
 
 // ---------------------------------------------------------------------------
 // Backend request/response payloads (team contract).
@@ -150,6 +176,16 @@ export interface ChatTurn {
   content: string;
 }
 
+/** Crop-classification model the user can pin for `classify_new_parcel`
+ *  (mirror of `ml/agent/schemas.py` `CropModel`). Sent as `ChatRequest.crop_model`;
+ *  the backend puts it on the tool context and `classify.run` serves it verbatim,
+ *  ignoring whatever model the reasoner asked for — the pin is a contract, not a
+ *  hint. Runtime array + derived type, for the same rehydration guard as
+ *  `LLM_VARIANTS`. */
+export const CROP_MODELS = ["voting3", "xgb", "stacking5"] as const;
+
+export type CropModel = (typeof CROP_MODELS)[number];
+
 /** Body of POST /chat (mirror of ChatRequest). */
 export interface ChatRequest {
   messages: ChatTurn[];
@@ -157,4 +193,7 @@ export interface ChatRequest {
   parcel_id?: number | null;
   aoi?: GeoJSONGeometry | null;
   year?: number;
+  /** Crop-classification model pinned by the user, if any (else the LLM/tool
+   *  default of `voting3` applies). Omitted from the body when not selected. */
+  crop_model?: CropModel;
 }

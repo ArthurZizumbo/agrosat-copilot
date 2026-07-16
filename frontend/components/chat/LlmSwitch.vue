@@ -1,11 +1,14 @@
 <script setup lang="ts">
-// Segmented A/B LLM switch (Gemini / Qwen). Reflects the chat store's llmVariant
-// via v-model:variant.
+// Segmented per-session reasoner switch (Gemini / Qwen / Qwen-VL). Reflects the
+// chat store's llmVariant via v-model:variant.
 //
-// APORTE PENDIENTE: the team backend's `/chat` does NOT accept a per-request
-// llm_variant (the reasoner is fixed by `settings.llm_variant_default`). When
-// `server-fixed` is set the control renders disabled with a "server
-// configuration" tooltip so the design is preserved without a misleading action.
+// E12: the switch is REAL. Picking a backend emits `update:variant`, which the
+// parent forwards to `useChat.switchLlm` -> `POST /llm/switch` (persisted on the
+// session; the next `/chat` builds the matching backend). The on-prem variants
+// (`qwen-onprem` / `qwen-vl`) are reachable only behind the demo VM tunnel; a
+// failed switch reverts and surfaces a toast (the chat never breaks). The
+// `disabled` prop only suppresses changes mid-stream; `serverFixed` is kept for
+// deployments that pin the backend server-side (then a tooltip explains why).
 
 import type { LlmVariant } from "~/types/agent";
 
@@ -20,9 +23,11 @@ const emit = defineEmits<{ (e: "update:variant", v: LlmVariant): void }>();
 
 const { t } = useI18n();
 
+// 1:1 with the backend variant tags (types/agent.ts LlmVariant): three options.
 const options: { value: LlmVariant; labelKey: string; short: string }[] = [
   { value: "gemini", labelKey: "llm.gemini", short: "Gemini" },
-  { value: "qwen35", labelKey: "llm.qwen", short: "Qwen" },
+  { value: "qwen-onprem", labelKey: "llm.qwen", short: "Qwen" },
+  { value: "qwen-vl", labelKey: "llm.qwen_vl", short: "Qwen-VL" },
 ];
 
 const isDisabled = computed(() => props.disabled || props.serverFixed);

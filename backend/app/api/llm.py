@@ -10,8 +10,8 @@ before any business logic (router stays thin -- SoC):
    ``X-Session-ID``, US-054 AC-6). The 6th request in the window returns ``429``.
 
 The persisted variant (one of ``gemini`` / ``qwen-api`` / ``qwen-onprem`` /
-``gemma``) drives which backend the subsequent ``/chat`` requests of this session
-build (US-054 AC-2). No SQL lives here; the ``UPDATE`` runs in
+``gemma`` / ``qwen-vl``) drives which backend the subsequent ``/chat`` requests
+of this session build (US-054 AC-2, E12). No SQL lives here; the ``UPDATE`` runs in
 :class:`~backend.app.services.llm_switch_service.LLMSwitchService` on the
 RLS-scoped connection.
 """
@@ -36,10 +36,11 @@ logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/llm", tags=["llm"])
 
-#: The four supported variant tags, exposed as a ``Literal`` so FastAPI rejects
-#: any other value with ``422`` before the handler runs (1:1 with the DB CHECK
-#: constraint and ``ml.agent.llm_routing.VARIANTS``).
-LLMVariant = Literal["gemini", "qwen-api", "qwen-onprem", "gemma"]
+#: The supported variant tags, exposed as a ``Literal`` so FastAPI rejects any
+#: other value with ``422`` before the handler runs (1:1 with the DB CHECK
+#: constraint and ``ml.agent.llm_routing.VARIANTS``). ``qwen-vl`` is the on-prem
+#: multimodal Qwen3.6-VL host (E12).
+LLMVariant = Literal["gemini", "qwen-api", "qwen-onprem", "gemma", "qwen-vl"]
 
 
 class LLMSwitchRequest(BaseModel):

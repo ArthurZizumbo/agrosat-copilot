@@ -12,6 +12,20 @@ disjuntos. Salvo que se indique lo contrario, los modelos de
 segmentación se evalúan en un fold de prueba retenido y los combinadores
 de ensamble sobre predicciones out-of-fold.
 
+\paragraph{Datasets tipo PASTIS construidos a mano (Italia, Alemania).}
+Para medir la transferencia con datos reales donde no existe un benchmark en
+formato PASTIS, construimos dos datasets a mano en el mismo formato que PASTIS-R.
+\emph{Italia (Toscana/Pianura, 2018)}: $1{,}438$ parches de $128\times128$\,px y
+$103{,}350$ parcelas etiquetadas. \emph{Alemania (Baja Sajonia, DE4, 2023)}:
+$1{,}246$ parches y $53{,}460$ parcelas con una ventana de 14 meses ($\approx156$k
+parcelas etiquetadas en total). Ambos siguen la misma receta: polígonos con el
+cultivo declarado de EuroCrops como etiquetas, la serie temporal Sentinel-2
+completa por parche (24 fechas en Italia, ~41 en Alemania) con una máscara de
+cultivo píxel a píxel, un resumen AlphaEarth por parcela vía Google Earth Engine,
+y una división en cinco bloques geográficos para una evaluación sin fugas.
+Construir estos datasets es lo que hace medible la transferencia
+Francia$\rightarrow$Italia y Francia$\rightarrow$Alemania; se versionan con DVC.
+
 \paragraph{Sen4AgriNet (Cataluña)}~\cite{sykas2022sen4agrinet}
 (CC-BY-SA-4.0) se usa para el estudio de transferencia
 Francia$\rightarrow$Cataluña. Un subconjunto de Cataluña se versiona con
@@ -50,27 +64,17 @@ MLflow.
 
 \subsection{Protocolo de benchmark de la capa conversacional}
 \label{sec:experiments-llm}
-La capa conversacional se evalúa sobre AgroMind con un protocolo de
-LLM-como-juez que compara el razonador congelado Gemini~2.5~Pro frente al
-razonador multimodal Qwen on-premises servido vía vLLM. La tabla
-cuantitativa del benchmark se produce mediante una corrida de evaluación
-separada en la GPU H100 (US-069) y se deja aquí intencionalmente como un
-marcador de posición estructurado; las cifras no se fabrican.
-La Tabla~\ref{tab:llm-bench} fija la estructura de columnas.
-
-\begin{table}[htbp]
-\caption{Benchmark de la capa conversacional (solo estructura; cifras
-pendientes de la evaluación en H100, US-069).}
-\label{tab:llm-bench}
-\centering
-\begin{tabular}{lccc}
-\toprule
-\textbf{Razonador (congelado)} & \textbf{Exactitud} & \textbf{Anclaje}
-  & \textbf{LLM-juez} \\
-\midrule
-Gemini~2.5~Pro (nube)       & --- & --- & --- \\
-Qwen3.5-35B-A3B (on-prem)   & --- & --- & --- \\
-\bottomrule
-\end{tabular}
-% src: pending US-069 (H100 eval) -- do not fill with synthetic numbers.
-\end{table}
+Evaluamos la capa conversacional en dos ejes independientes. El primero
+es un eje de \emph{ingeniería} --- la intercambiabilidad de backends ---
+que ya está medido: detrás de un perceptor fijo, se envía una misma
+consulta anclada a los tres backends de servicio efectivamente
+desplegados (Gemini~3.5~Flash en la nube, más Qwen~3.5~MoE y
+Qwen~3.6-VL on-premises), y se registra si la respuesta es idéntica y su
+latencia de extremo a extremo. El resultado medido se reporta en la
+Sección~\ref{sec:results} (Tabla~\ref{tab:backend-switch}). El segundo es
+un eje de \emph{calidad} --- un protocolo LLM-como-juez sobre AgroMind que
+puntúa las respuestas del razonador congelado por exactitud y anclaje ---
+que depende de una corrida de evaluación separada en la GPU H100 (US-069)
+y sigue pendiente; reportamos el protocolo y diferimos las cifras en
+lugar de fabricarlas. No se reporta ninguna puntuación sintética de
+AgroMind en ninguna parte de este artículo.

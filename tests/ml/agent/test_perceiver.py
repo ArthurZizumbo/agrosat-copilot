@@ -30,6 +30,7 @@ import ml.agent.perceiver as perceiver_mod
 import ml.agent.tools.classify as classify_mod
 import ml.agent.tools.explain as explain_mod
 from ml.agent.perceiver import PerceiverLayer, PerceiverObservation
+from ml.agent.schemas import ClassificationResult
 
 _POLYGON = {
     "type": "Polygon",
@@ -391,3 +392,45 @@ def test_perceiver_observation_is_strict_extra_forbid() -> None:
             description="d",
             extra_key="boom",  # extra="forbid"
         )
+
+
+async def test_observe_aoi_segmentation_names_the_tabular_model_not_the_served_one(
+    monkeypatch, make_ctx
+) -> None:
+    """The per-cell map is credited to the model that PAINTED it, not to the AOI one.
+
+    Regression: the AOI-level estimate can be served by the Voting-3 champion, but
+    :func:`ml.agent.segment_aoi.segment_aoi_live` has no model selector -- it always
+    classifies each cell with the cached XGBoost-AlphaEarth classifier
+    (``classify._load_classifier``). Crediting the segmentation to
+    ``result.served_model`` therefore told the user the crop map was painted by
+    Voting-3 when XGBoost painted it, which is exactly the dishonesty the
+    ``served_model`` plumbing exists to prevent.
+    """
+    served = ClassificationResult(
+        crop_class="Corn",
+        confidence=0.9,
+        class_probabilities={"Corn": 0.9, "Meadow": 0.1},
+        served_model="voting-3",  # the champion DID serve the AOI-level estimate
+    )
+
+    async def _fake_run(inp, ctx):
+        return served
+
+    async def _fake_segments(self, aoi, year):
+        return [{"crop_class": "Corn", "confidence": 0.9, "area_ha": 1.0, "geometry": {}}]
+
+    monkeypatch.setattr(classify_mod, "run", _fake_run)
+    monkeypatch.setattr(perceiver_mod.classify, "run", _fake_run)
+    monkeypatch.setattr(PerceiverLayer, "_segment_aoi", _fake_segments)
+
+    obs = await PerceiverLayer(make_ctx()).observe_aoi(
+        perceiver_mod.GeoJSONGeometry(**_POLYGON), year=2019
+    )
+
+    # The AOI-level estimate is still credited to the champion that served it.
+    assert "Voting-3" in obs.description
+    # But the per-cell map sentence must name the tabular classifier that ran it.
+    segmentation_sentence = obs.description.split("Mapa de cultivos por celda")[1]
+    assert "AlphaEarth + XGBoost" in segmentation_sentence
+    assert "Voting-3" not in segmentation_sentence

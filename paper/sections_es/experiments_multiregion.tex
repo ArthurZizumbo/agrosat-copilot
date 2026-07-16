@@ -3,10 +3,10 @@
 % Prose in English (the manuscript is EN). Every number is rendered from the real
 % EPIC 12 artefacts by scripts/build_us073_transfer_figures.py; nothing is hand-typed.
 % Tables : paper/tables/us-073-transfer/{sen4agrinet_domain_gap,eurocropsml_kshot}.tex
-% Figures: paper/figures/us-073-transfer/{kshot_curve,mexico_phenology,worldcereal_tropical_transfer}.{png,svg}
+% Figures: paper/figures/us-073-transfer/{kshot_curve,worldcereal_tropical_transfer}.{png,svg}
 %          paper/figures/us-075/sen4agrinet_per_class_iou_f1.png
 %          paper/figures/us-076/eurocropsml_per_class_f1_vs_k.png
-%          ../docs/us-planning/figures/eurocropsml_alphaearth_vs_s2_fewshot.png
+%          figures/us-070/eurocropsml_ae_vs_s2_es.png
 % Required packages in the host preamble: booktabs, graphicx, amsmath, hyperref, url.
 
 \section{Transferencia multirregión: entrenar en Francia, extender a otros lugares}
@@ -18,8 +18,7 @@ convierte esa limitación en una capacidad medida: documentamos la
 \emph{receta} ``entrenar en Francia $\rightarrow$ extender a otros
 lugares'' a lo largo de dos rutas de transferencia reales que se
 ejecutaron de extremo a extremo y se versionaron con DVC, más una
-demostración cualitativa zero-shot sobre México y una extensión tropical
-explícitamente fuera de alcance. La tesis que defendemos es
+extensión tropical explícitamente fuera de alcance. La tesis que defendemos es
 deliberadamente conservadora: el modelo \emph{recibe nuevas clases de
 otros datasets mediante adaptación few-shot}, y la brecha de dominio
 franco-ibérica es \emph{catastrófica en zero-shot}. En consecuencia, el
@@ -35,7 +34,7 @@ Todos los embeddings son AlphaEarth Foundations~\cite{brown2025alphaearth}
 \texttt{SATELLITE\_EMBEDDING/V1/ANNUAL}, versión de datos~1.1,
 64-dimensional, CC-BY-4.0. El razonador congelado que convierte las
 salidas del modelo en explicaciones es
-Gemini~2.5~Pro~\cite{google2025gemini25} (GA, contexto de 1M tokens);
+Gemini~3.5~Flash~\cite{google2025gemini25} (el backend de nube desplegado);
 siguiendo el patrón ``Be My Eyes''~\cite{huang2025bemyeyes}, nuestros
 modelos entrenados son el \emph{perceptor} y el LLM es un \emph{razonador}
 congelado para la comunicación y la soberanía de datos, nunca un
@@ -46,17 +45,21 @@ del proyecto --- la región agrícola italiana usada para la destilación
 contrastiva de FarSLIP (\texttt{farslip-clip-italy-v1}) --- dentro de la
 huella multirregión que abarca Francia (PASTIS-R), Cataluña
 (Sen4AgriNet), los países de EuroCropsML (Estonia/Letonia/Portugal) y las
-áreas de demostración cualitativa de México.
+regiones tropicales de WorldCereal (Brasil, India).
 
 \begin{figure}[htbp]
   \centering
-  \includegraphics[width=0.75\linewidth]{figures/us-070/aoi_italy.png}
-  \caption{Área de interés italiana usada para la destilación contrastiva
-  de FarSLIP (\texttt{farslip-clip-italy-v1}), un nodo de la huella
-  multirregión de AgroSatCopilot. Mapa base y superposición del AOI;
-  contiene datos Sentinel de Copernicus modificados. AlphaEarth
+  \includegraphics[width=0.75\linewidth]{figures/us-070/aoi_italy_es.png}
+  \caption{Área de interés italiana (Pianura Padana, valle del Po) usada
+  para la destilación contrastiva de FarSLIP
+  (\texttt{farslip-clip-italy-v1}), un nodo de la huella multirregión de
+  AgroSatCopilot. Los píxeles reales muestreados de AlphaEarth se colorean
+  según su embedding anual de 64 dimensiones sobre un mapa base de
+  OpenStreetMap, para ubicar el AOI y mostrar que el embedding varía
+  espacialmente en la región. AlphaEarth
   \texttt{SATELLITE\_EMBEDDING/V1/ANNUAL} v1.1
-  (CC-BY-4.0)~\cite{brown2025alphaearth}.}
+  (CC-BY-4.0)~\cite{brown2025alphaearth}; mapa base \textcopyright{}
+  contribuidores de OpenStreetMap.}
   \label{fig:aoi-italy}
 \end{figure}
 
@@ -137,6 +140,30 @@ reproduce con el notebook ejecutado
 
 \input{tables/us-073-transfer/sen4agrinet_domain_gap.tex}
 
+\subsection{Transfer dentro del mismo país: Francia $\rightarrow$ Bretaña (BreizhCrops)}
+\label{sec:multiregion:breizhcrops}
+
+Antes de cruzar una frontera, planteamos la pregunta de transfer más barata posible: ¿el
+modelo aguanta dentro del \emph{mismo país}? Bretaña es francesa pero agronómicamente
+distinta --- clima oceánico, otro calendario de cultivo y otro año ---, así que aísla el
+cambio de \emph{región} del cambio de \emph{país}. Entrenamos el clasificador tabular del
+proyecto (XGBoost \texttt{multi:softprob} sobre los 185 rasgos compartidos por parcela)
+en PASTIS-R (Francia, 2019) y lo evaluamos \emph{directo}, sin reentrenar, sobre
+BreizhCrops~\cite{russwurm2020breizhcrops} (Bretaña, 2017; regiones
+\texttt{frh01}$+$\texttt{frh04}), sobre los siete cultivos que ambos datasets comparten
+($64{,}121$ parcelas de entrenamiento / $2{,}145$ de prueba). BreizhCrops no trae embedding
+AlphaEarth, de modo que esta es una prueba con rasgos crudos, no una evaluación de Voting-3.
+
+El F1-macro del transfer directo es de solo $0.2057$ (\emph{accuracy} $0.2956$): incluso
+dentro de Francia, cambiar de región es un salto real. El desglose por cultivo es la señal
+honesta (se genera desde \texttt{data/transfer/pastis\_to\_breizhcrops.parquet}): el transfer
+\emph{aguanta} donde el cultivo se ve fenológicamente parecido entre regiones --- colza
+$0.70$, pradera permanente $0.51$ --- y \emph{se hunde} en los cereales cuya dinámica
+intra-anual difiere --- maíz $0.14$, cebada $0.07$, trigo blando $0.01$, girasol $0.00$.
+Este resultado dentro de Francia es la ilustración más fuerte y más barata del caveat de
+transferibilidad limitada (Sec.~\ref{sec:multiregion:caveat}): el fallo lo impulsa la región
+y su fenología, no solo el cambio de país.
+
 \subsection{Ruta tabular few-shot: EuroCropsML (transnacional)}
 \label{sec:multiregion:fewshot}
 
@@ -146,7 +173,7 @@ la ruta tabular mide cuántas etiquetas locales cierran una brecha
 Primero, \textbf{Francia no forma parte de EuroCropsML}: el
 benchmark~\cite{reuss2025eurocropsml} cubre Estonia (EE), Letonia (LV) y
 Portugal (PT), de modo que el protocolo real es
-LV$+$PT~$\rightarrow$~EE y LV~$\rightarrow$~EE (Reuter et al.
+LV$+$PT~$\rightarrow$~EE y LV~$\rightarrow$~EE (Reuss et al.
 2025, Tabla~II), no ``Francia~$\rightarrow$~Estonia''.
 Segundo, EuroCropsML \textbf{no lleva embedding de AlphaEarth}: cada dato
 es una serie temporal de mediana anual Sentinel-2 L1C (13 bandas, B10
@@ -179,7 +206,7 @@ calcula estrictamente sobre las particiones reales de EuroCropsML.
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=0.9\linewidth]{figures/us-073-transfer/kshot_curve.png}
+  \includegraphics[width=0.9\linewidth]{figures/us-073-transfer/kshot_curve_es.png}
   \caption{Curva few-shot transnacional de EuroCropsML
   (LV$[+$PT$]\rightarrow$EE). F1-macro sobre el conjunto de consulta de
   Estonia frente a $k$ shots por clase, media sobre tres semillas con
@@ -226,7 +253,7 @@ más barato. Todas las cifras se renderizan desde
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=0.9\linewidth]{../docs/us-planning/figures/eurocropsml_alphaearth_vs_s2_fewshot.png}
+  \includegraphics[width=0.9\linewidth]{figures/us-070/eurocropsml_ae_vs_s2_es.png}
   \caption{Embedding del modelo de fundación AlphaEarth vs.\ Sentinel-2
   crudo en la tarea few-shot transnacional EuroCropsML LV$\rightarrow$EE
   (F1-macro vs.\ $k$, media sobre tres semillas). AlphaEarth domina en
@@ -282,9 +309,9 @@ es una decisión por cultivo, no global. Las tablas completas están en
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=0.49\linewidth]{figures/us-076/eurocropsml_per_class_f1_vs_k.png}
+  \includegraphics[width=0.49\linewidth]{figures/us-076/eurocropsml_per_class_f1_vs_k_es.png}
   \hfill
-  \includegraphics[width=0.49\linewidth]{figures/us-075/sen4agrinet_per_class_iou_f1.png}
+  \includegraphics[width=0.49\linewidth]{figures/us-075/sen4agrinet_per_class_iou_f1_es.png}
   \caption{Anatomía de la transferencia por clase. \emph{Izquierda:}
   EuroCropsML LV$\rightarrow$EE F1 por macroclase frente a $k$ --- los
   cultivos robustos (grassland, cereals, oilseed) se saturan con pocas o
@@ -301,42 +328,6 @@ es una decisión por cultivo, no global. Las tablas completas están en
   (CC-BY-SA-4.0)~\cite{sykas2022sen4agrinet}.}
   \label{fig:eurocropsml_perclass}
   \label{fig:sen4agrinet_perclass}
-\end{figure}
-
-\subsection{Demostración cualitativa zero-shot: México}
-\label{sec:multiregion:mexico}
-
-Para mostrar que el mismo pipeline se replica fuera de Europa, lo
-aplicamos a dos áreas productoras mexicanas reales \emph{sin} verdad de
-terreno curada: aguacate en torno a Uruapan/Tancítaro (Michoacán) y
-guayaba en torno a Calvillo (Aguascalientes). Para cada área de interés
-obtenemos el embedding zonal real de AlphaEarth de 64 dimensiones y la
-serie temporal real de NDVI Sentinel-2 desde Google Earth Engine, y
-alineamos la narrativa fenológica a la familia
-\texttt{PERMANENT\_WOODY} del espacio macro HCAT como una analogía
-cualitativa. La Figura~\ref{fig:mexico_phenology} muestra las dos curvas
-NDVI: ambos cultivos son leñosos perennes (similares a un huerto), con
-una señal relativamente alta y estable en lugar del ciclo
-siembra--cosecha de un cereal anual, y el AOI de guayaba muestra la
-modulación esperada de fin de temporada por el riego y la poda. Esta
-demostración es puramente metodológica: como no hay verdad de terreno,
-\textbf{nunca reportamos un F1, exactitud ni clasificador sobre México}
---- un metatest en el código fuente impone que ninguna métrica de
-clasificación se importe en esta ruta. Ilustra el mecanismo de ``recibir
-nuevas clases'', no una afirmación de desempeño. AlphaEarth (Satellite
-Embedding V1 Annual, CC-BY-4.0);
-contiene datos Sentinel de Copernicus modificados.
-
-\begin{figure}[t]
-  \centering
-  \includegraphics[width=0.9\linewidth]{figures/us-073-transfer/mexico_phenology.png}
-  \caption{Demostración cualitativa de México: fenología NDVI Sentinel-2
-  real de aguacate (Uruapan, Michoacán) y guayaba (Calvillo,
-  Aguascalientes), ambos cultivos leñosos perennes. No existe verdad de
-  terreno para estos AOI, de modo que no se calcula ni se implica ningún
-  F1/exactitud. La figura ilustra la metodología de extender a una nueva
-  región, no una métrica.}
-  \label{fig:mexico_phenology}
 \end{figure}
 
 \subsection{Fuera de Europa: transferencia tropical con WorldCereal (Brasil e India)}
@@ -381,7 +372,7 @@ europeas. Las cifras se renderizan desde
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=0.9\linewidth]{figures/us-073-transfer/worldcereal_tropical_transfer.png}
+  \includegraphics[width=0.9\linewidth]{figures/us-073-transfer/worldcereal_tropical_transfer_es.png}
   \caption{Transferencia tropical con embeddings AlphaEarth de
   WorldCereal. El zero-shot Europa$\rightarrow$Brasil falla (maíz
   F1~$=0.0095$; la frontera de decisión europea no se traduce), mientras
@@ -498,10 +489,7 @@ del trigo, necesita la fenología intraanual que un único vector anual de
 una clase que ninguna región puede separar a esta resolución temporal; el
 siguiente paso indicado son características temporales intraanuales
 multifecha sobre las hojas de cereal/leguminosa, no más regiones. El
-modelo sigue siendo útil como un vocabulario \emph{macro} más rico y un
-generador de hipótesis de grano fino (la demostración cualitativa de
-México mapea con confianza, y erróneamente, los huertos tropicales a
-\texttt{grassland}, sin una clase de huerto tropical que ofrecer), pero
+modelo sigue siendo útil como un vocabulario \emph{macro} más rico, pero
 aún no como un clasificador fino de producción. Lo reportamos para que el
 límite quede registrado, no oculto.
 
@@ -528,7 +516,7 @@ que el zero-shot funcione fuera de Francia, que agrupar regiones rescate
 nuevas clases finas, que la capa LLM ``supere'' a Gemini en
 clasificación (su rol es la comunicación, la explicación y la soberanía
 de datos on-premises vía Qwen3.5-35B-A3B~\cite{yang2025qwen3} servido con
-vLLM GPTQ-Int4 en una sola GPU), ni ningún F1 $\geq$0.80 en México o los
+vLLM GPTQ-Int4 en una sola GPU), ni ningún F1 $\geq$0.80 en los
 trópicos. Los entregables de esta sección son el $\Delta$mIoU
 \emph{medido}, las curvas few-shot, la ventaja FM-vs-crudo y el hallazgo
 negativo del modelo agrupado --- evidencia honesta de cómo, y hasta qué

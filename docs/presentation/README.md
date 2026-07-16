@@ -1,7 +1,43 @@
 # Presentación AgroSatCopilot (Reveal.js, ES/EN)
 
-Presentación de ~64 láminas para la defensa final, bilingüe (español/inglés) con
+Presentación de 65 láminas para la defensa final, bilingüe (español/inglés) con
 **switch de idioma** en vivo, lista para **GitHub Pages**.
+
+## Arquitectura (contenido separado del HTML)
+
+El contenido NO está embebido en el HTML. Vive en archivos JSON, uno por idioma, y
+un motor JavaScript construye las láminas. Así, **corregir un texto = editar una
+línea de JSON**, sin pelear con el HTML.
+
+```
+docs/presentation/
+  index.html          # shell minimo (cabecera, marca, switch; SIN laminas)
+  content/
+    es.json           # TODO el texto en espanol (una entrada por lamina)
+    en.json           # TODO el texto en ingles (mismas laminas, mismo orden)
+  js/render.js        # motor: lee el JSON activo y construye los <section>; switch ES/EN
+  css/theme.css       # tema agro-satelital (paleta crema/verde/tierra)
+  assets/figs/        # figuras reales + ilustraciones hero + logo del Tec (logo_tec.png)
+  .nojekyll
+```
+
+### Como editar el contenido
+
+- Cambiar un texto: abre `content/es.json` (o `en.json`), busca la lámina y edita el
+  campo (`title`, `body`, `paras`, etc.). Recarga el navegador. Listo.
+- Cada lámina es un objeto con un `layout` (`cover`, `divider`, `cards`, `kpi`,
+  `table`, `fig`, `twocol`, `text`, `closing`) y los campos de ese layout. **El
+  número de láminas y el orden deben coincidir entre `es.json` y `en.json`** (es lo
+  que mantiene el switch alineado).
+- Cambiar una figura: edita el campo `img` de la lámina (ruta dentro de `assets/figs/`).
+- Agregar una lámina: añade el mismo objeto en `es.json` y en `en.json`, en la misma
+  posición.
+
+### Logo del Tecnológico de Monterrey
+
+La marca institucional usa `assets/figs/logo_tec.png` si existe; si no, muestra un
+wordmark tipográfico de respaldo. **Para poner el logo real, guarda el PNG como
+`assets/figs/logo_tec.png`** (la presentación lo toma automáticamente).
 
 ## Ver localmente
 
@@ -11,42 +47,23 @@ python -m http.server 8765
 # abrir http://127.0.0.1:8765/index.html
 ```
 
-- Switch ES/EN: botón flotante arriba a la derecha (o `?lang=es` / `?lang=en` en la URL).
-- Navegación Reveal.js: flechas, `Esc` (vista general), `S` (notas del ponente), `F` (pantalla completa).
-- La elección de idioma se recuerda (localStorage).
+- Switch ES/EN: botón flotante arriba a la derecha (o `?lang=es` / `?lang=en`).
+- Navegación: flechas, `Esc` (vista general), `S` (notas), `F` (pantalla completa).
 
 ## Desplegar en GitHub Pages
 
-La presentación es estática (HTML + CSS + JS + PNG, Reveal.js por CDN). Para publicarla:
+Sitio estático (HTML + CSS + JS + JSON + PNG, Reveal.js por CDN). En **Settings →
+Pages**, elige *Deploy from a branch* y la carpeta `/docs`. El `.nojekyll` evita que
+Pages procese el sitio con Jekyll.
 
-1. **Settings → Pages** del repo.
-2. Source: *Deploy from a branch*; carpeta `/docs` (o mover `docs/presentation/` a la
-   raíz de una rama `gh-pages`).
-3. La URL será `https://<usuario>.github.io/<repo>/presentation/`.
+## Contenido (6 secciones, con láminas divisorias ilustradas)
 
-El archivo `.nojekyll` evita que GitHub Pages procese el sitio con Jekyll (necesario para
-que sirva los assets tal cual).
+1. **Negocio** — el problema, el impacto económico, la métrica correcta.
+2. **Datos y exploración** — la señal que separa cultivos vive en el tiempo; AlphaEarth, PASTIS.
+3. **Modelado** — de modelos simples a seis arquitecturas y cuatro formas de combinarlas.
+4. **El modelo ganador** — Voting-3 con doce cultivos bien resueltos (puntaje 0.86, 90% de cobertura), que mejora con cada nueva región vía aprendizaje por transferencia.
+5. **El copiloto y la aplicación** — los modelos ven; un modelo de lenguaje razona y responde.
+6. **Llevarlo a nuevas regiones** — aprendizaje por transferencia, buenas prácticas y lo aprendido.
 
-## Estructura
-
-```
-docs/presentation/
-  index.html        # la presentación completa (64 secciones bilingues)
-  css/theme.css     # tema agro-satelital (paleta crema/verde/tierra)
-  js/i18n.js        # switch de idioma ES/EN persistente
-  assets/figs/      # 17 figuras reales del proyecto + 4 diagramas conceptuales
-  .nojekyll
-```
-
-## Contenido
-
-1. **Negocio** — problema, impacto económico (ROI >1500%), métrica macro-F1.
-2. **Datos y EDA** — CRISP-ML(Q), PASTIS-R, la señal temporal manda, desbalance, AlphaEarth.
-3. **Modelado** — baselines → 6 arquitecturas de segmentación → 4 ensambles, benchmark unificado.
-4. **Modelo final Voting-3** — campeón, curva de cardinalidad, 4 modos de producción, F1 por clase.
-5. **Copiloto y app** — Be My Eyes, 10 FunctionTools, Spatial-RAG, doble backend LLM, frontend, seguridad.
-6. **Transfer, MLOps, H100, futuro** — multi-región honesto, DE4 Baja Sajonia, harness, aprendizajes, agradecimientos.
-
-Todas las cifras provienen de artefactos reales del proyecto (cero placeholders). Las figuras
-de resultados son matplotlib reales de `reports/`; los diagramas conceptuales (portada,
-arquitectura, pipeline, mapa de transfer) se generaron con calidad-paper.
+Todas las cifras provienen de artefactos reales del proyecto (cero placeholders).
+Lenguaje llano, con las siglas técnicas explicadas la primera vez.

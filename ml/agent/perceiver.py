@@ -55,6 +55,45 @@ from ml.agent.tools import classify, explain
 
 logger = structlog.get_logger(__name__)
 
+#: Human-facing Spanish labels for the model that ACTUALLY served an AOI estimate
+#: (``result.served_model``): the champion vote vs. the tabular member it degrades
+#: to. Single source of truth for both :meth:`PerceiverLayer.observe_aoi` and
+#: :meth:`PerceiverLayer._observation_from_classification` (no duplication).
+_SERVED_MODEL_LABELS: dict[str, str] = {
+    "voting-3": "Voting-3 (TSViT-fenologico + U-TAE + AlphaEarth/XGBoost)",
+    "stacking-5": "Stacking-5",
+    "xgb-alphaearth": "AlphaEarth + XGBoost",
+}
+
+#: Label of the model that serves the PER-CELL segmentation. Unlike the AOI-level
+#: estimate (whose model the user picks), :func:`ml.agent.segment_aoi.segment_aoi_live`
+#: ALWAYS classifies each cell with the cached XGBoost-AlphaEarth classifier
+#: (``classify._load_classifier``) -- it has no model selector. The segmentation
+#: text must therefore name THIS model, never the one that served the AOI estimate.
+_SEGMENTATION_MODEL_LABEL: str = _SERVED_MODEL_LABELS["xgb-alphaearth"]
+
+#: Classifier sentinels that mean NO model produced a real crop estimate: the AOI
+#: has no cached embedding yet (``needs_gee_sampling``) or the posterior resolved
+#: to no in-vocabulary class (``unresolved``). The observation must NOT claim a
+#: model served for these.
+_NO_ESTIMATE_SENTINELS: frozenset[str] = frozenset({"needs_gee_sampling", "unresolved"})
+
+
+def _served_model_label(served_model: str | None) -> str:
+    """Resolve the human-facing label of the model that actually served.
+
+    Args:
+        served_model: ``result.served_model`` (or ``None`` when the classifier did
+            not record one, in which case the tabular member is assumed).
+
+    Returns:
+        The Spanish label from :data:`_SERVED_MODEL_LABELS`, or the raw tag when
+        unmapped.
+    """
+    served = served_model or "xgb-alphaearth"
+    return _SERVED_MODEL_LABELS.get(served, served)
+
+
 __all__ = ["PerceiverLayer", "PerceiverObservation"]
 
 #: Fallback crop label when no stored prediction nor classifier output is found.
@@ -244,13 +283,22 @@ class PerceiverLayer:
         """Observe a freshly drawn AOI polygon and emit a TEXT observation.
 
         An AOI is not a persisted parcel, so there is no stored phenology row to
-        explain. The perceiver classifies the AOI with the XGBoost-AlphaEarth
-        model (reusing :func:`ml.agent.tools.classify.run`, which resolves the
-        session parcel's AlphaEarth embedding for ``year``) and derives the vigor
-        and phenology text from that classifier output. When the AOI has no
-        persisted embedding yet, ``classify.run`` returns the controlled
+        explain. The perceiver classifies the AOI through
+        :func:`ml.agent.tools.classify.run` (which resolves the session parcel's
+        AlphaEarth embedding for ``year``) and derives the vigor and phenology text
+        from that classifier output. For a freshly drawn AOI that is not a PASTIS-R
+        fold-5 parcel, ``voting3`` / ``stacking5`` degrade cleanly to
+        ``xgb-alphaearth`` -- the model that actually served is read back from
+        ``result.served_model`` and surfaced in the observation text, so the report
+        never claims a model it did not use. When the AOI has no persisted
+        embedding yet, ``classify.run`` returns the controlled
         ``needs_gee_sampling`` result, which is surfaced verbatim (no hallucinated
         crop).
+
+        The serving model is NOT a parameter: the user's pin lives on
+        :attr:`ml.agent.context.ToolContext.crop_model` and ``classify.run``
+        enforces it, so this path and the reasoner's tool call read the choice from
+        the same place (and neither can drift from the other).
 
         Args:
             aoi: Polygon geometry of the area to observe.
@@ -268,12 +316,17 @@ class PerceiverLayer:
             year=year,
         )
 
+        # `model` is the tool's champion default; when the user pinned one,
+        # classify.run overrides it from ctx.crop_model. For a freshly drawn AOI
+        # outside the PASTIS-R fold-5 OOF, voting3/stacking5 degrade cleanly to
+        # xgb-alphaearth inside classify.run; result.served_model carries the model
+        # that ACTUALLY ran, which we surface verbatim (never a hardcoded claim).
         result = await classify.run(
             ClassifyParcelInput(
                 session_id=self._ctx.session_id,
                 aoi=aoi,
                 year=year,
-                use_stacking=True,
+                model="voting3",
             ),
             self._ctx,
         )
@@ -283,14 +336,17 @@ class PerceiverLayer:
         # (not just report a dominant class). Best-effort: any failure leaves the
         # AOI-level estimate untouched. Only attempted for a real crop estimate
         # (not the needs_gee_sampling / unresolved sentinels).
-        if result.crop_class not in ("needs_gee_sampling", "unresolved"):
+        if result.crop_class not in _NO_ESTIMATE_SENTINELS:
             segments = await self._segment_aoi(aoi, year)
             if segments:
                 observation.map_segments = segments
+                # Name the model that painted THESE cells, which is always the
+                # tabular classifier -- segment_aoi_live has no model selector, so
+                # it is NOT the model that served the AOI-level estimate above.
                 observation.description += (
                     f" Mapa de cultivos por celda pintado en el mapa: "
                     f"{len(segments)} regiones reconocidas (clasificacion por "
-                    f"celda con AlphaEarth+XGBoost)."
+                    f"celda con {_SEGMENTATION_MODEL_LABEL})."
                 )
 
         logger.info(
@@ -304,9 +360,7 @@ class PerceiverLayer:
         )
         return observation
 
-    async def _segment_aoi(
-        self, aoi: GeoJSONGeometry, year: int
-    ) -> list[dict[str, Any]]:
+    async def _segment_aoi(self, aoi: GeoJSONGeometry, year: int) -> list[dict[str, Any]]:
         """Run the live per-cell AOI segmentation off the event loop (best-effort).
 
         Delegates to :func:`ml.agent.segment_aoi.segment_aoi_live` (blocking GEE +
@@ -462,15 +516,49 @@ class PerceiverLayer:
         """
         vigor = explain._vigor_from_peak(result.confidence)
         confidence_pct = f"{result.confidence * 100:.1f}%"
+        # Sentinel result: NO model produced a crop estimate (the AOI has no cached
+        # embedding yet, or the posterior resolved to no in-vocabulary class). Emit
+        # an honest "nothing ran" observation rather than claiming a served model.
+        if result.crop_class in _NO_ESTIMATE_SENTINELS:
+            pending_text = (
+                "No se ejecuto ningun clasificador todavia: el area dibujada no "
+                "tiene un embedding AlphaEarth en cache, por lo que requiere "
+                "muestreo via Google Earth Engine antes de estimar el cultivo."
+                if result.crop_class == "needs_gee_sampling"
+                else "El clasificador no resolvio ninguna clase dentro del "
+                "vocabulario para el area dibujada."
+            )
+            return PerceiverObservation(
+                parcel_id=_AOI_PARCEL_ID,
+                crop_class=result.crop_class or _UNKNOWN_CROP,
+                confidence=float(np.clip(result.confidence, 0.0, 1.0)),
+                phenology_text="Fenologia: no disponible (sin estimacion de cultivo).",
+                vigor="unknown",
+                class_probabilities=dict(result.class_probabilities),
+                description=pending_text,
+            )
+        # Name the model that ACTUALLY served (result.served_model), never a fixed
+        # claim: voting3/stacking5 degrade to xgb-alphaearth for a non-PASTIS AOI,
+        # and the report must say which model produced this estimate.
+        served = result.served_model or "xgb-alphaearth"
+        served_label = _served_model_label(result.served_model)
+        degraded_note = ""
+        if served == "xgb-alphaearth":
+            # Be explicit when the champion could not serve this AOI (it is not a
+            # PASTIS-R fold-5 parcel, so there is no pre-computed Voting-3 vote).
+            degraded_note = (
+                " El area dibujada no es una parcela del conjunto PASTIS-R, por lo "
+                "que el voto Voting-3 no aplica y se uso el clasificador tabular."
+            )
         phenology_text = (
             "Fenologia: sin metricas fenologicas almacenadas para el AOI; "
-            "observacion derivada del clasificador AlphaEarth+XGBoost."
+            f"observacion derivada del clasificador {served_label}."
         )
         description = (
             f"Cultivo estimado para el AOI: {result.crop_class} "
-            f"(confianza {confidence_pct}), inferido del embedding AlphaEarth "
-            "anual sin descriptor fenologico denso (TSViT/FarSLIP requieren "
-            "raster y corren fuera de linea)."
+            f"(confianza {confidence_pct}), modelo: {served_label}, inferido del "
+            "embedding AlphaEarth anual sin descriptor fenologico denso "
+            f"(TSViT/FarSLIP requieren raster y corren fuera de linea).{degraded_note}"
         )
         return PerceiverObservation(
             parcel_id=_AOI_PARCEL_ID,

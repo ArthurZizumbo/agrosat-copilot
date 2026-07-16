@@ -111,6 +111,54 @@ def test_llm_benchmark_barplot_from_fixture(tmp_path: Path) -> None:
     assert out is not None and out["png"].exists()
 
 
+def test_stem_for_lang_suffix() -> None:
+    assert pf.stem_for_lang("fig", "en") == "fig"
+    assert pf.stem_for_lang("fig", "es") == "fig_es"
+
+
+def test_save_fig_svg_png_es_suffix(tmp_path: Path) -> None:
+    import matplotlib.pyplot as plt
+
+    pf.set_paper_style()
+    fig, ax = plt.subplots()
+    ax.plot([0, 1], [0, 1])
+    out = pf.save_fig_svg_png(fig, "smoke", out_dir=tmp_path, lang="es")
+    assert out["svg"].name == "smoke_es.svg"
+    assert out["png"].name == "smoke_es.png"
+    assert out["svg"].exists() and out["png"].exists()
+
+
+def test_benchmark_barplot_bilingual_distinct_titles(tmp_path: Path) -> None:
+    """Both languages emit files with the right suffix and different titles."""
+    csv = tmp_path / "metrics.csv"
+    csv.write_text(
+        "model,miou,f1_macro,pixel_accuracy,fold,n_patches,status,model_kind,"
+        "needs_resize,in_channels,cohen_kappa,balanced_acc\n"
+        "m1,0.5,0.6,0.7,5,10,ok,m1,false,10,0.5,0.5\n",
+        encoding="utf-8",
+    )
+    en = pf.fig_benchmark_barplot(csv, out_dir=tmp_path, lang="en")
+    es = pf.fig_benchmark_barplot(csv, out_dir=tmp_path, lang="es")
+    assert en is not None and es is not None
+    assert en["png"].name == "benchmark_barplot_fold5.png"
+    assert es["png"].name == "benchmark_barplot_fold5_es.png"
+    assert en["png"].exists() and es["png"].exists()
+    # English/Spanish titles must actually differ (real translation, not a copy).
+    assert pf._STR_BENCHMARK["en"]["title"] != pf._STR_BENCHMARK["es"]["title"]
+
+
+def test_build_all_figures_emits_both_languages(tmp_path: Path) -> None:
+    """build_all_figures produces base (EN) and _es keys for real figures."""
+    results = pf.build_all_figures(out_dir=tmp_path)
+    # farslip_band_ablation source exists in the repo -> both variants present.
+    if results.get("farslip_band_ablation") is not None:
+        assert results.get("farslip_band_ablation_es") is not None
+        base = results["farslip_band_ablation"]
+        es = results["farslip_band_ablation_es"]
+        assert base["png"].name == "farslip_band_ablation.png"
+        assert es["png"].name == "farslip_band_ablation_es.png"
+
+
 def test_missing_source_returns_none(tmp_path: Path) -> None:
     assert pf.fig_benchmark_barplot(tmp_path / "nope.csv", out_dir=tmp_path) is None
     assert pf.promote_png(tmp_path / "nope.png", "x", out_dir=tmp_path) is None

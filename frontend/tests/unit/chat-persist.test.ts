@@ -43,14 +43,14 @@ describe("chatStore persistence (pick: llmVariant only; transcript is server-sid
       STORE_KEY,
       JSON.stringify({
         messages: [{ id: "user-1", role: "user", text: "stale", createdAt: 1 }],
-        llmVariant: "qwen35",
+        llmVariant: "qwen-onprem",
       }),
     );
 
     mountPinia();
     const store = useChatStore();
 
-    expect(store.llmVariant).toBe("qwen35");
+    expect(store.llmVariant).toBe("qwen-onprem");
     // The transcript is no longer persisted -> not rehydrated from storage.
     expect(store.messages).toHaveLength(0);
   });
@@ -78,6 +78,60 @@ describe("chatStore persistence (pick: llmVariant only; transcript is server-sid
     expect(saved).not.toHaveProperty("findings");
     expect(saved).not.toHaveProperty("status");
     expect(saved).not.toHaveProperty("activeAssistantId");
+  });
+
+  it("drops a stale pre-E12 llmVariant from storage instead of rehydrating it", () => {
+    // Regression: the reasoner tags were renamed in E12 ("qwen35" ->
+    // "qwen-onprem" / "qwen-vl"). A user who opened the app before that deploy
+    // still has the old tag in localStorage; rehydrated verbatim it is not in
+    // LlmVariant, so no LlmSwitch option matches `variant === opt.value` and the
+    // segmented control renders with NOTHING selected. The afterHydrate guard
+    // must fold an unknown tag back to the always-resolvable default.
+    globalThis.localStorage.setItem(
+      STORE_KEY,
+      JSON.stringify({ llmVariant: "qwen35", cropModel: "voting3" }),
+    );
+
+    mountPinia();
+    const store = useChatStore();
+
+    expect(store.llmVariant).toBe("gemini");
+  });
+
+  it("keeps a still-valid persisted variant and cropModel untouched", () => {
+    globalThis.localStorage.setItem(
+      STORE_KEY,
+      JSON.stringify({ llmVariant: "qwen-vl", cropModel: "xgb" }),
+    );
+
+    mountPinia();
+    const store = useChatStore();
+
+    expect(store.llmVariant).toBe("qwen-vl");
+    expect(store.cropModel).toBe("xgb");
+  });
+
+  it("folds an unknown persisted cropModel back to 'no pin'", () => {
+    // A stale tag must not survive as a pin: `null` hands the choice back to the
+    // reasoner, and the tool's own `voting3` default still serves.
+    globalThis.localStorage.setItem(
+      STORE_KEY,
+      JSON.stringify({ llmVariant: "gemini", cropModel: "bogus-model" }),
+    );
+
+    mountPinia();
+    const store = useChatStore();
+
+    expect(store.cropModel).toBeNull();
+  });
+
+  it("keeps a null cropModel as 'no pin' (the reasoner stays free)", () => {
+    // The default is null, NOT "voting3": an always-set pin would silently
+    // override an explicit in-conversation model request.
+    mountPinia();
+    const store = useChatStore();
+
+    expect(store.cropModel).toBeNull();
   });
 
   it("loadMessages restores a server transcript into the store", () => {

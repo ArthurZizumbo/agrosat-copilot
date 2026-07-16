@@ -14,14 +14,22 @@ Emits:
   pretrain. Reuses the existing few-shot pipeline
   (:mod:`ml.transfer.eurocropsml_fewshot`); only the metric extraction changes
   (per-class instead of f1-macro).
-- ``paper/figures/us-076/eurocropsml_per_class_f1_vs_k.png`` -- per-class F1 vs k.
+- ``paper/figures/us-076/eurocropsml_per_class_f1_vs_k.{png,svg}`` -- per-class
+  F1 vs k (English, canonical) and the ``*_es.{png,svg}`` Spanish twin.
 - ``data/transfer/sen4agrinet_per_class.parquet`` +
   ``reports/segmentation/sen4agrinet_transfer_per_class.json`` -- the dense
   France -> Catalonia transfer per macro-group IoU/precision/recall/f1/support,
   zero-shot (France checkpoint projected to macro) and few-shot (k=10 recomputed
   locally). Reuses :mod:`ml.train.finetune_sen4agrinet` and the
   :class:`ml.eval.dense_metrics.DenseConfusionAccumulator`.
-- ``paper/figures/us-075/sen4agrinet_per_class_iou_f1.png`` -- per-class IoU/F1.
+- ``paper/figures/us-075/sen4agrinet_per_class_iou_f1.{png,svg}`` -- per-class
+  IoU/F1 (English, canonical) and the ``*_es.{png,svg}`` Spanish twin.
+
+Every figure is emitted in both languages: the base name carries the English
+(paper EN) text and the ``_es`` suffix carries the Spanish (paper ES) text. Only
+visible strings are translated; the plotted numbers and logic are identical.
+Pass ``--plot-only`` to re-render both languages from the persisted parquets
+without any recompute (no GPU, no XGBoost refit).
 
 Honest provenance: the Sen4AgriNet finetuned checkpoint lives on the VM ``F:``;
 this script recomputes the few-shot finetune locally with the identical protocol
@@ -64,6 +72,10 @@ for _stream in (sys.stdout, sys.stderr):
 
 _REPO = Path(__file__).resolve().parents[1]
 
+#: Languages emitted for every figure. The canonical (base) name is English; the
+#: Spanish variant gets an ``_es`` suffix on the output stem.
+LANGS: tuple[str, ...] = ("en", "es")
+
 #: Stable per-macro colour (shared by both figures where the macro exists).
 MACRO_COLORS: dict[str, str] = {
     "grassland": "#4daf4a",
@@ -77,6 +89,154 @@ MACRO_COLORS: dict[str, str] = {
     "soybean": "#1b9e77",
     "orchard": "#bf812d",
 }
+
+#: Per-language display names for the HCAT macro-groups (used as tick / legend
+#: labels). English is the canonical machine label; Spanish is the human reading.
+MACRO_LABELS: dict[str, dict[str, str]] = {
+    "en": {
+        "grassland": "grassland",
+        "cereals": "cereals",
+        "oilseed_industrial": "oilseed/industrial",
+        "vineyard": "vineyard",
+        "sugar_beet": "sugar beet",
+        "vegetables": "vegetables",
+        "potato": "potato",
+        "legumes_fodder": "legumes/fodder",
+        "soybean": "soybean",
+        "orchard": "orchard",
+    },
+    "es": {
+        "grassland": "pastizal",
+        "cereals": "cereales",
+        "oilseed_industrial": "oleaginosas/industriales",
+        "vineyard": "viñedo",
+        "sugar_beet": "remolacha azucarera",
+        "vegetables": "hortalizas",
+        "potato": "patata",
+        "legumes_fodder": "leguminosas/forraje",
+        "soybean": "soja",
+        "orchard": "huerto frutal",
+    },
+}
+
+
+def _macro_label(macro: str, lang: str) -> str:
+    """Return the localised display name for an HCAT macro-group.
+
+    Args:
+        macro: Machine macro-group key (e.g. ``"sugar_beet"``).
+        lang: Target language (``"en"`` or ``"es"``).
+
+    Returns:
+        The localised label, falling back to the raw key when unknown.
+    """
+    return MACRO_LABELS.get(lang, {}).get(macro, macro)
+
+
+#: Per-language visible strings for the EuroCropsML per-class F1-vs-k figure.
+EC_STRINGS: dict[str, dict[str, str]] = {
+    "en": {
+        "xlabel": "k-shot (labelled target samples per class, Estonia)",
+        "ylabel": "Per-class F1 (target query set)",
+        "title": (
+            "EuroCropsML transnational transfer LV -> EE: per-class F1 vs k\n"
+            "(XGBoost on S2-derived features, pretrain on Latvia + k Estonia shots; "
+            "3 seeds)"
+        ),
+        "legend_n_test": "n_test",
+        "footnote": (
+            "Data: EuroCropsML (Reuss et al. 2024, arXiv:2407.17458), HCAT macro "
+            "label-space. Real splits, 3 seeds."
+        ),
+    },
+    "es": {
+        "xlabel": "k-shot (muestras etiquetadas por clase del objetivo, Estonia)",
+        "ylabel": "F1 por clase (conjunto de consulta del objetivo)",
+        "title": (
+            "Transferencia transnacional EuroCropsML LV -> EE: F1 por clase vs k\n"
+            "(XGBoost sobre rasgos derivados de S2, preentrenamiento en Letonia + k "
+            "muestras de Estonia; 3 semillas)"
+        ),
+        "legend_n_test": "n_prueba",
+        "footnote": (
+            "Datos: EuroCropsML (Reuss et al. 2024, arXiv:2407.17458), espacio de "
+            "etiquetas macro HCAT. Particiones reales, 3 semillas."
+        ),
+    },
+}
+
+#: Per-language visible strings for the Sen4AgriNet per-class IoU/F1 figure.
+SEN4_STRINGS: dict[str, dict[str, str]] = {
+    "en": {
+        "iou_title": "IoU per macro-group",
+        "f1_title": "F1 per macro-group",
+        "zero_shot_label": "zero-shot (FR ckpt)",
+        "few_shot_label": "few-shot (k=10, 40 ep)",
+        "px_prefix": "n_px",
+        "suptitle": (
+            "Sen4AgriNet dense transfer France (PASTIS-R) -> Catalonia (ES): "
+            "per-class collapse and recovery\n"
+            "Zero-shot mIoU 0.000 -> few-shot recovery (TSViT, macro-HCAT "
+            "label-space, 1 seed)"
+        ),
+        "footnote": (
+            "Data: Sen4AgriNet (Sykas et al. 2022, CC-BY-SA-4.0) tile 31TCG; FR "
+            "source PASTIS-R. Real held-out Catalonia val. Few-shot recomputed "
+            "locally (VM checkpoint not on host)."
+        ),
+    },
+    "es": {
+        "iou_title": "IoU por macro-grupo",
+        "f1_title": "F1 por macro-grupo",
+        "zero_shot_label": "zero-shot (ckpt FR)",
+        "few_shot_label": "few-shot (k=10, 40 ep)",
+        "px_prefix": "n_px",
+        "suptitle": (
+            "Transferencia densa Sen4AgriNet Francia (PASTIS-R) -> Cataluña (ES): "
+            "colapso y recuperación por clase\n"
+            "mIoU zero-shot 0.000 -> recuperación few-shot (TSViT, espacio de "
+            "etiquetas macro-HCAT, 1 semilla)"
+        ),
+        "footnote": (
+            "Datos: Sen4AgriNet (Sykas et al. 2022, CC-BY-SA-4.0) tesela 31TCG; "
+            "fuente FR PASTIS-R. Validación real reservada de Cataluña. Few-shot "
+            "recalculado localmente (checkpoint de la VM no está en este host)."
+        ),
+    },
+}
+
+
+def _save_fig(fig: "plt.Figure", out_stem: Path, *, dpi: int = 150) -> list[Path]:
+    """Save a figure as both PNG and SVG under ``out_stem`` and close it.
+
+    Args:
+        fig: The matplotlib figure to persist.
+        out_stem: Extension-less output path stem (``.png``/``.svg`` appended).
+        dpi: Raster resolution for the PNG.
+
+    Returns:
+        The list of written paths (``[png, svg]``).
+    """
+    out_stem.parent.mkdir(parents=True, exist_ok=True)
+    png = out_stem.with_suffix(".png")
+    svg = out_stem.with_suffix(".svg")
+    fig.savefig(png, dpi=dpi, bbox_inches="tight")
+    fig.savefig(svg, bbox_inches="tight")
+    plt.close(fig)
+    return [png, svg]
+
+
+def _lang_stem(base_stem: Path, lang: str) -> Path:
+    """Return the language-specific output stem (English = base, Spanish = ``_es``).
+
+    Args:
+        base_stem: Canonical (English) extension-less path stem.
+        lang: Target language (``"en"`` or ``"es"``).
+
+    Returns:
+        ``base_stem`` for English, ``base_stem`` + ``_es`` for Spanish.
+    """
+    return base_stem if lang == "en" else base_stem.with_name(f"{base_stem.name}_es")
 
 # --- EuroCropsML config (matches the existing _feature_cache parquets) ---------
 _EC_ROOT = _REPO / "data" / "transfer" / "eurocropsml"
@@ -177,12 +337,43 @@ def build_eurocropsml_per_class() -> pl.DataFrame:
         .sort("scenario", "k", "macro_group")
     )
     agg.write_parquet(_REPO / "data" / "transfer" / "eurocropsml_per_class.parquet")
-    _plot_eurocropsml(agg)
+    plot_eurocropsml(agg)
     return agg
 
 
-def _plot_eurocropsml(agg: pl.DataFrame) -> None:
-    """Render the EuroCropsML per-class F1-vs-k figure (LV->EE scenario)."""
+def plot_eurocropsml(agg: pl.DataFrame, repo_root: Path = _REPO) -> list[Path]:
+    """Render the EuroCropsML per-class F1-vs-k figure in every language.
+
+    The English variant is the canonical base name; Spanish gets an ``_es`` suffix.
+    Each variant is written as PNG and SVG. Only visible strings change between
+    languages; the plotted numbers and logic are identical.
+
+    Args:
+        agg: Aggregated per-class frame (see :func:`build_eurocropsml_per_class`).
+        repo_root: Repository root the output paths are resolved against.
+
+    Returns:
+        The list of written figure paths across all languages and formats.
+    """
+    base_stem = repo_root / "paper" / "figures" / "us-076" / "eurocropsml_per_class_f1_vs_k"
+    written: list[Path] = []
+    for lang in LANGS:
+        written.extend(_plot_eurocropsml_lang(agg, base_stem, lang))
+    return written
+
+
+def _plot_eurocropsml_lang(agg: pl.DataFrame, base_stem: Path, lang: str) -> list[Path]:
+    """Render one language of the EuroCropsML per-class F1-vs-k figure.
+
+    Args:
+        agg: Aggregated per-class frame (LV->EE scenario is plotted).
+        base_stem: Canonical (English) extension-less output stem.
+        lang: Target language (``"en"`` or ``"es"``).
+
+    Returns:
+        The paths written for this language (``[png, svg]``).
+    """
+    txt = EC_STRINGS[lang]
     df = agg.filter(pl.col("use_pretrain"))
     classes = (
         df.group_by("macro_group").agg(pl.col("support_mean").mean().alias("sup"))
@@ -194,33 +385,28 @@ def _plot_eurocropsml(agg: pl.DataFrame) -> None:
         ks = sub.get_column("k").to_list()
         if not ks:
             continue
+        n_test = int(sub.get_column("support_mean").mean())
         ax.errorbar(
             ks, sub.get_column("f1_mean").to_list(),
             yerr=sub.get_column("f1_std").to_list(), marker="o", capsize=3, lw=2,
             color=MACRO_COLORS.get(cls, "#777777"),
-            label=f"{cls} (n_test~{int(sub.get_column('support_mean').mean())})",
+            label=f"{_macro_label(cls, lang)} ({txt['legend_n_test']}~{n_test})",
         )
     ax.set_xscale("log")
     ax.set_xticks(list(_EC_K_SHOTS))
     ax.set_xticklabels([str(k) for k in _EC_K_SHOTS])
-    ax.set_xlabel("k-shot (labelled target samples per class, Estonia)")
-    ax.set_ylabel("Per-class F1 (target query set)")
+    ax.set_xlabel(txt["xlabel"])
+    ax.set_ylabel(txt["ylabel"])
     ax.set_ylim(-0.02, 1.0)
-    ax.set_title(
-        "EuroCropsML transnational transfer LV -> EE: per-class F1 vs k\n"
-        "(XGBoost on S2-derived features, pretrain on Latvia + k Estonia shots; 3 seeds)"
-    )
+    ax.set_title(txt["title"])
     ax.grid(True, alpha=0.3, which="both")
     ax.legend(loc="center left", bbox_to_anchor=(1.01, 0.5), fontsize=8, frameon=False)
-    fig.text(0.01, 0.01,
-             "Data: EuroCropsML (Reuss et al. 2024, arXiv:2407.17458), HCAT macro label-space. Real splits, 3 seeds.",
-             fontsize=6, color="#555555")
+    fig.text(0.01, 0.01, txt["footnote"], fontsize=6, color="#555555")
     fig.tight_layout(rect=(0, 0.02, 1, 1))
-    out = _REPO / "paper" / "figures" / "us-076" / "eurocropsml_per_class_f1_vs_k.png"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    logger.info("ec_figure_written", path=str(out))
+    out_stem = _lang_stem(base_stem, lang)
+    paths = _save_fig(fig, out_stem)
+    logger.info("ec_figure_written", lang=lang, path=str(paths[0]))
+    return paths
 
 
 # =============================================================================
@@ -399,12 +585,43 @@ def build_sen4agrinet_per_class(epochs: int = 40) -> pl.DataFrame:
     }
     out_json = _REPO / "reports" / "segmentation" / "sen4agrinet_transfer_per_class.json"
     out_json.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
-    _plot_sen4agrinet(df)
+    plot_sen4agrinet(df)
     return df
 
 
-def _plot_sen4agrinet(df: pl.DataFrame) -> None:
-    """Render the Sen4AgriNet per-class IoU/F1 grouped-bar figure."""
+def plot_sen4agrinet(df: pl.DataFrame, repo_root: Path = _REPO) -> list[Path]:
+    """Render the Sen4AgriNet per-class IoU/F1 figure in every language.
+
+    The English variant is the canonical base name; Spanish gets an ``_es`` suffix.
+    Each variant is written as PNG and SVG. Only visible strings change between
+    languages; the plotted numbers and logic are identical.
+
+    Args:
+        df: Long per-class frame (see :func:`build_sen4agrinet_per_class`).
+        repo_root: Repository root the output paths are resolved against.
+
+    Returns:
+        The list of written figure paths across all languages and formats.
+    """
+    base_stem = repo_root / "paper" / "figures" / "us-075" / "sen4agrinet_per_class_iou_f1"
+    written: list[Path] = []
+    for lang in LANGS:
+        written.extend(_plot_sen4agrinet_lang(df, base_stem, lang))
+    return written
+
+
+def _plot_sen4agrinet_lang(df: pl.DataFrame, base_stem: Path, lang: str) -> list[Path]:
+    """Render one language of the Sen4AgriNet per-class IoU/F1 grouped-bar figure.
+
+    Args:
+        df: Long per-class frame with ``stage`` in ``{zero_shot, few_shot}``.
+        base_stem: Canonical (English) extension-less output stem.
+        lang: Target language (``"en"`` or ``"es"``).
+
+    Returns:
+        The paths written for this language (``[png, svg]``).
+    """
+    txt = SEN4_STRINGS[lang]
     fs = df.filter(pl.col("stage") == "few_shot").sort("iou", descending=True)
     order = fs.get_column("macro_group").to_list()
     zs = df.filter(pl.col("stage") == "zero_shot")
@@ -417,46 +634,82 @@ def _plot_sen4agrinet(df: pl.DataFrame) -> None:
     fig, axes = plt.subplots(1, 2, figsize=(13, 5.5))
     x = np.arange(len(order))
     w = 0.38
-    for ax, metric, title in ((axes[0], "iou", "IoU per macro-group"),
-                              (axes[1], "f1", "F1 per macro-group")):
-        ax.bar(x - w / 2, vals(zs, metric), w, label="zero-shot (FR ckpt)",
+    for ax, metric, title in ((axes[0], "iou", txt["iou_title"]),
+                              (axes[1], "f1", txt["f1_title"])):
+        ax.bar(x - w / 2, vals(zs, metric), w, label=txt["zero_shot_label"],
                color="#bdbdbd", edgecolor="#555")
         fs_v = vals(fs, metric)
-        ax.bar(x + w / 2, fs_v, w, label="few-shot (k=10, 40 ep)",
+        ax.bar(x + w / 2, fs_v, w, label=txt["few_shot_label"],
                color="#2c7fb8", edgecolor="#1a4f73")
         for xi, v in zip(x, fs_v):
             if v > 0.01:
                 ax.text(xi + w / 2, v + 0.01, f"{v:.2f}", ha="center", va="bottom", fontsize=8)
         ax.set_xticks(x)
-        ax.set_xticklabels([f"{g}\n(n_px~{support.get(g, 0) // 1000}k)" for g in order],
-                           rotation=30, ha="right", fontsize=8)
+        ax.set_xticklabels(
+            [f"{_macro_label(g, lang)}\n({txt['px_prefix']}~{support.get(g, 0) // 1000}k)"
+             for g in order],
+            rotation=30, ha="right", fontsize=8,
+        )
         ax.set_ylabel(metric.upper())
         ax.set_ylim(0, 1.0)
         ax.set_title(title)
         ax.grid(True, axis="y", alpha=0.3)
         ax.legend(loc="upper right", fontsize=8, frameon=False)
-    fig.suptitle(
-        "Sen4AgriNet dense transfer France (PASTIS-R) -> Catalonia (ES): per-class collapse and recovery\n"
-        "Zero-shot mIoU 0.000 -> few-shot recovery (TSViT, macro-HCAT label-space, 1 seed)",
-        fontsize=11,
-    )
-    fig.text(0.01, 0.005,
-             "Data: Sen4AgriNet (Sykas et al. 2022, CC-BY-SA-4.0) tile 31TCG; FR source PASTIS-R. "
-             "Real held-out Catalonia val. Few-shot recomputed locally (VM checkpoint not on host).",
-             fontsize=6, color="#555555")
+    fig.suptitle(txt["suptitle"], fontsize=11)
+    fig.text(0.01, 0.005, txt["footnote"], fontsize=6, color="#555555")
     fig.tight_layout(rect=(0, 0.03, 1, 0.93))
-    out = _REPO / "paper" / "figures" / "us-075" / "sen4agrinet_per_class_iou_f1.png"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    logger.info("sen4_figure_written", path=str(out))
+    out_stem = _lang_stem(base_stem, lang)
+    paths = _save_fig(fig, out_stem)
+    logger.info("sen4_figure_written", lang=lang, path=str(paths[0]))
+    return paths
+
+
+def _replot_from_parquet(repo_root: Path, *, eurocrops: bool, sen4: bool) -> list[Path]:
+    """Re-render both language variants from the persisted REAL parquets only.
+
+    Used by ``--plot-only`` to regenerate the bilingual figures without recomputing
+    any metric (no GPU, no XGBoost refit). Numbers come verbatim from the parquets
+    written by the full build; only the visible strings differ per language.
+
+    Args:
+        repo_root: Repository root the artefacts are resolved against.
+        eurocrops: Whether to re-render the EuroCropsML figure.
+        sen4: Whether to re-render the Sen4AgriNet figure.
+
+    Returns:
+        The list of written figure paths.
+
+    Raises:
+        FileNotFoundError: if a required parquet is missing (never fabricated).
+    """
+    written: list[Path] = []
+    if eurocrops:
+        path = repo_root / "data" / "transfer" / "eurocropsml_per_class.parquet"
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"Missing {path}. Run the full build (--eurocrops) before --plot-only."
+            )
+        written.extend(plot_eurocropsml(pl.read_parquet(path), repo_root=repo_root))
+    if sen4:
+        path = repo_root / "data" / "transfer" / "sen4agrinet_per_class.parquet"
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"Missing {path}. Run the full build (--sen4) before --plot-only."
+            )
+        written.extend(plot_sen4agrinet(pl.read_parquet(path), repo_root=repo_root))
+    return written
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--repo-root", type=Path, default=_REPO,
+                   help="Repository root (inputs and outputs resolved against it).")
     p.add_argument("--eurocrops", action="store_true", help="Build EuroCropsML per-class.")
     p.add_argument("--sen4", action="store_true", help="Build Sen4AgriNet per-class.")
     p.add_argument("--sen4-epochs", type=int, default=40)
+    p.add_argument("--plot-only", action="store_true",
+                   help="Only re-render bilingual figures from existing parquets "
+                        "(no recompute, no GPU).")
     return p.parse_args(argv)
 
 
@@ -464,6 +717,10 @@ def main(argv: list[str] | None = None) -> None:
     args = _parse_args(argv)
     if not (args.eurocrops or args.sen4):
         args.eurocrops = args.sen4 = True
+    if args.plot_only:
+        _replot_from_parquet(args.repo_root.resolve(),
+                             eurocrops=args.eurocrops, sen4=args.sen4)
+        return
     if args.eurocrops:
         build_eurocropsml_per_class()
     if args.sen4:

@@ -1,201 +1,329 @@
 /* ============================================================================
-   AgroSatCopilot --- tema de presentacion (Reveal.js) v2
-   Rediseno con guia ui-ux-pro-max: Corporate Minimal + editorial.
-   Objetivos: aprovechar PANTALLA COMPLETA, jerarquia tipografica fuerte,
-   whitespace intencional, ritmo 8px, elevacion consistente, sin emojis.
-   Paleta agro-satelital: crema calido + verde campo + tierra + acento cosecha.
+   AgroSatCopilot --- tema de presentacion (Reveal.js) v4
+   Direccion: ACADEMICO EDITORIAL de alto acabado (journal / plate book).
+   Guia ui-ux-pro-max: tipografia academica (display serif + cuerpo legible),
+   jerarquia por tamano y espacio, reglas finas tipo booktabs, cifras tabulares,
+   duotono botanico en imagenes de capitulo, cero ornamentacion gratuita.
+   Familias: Fraunces (display), Spectral (cuerpo serif), Inter (etiquetas).
    ============================================================================ */
 
 :root {
-  --bg:        #f7f4ec;  /* crema base */
-  --bg-2:      #f1ece0;  /* crema mas profunda (paneles) */
-  --bg-card:   #ffffff;  /* tarjeta */
-  --ink:       #232420;  /* texto principal (contraste AAA sobre crema) */
-  --ink-soft:  #56544c;  /* texto secundario */
-  --ink-faint: #8a8678;  /* texto terciario / captions */
-  --field:     #2f6b41;  /* verde campo (primario) */
-  --field-dk:  #244f31;  /* verde profundo (titulos acento) */
-  --field-lt:  #e4efe5;  /* verde tenue (fondos suaves) */
-  --earth:     #8a7c63;  /* tierra */
-  --earth-dk:  #5f5645;
-  --accent:    #c2741f;  /* naranja cosecha (highlights / datos) */
-  --accent-lt: #f6e7d4;
-  --line:      #e0d8c8;
-  --line-soft: #ece5d6;
-  --shadow:    0 6px 28px rgba(60, 50, 30, 0.10);
-  --shadow-sm: 0 2px 10px rgba(60, 50, 30, 0.07);
-  --radius:    16px;
-  --radius-sm: 10px;
+  --paper:     #fbfaf7;  /* papel hueso */
+  --paper-2:   #f3f1ea;  /* panel sutil */
+  --ink:       #1a1a18;  /* tinta principal */
+  --ink-2:     #44443f;  /* tinta secundaria */
+  --ink-3:     #5a584f;  /* tinta terciaria / notas (6.8:1, legible sobre crema) */
+  --rule:      #cfc9b8;  /* lineas/reglas (un poco mas visibles) */
+  --rule-soft: #e2ddce;
+  --accent:    #1f5d3a;  /* verde botanico sobrio (acento academico) */
+  --accent-soft: #eaf0ea;  /* verde muy claro para superficies tenidas */
+  --accent-2:  #9a6a1f;  /* ambar para datos destacados */
+  --ink-on-dark: #f4f2ec;
+  --font-display: "Fraunces", "Spectral", Georgia, serif;
+  --font-body: "Spectral", "Source Serif 4", Georgia, serif;
+  --font-label: "Inter", system-ui, sans-serif;
 }
 
-/* ---- Reveal base: ocupar todo el viewport ---- */
-.reveal { font-family: "Inter", "Segoe UI", system-ui, sans-serif; font-size: 28px; color: var(--ink); }
+/* ---- Base: lienzo de papel, tipografia editorial ---- */
+.reveal {
+  font-family: var(--font-body);
+  font-size: 26px; color: var(--ink); background: var(--paper);
+}
 .reveal .slides { text-align: left; }
 .reveal .slides section {
-  background: var(--bg);
-  box-sizing: border-box;
-  height: 100%;
-  /* full-bleed: el contenido usa todo el alto/ancho con padding generoso */
-  padding: 56px 72px 52px 72px;
-  /* Reveal fuerza display:block en la lamina presente; subimos especificidad
-     con !important para que nuestro layout flex (centrado vertical) gane. */
-  display: flex !important;
-  flex-direction: column;
-  /* Titulo arriba; el contenido fluye debajo con ritmo consistente. El primer
-     bloque de contenido tras el titulo recibe un margen superior fijo y luego
-     CRECE (flex:1) para ocupar el alto, evitando el hueco muerto que dejaba el
-     centrado global cuando habia un texto suelto al final. */
-  justify-content: flex-start;
-  gap: 0;
+  background: var(--paper); box-sizing: border-box; height: 100%;
+  padding: 60px 84px 76px 84px;
+  /* Contenido centrado verticalmente: cada lamina es una composicion
+     equilibrada, sin el bloque flotando arriba con vacio abajo. El pie y la
+     numeracion van absolutos, asi que no se mueven. */
+  display: flex !important; flex-direction: column; justify-content: center; gap: 0;
 }
-/* El bloque de contenido principal (el primero que no es kicker/titulo) crece
-   y centra su propio contenido verticalmente -> sin banda vacia abajo. */
-.reveal .slides section > .cards,
-.reveal .slides section > .kpi-row,
-.reveal .slides section > .two-col,
-.reveal .slides section > .fig,
-.reveal .slides section > .ulist,
-.reveal .slides section > table {
-  margin-top: 36px;
-  flex: 1 1 auto;
-  align-self: stretch;
-  min-height: 0;
-  align-content: center;   /* grids (cards/kpi) centran sus filas en el alto */
-}
-/* la figura ya es flex column centrada; reforzamos */
-.reveal .slides section > .fig { display: flex; flex-direction: column; justify-content: center; }
-.reveal .slides section > table { align-self: center; height: max-content; margin-top: auto; margin-bottom: auto; }
-/* un parrafo suelto tras un bloque (nota de cierre) se separa con aire, no flota */
-.reveal .slides section > p { margin-top: 22px; }
-/* portada/cierre centran por completo */
 .reveal .slides section.center { justify-content: center; }
-.reveal .slides section.top { justify-content: flex-start; }
 
-/* ---- Tipografia ---- */
-.reveal h1, .reveal h2, .reveal h3, .reveal h4 {
-  font-family: "Fraunces", "Georgia", "Times New Roman", serif;
+/* pie de pagina tipo "running foot" de journal: wordmark a la izquierda +
+   hairline; la seccion corre a la derecha via [data-sec]. */
+.reveal .slides section::before {
+  content: "AgroSatCopilot · Tecnol\00F3gico de Monterrey";
+  position: absolute; left: 76px; right: 76px; bottom: 26px;
+  font-family: var(--font-label); font-size: 11px; font-weight: 500;
+  letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3);
+  padding-top: 10px; border-top: 1px solid var(--rule-soft);
+  pointer-events: none;
+}
+.reveal .slides section.cover-slide::before,
+.reveal .slides section.divider::before,
+.reveal .slides section.closing::before { content: none; }
+.reveal .slides section[data-sec]::after {
+  content: attr(data-sec); position: absolute; right: 76px; bottom: 26px;
+  padding-top: 10px;
+  font-family: var(--font-label); font-size: 11px; font-weight: 600;
+  color: var(--accent); letter-spacing: 0.18em; text-transform: uppercase;
+  pointer-events: none;
+}
+
+/* etiqueta de seccion arriba (kicker), pequena y precisa */
+.reveal .kicker {
+  font-family: var(--font-label); font-size: 0.44em; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent);
+  margin-bottom: 1.0em; display: flex; align-items: center; gap: 14px;
+}
+.reveal .kicker::after { content: ""; flex: 1 1 auto; height: 1px; background: var(--rule); }
+
+/* ---- Titulos: display serif editorial con filete de acento ---- */
+.reveal h1, .reveal h2 {
+  font-family: var(--font-display); font-optical-sizing: auto;
   color: var(--ink); font-weight: 600; text-transform: none;
   letter-spacing: -0.015em; line-height: 1.08; margin: 0;
 }
-.reveal h1 { font-size: 2.7em; font-weight: 600; }
-.reveal h2 { font-size: 1.95em; margin-bottom: 0.45em; }
-.reveal h3 { font-size: 1.05em; color: var(--field-dk); font-family: "Inter", sans-serif; font-weight: 700; letter-spacing: -0.01em; }
-.reveal h4 { font-size: 0.8em; color: var(--ink-soft); font-family: "Inter", sans-serif; font-weight: 600; }
-.reveal p  { line-height: 1.5; margin: 0.3em 0; }
-.reveal strong { color: var(--field-dk); font-weight: 700; }
-.reveal em { color: var(--ink-soft); font-style: italic; }
-.reveal a { color: var(--field); text-decoration: none; }
-
-/* numero/etiqueta de seccion: barra de color + kicker */
-.reveal .kicker {
-  font-family: "Inter", sans-serif; font-size: 0.52em; letter-spacing: 0.16em;
-  text-transform: uppercase; color: var(--accent); font-weight: 700;
-  margin-bottom: 0.5em; display: inline-flex; align-items: center; gap: 12px;
+.reveal h1 { font-size: 2.6em; font-weight: 700; }
+.reveal h2 { font-size: 1.78em; margin-bottom: 0.55em; }
+.reveal h2::after {
+  content: ""; display: block; width: 58px; height: 3px;
+  background: var(--accent); margin-top: 0.4em;
 }
-.reveal .kicker::before {
-  content: ""; width: 28px; height: 3px; background: var(--accent); border-radius: 2px;
+.reveal h3, .reveal h4 {
+  font-family: var(--font-label); font-weight: 700; color: var(--ink);
+  letter-spacing: 0; line-height: 1.25; margin: 0; font-size: 0.92em;
+}
+.reveal p  { line-height: 1.58; margin: 0.35em 0; color: var(--ink-2); font-size: 0.92em; }
+.reveal strong { color: var(--ink); font-weight: 700; }
+.reveal em { color: var(--ink-2); font-style: italic; }
+.reveal a { color: var(--accent); text-decoration: none; }
+
+/* el bloque PRINCIPAL (unico hijo de contenido) crece para llenar el alto;
+   si hay varios bloques (p.ej. kpi + cards) NO se estiran y se agrupan arriba. */
+.reveal .slides section > .two-col,
+.reveal .slides section > .fig {
+  margin-top: 26px; flex: 1 1 auto; min-height: 0; align-content: center; align-self: stretch;
+}
+.reveal .slides section > .cards,
+.reveal .slides section > .kpi-row,
+.reveal .slides section > .ulist { margin-top: 22px; }
+/* la reticula de tarjetas toma su alto natural y la lamina la centra
+   verticalmente (mejor que estirarla y dejar el interior de cada tarjeta vacio). */
+.reveal .slides section > .cards { flex: 0 0 auto; }
+.reveal .slides section > .fig { display: flex; flex-direction: column; justify-content: center; }
+/* la tabla toma su alto natural (filas sin estirar); el `justify-content:center`
+   de la lamina centra el grupo kicker+titulo+tabla. Sin `margin:auto`, que
+   peleaba con el centrado y dejaba la tabla pegada arriba. */
+.reveal .slides section > table {
+  flex: 0 0 auto; align-self: stretch; height: max-content; margin-top: 26px;
+}
+.reveal .slides section > p { margin-top: 14px; }
+
+/* ---- Listas: guion de referencia, ritmo comodo ---- */
+.reveal .ulist { list-style: none; padding: 0; margin: 0.4em 0; }
+.reveal .ulist li {
+  position: relative; padding-left: 28px; margin: 0.62em 0;
+  font-size: 0.9em; color: var(--ink-2); line-height: 1.58;
+}
+.reveal .ulist li::before {
+  content: ""; position: absolute; left: 2px; top: 0.64em;
+  width: 15px; height: 2px; background: var(--accent);
 }
 
-/* titulo de seccion con regla inferior sutil */
-.reveal h2 + .rule, .reveal .titlebar {
-  border-bottom: 2px solid var(--line); margin-bottom: 0.7em; padding-bottom: 0.2em;
-}
-
-/* ---- Tarjetas ---- */
-.cards { display: grid; gap: 22px; margin-top: 0.5em; flex: 1 1 auto; align-content: start; }
+/* ---- Tarjetas: retícula de hairlines, cabecera small-caps con guion ---- */
+.cards { display: grid; gap: 1px; background: var(--rule); border: 1px solid var(--rule);
+  margin-top: 22px; align-content: start; grid-auto-rows: 1fr; }
+.cards.c1 { grid-template-columns: 1fr; }
 .cards.c2 { grid-template-columns: 1fr 1fr; }
 .cards.c3 { grid-template-columns: repeat(3, 1fr); }
 .cards.c4 { grid-template-columns: repeat(4, 1fr); }
-.card {
-  background: var(--bg-card); border: 1px solid var(--line);
-  border-radius: var(--radius); padding: 26px 28px; box-shadow: var(--shadow-sm);
-  transition: transform 200ms ease, box-shadow 200ms ease;
+.card { background: var(--paper); padding: 30px 30px 28px 30px;
+  display: flex; flex-direction: column; justify-content: flex-start; }
+/* titulo de tarjeta en VERDE: inyecta color de marca en cada lamina de tarjetas,
+   asi el deck deja de leerse beige/gris apagado. */
+.card h3 {
+  margin: 0 0 0.7em 0; font-size: 0.68em; color: var(--accent);
+  text-transform: uppercase; letter-spacing: 0.07em; font-weight: 700;
 }
-.card h3 { margin: 0 0 0.45em 0; font-size: 1em; }
-.card p  { font-size: 0.82em; color: var(--ink-soft); margin: 0; line-height: 1.5; }
-.card .lead { font-size: 1.5em; font-family: "Fraunces", serif; color: var(--field); font-weight: 600; line-height: 1; margin-bottom: 0.2em; display: block; }
+.card h3::before {
+  content: ""; display: block; width: 28px; height: 3px;
+  background: var(--accent); margin-bottom: 13px;
+}
+.card p  { font-size: 0.82em; color: var(--ink-2); margin: 0; line-height: 1.62; }
+/* primera tarjeta de cada grid (variant "s"): superficie verde muy tenue para
+   marcar el punto de entrada de la lectura. */
+.card.s { background: var(--accent-soft); }
+.card.hero { background: var(--accent); }
+.card.hero h3, .card.hero p { color: var(--ink-on-dark); }
+.card.hero h3::before { background: var(--accent-2); }
+.card.hero p strong { color: #fff; }
+.card.accent { box-shadow: inset 0 3px 0 var(--accent-2); }
+.card.accent h3 { color: var(--accent-2); }
+.card.accent h3::before { background: var(--accent-2); }
+.card.soft { background: var(--paper-2); }
 
-/* tarjeta hero (modelo desplegado / dato clave) */
-.card.hero { background: linear-gradient(135deg, var(--field-dk), var(--field)); color: #fff; border: none; box-shadow: var(--shadow); }
-.card.hero h3 { color: #fff; } .card.hero p { color: #e6f0e6; } .card.hero .lead { color: #fff; }
-.card.accent { border-left: 4px solid var(--accent); }
-.card.soft { background: var(--field-lt); border-color: #d4e6d6; }
+/* subtitulo entre dos grupos de tarjetas */
+.cards-sub {
+  font-family: var(--font-label); font-size: 0.5em; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3);
+  margin: 22px 0 0 0; display: flex; align-items: center; gap: 14px;
+}
+.cards-sub::after { content: ""; flex: 1 1 auto; height: 1px; background: var(--rule-soft); }
+.cards-sub + .cards { margin-top: 12px; }
 
-/* ---- KPIs grandes (banda) ---- */
-.kpi-row { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 28px; margin: 0.6em 0; }
-.kpi { background: var(--bg-card); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px 20px; text-align: center; box-shadow: var(--shadow-sm); }
-.kpi .num { font-family: "Fraunces", serif; font-size: 2.6em; color: var(--field); font-weight: 600; line-height: 1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+/* ---- KPIs: cifras display grandes, regla booktabs, tick ambar ---- */
+.kpi-row { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 0;
+  border-top: 2.5px solid var(--ink); border-bottom: 1px solid var(--rule); margin: 24px 0; }
+.kpi { padding: 30px 24px 26px 24px; text-align: left; border-right: 1px solid var(--rule); }
+.kpi:last-child { border-right: 0; }
+.kpi .num {
+  font-family: var(--font-display); font-optical-sizing: auto;
+  font-size: 3.3em; color: var(--ink);
+  font-weight: 700; line-height: 1; letter-spacing: -0.03em; font-variant-numeric: tabular-nums;
+}
 .kpi .num.accent { color: var(--accent); }
-.kpi .lbl { font-size: 0.56em; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.09em; margin-top: 0.5em; line-height: 1.3; }
+.kpi .lbl { font-family: var(--font-label); font-size: 0.52em; color: var(--ink-3);
+  text-transform: uppercase; letter-spacing: 0.07em; margin-top: 0.9em; line-height: 1.45; }
+.kpi .lbl::before { content: ""; display: block; width: 22px; height: 2px;
+  background: var(--accent-2); margin-bottom: 10px; }
 
-/* ---- Tablas ---- */
-.reveal table { font-size: 0.68em; border-collapse: separate; border-spacing: 0; width: 100%; box-shadow: var(--shadow-sm); border-radius: var(--radius-sm); overflow: hidden; }
-.reveal table th { background: var(--earth-dk); color: #fff; font-family: "Inter", sans-serif; padding: 11px 16px; text-align: left; font-weight: 600; font-size: 0.92em; letter-spacing: 0.01em; }
-.reveal table td { padding: 9px 16px; border-bottom: 1px solid var(--line-soft); background: var(--bg-card); font-variant-numeric: tabular-nums; }
-.reveal table tr:nth-child(even) td { background: var(--bg-2); }
-.reveal table tr.highlight td { background: var(--field-lt); font-weight: 700; color: var(--field-dk); }
+/* ---- Tablas: booktabs (doble regla arriba, regla fina abajo) ---- */
+.reveal table { font-size: 0.64em; border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+.reveal table th {
+  font-family: var(--font-label); font-size: 0.86em; font-weight: 700;
+  text-align: left; padding: 12px 16px; color: var(--ink);
+  text-transform: uppercase; letter-spacing: 0.06em;
+  border-top: 2.5px solid var(--ink); border-bottom: 1px solid var(--ink); background: transparent;
+}
+.reveal table td { padding: 11px 16px; border-bottom: 1px solid var(--rule-soft); background: transparent; color: var(--ink-2); }
+.reveal table tr:last-child td { border-bottom: 2px solid var(--ink); }
+.reveal table tr.highlight td { background: var(--paper-2); color: var(--ink); font-weight: 700; }
+.reveal table tr.highlight td:first-child { box-shadow: inset 3px 0 0 var(--accent-2); }
 
-/* ---- Figuras: aprovechan el alto ---- */
+/* ---- Figuras: lamina montada (marco doble), pie tipo paper ---- */
 .reveal .fig { text-align: center; flex: 1 1 auto; display: flex; flex-direction: column; justify-content: center; min-height: 0; }
-.reveal .fig img { max-height: 64vh; max-width: 100%; border-radius: var(--radius-sm); background: #fff; border: 1px solid var(--line); box-shadow: var(--shadow); object-fit: contain; }
-.reveal .fig .cap { font-size: 0.52em; color: var(--ink-faint); margin-top: 0.6em; font-style: italic; }
+.reveal .fig img, .two-col img {
+  max-height: 62vh; max-width: 100%; object-fit: contain;
+  background: #fff; border: 1px solid var(--rule);
+  outline: 1px solid var(--rule-soft); outline-offset: 6px;
+  padding: 8px;
+}
+.two-col img { width: 100%; }
+.reveal .fig .cap, .two-col .cap {
+  font-size: 0.53em; color: var(--ink-3); margin-top: 1.0em; font-style: italic;
+  line-height: 1.55;
+}
+.reveal .fig .cap { text-align: center; }
 
-/* dos columnas: texto + figura, ocupando el alto */
-.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: center; flex: 1 1 auto; min-height: 0; }
-.two-col.wide-right { grid-template-columns: 0.85fr 1.15fr; }
-.two-col.wide-left  { grid-template-columns: 1.15fr 0.85fr; }
-.two-col img { max-height: 62vh; width: 100%; object-fit: contain; border-radius: var(--radius-sm); border: 1px solid var(--line); background: #fff; box-shadow: var(--shadow); }
-.two-col .col-text > * + * { margin-top: 0.55em; }
+/* dos columnas: figura + texto */
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center; flex: 1 1 auto; min-height: 0; }
+.two-col.wide-right { grid-template-columns: 0.82fr 1.18fr; }
+.two-col.wide-left  { grid-template-columns: 1.18fr 0.82fr; }
+.two-col .col-text > * + * { margin-top: 0.6em; }
 
-/* lista con bullets de marca */
-.reveal .ulist { list-style: none; padding: 0; margin: 0.4em 0; }
-.reveal .ulist li { position: relative; padding-left: 30px; margin: 0.5em 0; font-size: 0.86em; color: var(--ink-soft); line-height: 1.5; }
-.reveal .ulist li::before { content: ""; position: absolute; left: 4px; top: 0.5em; width: 9px; height: 9px; border-radius: 2px; background: var(--field); transform: rotate(45deg); }
+/* ---- Portada: composicion editorial (mancheta + filete + imagen duotono) ---- */
+.cover-slide { padding: 0 !important; }
+.cover { display: grid; grid-template-columns: 1.04fr 0.96fr; height: 100%; }
+.cover-text { display: flex; flex-direction: column; justify-content: center; padding: 0 68px; position: relative; }
+.cover-logo { height: 84px; width: auto; margin-bottom: 30px; align-self: flex-start; order: -2; }
+.cover-text::before { content: ""; order: -1; width: 72px; height: 5px; background: var(--accent); margin-bottom: 30px; }
+.cover-brand {
+  font-family: var(--font-display); font-optical-sizing: auto;
+  font-size: 4.0em; font-weight: 700; letter-spacing: -0.025em; line-height: 0.98; margin: 0;
+}
+.cover-sub { font-size: 1.0em; color: var(--ink-2); margin: 0.7em 0 0 0; max-width: 17em; line-height: 1.45; font-family: var(--font-body); font-style: italic; }
+.cover-meta { margin-top: 2.6em; padding-top: 1.3em; border-top: 2.5px solid var(--ink);
+  font-family: var(--font-label); font-size: 0.58em; color: var(--ink-3); line-height: 2.0; }
+.cover-meta div:first-child { color: var(--ink); font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
+.cover-img { height: 100%; background-size: cover; background-position: center; position: relative;
+  filter: saturate(0.82) contrast(1.02); }
+.cover-img::before { content: ""; position: absolute; inset: 0;
+  background: rgba(31, 93, 58, 0.16); mix-blend-mode: multiply; }
+.cover-img::after { content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, var(--paper) 0%, transparent 16%); }
 
-/* ---- Portada full-bleed ---- */
-.cover { display: grid; grid-template-columns: 1.05fr 0.95fr; height: 100%; gap: 0; }
-.cover-text { display: flex; flex-direction: column; justify-content: center; padding-right: 48px; }
-.cover h1 { font-size: 3.4em; margin-bottom: 0.25em; line-height: 1.02; }
-.cover .sub { font-size: 1.05em; color: var(--ink-soft); max-width: 18em; }
-.cover .meta { font-size: 0.62em; color: var(--ink-faint); margin-top: 1.6em; line-height: 1.7; }
-.cover-img { height: calc(100% + 120px); margin: -64px -72px -56px 0; background-size: cover; background-position: center; position: relative; }
-.cover-img::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, var(--bg) 0%, transparent 22%); }
-
-/* portada de cierre */
-section.closing { background: linear-gradient(140deg, var(--field-dk), #1c3d26) !important; color: #fff; }
-section.closing h1 { color: #fff; font-size: 3em; }
-section.closing p { color: #d6e6d8; }
-
-/* ---- Pildoras / chips ---- */
-.chips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 0.6em; }
-.chip { background: var(--bg-card); border: 1px solid var(--line); border-radius: 999px; padding: 6px 16px; font-size: 0.6em; color: var(--ink-soft); box-shadow: var(--shadow-sm); }
-.chip.on { background: var(--field); color: #fff; border-color: var(--field); }
-
-/* numero de slide + barra de progreso */
-.reveal .slide-number { background: transparent; color: var(--earth); font-family: "Inter", sans-serif; font-size: 13px; right: 24px; bottom: 18px; }
-.reveal .progress { color: var(--field); height: 4px; }
-
-/* marca de agua de seccion (numero grande tenue) */
-.reveal .slides section[data-sec]::before {
-  content: attr(data-sec); position: absolute; right: 56px; bottom: 28px;
-  font-family: "Fraunces", serif; font-size: 0.6em; color: var(--ink-faint); opacity: 0.5; letter-spacing: 0.05em;
+/* ---- Divisorias: portadilla de capitulo, tinta + numeral fantasma ---- */
+section.divider { background: var(--ink) !important; color: var(--ink-on-dark);
+  position: absolute; inset: 0; width: 1600px; height: 900px; padding: 64px 84px; justify-content: center !important;
+  overflow: hidden; }
+section.divider .divider-grid { display: grid; grid-template-columns: 1.08fr 0.92fr; align-items: center; gap: 64px; height: 100%; position: relative; }
+section.divider .divider-text { display: flex; flex-direction: column; justify-content: center; position: relative; z-index: 1; }
+section.divider .sec-num {
+  font-family: var(--font-display); font-optical-sizing: auto;
+  font-size: 7.5em; font-weight: 600; line-height: 1;
+  color: transparent; -webkit-text-stroke: 1.5px rgba(244, 242, 236, 0.30);
+  letter-spacing: 0.02em; margin-bottom: 0.12em; user-select: none;
+}
+section.divider .kicker { color: var(--accent-2); }
+section.divider .kicker::after { background: rgba(244, 242, 236, 0.18); }
+section.divider h2 { color: #fff; font-size: 3.0em; line-height: 1.04; }
+section.divider h2::after { background: var(--accent-2); width: 72px; }
+section.divider p { color: rgba(244, 242, 236, 0.78); font-size: 1.0em; max-width: 18em; margin-top: 0.9em; font-family: var(--font-body); font-style: italic; }
+section.divider .divider-art { display: flex; align-items: center; justify-content: center; }
+section.divider .divider-art img {
+  max-height: 56vh; max-width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  outline: 1px solid rgba(255, 255, 255, 0.12); outline-offset: 10px;
+  filter: saturate(0.72) contrast(1.03) sepia(0.06);
 }
 
-/* ---- Switch de idioma (pildora flotante) ---- */
-#lang-toggle { position: fixed; top: 18px; right: 22px; z-index: 60; display: flex; border: 1px solid var(--earth); border-radius: 999px; overflow: hidden; font-family: "Inter", sans-serif; font-size: 13px; box-shadow: var(--shadow-sm); background: var(--bg-card); }
-#lang-toggle button { border: 0; background: transparent; color: var(--ink-soft); padding: 7px 16px; cursor: pointer; font-weight: 600; transition: background 150ms ease; }
-#lang-toggle button.active { background: var(--field); color: #fff; }
+/* cierre */
+section.closing { background: var(--ink) !important; color: var(--ink-on-dark); }
+section.closing h1 { color: #fff; font-size: 3.1em; font-family: var(--font-display); }
+section.closing h1::after { content: ""; display: block; width: 72px; height: 3px; background: var(--accent-2); margin-top: 0.35em; }
+section.closing .kicker { color: var(--accent-2); }
+section.closing .kicker::after { background: rgba(244, 242, 236, 0.18); }
+section.closing p { color: rgba(244, 242, 236, 0.8); font-family: var(--font-body); }
 
-/* i18n visibility */
+/* ---- Chips ---- */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 0.6em; }
+.chip { border: 1px solid var(--rule); padding: 5px 14px; font-size: 0.52em; color: var(--ink-2);
+  font-family: var(--font-label); text-transform: uppercase; letter-spacing: 0.06em; }
+
+/* ---- Chrome: numero de slide, progreso, controles ---- */
+.reveal .slide-number { background: transparent; color: var(--ink-3); font-family: var(--font-label); font-size: 12px; right: 26px; bottom: 20px; }
+.reveal .progress { color: var(--accent); height: 3px; }
+
+.reveal .controls { color: var(--ink-2); bottom: 16px; right: 18px; }
+.reveal .controls button { color: var(--ink-2) !important; opacity: 0.35; transition: opacity 200ms ease-out; }
+.reveal .controls button:hover { opacity: 0.9; }
+
+/* marca institucional persistente: OCULTA (el logo vive en la portada). */
+#brand { display: none !important; }
+
+/* switch de idioma */
+#lang-toggle { position: fixed; top: 18px; right: 22px; z-index: 60; display: flex;
+  border: 1px solid var(--ink); overflow: hidden; font-family: var(--font-label); font-size: 12px; background: var(--paper); }
+#lang-toggle button { border: 0; background: transparent; color: var(--ink-2); padding: 6px 14px; cursor: pointer; font-weight: 600; letter-spacing: 0.04em; transition: background 150ms ease-out, color 150ms ease-out; }
+#lang-toggle button:hover { background: var(--paper-2); }
+#lang-toggle button.active { background: var(--ink); color: var(--paper); }
+
+/* i18n del wordmark del brand (estatico en index.html) */
 html[data-lang="es"] [data-lang-en] { display: none; }
 html[data-lang="en"] [data-lang-es] { display: none; }
 
-/* transiciones suaves de entrada de elementos clave (sin animar layout) */
-@media (prefers-reduced-motion: no-preference) {
-  .reveal .slides section.present .card,
-  .reveal .slides section.present .kpi { animation: rise 380ms ease-out both; }
-  .reveal .slides section.present .cards .card:nth-child(2) { animation-delay: 50ms; }
-  .reveal .slides section.present .cards .card:nth-child(3) { animation-delay: 100ms; }
-  .reveal .slides section.present .cards .card:nth-child(4) { animation-delay: 150ms; }
-  @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+/* ============================================================================
+   Impresion / export a PDF (?print-pdf + Ctrl-P o scripts/presentation_pdf.ps1)
+   ============================================================================ */
+@media print {
+  * { print-color-adjust: exact !important; -webkit-print-color-adjust: exact !important; }
+  #lang-toggle, .reveal .controls, .reveal .progress { display: none !important; }
+  .reveal .slides section { box-shadow: none !important; }
+  /* la divisoria usa position:absolute + tamano fijo para pintar el fondo tinta
+     a sangre completa; dentro de la pagina PDF debe ocupar su pdf-page. */
+  .reveal .slides section.divider { position: relative !important; inset: auto !important; }
 }
+html.print-pdf .reveal .slides section.divider {
+  position: relative !important; inset: auto !important; width: auto !important;
+}
+/* Altura EXPLICITA por lamina en modo print: con height:100% el contenido mide
+   900px, la pagina PDF de Reveal mide 899px y el desborde de 1px dispara el
+   bucle de paginacion (cada lamina salia en 4 hojas). 897px cabe siempre.
+   CLAVE: la hoja de impresion de reveal.js pone `section { display: block }`,
+   lo que ANULA el flex + justify-content:center del tema y pega el contenido
+   arriba (dejando la mitad inferior vacia = "el PDF se ve distinto a la
+   pantalla"). Forzamos el MISMO layout flex centrado que en pantalla. */
+html.print-pdf .reveal .slides section {
+  height: 897px !important;
+  display: flex !important; flex-direction: column !important;
+  justify-content: center !important;
+}
+/* portada/divisoria/cierre conservan su composicion propia, no la centran */
+html.print-pdf .reveal .slides section.cover-slide { display: block !important; padding: 0 !important; }
+html.print-pdf .reveal .slides section.divider,
+html.print-pdf .reveal .slides section.closing { justify-content: center !important; }
+html.print-pdf .pdf-page { background: var(--paper) !important; }
+html.print-pdf .pdf-page:has(section.divider),
+html.print-pdf .pdf-page:has(section.closing) { background: var(--ink) !important; }

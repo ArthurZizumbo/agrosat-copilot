@@ -1,5 +1,5 @@
 % Results --- every number anchored to a real repo artefact via % src:.
-% Claims kept defensible: no "VLM beats Gemini", no F1>=0.80 in Mexico,
+% Claims kept defensible: no "VLM beats Gemini", no F1>=0.80 in the tropics,
 % no zero-shot outside France, no TSViT 0.75+ mIoU.
 \section{Resultados}
 \label{sec:results}
@@ -48,7 +48,7 @@ fold-5.
 
 \begin{figure}[htbp]
   \centering
-  \includegraphics[width=0.7\columnwidth]{figures/us-070/tsvit_full_config_delta.png}
+  \includegraphics[width=0.7\columnwidth]{figures/us-070/tsvit_full_config_delta_es.png}
   \caption{TSViT en configuración completa (full-M) base vs. rama
   fenológica sobre el fold-5 (mIoU, F1-macro, exactitud de píxel). El
   delta supervisado es cercano a cero (saturación), que es el resultado
@@ -89,25 +89,28 @@ Blending, 3 miembros & 0.5651 & 0.7697 \\
 % (stacking_5_oof_cv f1_macro 0.6477; delta_5_vs_3 +0.0118; n_universe 16640)
 \end{table}
 
-\paragraph{Modelo final consolidado (fold de prueba retenido).}
+\paragraph{Mejor combinador vs.\ modelo desplegado (fold de prueba retenido).}
 En la comparación a nivel de parcela en el fold de prueba retenido
 (\texttt{comparison\_us040.csv}, fold-5, 18 clases), el ensamble
 heterogéneo Stacking-5 (TSViT-pheno, U-TAE,
-XGBoost-sobre-AlphaEarth, FarSLIP-ft18, FarSLIP-zeroshot) es el modelo
-final elegido con un F1 macro de \textbf{0.7470} y una exactitud de
-\textbf{0.8490}, a un costo de inferencia de 0.042\,s por parcela; el
-blending por Optuna alcanza un F1 macro de 0.7414 (exactitud 0.8618) a
-0.006\,s. Esto representa $+12.3$ puntos porcentuales de F1 macro sobre
-el mejor miembro individual (TSViT-pheno, 0.6253 mIoU / 0.6253 F1 de
-prueba en el mismo arnés; el arbitraje entre miembros del ensamble
-recupera las clases raras que cualquier backbone individual pierde). El
+XGBoost-sobre-AlphaEarth, FarSLIP-ft18, FarSLIP-zeroshot) es el
+combinador con mayor puntaje, con un F1 macro de \textbf{0.7470} y una
+exactitud de \textbf{0.8490}, a un costo de inferencia de 0.042\,s por
+parcela; el blending por Optuna alcanza un F1 macro de 0.7414 (exactitud
+0.8618) a 0.006\,s. El modelo realmente \emph{desplegado} en producción,
+no obstante, es el más simple Voting-3 (F1 macro 0.7444, a la par con
+Stacking-5 pero mucho más simple y robusto en regiones nuevas; véase la
+Sección~\ref{sec:results-perceiver}). Medido de forma comparable a nivel de parcela (out-of-fold), el
+stacking de cinco miembros mejora el F1 macro del stacking de tres
+miembros de 0.6359 a 0.6477; el arbitraje heterogéneo entre miembros
+recupera las clases raras que cualquier backbone individual pierde. El
 metamodelo de stacking actúa así como un árbitro por clase en lugar de
 un promediador, que es lo que produce una ganancia macro
 desproporcionada respecto a la ganancia en exactitud. La
 Tabla~\ref{tab:individual} contrasta esto con el mejor perceptor
 individual; la cifra de validación cruzada out-of-fold de 0.6477
 (Tabla~\ref{tab:ensembles}) es la comparación sin fugas \emph{entre
-combinadores}, mientras que 0.7470 es el desempeño del modelo desplegado
+combinadores}, mientras que 0.7470 es el puntaje del mejor combinador
 en el fold de prueba retenido.
 
 \subsection{Espacio de características de FarSLIP}
@@ -124,7 +127,7 @@ ablación de bandas --- se desarrolla en el estudio de FarSLIP
 
 \begin{figure}[htbp]
   \centering
-  \includegraphics[width=0.85\columnwidth]{figures/us-070/farslip_band_ablation.png}
+  \includegraphics[width=0.85\columnwidth]{figures/us-070/farslip_band_ablation_es.png}
   \caption{FarSLIP v2 fiel (768-dim, destilación fenológica de 4 bandas)
   frente a AlphaEarth-2019 (64-dim) sobre la misma sonda: F1 macro
   supervisado por KMeans ($\pm$ std) y silueta no supervisada. FarSLIP
@@ -170,45 +173,69 @@ $\Delta$   & $+0.2468$ & --- & --- \\
 % src: reports/segmentation/sen4agrinet_transfer_result.json
 \end{table}
 
-\subsection{Agente Be My Eyes: recablear el perceptor hacia el campeón}
+\subsection{Agente Be My Eyes: recablear el perceptor hacia el campeón desplegado}
 \label{sec:results-perceiver}
 Un resultado central de ingeniería de la capa conversacional es que el
 \emph{perceptor} que alimenta al razonador congelado debe ser el ensamble
-campeón consolidado, no el baseline tabular usado en los primeros
-prototipos del agente. Recableamos el perceptor
-\texttt{classify\_parcel} del agente desde el baseline
-XGBoost-sobre-AlphaEarth hacia el campeón Stacking-5 y reevaluamos sobre
-13{,}481 parcelas reales (fold-5, el espacio de etiquetas operativo
-\texttt{france-9}). La Tabla~\ref{tab:perceiver} reporta el efecto: la
-exactitud sube de 0.8308 a \textbf{0.9413} ($+11.0$ puntos porcentuales)
-y el F1 macro de 0.6868 a \textbf{0.9007} ($+21.4$ puntos porcentuales).
-Los dos perceptores coinciden en el 83.7\% de las parcelas; sobre los
-desacuerdos el campeón corrige 1{,}746 errores del baseline y rompe 256,
-un neto de $+1{,}490$ parcelas corregidas. Esto confirma que la
-separación perceptor/razonador rinde frutos solo cuando el perceptor
-detrás del razonador congelado es el clasificador más fuerte disponible:
-el razonador hereda la exactitud del campeón sin tocar jamás un píxel.
+de producción desplegado, no el baseline tabular usado en los primeros
+prototipos del agente. El campeón desplegado es \textbf{Voting-3} (un voto
+ponderado de TSViT-pheno, U-TAE y XGBoost-sobre-AlphaEarth): está a la par
+con el ensamble de stacking de cinco miembros en la tarea de 18 clases
+($0.7444$ frente a $0.7470$ de F1 macro), pero es mucho más simple y
+robusto ($3$ ajustes internos frente a $54$, un tiempo de respuesta de
+$0.04$\,s y un mejor puntaje en regiones nuevas fuera de muestra de
+$0.558$ frente a $0.536$), por lo que es el modelo realmente puesto en
+producción. Recableamos el perceptor \texttt{classify\_parcel} del agente
+desde el baseline XGBoost-sobre-AlphaEarth hacia Voting-3 y reevaluamos
+sobre $14{,}688$ parcelas reales (espacio de etiquetas de producción
+\texttt{france-12}). La Tabla~\ref{tab:perceiver} reporta el efecto: la
+exactitud sube de 0.8539 a \textbf{0.9375} ($+8.4$ puntos porcentuales)
+y el F1 macro de 0.7480 a \textbf{0.8992} ($+15.1$ puntos porcentuales).
+Los dos perceptores coinciden en el 87.1\% de las parcelas; sobre los
+desacuerdos Voting-3 corrige 1{,}465 errores del baseline y rompe 237,
+un neto de $+1{,}228$ parcelas corregidas. Esto confirma que la
+separación perceptor/razonador rinde frutos precisamente porque el
+razonador congelado hereda la exactitud del perceptor desplegado sin
+tocar jamás un píxel.
 
 \begin{table}[htbp]
 \caption{Recableado del perceptor Be My Eyes: clasificador del agente
-cambiado del baseline XGBoost-AlphaEarth al campeón Stacking-5, evaluado
-sobre 13{,}481 parcelas reales (fold-5, espacio de etiquetas
-\texttt{france-9}).}
+cambiado del baseline XGBoost-AlphaEarth al campeón desplegado Voting-3,
+evaluado sobre $14{,}688$ parcelas reales (espacio de etiquetas de
+producción \texttt{france-12}).}
 \label{tab:perceiver}
 \centering
 \begin{tabular}{lcc}
 \toprule
 \textbf{Perceptor del agente} & \textbf{Exactitud} & \textbf{F1 macro} \\
 \midrule
-XGBoost-AlphaEarth (baseline) & 0.8308 & 0.6868 \\
-Stacking-5 (campeón)          & \textbf{0.9413} & \textbf{0.9007} \\
-$\Delta$                      & $+0.1105$ & $+0.2139$ \\
+XGBoost-AlphaEarth (baseline) & 0.8539 & 0.7480 \\
+Voting-3 (campeón desplegado) & \textbf{0.9375} & \textbf{0.8992} \\
+$\Delta$                      & $+0.0836$ & $+0.1512$ \\
 \bottomrule
 \end{tabular}
-% src: reports/agent_bench/perceiver_champion_eval.json
-% (baseline_xgb acc 0.8308 / f1 0.6868; champion_stacking5 acc 0.9413 /
-%  f1 0.9007; delta_accuracy 0.1105; agreement 0.837; net_fixed 1490)
+% src: reports/agent_bench/perceiver_champion_eval_v2.json
+% (v2_champion_france12: baseline_xgb acc 0.8539 / f1 0.7480;
+%  champion_voting3 acc 0.9375 / f1 0.8992; delta_accuracy 0.0836;
+%  agreement 0.8711; net_fixed 1228; n 14688)
 \end{table}
+
+\subsection{Inferencia por escena en dominio}
+\label{sec:results-deployed}
+La mejora agregada se corrobora con inferencia parcela-por-parcela
+con el mismo modelo Voting-3 desplegado,
+sobre escenas francesas reales a $10$\,m/px (Sentinel-2 RGB, verdad de campo,
+predicción de Voting-3 y un mapa de aciertos/errores/fuera-de-alcance), puntuada
+contra la verdad de campo. En la escena
+40039 el modelo clasifica correctamente $67/68$ parcelas dentro de su alcance
+($99\%$); en la 40005, $89/92$ ($97\%$) mientras se abstiene honestamente en $22$
+parcelas de cultivos fuera de su espacio de etiquetas; en la 40175, $73/75$ ($97\%$).
+La abstención fuera-de-alcance es el comportamiento desplegado clave: en vez de
+forzar una etiqueta equivocada sobre un cultivo para el que nunca se entrenó, el
+sistema desplegado lo marca \emph{fuera de alcance}, coherente con el principio de
+honestidad que recorre todo el sistema.
+% src: reports/agent_bench/perceiver_champion_eval_v2.json (v2_champion_france12)
+% + reports/voting_new/inference_parcel/paper_inference_{40039,40005,40175}.png
 
 \subsection{Brecha de dominio: por qué se requiere few-shot}
 \label{sec:results-domaingap}
@@ -224,7 +251,7 @@ adaptación local.
 
 \begin{figure}[htbp]
   \centering
-  \includegraphics[width=0.85\columnwidth]{figures/us-073/domain_gap_umap.png}
+  \includegraphics[width=0.85\columnwidth]{figures/us-073/domain_gap_umap_es.png}
   \caption{Proyección UMAP de los embeddings anuales de AlphaEarth
   (\texttt{SATELLITE\_EMBEDDING/V1/ANNUAL}, versión de datos~1.1,
   CC-BY-4.0~\cite{brown2025alphaearth}) para Francia (PASTIS-R) frente a
@@ -237,7 +264,7 @@ adaptación local.
 
 \begin{figure}[htbp]
   \centering
-  \includegraphics[width=0.85\columnwidth]{figures/us-073/ndvi_phenology_offset.png}
+  \includegraphics[width=0.85\columnwidth]{figures/us-073/ndvi_phenology_offset_es.png}
   \caption{Desfase fenológico: calendario medio de NDVI Sentinel-2 para
   Francia frente a Cataluña. El desplazamiento temporal en las fechas de
   reverdecimiento y senescencia corrobora la brecha zero-shot
@@ -250,11 +277,45 @@ adaptación local.
 \subsection{Evaluación de la capa conversacional}
 La capa conversacional se evalúa sobre
 AgroMind~\cite{ruan2025agromind} con un protocolo de LLM-como-juez
-(Sección~\ref{sec:experiments-llm}). El benchmark cuantitativo depende de
-la corrida de evaluación en H100 (US-069) y se reporta en la
-Tabla~\ref{tab:llm-bench} una vez disponible; no reportamos cifras
-fabricadas aquí. Subrayamos que la capa de lenguaje es un componente de
+(Sección~\ref{sec:experiments-llm}). El benchmark cuantitativo de calidad
+depende de la corrida de evaluación en H100 (US-069) y sigue pendiente;
+no reportamos cifras fabricadas aquí. El resultado de ingeniería medido
+--- la intercambiabilidad de backends --- se reporta a continuación.
+Subrayamos que la capa de lenguaje es un componente de
 comunicación y orquestación de herramientas: \emph{no} afirmamos que
 ningún VLM ajustado supere al razonador congelado Gemini en
-clasificación, ni afirmamos un umbral de F1 para la demostración
-cualitativa en México (Sección~\ref{sec:discussion}).
+clasificación (Sección~\ref{sec:discussion}).
+
+\paragraph{Intercambiabilidad de backends.}
+Independientemente del benchmark de calidad pendiente, ya hay un resultado de
+ingeniería medible: el razonador es enchufable y cambiar de backend es transparente
+para el agrónomo. Con un perceiver fijo, emitimos una consulta anclada idéntica
+(``¿qué cultivo hay en la parcela~52?'') a los tres backends de servicio
+intercambiables efectivamente desplegados --- Gemini~3.5~Flash en la nube (el
+predeterminado desplegado, una elección consciente de costo/latencia frente al
+razonador de referencia Gemini~2.5~Pro de mayor contexto) y dos variantes Qwen
+on-premises --- y registramos la respuesta y la latencia extremo a extremo
+(Tabla~\ref{tab:backend-switch}). Los tres devuelven la \emph{misma} respuesta
+anclada --- trigo blando de invierno, $97.9\%$ de confianza --- y solo cambia la
+latencia; la elección nube/servidor propio intercambia, por tanto, tiempo de
+respuesta y soberanía de datos sin alterar el resultado.
+
+\begin{table}[htbp]
+\caption{Intercambiabilidad de backends: la misma consulta anclada respondida de
+forma idéntica por los tres backends de servicio enchufables tras un perceiver
+fijo; solo cambia la latencia (los tres devuelven trigo blando de invierno,
+$97.9\%$).}
+\label{tab:backend-switch}
+\centering
+\begin{tabular}{lc}
+\toprule
+\textbf{Backend de servicio} & \textbf{Latencia (ms)} \\
+\midrule
+Gemini~3.5~Flash (nube)       & $2{,}995$ \\
+Qwen~3.5~MoE (servidor propio) & $2{,}391$ \\
+Qwen~3.6-VL (servidor propio)  & $\mathbf{1{,}952}$ \\
+\bottomrule
+\end{tabular}
+% src: reports/copilot_backends/{gemini-3.5-flash,qwen35,qwen36-vl}.json
+% (misma respuesta "trigo blando de invierno 97.9%"; latency_ms 2994.8/2391.1/1951.9)
+\end{table}

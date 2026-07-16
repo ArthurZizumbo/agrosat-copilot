@@ -14,7 +14,8 @@ Events:
    from ``chat_sessions.llm_model`` (per-request, RLS-scoped), resolves it through
    the backend-agnostic routing table (:mod:`ml.agent.llm_routing`) and builds the
    matching :class:`~ml.agent.backends.LLMBackend` (``gemini`` -> Gemini,
-   ``qwen-api`` / ``qwen-onprem`` -> OpenAI-compatible vLLM, ``gemma`` -> Ollama),
+   ``qwen-api`` / ``qwen-onprem`` -> OpenAI-compatible vLLM, ``gemma`` -> Ollama,
+   ``qwen-vl`` -> multimodal Ollama/llama.cpp, E12),
    wires it into a real :class:`~ml.agent.agent.Agent`, runs its manual
    function-calling loop, and forwards every :data:`~ml.agent.events.AgentEvent`
    it yields (``tool_call``, ``tool_result``, ``text_delta``, ``done``,
@@ -63,9 +64,13 @@ from backend.app.core.db import get_pool
 from backend.app.services.session_service import SessionService
 from backend.app.utils.chat_metrics import ChatMetricsAccumulator, emit_chat_turn_metrics
 from ml.agent.context import ToolContext
-from ml.agent.llm_routing import DEFAULT_VARIANT, VARIANTS, make_backend_for_variant
+from ml.agent.llm_routing import (
+    DEFAULT_VARIANT,
+    VARIANTS,
+    make_backend_for_variant_available,
+)
 from ml.agent.perceiver import PerceiverLayer, PerceiverObservation
-from ml.agent.schemas import GeoJSONGeometry
+from ml.agent.schemas import CropModel, GeoJSONGeometry
 
 if TYPE_CHECKING:
     import asyncpg
@@ -94,8 +99,9 @@ _DEFAULT_YEAR: int = 2019
 _SELECT_VARIANT_SQL = "SELECT llm_model FROM chat_sessions WHERE id = $1"
 
 #: Signature of the injectable reasoner factory: it receives the resolved LLM
-#: VARIANT tag (``gemini`` / ``qwen-api`` / ``qwen-onprem`` / ``gemma``) and the
-#: typed ``settings`` keyword and returns a ready-to-stream :class:`Agent`. The
+#: VARIANT tag (``gemini`` / ``qwen-api`` / ``qwen-onprem`` / ``gemma`` /
+#: ``qwen-vl``) and the typed ``settings`` keyword and returns a ready-to-stream
+#: :class:`Agent`. The
 #: default adapter (:func:`_default_agent_factory`) resolves the variant through
 #: the backend-agnostic routing table (:mod:`ml.agent.llm_routing`) and wires the
 #: matching backend into the agent; tests pass a stub so the stream runs without
@@ -116,11 +122,19 @@ PoolFactory = Callable[[], "Awaitable[asyncpg.Pool]"]
 def _default_agent_factory(variant: str, *, settings: Settings) -> Agent:
     """Build the production reasoner for a persisted LLM ``variant``.
 
-    Resolves the variant through the backend-agnostic routing table
-    (:func:`~ml.agent.llm_routing.make_backend_for_variant`, US-054 AC-4: host is
-    env-driven, zero code to swap H100 -> L4 -> hosted API) and wires the
-    resulting :class:`~ml.agent.backends.LLMBackend` into an
-    :class:`~ml.agent.agent.Agent` with the default tool set and analyst prompt.
+    Resolves the variant through the AVAILABILITY-AWARE routing table
+    (:func:`~ml.agent.llm_routing.make_backend_for_variant_available`, US-081
+    AC10 / E12) and wires the resulting :class:`~ml.agent.backends.LLMBackend`
+    into an :class:`~ml.agent.agent.Agent` with the default tool set and analyst
+    prompt.
+
+    Honest degradation (E12): the on-prem variants (``qwen-onprem`` / ``qwen-vl``
+    / ``gemma``) are reachable only behind the demo VM tunnel (``make demo-vm``).
+    The availability-aware resolver PROBES the on-prem host and, when it is
+    unreachable, falls back to the always-resolvable ``gemini`` route instead of
+    failing the ``/chat`` request at request time. The ``/llm/switch`` endpoint
+    only persists the chosen variant (it does not probe), so this is where a dead
+    host is caught -- the user keeps a working reasoner rather than a timeout.
 
     The agent is assembled here (rather than via
     :func:`~ml.agent.agent.create_agent`, which selects the backend by
@@ -139,7 +153,7 @@ def _default_agent_factory(variant: str, *, settings: Settings) -> Agent:
     from ml.agent.prompts import ANALYST_SYSTEM_PROMPT
     from ml.agent.tools import get_sync_tools
 
-    backend = make_backend_for_variant(variant, settings)
+    backend, _decision = make_backend_for_variant_available(variant, settings)
     return Agent(
         backend=backend,
         tools=get_sync_tools(),
@@ -190,6 +204,15 @@ class ChatRequest(BaseModel):
     #: trilingual frontend gets replies in the user's language. ``None`` -> the
     #: agent answers in its default (Spanish, per the analyst system prompt).
     locale: Literal["it", "es", "en"] | None = None
+    #: Crop-classification model the USER pinned in the UI for
+    #: ``classify_new_parcel`` (mirror of :data:`ml.agent.schemas.CropModel`). It
+    #: is carried on :attr:`ml.agent.context.ToolContext.crop_model` and
+    #: :func:`ml.agent.tools.classify.run` SERVES IT VERBATIM, ignoring the
+    #: ``model`` argument the reasoner passes: the UI switch is a hard choice, so
+    #: it is enforced at the tool boundary rather than requested via a prompt the
+    #: LLM could ignore. ``None`` -> no pin, and the reasoner's argument (or the
+    #: tool's ``voting3`` default) stands.
+    crop_model: CropModel | None = None
 
 
 def _sse_event(event: str, data: dict[str, Any]) -> str:
@@ -302,11 +325,18 @@ class ChatService:
         )
         return fallback
 
-    async def _build_context(self, session_id: UUID) -> ToolContext:
+    async def _build_context(
+        self, session_id: UUID, crop_model: CropModel | None = None
+    ) -> ToolContext:
         """Build the :class:`ToolContext` shared by the perceiver and the tools.
 
         Args:
             session_id: Tenant session driving every downstream DB read.
+            crop_model: Crop-classification model the user pinned in the UI for
+                this turn, or ``None``. Carried on the context so
+                ``classify_new_parcel`` serves it REGARDLESS of what the reasoner
+                passes -- the switch is a hard choice, so it is enforced at the
+                tool boundary instead of being requested via a prompt.
 
         The pool comes from :attr:`_pool_factory` (by default the
         ``app_database_url`` pool of :func:`backend.app.core.db.get_pool`, role
@@ -314,14 +344,15 @@ class ChatService:
         emit isolates them under the US-051 RLS policies (B2).
 
         Returns:
-            A :class:`ToolContext` with the shared asyncpg pool, settings and
-            session id (no deferred executor in this MVP).
+            A :class:`ToolContext` with the shared asyncpg pool, settings, session
+            id and the user's pinned crop model (no deferred executor in this MVP).
         """
         pool = await self._pool_factory()
         return ToolContext(
             pool=pool,
             settings=self._settings,
             session_id=session_id,
+            crop_model=crop_model,
         )
 
     async def _observe(self, request: ChatRequest, ctx: ToolContext) -> PerceiverObservation | None:
@@ -343,6 +374,9 @@ class ChatService:
             return await perceiver.observe(request.parcel_id)
         # ``aoi`` is non-None here by the guard above.
         assert request.aoi is not None
+        # The user-picked crop model is NOT an argument here: it rides on ``ctx``
+        # and ``classify.run`` enforces it, so the AOI observation and the
+        # reasoner's tool call read the choice from one place.
         return await perceiver.observe_aoi(request.aoi, request.year)
 
     @staticmethod
@@ -360,6 +394,11 @@ class ChatService:
         role, so a ``system`` grounding turn reaches the model as context. When a
         ``locale`` is supplied (US-057) a language-instruction ``system`` turn is
         prepended so the reasoner answers in the user's UI language.
+
+        The user's pinned crop model is deliberately NOT injected here: it is a
+        hard choice enforced at the tool boundary via
+        :attr:`ml.agent.context.ToolContext.crop_model`, not an instruction the
+        reasoner may or may not follow.
 
         Args:
             messages: The validated conversation history.
@@ -422,7 +461,10 @@ class ChatService:
             has_aoi=request.aoi is not None,
         )
 
-        ctx = await self._build_context(session_id)
+        # The user's pinned crop model rides on the context, so every downstream
+        # classify call (the reasoner's tool call AND the perceiver's AOI
+        # observation) serves it from the same, non-negotiable place.
+        ctx = await self._build_context(session_id, request.crop_model)
 
         # Persist the new user turn (US-080) so the transcript survives a reload.
         # Best-effort: a persistence failure must never break the live stream.
@@ -459,7 +501,12 @@ class ChatService:
             )
 
         async for frame in self._stream_reasoner(
-            messages, observation, session_id, ctx, locale=request.locale, start=start
+            messages,
+            observation,
+            session_id,
+            ctx,
+            locale=request.locale,
+            start=start,
         ):
             yield frame
 
@@ -502,7 +549,9 @@ class ChatService:
             messages: The conversation history.
             observation: The perceiver grounding observation, if any.
             session_id: Effective tenant session.
-            ctx: Shared, session-scoped tool execution context.
+            ctx: Shared, session-scoped tool execution context. It carries the
+                user's pinned crop model, which ``classify_new_parcel`` enforces
+                on its own -- no prompt-level instruction is needed here.
             locale: Active UI locale conditioning the answer language, if any.
             start: The ``time.perf_counter`` mark taken by :meth:`stream` at the
                 turn's start, reused so the SLO latency is not double-measured.

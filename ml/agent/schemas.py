@@ -32,6 +32,7 @@ __all__ = [
     "ClassificationResult",
     "ClassifyParcelInput",
     "CompareModelsInput",
+    "CropModel",
     "ExplainPredictionInput",
     "Explanation",
     "GeoJSONGeometry",
@@ -400,6 +401,15 @@ class TileUrl(BaseModel):
 # ---------------------------------------------------------------------------
 # classify_new_parcel
 # ---------------------------------------------------------------------------
+
+#: Serving models selectable for ``classify_new_parcel``. SINGLE SOURCE OF TRUTH
+#: for the crop-model tag: :class:`ClassifyParcelInput.model`, the perceiver's
+#: AOI path and the ``/chat`` request body all reuse this alias instead of
+#: re-declaring the ``Literal`` (the frontend mirror lives in
+#: ``frontend/types/agent.ts``). Adding a model = editing this line only.
+CropModel = Literal["xgb", "voting3", "stacking5"]
+
+
 class ClassifyParcelInput(BaseModel):
     """Arguments for ``classify_new_parcel`` (honest per-parcel crop classifier).
 
@@ -441,7 +451,11 @@ class ClassifyParcelInput(BaseModel):
             weighted-vote champion), ``"xgb"`` (tabular member, historical
             default) or ``"stacking5"`` (EPIC 6 Stacking-5 meta, legacy). Each
             degrades cleanly to ``xgb-alphaearth`` when it cannot resolve the
-            parcel or its OOF artifacts are unavailable.
+            parcel or its OOF artifacts are unavailable. NOT the last word: when
+            the user pinned a model in the UI,
+            :attr:`ml.agent.context.ToolContext.crop_model` OVERRIDES this
+            argument (the switch is a hard choice enforced at the tool boundary).
+            Read ``ClassificationResult.served_model`` for what actually ran.
         use_stacking: LEGACY back-compat flag. Honoured ONLY when ``model`` is set
             explicitly to ``"xgb"`` (then promoted to ``model="stacking5"`` so an
             old caller passing ``use_stacking=True`` still gets the Stacking-5
@@ -459,7 +473,7 @@ class ClassifyParcelInput(BaseModel):
     aoi: GeoJSONGeometry
     year: int = 2019
     restrict_to_resolved_classes: bool = True
-    model: Literal["xgb", "voting3", "stacking5"] = "voting3"
+    model: CropModel = "voting3"
     use_stacking: bool = False
     label_space: str = DEFAULT_LABEL_SPACE
 
@@ -517,6 +531,13 @@ class ClassificationResult(BaseModel):
             explicit cue that ``crop_class`` may be a renormalization artifact and
             should be hedged with neighbouring-parcel grounding, not reported as
             confident. ``None`` when the raw top class is in vocabulary.
+        served_model: The ensemble member that actually produced this posterior
+            (``"voting-3"``, ``"xgb-alphaearth"`` or ``"stacking-5"``), reflecting
+            any degradation. When the caller requested Voting-3 but the parcel
+            fell outside the fold-5 OOF universe, this is exactly
+            ``"xgb-alphaearth"`` (not ``"voting-3"``) so the reasoner and the UI
+            stay honest about the active model. Empty string for sentinel results
+            (e.g. ``needs_gee_sampling``) that did not run a model.
     """
 
     model_config = _STRICT_CONFIG
@@ -526,6 +547,7 @@ class ClassificationResult(BaseModel):
     class_probabilities: dict[str, float]
     out_of_vocabulary_classes: list[str] = Field(default_factory=list)
     unresolved_candidate: str | None = None
+    served_model: str = ""
 
 
 # ---------------------------------------------------------------------------

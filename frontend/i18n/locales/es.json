@@ -56,6 +56,11 @@
     "placeholder": "Pregunta algo sobre tus cultivos...",
     "send": "Enviar",
     "thinking": "Razonando...",
+    "classifying": "Clasificando...",
+    "classifying_with": "Clasificando con {model}...",
+    "served_model": "Modelo",
+    "model_label": "Modelo",
+    "probabilities": "Probabilidades por cultivo",
     "switch_llm": "Cambiar LLM",
     "panel_label": "Panel de conversación",
     "assistant_title": "Asistente",
@@ -105,6 +110,7 @@
     "prediction_legend": "Predicción del modelo",
     "predicted": "Predicho",
     "true_crop": "Real",
+    "true_class": "Verdad de campo",
     "view_label": "Vista del mapa",
     "view_predicted": "Predicción",
     "view_true": "Verdad",
@@ -118,9 +124,18 @@
     "clear_selection": "Quitar selección"
   },
   "llm": {
-    "gemini": "Gemini 2.5 Pro (nube)",
-    "qwen": "Qwen3.5-35B-A3B (on-premise)",
+    "gemini": "Gemini (nube)",
+    "qwen": "Qwen (local)",
+    "qwen_vl": "Qwen-VL (local, visual)",
+    "switch_failed": "No se pudo cambiar de modelo (el servicio local podría estar apagado). Se mantiene el modelo anterior.",
     "server_fixed": "Definido por la configuración del servidor"
+  },
+  "crop_model": {
+    "label": "Modelo de cultivo",
+    "hint": "Elige el modelo con el que el copiloto clasifica los cultivos",
+    "voting3": "Voting-3 (ganador)",
+    "xgb": "XGBoost",
+    "stacking5": "Stacking-5"
   },
   "errors": {
     "generic": "Ocurrió un error. Inténtalo de nuevo.",

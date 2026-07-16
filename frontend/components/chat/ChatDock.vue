@@ -7,7 +7,7 @@
 import { storeToRefs } from "pinia";
 import { useChatStore } from "~/stores/chat";
 import { useMapStore } from "~/stores/map";
-import type { LlmVariant } from "~/types/agent";
+import type { CropModel } from "~/types/agent";
 import { demoFindings } from "~/utils/demoPreview";
 
 const emit = defineEmits<{
@@ -18,11 +18,17 @@ const emit = defineEmits<{
 const { t } = useI18n();
 const store = useChatStore();
 const mapStore = useMapStore();
-const { messages, perceiverNotes, toolCalls, findings, status, llmVariant } =
-  storeToRefs(store);
+const {
+  messages,
+  perceiverNotes,
+  toolCalls,
+  findings,
+  status,
+  cropModel,
+} = storeToRefs(store);
 const { previewActive } = storeToRefs(mapStore);
 
-const { sendMessage, switchLlm, dispose } = useChat();
+const { sendMessage, dispose } = useChat();
 const { ensureActiveSession } = useSessions();
 
 // On open, guarantee a valid active session (create the first one, or restore
@@ -37,6 +43,51 @@ const isBusy = computed(
 const isEmpty = computed(
   () => messages.value.length === 0 && !isBusy.value,
 );
+
+/** Map the requested crop model (tool argument) to a human-readable label. */
+const CROP_MODEL_LABELS: Record<string, string> = {
+  voting3: "Voting-3",
+  xgb: "XGBoost",
+  stacking5: "Stacking-5",
+};
+
+/** The running `classify_new_parcel` tool call, or null. Resolved ONCE (both the
+ *  loader flag and its label derive from it) because `toolCalls` changes on every
+ *  streamed delta, so a second scan of the list would re-run per token. */
+const classifyingCall = computed(
+  () =>
+    toolCalls.value.find(
+      (c) => c.tool === "classify_new_parcel" && c.status === "running",
+    ) ?? null,
+);
+
+/** When a classify call is running we swap the generic "thinking" loader for a
+ *  model-aware "classifying" message. */
+const isClassifying = computed(() => classifyingCall.value !== null);
+
+/** The model label, with the SAME precedence the backend applies: the user's pin
+ *  wins over the reasoner's tool argument (`classify.run` serves `ctx.crop_model`
+ *  verbatim and ignores `inp.model`). Falling back to the reasoner's argument
+ *  would let this loader announce a model that is not the one about to serve. The
+ *  argument is only used when the user pinned nothing. */
+const classifyingLabel = computed<string | null>(() => {
+  const call = classifyingCall.value;
+  if (!call) return null;
+  const requested = call.args?.model;
+  const key =
+    cropModel.value ??
+    (typeof requested === "string" && requested.length > 0 ? requested : null);
+  if (!key) return null;
+  return CROP_MODEL_LABELS[key] ?? key;
+});
+
+/** Loader text shown while busy: model-aware while classifying, else generic. */
+const busyText = computed(() => {
+  if (!isClassifying.value) return t("chat.thinking");
+  return classifyingLabel.value
+    ? t("chat.classifying_with", { model: classifyingLabel.value })
+    : t("chat.classifying");
+});
 
 // WS status dot: connected (streaming), idle, error.
 const wsStatus = computed(() => {
@@ -62,9 +113,11 @@ async function onSubmit(text: string) {
   await sendMessage(text);
 }
 
-async function onSwitchLlm(variant: LlmVariant) {
-  if (variant === llmVariant.value || isBusy.value) return;
-  await switchLlm(variant);
+/** Pin the crop-classification model the next POST /chat forwards to
+ *  `classify_new_parcel` (US-081). Persisted in the chat store. */
+function onSelectCropModel(model: CropModel) {
+  if (model === cropModel.value || isBusy.value) return;
+  store.setCropModel(model);
 }
 
 function loadExample() {
@@ -98,15 +151,8 @@ onBeforeUnmount(() => {
         </h2>
       </div>
       <div class="flex items-center gap-1.5">
-        <!-- APORTE PENDIENTE: the team `/chat` ignores a per-request llm_variant
-             (server uses settings.llm_variant_default). The switch stays visible
-             but disabled, with a "server configuration" tooltip. -->
-        <ChatLlmSwitch
-          :variant="llmVariant"
-          disabled
-          server-fixed
-          @update:variant="onSwitchLlm"
-        />
+        <!-- The reasoner backend switch (Gemini / Qwen / Qwen-VL) lives in the
+             global AppHeader; it is intentionally NOT duplicated here. -->
         <button
           type="button"
           class="inline-flex size-9 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-muted-fg)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-fg)] lg:hidden"
@@ -120,6 +166,18 @@ onBeforeUnmount(() => {
 
     <!-- Chat tabs: one tab per session, each with its own transcript + map AOI -->
     <ChatTabs />
+
+    <!-- Crop-model selector: the user pins which model classify_new_parcel uses
+         (US-081). Wired end-to-end via ChatRequest.crop_model. -->
+    <div
+      class="flex items-center justify-end gap-2 border-b border-[var(--color-border)] px-3 py-1.5"
+    >
+      <ChatCropModelSwitch
+        :model="cropModel"
+        :disabled="isBusy"
+        @update:model="onSelectCropModel"
+      />
+    </div>
 
     <!-- Preview banner -->
     <div
@@ -213,9 +271,15 @@ onBeforeUnmount(() => {
         <p
           v-if="isBusy"
           class="flex items-center gap-1.5 text-xs italic text-[var(--color-muted-fg)]"
+          :class="isClassifying ? 'text-agro-700 dark:text-agro-400' : ''"
         >
-          <UIcon name="i-lucide-loader-circle" class="size-3.5 animate-spin" aria-hidden="true" />
-          {{ t("chat.thinking") }}
+          <UIcon
+            :name="isClassifying ? 'i-lucide-sprout' : 'i-lucide-loader-circle'"
+            class="size-3.5"
+            :class="isClassifying ? 'animate-pulse' : 'animate-spin'"
+            aria-hidden="true"
+          />
+          {{ busyText }}
         </p>
 
         <!-- Error -->

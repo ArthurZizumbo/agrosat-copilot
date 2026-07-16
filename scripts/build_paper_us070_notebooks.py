@@ -84,13 +84,17 @@ _NB01 = [
     ),
     _code(_HEADER),
     _code(
-        "# F7-seg: barplot de benchmark recompuesto desde model_comparison_fold5.csv\n"
-        'print("F7-seg:", pf.fig_benchmark_barplot())'
+        "# F7-seg: barplot de benchmark recompuesto desde model_comparison_fold5.csv.\n"
+        "# Bilingue: base EN (<stem>.png) + variante ES (<stem>_es.png).\n"
+        "for lang in pf.LANGS:\n"
+        '    print("F7-seg", lang, pf.fig_benchmark_barplot(lang=lang))'
     ),
     _code(
-        "# F4 curvas TSViT y F6 confusion TSViT (PNG reales promovidos a SVG+PNG)\n"
+        "# F4 curvas TSViT y F6 confusion TSViT (PNG reales promovidos a SVG+PNG).\n"
+        "# Bilingue: el raster no lleva texto matplotlib; solo cambia el sufijo _es.\n"
         'for stem in ["curves_tsvit", "confusion_tsvit", "per_class_iou_tsvit"]:\n'
-        "    print(stem, pf.promote_png(pf.PROMOTED_FIGURES[stem], stem))"
+        "    for lang in pf.LANGS:\n"
+        "        print(stem, lang, pf.promote_png(pf.PROMOTED_FIGURES[stem], stem, lang=lang))"
     ),
     _code(
         "# T2: modelos individuales EPIC 5 re-scoreados fold-5\n"
@@ -119,13 +123,18 @@ _NB02 = [
     ),
     _code(_HEADER),
     _code(
-        "# F8 mapa de error espacial + F6-ens confusion stacking\n"
+        "# F8 mapa de error espacial + F6-ens confusion stacking (bilingue).\n"
         'for stem in ["spatial_residuals", "confusion_stacking"]:\n'
-        "    print(stem, pf.promote_png(pf.PROMOTED_FIGURES[stem], stem))"
+        "    for lang in pf.LANGS:\n"
+        "        print(stem, lang, pf.promote_png(pf.PROMOTED_FIGURES[stem], stem, lang=lang))"
     ),
     _code(
-        "# Fx curva de ablacion FarSLIP recompuesta desde parcel_sweep.csv\n"
-        'print("Fx farslip_sweep:", pf.fig_farslip_sweep_curve())'
+        "# Fx curva de ablacion FarSLIP recompuesta desde parcel_sweep.csv (bilingue).\n"
+        "for lang in pf.LANGS:\n"
+        '    print("Fx farslip_sweep", lang, pf.fig_farslip_sweep_curve(lang=lang))\n'
+        "# Ablacion de bandas FarSLIP (fig objetivo de la US): base EN + _es.\n"
+        "for lang in pf.LANGS:\n"
+        '    print("Fx farslip_band_ablation", lang, pf.fig_farslip_band_ablation(lang=lang))'
     ),
     _code(
         "# T3 ensambles + Tx ablacion bandas FarSLIP\n"
@@ -154,10 +163,11 @@ _NB03 = [
     ),
     _code(_HEADER),
     _code(
-        "# F3 UMAP AlphaEarth + transferencia FR->Cataluna\n"
+        "# F3 UMAP AlphaEarth + transferencia FR->Cataluna (bilingue).\n"
         'umap_src = pf.PROMOTED_FIGURES["umap_alphaearth"]\n'
-        'print("F3 umap:", pf.promote_png(umap_src, "umap_alphaearth"))\n'
-        'print("transfer FR->Cataluna:", pf.fig_transfer_catalonia())'
+        "for lang in pf.LANGS:\n"
+        '    print("F3 umap", lang, pf.promote_png(umap_src, "umap_alphaearth", lang=lang))\n'
+        '    print("transfer FR->Cataluna", lang, pf.fig_transfer_catalonia(lang=lang))'
     ),
     _code(
         "# T1 comparativa de modelos fundacionales\n"
@@ -201,8 +211,9 @@ _NB04 = [
     ),
     _code(_HEADER),
     _code(
-        "# F7-LLM barplot + F5 ejemplos conversacionales ES/EN reales\n"
-        'print("F7-LLM:", pf.fig_llm_benchmark_barplot())\n'
+        "# F7-LLM barplot (bilingue: base EN + _es) + F5 ejemplos conversacionales.\n"
+        "for lang in pf.LANGS:\n"
+        '    print("F7-LLM", lang, pf.fig_llm_benchmark_barplot(lang=lang))\n'
         "# F5: IT pendiente (B-070-4, AgroMind-IT US-068)\n"
         'print("F5 conversational ES/EN:", pf.export_conversational_examples())'
     ),

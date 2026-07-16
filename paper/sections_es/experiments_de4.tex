@@ -19,6 +19,24 @@ elegida porque su cobertura en EuroCrops~v2 es \emph{completa} (no
 parcial como en el piloto de la Toscana italiana) y su agricultura está
 dominada por cereales de invierno grandes y fenológicamente separables.
 
+\paragraph{Cómo se alcanzó el techo de Toscana: tres estrategias de transfer.}
+Antes de DE4, el mismo backbone entrenado en Francia (TSViT-pheno) se llevó al
+dataset italiano de Toscana ($39$ clases nativas, test fold-3) bajo tres
+estrategias de transfer, para separar qué aporta realmente la transferencia.
+\emph{(i)} Entrenar desde cero solo con datos italianos alcanza F1-macro~$0.095$.
+\emph{(ii)} El transfer puro --- reutilizar el codificador temporal de Francia y
+aprender un clasificador nuevo para los cultivos italianos --- lo eleva a $0.120$.
+\emph{(iii)} Conservar las clases francesas (arrancar la cabeza desde los cultivos
+franceses) o replicar el modo de entrenamiento completo de PASTIS llega a
+$0.130$--$0.132$. El codificador temporal es, por tanto, el componente transferido
+determinante; conservar las clases suma poco en promedio ($+0.012$) y \emph{no} es
+universal --- ayuda a cultivos parecidos entre Francia e Italia (trigo duro $+0.08$,
+cebada $+0.07$, alfalfa $+0.05$) y perjudica a los de fenología mediterránea distinta
+(avena $-0.08$, girasol $-0.06$). Este techo de Toscana de $\approx0.13$ en el mejor
+caso es la línea base que las palancas de DE4 a continuación elevan a $0.266$.
+% src: reports/us079_figs/ablation_compare.json (A_warmstart 0.132, B_nowarmstart 0.120,
+% original 0.130; from-scratch 0.095; deltas warm-start por clase)
+
 \paragraph{Construir un dataset homólogo a PASTIS para DE4.}
 Materializamos un dataset denso homólogo a PASTIS para DE4 2023 desde
 cero, con \textbf{100\% de datos reales y cero marcadores de posición}:
@@ -99,7 +117,7 @@ trigo~de~invierno~$0.674$, centeno~de~invierno~$0.573$), arrojando
 8~clases con F1~$\ge0.60$ y 12 con $\ge0.40$, frente a una única clase
 por encima de $0.60$ en la Toscana. % src: report.json de4_2023 per-class
 
-\paragraph{Tres vistas taxonómicas (las ``tres formas'').}
+\paragraph{Tres convenciones de espacio de etiquetas.}
 Para una lectura honesta evaluamos el mismo ensamble entrenado bajo tres
 convenciones de espacio de etiquetas, decididas a~priori: \emph{(A)
 conservando las 37 clases HCAT nativas} (fino, F1 macro~$0.266$);
