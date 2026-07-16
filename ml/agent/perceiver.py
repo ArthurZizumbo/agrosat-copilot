@@ -47,7 +47,6 @@ from ml.agent.refine import RefinementResult
 from ml.agent.schemas import (
     ClassificationResult,
     ClassifyParcelInput,
-    CropModel,
     ExplainPredictionInput,
     Explanation,
     GeoJSONGeometry,
@@ -280,30 +279,30 @@ class PerceiverLayer:
         )
         return observation
 
-    async def observe_aoi(
-        self, aoi: GeoJSONGeometry, year: int, crop_model: CropModel | None = None
-    ) -> PerceiverObservation:
+    async def observe_aoi(self, aoi: GeoJSONGeometry, year: int) -> PerceiverObservation:
         """Observe a freshly drawn AOI polygon and emit a TEXT observation.
 
         An AOI is not a persisted parcel, so there is no stored phenology row to
-        explain. The perceiver classifies the AOI with the crop model the user
-        picked (``crop_model``: ``"voting3"`` the EPIC 12 champion by default,
-        ``"xgb"`` or ``"stacking5"``), reusing :func:`ml.agent.tools.classify.run`
-        (which resolves the session parcel's AlphaEarth embedding for ``year``) and
-        derives the vigor and phenology text from that classifier output. For a
-        freshly drawn AOI that is not a PASTIS-R fold-5 parcel, ``voting3`` /
-        ``stacking5`` degrade cleanly to ``xgb-alphaearth`` -- the model that
-        actually served is read back from ``result.served_model`` and surfaced in
-        the observation text, so the report never claims a model it did not use.
-        When the AOI has no persisted embedding yet, ``classify.run`` returns the
-        controlled ``needs_gee_sampling`` result, which is surfaced verbatim (no
-        hallucinated crop).
+        explain. The perceiver classifies the AOI through
+        :func:`ml.agent.tools.classify.run` (which resolves the session parcel's
+        AlphaEarth embedding for ``year``) and derives the vigor and phenology text
+        from that classifier output. For a freshly drawn AOI that is not a PASTIS-R
+        fold-5 parcel, ``voting3`` / ``stacking5`` degrade cleanly to
+        ``xgb-alphaearth`` -- the model that actually served is read back from
+        ``result.served_model`` and surfaced in the observation text, so the report
+        never claims a model it did not use. When the AOI has no persisted
+        embedding yet, ``classify.run`` returns the controlled
+        ``needs_gee_sampling`` result, which is surfaced verbatim (no hallucinated
+        crop).
+
+        The serving model is NOT a parameter: the user's pin lives on
+        :attr:`ml.agent.context.ToolContext.crop_model` and ``classify.run``
+        enforces it, so this path and the reasoner's tool call read the choice from
+        the same place (and neither can drift from the other).
 
         Args:
             aoi: Polygon geometry of the area to observe.
             year: Campaign year of the AlphaEarth annual embedding.
-            crop_model: Serving model the user selected (``"voting3"`` default,
-                ``"xgb"``, ``"stacking5"``); ``None`` falls back to the tool default.
 
         Returns:
             A :class:`PerceiverObservation` for the AOI, with ``parcel_id == -1``.
@@ -317,8 +316,9 @@ class PerceiverLayer:
             year=year,
         )
 
-        # Serve the model the user picked (default voting3). For a freshly drawn
-        # AOI outside the PASTIS-R fold-5 OOF, voting3/stacking5 degrade cleanly to
+        # `model` is the tool's champion default; when the user pinned one,
+        # classify.run overrides it from ctx.crop_model. For a freshly drawn AOI
+        # outside the PASTIS-R fold-5 OOF, voting3/stacking5 degrade cleanly to
         # xgb-alphaearth inside classify.run; result.served_model carries the model
         # that ACTUALLY ran, which we surface verbatim (never a hardcoded claim).
         result = await classify.run(
@@ -326,7 +326,7 @@ class PerceiverLayer:
                 session_id=self._ctx.session_id,
                 aoi=aoi,
                 year=year,
-                model=crop_model or "voting3",
+                model="voting3",
             ),
             self._ctx,
         )

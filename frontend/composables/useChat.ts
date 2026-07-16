@@ -204,11 +204,13 @@ export function useChat() {
       locale: activeLocale,
     };
 
-    // Crop-classification model the user pinned (US-081). Sent only when set so
-    // the body stays minimal and the backend's `voting3` tool default applies
-    // otherwise. The reasoner forwards it to `classify_new_parcel` (see the
-    // system instruction injected by chat_service.py).
-    if (store.cropModel) body.crop_model = store.cropModel;
+    // Crop-classification model the user actively pinned (US-081). Sent ONLY when
+    // they picked one: the backend serves a pin verbatim and ignores the model the
+    // reasoner asked for, so sending it unconditionally would silently override an
+    // explicit in-conversation request ("classify it with XGBoost") on behalf of a
+    // switch the user never touched. With no pin the tool's own `voting3` default
+    // applies -- same served model, reasoner discretion intact.
+    if (store.cropModel !== null) body.crop_model = store.cropModel;
 
     abort = new AbortController();
     const signal = abort.signal;

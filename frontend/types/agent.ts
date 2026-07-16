@@ -177,9 +177,11 @@ export interface ChatTurn {
 }
 
 /** Crop-classification model the user can pin for `classify_new_parcel`
- *  (mirror of `ml/agent/schemas.py` `CropModel`). When set, the backend injects a
- *  system turn telling the reasoner to forward it to the tool. Runtime array +
- *  derived type, for the same rehydration guard as `LLM_VARIANTS`. */
+ *  (mirror of `ml/agent/schemas.py` `CropModel`). Sent as `ChatRequest.crop_model`;
+ *  the backend puts it on the tool context and `classify.run` serves it verbatim,
+ *  ignoring whatever model the reasoner asked for — the pin is a contract, not a
+ *  hint. Runtime array + derived type, for the same rehydration guard as
+ *  `LLM_VARIANTS`. */
 export const CROP_MODELS = ["voting3", "xgb", "stacking5"] as const;
 
 export type CropModel = (typeof CROP_MODELS)[number];

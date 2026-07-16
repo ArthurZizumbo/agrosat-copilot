@@ -473,3 +473,79 @@ async def test_run_unknown_label_space_raises_keyerror(monkeypatch, make_ctx) ->
             ),
             make_ctx(),
         )
+
+
+# ---------------------------------------------------------------------------
+# ctx.crop_model: the user's UI pin is a CONTRACT, not a hint
+# ---------------------------------------------------------------------------
+async def test_user_pin_overrides_the_model_the_reasoner_asked_for(monkeypatch, make_ctx) -> None:
+    """``ctx.crop_model`` wins over ``inp.model``: the UI switch is a hard choice.
+
+    The crop-model selector promises the user a specific model. Before this was
+    enforced at the tool boundary it was merely *requested* from the reasoner via a
+    system instruction, so an LLM that ignored the instruction silently served a
+    different model than the one the user picked. Here the reasoner asks for
+    ``voting3`` while the user pinned ``xgb``: the tabular member must serve.
+    """
+    proba = _deterministic_posterior()
+    class_names = {i: f"class_{i}" for i in range(HARNESS_NUM_CLASSES)}
+    _patch_embedding(monkeypatch)
+    monkeypatch.setattr(
+        classify_mod, "_load_classifier", lambda: _FakeClassifier(proba, class_names)
+    )
+
+    # Voting-3 WOULD serve happily here: if the pin were ignored, `member` becomes
+    # "voting-3". This is what makes the assertion below non-vacuous (a parcel that
+    # simply failed to resolve would degrade to xgb-alphaearth for unrelated
+    # reasons and the test would pass without proving anything).
+    calls: list[str] = []
+
+    async def _voting_would_serve(ctx, inp):
+        calls.append("voting")
+        return _deterministic_posterior()
+
+    monkeypatch.setattr(classify_mod, "_voting_posterior", _voting_would_serve)
+
+    out = await classify_mod.run(
+        ClassifyParcelInput(
+            session_id=SESSION_A,
+            aoi=_POLYGON,
+            year=2019,
+            model="voting3",  # what the REASONER asked for
+        ),
+        make_ctx(crop_model="xgb"),  # what the USER pinned -> must win
+    )
+
+    assert out.served_model == "xgb-alphaearth"
+    assert calls == [], "voting-3 was consulted despite the user pinning xgb"
+
+
+async def test_no_user_pin_leaves_the_reasoner_argument_alone(monkeypatch, make_ctx) -> None:
+    """With no pin (``ctx.crop_model=None``) the reasoner's ``model`` still stands.
+
+    The override is scoped to an explicit user choice; it must not hijack the
+    normal path where the reasoner (or the ``voting3`` default) selects the model.
+    """
+    proba = _deterministic_posterior()
+    class_names = {i: f"class_{i}" for i in range(HARNESS_NUM_CLASSES)}
+    _patch_embedding(monkeypatch)
+    monkeypatch.setattr(
+        classify_mod, "_load_classifier", lambda: _FakeClassifier(proba, class_names)
+    )
+
+    async def _voting_would_serve(ctx, inp):
+        return _deterministic_posterior()
+
+    monkeypatch.setattr(classify_mod, "_voting_posterior", _voting_would_serve)
+
+    out = await classify_mod.run(
+        ClassifyParcelInput(
+            session_id=SESSION_A,
+            aoi=_POLYGON,
+            year=2019,
+            model="voting3",  # the reasoner's choice, with no user pin to override it
+        ),
+        make_ctx(),  # no pin
+    )
+
+    assert out.served_model == "voting-3"

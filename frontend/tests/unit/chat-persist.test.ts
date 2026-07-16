@@ -111,7 +111,9 @@ describe("chatStore persistence (pick: llmVariant only; transcript is server-sid
     expect(store.cropModel).toBe("xgb");
   });
 
-  it("folds an unknown persisted cropModel back to the champion default", () => {
+  it("folds an unknown persisted cropModel back to 'no pin'", () => {
+    // A stale tag must not survive as a pin: `null` hands the choice back to the
+    // reasoner, and the tool's own `voting3` default still serves.
     globalThis.localStorage.setItem(
       STORE_KEY,
       JSON.stringify({ llmVariant: "gemini", cropModel: "bogus-model" }),
@@ -120,7 +122,16 @@ describe("chatStore persistence (pick: llmVariant only; transcript is server-sid
     mountPinia();
     const store = useChatStore();
 
-    expect(store.cropModel).toBe("voting3");
+    expect(store.cropModel).toBeNull();
+  });
+
+  it("keeps a null cropModel as 'no pin' (the reasoner stays free)", () => {
+    // The default is null, NOT "voting3": an always-set pin would silently
+    // override an explicit in-conversation model request.
+    mountPinia();
+    const store = useChatStore();
+
+    expect(store.cropModel).toBeNull();
   });
 
   it("loadMessages restores a server transcript into the store", () => {

@@ -451,7 +451,11 @@ class ClassifyParcelInput(BaseModel):
             weighted-vote champion), ``"xgb"`` (tabular member, historical
             default) or ``"stacking5"`` (EPIC 6 Stacking-5 meta, legacy). Each
             degrades cleanly to ``xgb-alphaearth`` when it cannot resolve the
-            parcel or its OOF artifacts are unavailable.
+            parcel or its OOF artifacts are unavailable. NOT the last word: when
+            the user pinned a model in the UI,
+            :attr:`ml.agent.context.ToolContext.crop_model` OVERRIDES this
+            argument (the switch is a hard choice enforced at the tool boundary).
+            Read ``ClassificationResult.served_model`` for what actually ran.
         use_stacking: LEGACY back-compat flag. Honoured ONLY when ``model`` is set
             explicitly to ``"xgb"`` (then promoted to ``model="stacking5"`` so an
             old caller passing ``use_stacking=True`` still gets the Stacking-5

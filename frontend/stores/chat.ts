@@ -154,10 +154,20 @@ interface ChatState {
    *  on-prem host is down). Null when there is none; the UI shows a dismissable
    *  toast and the chat is never blocked (E12, honest degradation). */
   llmSwitchError: string | null;
-  /** Crop-classification model the user pinned for `classify_new_parcel`; sent
-   *  as `ChatRequest.crop_model` on the next POST /chat so the reasoner forwards
-   *  it to the tool. `"voting3"` (the champion) is the default. */
-  cropModel: CropModel;
+  /** Crop-classification model the user ACTIVELY pinned for `classify_new_parcel`,
+   *  or `null` when they never touched the switch.
+   *
+   *  The null is load-bearing, not laziness: a pin is sent as
+   *  `ChatRequest.crop_model` and the backend tool then serves it VERBATIM,
+   *  ignoring whatever model the reasoner asked for. If this defaulted to
+   *  `"voting3"` the pin would always be set, so an explicit in-conversation
+   *  request ("classify it with XGBoost") would be silently overridden by a switch
+   *  the user never touched, and the reasoner's `model` argument would be dead
+   *  code. With `null` the reasoner keeps its discretion until the user actually
+   *  chooses — and the served model is `voting3` either way, because that is the
+   *  tool's own default. The switch still DISPLAYS `voting3` as active
+   *  (`model ?? "voting3"`). */
+  cropModel: CropModel | null;
   status: ChatStatus;
   /** Id of the assistant turn currently being streamed, if any. */
   activeAssistantId: string | null;
@@ -178,7 +188,7 @@ export const useChatStore = defineStore("chat", {
     findings: [],
     llmVariant: "gemini",
     llmSwitchError: null,
-    cropModel: "voting3",
+    cropModel: null,
     status: "idle",
     activeAssistantId: null,
     errorMessage: null,
@@ -220,9 +230,11 @@ export const useChatStore = defineStore("chat", {
       this.llmSwitchError = message;
     },
 
-    /** Set the crop-classification model sent as `ChatRequest.crop_model` on the
-     *  next POST /chat (the reasoner forwards it to `classify_new_parcel`). */
-    setCropModel(model: CropModel) {
+    /** Pin the crop-classification model: it is sent as `ChatRequest.crop_model`
+     *  on the next POST /chat and `classify_new_parcel` then serves it verbatim,
+     *  overriding the reasoner's own choice. Pass `null` to un-pin and hand the
+     *  choice back to the reasoner. */
+    setCropModel(model: CropModel | null) {
       this.cropModel = model;
     },
 
@@ -487,8 +499,13 @@ export const useChatStore = defineStore("chat", {
       if (!(LLM_VARIANTS as readonly string[]).includes(state.llmVariant)) {
         state.llmVariant = "gemini";
       }
-      if (!(CROP_MODELS as readonly string[]).includes(state.cropModel)) {
-        state.cropModel = "voting3";
+      // `null` is a valid, meaningful value here (no pin) -- only a non-null tag
+      // outside the union is stale and folds back to "no pin".
+      if (
+        state.cropModel !== null &&
+        !(CROP_MODELS as readonly string[]).includes(state.cropModel)
+      ) {
+        state.cropModel = null;
       }
     },
   },

@@ -139,18 +139,20 @@ TOOL_SPECS: dict[str, _ToolDescriptor] = {
         ClassifyParcelInput,
         ClassificationResult,
         False,
-        "Classify a parcel's crop. By default (model='xgb') serves the "
-        "xgb-alphaearth tabular member restricted to the active label-space's "
-        "well-resolved classes (france-9). Set model='voting3' for the EPIC 12 "
-        "weighted-vote deployment champion (france-10 F1 0.9069), or "
-        "model='stacking5' for the legacy Stacking-5 meta; both use the cached "
-        "fold-5 OOF and degrade to xgb-alphaearth for an unresolved parcel. Not a "
-        "generic 'stacking ensemble' by default. The result's served_model field "
+        "Classify a parcel's crop. By default (model='voting3') serves the EPIC 12 "
+        "weighted-vote deployment champion (france-10 F1 0.9069), restricted to the "
+        "active label-space's well-resolved classes. Set model='xgb' for the "
+        "xgb-alphaearth tabular member, or model='stacking5' for the legacy "
+        "Stacking-5 meta; voting3 and stacking5 use the cached fold-5 OOF and "
+        "degrade to xgb-alphaearth for an unresolved parcel. Not a generic "
+        "'stacking ensemble' by default. NOTE: when the user has pinned a model in "
+        "the UI, that choice OVERRIDES your 'model' argument -- so never promise a "
+        "model before the call. ALWAYS read the result's served_model field, which "
         "names the member that ACTUALLY ran (voting-3, xgb-alphaearth or "
-        "stacking-5) after any degradation: you MUST tell the user which model was "
-        "used, and if served_model degraded to xgb-alphaearth despite requesting "
-        "voting3, explain that the parcel fell outside the PASTIS-R fold-5 OOF "
-        "universe so the weighted vote could not be served.",
+        "stacking-5) after any override or degradation: you MUST tell the user "
+        "which model was used, and if served_model is xgb-alphaearth while voting3 "
+        "was requested, explain that the parcel fell outside the PASTIS-R fold-5 "
+        "OOF universe so the weighted vote could not be served.",
     ),
     "add_aoi": (
         "ml.agent.tools.add_aoi",

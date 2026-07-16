@@ -90,23 +90,6 @@ _LOCALE_INSTRUCTION: dict[str, str] = {
     "en": "Always answer in English.",
 }
 
-#: Crop-classification models the user can pin for ``classify_new_parcel``.
-#: Re-exported from :data:`ml.agent.schemas.CropModel` (the single source of
-#: truth) rather than re-declared, so adding a model does not require editing
-#: this module. When the request carries one, a leading ``system`` turn instructs
-#: the reasoner to pass ``model='<value>'`` to the tool, so the choice is honoured
-#: WITHOUT hardcoding the model in the tool itself (it keeps its ``voting3``
-#: default).
-
-#: System instruction injected (as a leading ``system`` turn, same mechanism as
-#: ``_LOCALE_INSTRUCTION``) when the request pins a crop model. ``{model}`` is the
-#: validated :data:`CropModel` value, so the reasoner forwards it verbatim to the
-#: ``classify_new_parcel`` tool's ``model`` argument.
-_CROP_MODEL_INSTRUCTION = (
-    "When you call the classify_new_parcel tool, you MUST pass model='{model}' "
-    "as its argument; the user explicitly selected this crop-classification model."
-)
-
 #: Default campaign year for an AOI observation (matches the perceiver default).
 _DEFAULT_YEAR: int = 2019
 
@@ -221,12 +204,14 @@ class ChatRequest(BaseModel):
     #: trilingual frontend gets replies in the user's language. ``None`` -> the
     #: agent answers in its default (Spanish, per the analyst system prompt).
     locale: Literal["it", "es", "en"] | None = None
-    #: Crop-classification model the USER pinned for ``classify_new_parcel``
-    #: (mirror of :data:`ml.agent.schemas.ClassifyParcelInput.model`). When set, a
-    #: leading ``system`` turn instructs the reasoner to forward ``model=<value>``
-    #: to the tool (see :data:`_CROP_MODEL_INSTRUCTION`); the model is never
-    #: hardcoded in the tool. ``None`` -> the tool keeps its ``voting3`` default
-    #: and the LLM may still choose another model on its own.
+    #: Crop-classification model the USER pinned in the UI for
+    #: ``classify_new_parcel`` (mirror of :data:`ml.agent.schemas.CropModel`). It
+    #: is carried on :attr:`ml.agent.context.ToolContext.crop_model` and
+    #: :func:`ml.agent.tools.classify.run` SERVES IT VERBATIM, ignoring the
+    #: ``model`` argument the reasoner passes: the UI switch is a hard choice, so
+    #: it is enforced at the tool boundary rather than requested via a prompt the
+    #: LLM could ignore. ``None`` -> no pin, and the reasoner's argument (or the
+    #: tool's ``voting3`` default) stands.
     crop_model: CropModel | None = None
 
 
@@ -340,11 +325,18 @@ class ChatService:
         )
         return fallback
 
-    async def _build_context(self, session_id: UUID) -> ToolContext:
+    async def _build_context(
+        self, session_id: UUID, crop_model: CropModel | None = None
+    ) -> ToolContext:
         """Build the :class:`ToolContext` shared by the perceiver and the tools.
 
         Args:
             session_id: Tenant session driving every downstream DB read.
+            crop_model: Crop-classification model the user pinned in the UI for
+                this turn, or ``None``. Carried on the context so
+                ``classify_new_parcel`` serves it REGARDLESS of what the reasoner
+                passes -- the switch is a hard choice, so it is enforced at the
+                tool boundary instead of being requested via a prompt.
 
         The pool comes from :attr:`_pool_factory` (by default the
         ``app_database_url`` pool of :func:`backend.app.core.db.get_pool`, role
@@ -352,14 +344,15 @@ class ChatService:
         emit isolates them under the US-051 RLS policies (B2).
 
         Returns:
-            A :class:`ToolContext` with the shared asyncpg pool, settings and
-            session id (no deferred executor in this MVP).
+            A :class:`ToolContext` with the shared asyncpg pool, settings, session
+            id and the user's pinned crop model (no deferred executor in this MVP).
         """
         pool = await self._pool_factory()
         return ToolContext(
             pool=pool,
             settings=self._settings,
             session_id=session_id,
+            crop_model=crop_model,
         )
 
     async def _observe(self, request: ChatRequest, ctx: ToolContext) -> PerceiverObservation | None:
@@ -379,18 +372,18 @@ class ChatService:
         perceiver = PerceiverLayer(ctx)
         if request.parcel_id is not None:
             return await perceiver.observe(request.parcel_id)
-        # ``aoi`` is non-None here by the guard above. Forward the user-picked crop
-        # model so the AOI observation runs (and reports) the SAME model the user
-        # selected in the UI -- voting3 by default -- instead of always XGBoost.
+        # ``aoi`` is non-None here by the guard above.
         assert request.aoi is not None
-        return await perceiver.observe_aoi(request.aoi, request.year, request.crop_model)
+        # The user-picked crop model is NOT an argument here: it rides on ``ctx``
+        # and ``classify.run`` enforces it, so the AOI observation and the
+        # reasoner's tool call read the choice from one place.
+        return await perceiver.observe_aoi(request.aoi, request.year)
 
     @staticmethod
     def _agent_messages(
         messages: Sequence[ChatMessage],
         observation: PerceiverObservation | None,
         locale: Literal["it", "es", "en"] | None = None,
-        crop_model: CropModel | None = None,
     ) -> list[dict[str, str]]:
         """Build the reasoner's message history, grounded by the perceiver.
 
@@ -400,10 +393,12 @@ class ChatService:
         logits. The agent maps any non ``user``/``model`` role into the ``user``
         role, so a ``system`` grounding turn reaches the model as context. When a
         ``locale`` is supplied (US-057) a language-instruction ``system`` turn is
-        prepended so the reasoner answers in the user's UI language. When a
-        ``crop_model`` is supplied a second ``system`` turn instructs the reasoner
-        to forward ``model='<crop_model>'`` to the ``classify_new_parcel`` tool, so
-        the user's choice is honoured without hardcoding the model in the tool.
+        prepended so the reasoner answers in the user's UI language.
+
+        The user's pinned crop model is deliberately NOT injected here: it is a
+        hard choice enforced at the tool boundary via
+        :attr:`ml.agent.context.ToolContext.crop_model`, not an instruction the
+        reasoner may or may not follow.
 
         Args:
             messages: The validated conversation history.
@@ -411,9 +406,6 @@ class ChatService:
                 or ``None`` when there is no subject to observe.
             locale: Active UI locale (``it``/``es``/``en``) or ``None`` for the
                 agent's default answer language.
-            crop_model: Crop-classification model the user pinned for
-                ``classify_new_parcel`` (``voting3``/``xgb``/``stacking5``), or
-                ``None`` to leave the tool's own default in place.
 
         Returns:
             A list of ``{"role", "content"}`` dicts for
@@ -422,13 +414,6 @@ class ChatService:
         history: list[dict[str, str]] = []
         if locale is not None:
             history.append({"role": "system", "content": _LOCALE_INSTRUCTION[locale]})
-        if crop_model is not None:
-            history.append(
-                {
-                    "role": "system",
-                    "content": _CROP_MODEL_INSTRUCTION.format(model=crop_model),
-                }
-            )
         if observation is not None:
             # Frame the perceiver block so the reasoner treats it as the answer
             # source for the area the user already selected, instead of asking the
@@ -476,7 +461,10 @@ class ChatService:
             has_aoi=request.aoi is not None,
         )
 
-        ctx = await self._build_context(session_id)
+        # The user's pinned crop model rides on the context, so every downstream
+        # classify call (the reasoner's tool call AND the perceiver's AOI
+        # observation) serves it from the same, non-negotiable place.
+        ctx = await self._build_context(session_id, request.crop_model)
 
         # Persist the new user turn (US-080) so the transcript survives a reload.
         # Best-effort: a persistence failure must never break the live stream.
@@ -518,7 +506,6 @@ class ChatService:
             session_id,
             ctx,
             locale=request.locale,
-            crop_model=request.crop_model,
             start=start,
         ):
             yield frame
@@ -538,7 +525,6 @@ class ChatService:
         ctx: ToolContext,
         *,
         locale: Literal["it", "es", "en"] | None = None,
-        crop_model: CropModel | None = None,
         start: float,
     ) -> AsyncIterator[str]:
         """Run the reasoner loop and forward its events as SSE frames.
@@ -563,11 +549,10 @@ class ChatService:
             messages: The conversation history.
             observation: The perceiver grounding observation, if any.
             session_id: Effective tenant session.
-            ctx: Shared, session-scoped tool execution context.
+            ctx: Shared, session-scoped tool execution context. It carries the
+                user's pinned crop model, which ``classify_new_parcel`` enforces
+                on its own -- no prompt-level instruction is needed here.
             locale: Active UI locale conditioning the answer language, if any.
-            crop_model: Crop-classification model the user pinned for
-                ``classify_new_parcel``, forwarded to the reasoner as a system
-                instruction, if any.
             start: The ``time.perf_counter`` mark taken by :meth:`stream` at the
                 turn's start, reused so the SLO latency is not double-measured.
 
@@ -588,7 +573,7 @@ class ChatService:
             model=model,
             latency_ms=round((time.perf_counter() - resolve_start) * 1000.0, 2),
         )
-        agent_messages = self._agent_messages(messages, observation, locale, crop_model)
+        agent_messages = self._agent_messages(messages, observation, locale)
 
         metrics = ChatMetricsAccumulator(variant=variant, model=model)
         answer_parts: list[str] = []

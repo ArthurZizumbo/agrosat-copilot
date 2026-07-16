@@ -65,16 +65,19 @@ const classifyingCall = computed(
  *  model-aware "classifying" message. */
 const isClassifying = computed(() => classifyingCall.value !== null);
 
-/** The model label: the tool argument when the reasoner forwarded one, else the
- *  user-pinned `cropModel` from the store (default `voting3`). */
+/** The model label, with the SAME precedence the backend applies: the user's pin
+ *  wins over the reasoner's tool argument (`classify.run` serves `ctx.crop_model`
+ *  verbatim and ignores `inp.model`). Falling back to the reasoner's argument
+ *  would let this loader announce a model that is not the one about to serve. The
+ *  argument is only used when the user pinned nothing. */
 const classifyingLabel = computed<string | null>(() => {
   const call = classifyingCall.value;
   if (!call) return null;
   const requested = call.args?.model;
   const key =
-    typeof requested === "string" && requested.length > 0
-      ? requested
-      : cropModel.value;
+    cropModel.value ??
+    (typeof requested === "string" && requested.length > 0 ? requested : null);
+  if (!key) return null;
   return CROP_MODEL_LABELS[key] ?? key;
 });
 

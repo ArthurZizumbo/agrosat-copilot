@@ -575,3 +575,66 @@ async def test_chat_turn_metrics_simple_without_tokens(monkeypatch) -> None:
     assert entry["tokens_total"] is None
     assert entry["tokens_prompt"] is None
     assert entry["tokens_completion"] is None
+
+
+class _CtxCapturingPerceiver:
+    """``PerceiverLayer`` double that records the ``ToolContext`` it was built with."""
+
+    last_ctx = None
+
+    def __init__(self, ctx) -> None:
+        type(self).last_ctx = ctx
+        self._ctx = ctx
+
+    async def observe(self, parcel_id: int) -> PerceiverObservation:
+        return _OBSERVATION
+
+    async def observe_aoi(self, aoi, year: int) -> PerceiverObservation:
+        return _OBSERVATION
+
+
+async def test_user_pinned_crop_model_reaches_the_tool_context(monkeypatch) -> None:
+    """``ChatRequest.crop_model`` must land on the ``ToolContext`` the tools receive.
+
+    This is the ONE link that makes the UI's crop-model switch real: the tool
+    (``classify.run``) enforces ``ctx.crop_model`` over whatever the reasoner asks
+    for, so if the service stopped threading the pin onto the context every user
+    selection would silently become a no-op -- the exact prompt-era failure mode the
+    enforcement replaced -- while the tool's own unit tests (which build the ctx by
+    hand) stayed green. Assert the wiring, not just the enforcement.
+    """
+    _CtxCapturingPerceiver.last_ctx = None
+    service = _service(monkeypatch, _CtxCapturingPerceiver)
+    request = ChatRequest(
+        messages=[ChatMessage(role="user", content="que cultivo es?")],
+        session_id=_SESSION,
+        parcel_id=11,
+        crop_model="xgb",
+    )
+
+    await _collect(service, request)
+
+    ctx = _CtxCapturingPerceiver.last_ctx
+    assert ctx is not None
+    assert ctx.crop_model == "xgb"
+
+
+async def test_absent_crop_model_leaves_the_context_unpinned(monkeypatch) -> None:
+    """No pin in the request -> ``ctx.crop_model is None`` (reasoner keeps discretion).
+
+    The ``None`` is the branch that lets the reasoner honour an explicit
+    in-conversation model request; pinning by default would make it unreachable.
+    """
+    _CtxCapturingPerceiver.last_ctx = None
+    service = _service(monkeypatch, _CtxCapturingPerceiver)
+    request = ChatRequest(
+        messages=[ChatMessage(role="user", content="que cultivo es?")],
+        session_id=_SESSION,
+        parcel_id=11,
+    )
+
+    await _collect(service, request)
+
+    ctx = _CtxCapturingPerceiver.last_ctx
+    assert ctx is not None
+    assert ctx.crop_model is None

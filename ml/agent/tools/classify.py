@@ -1161,6 +1161,15 @@ async def run(inp: ClassifyParcelInput, ctx: ToolContext) -> ClassificationResul
     universe reports ``served_model="xgb-alphaearth"``, never ``"voting-3"``. This
     lets the reasoner and the UI stay honest about the active model.
 
+    Model selection is decided HERE, not by the reasoner: when the user pinned a
+    model in the UI (``ctx.crop_model``) it is served verbatim, because the
+    crop-model switch is a hard choice and must not depend on an LLM honouring a
+    prompt. The pin outranks the WHOLE caller-side resolution -- not just
+    ``inp.model`` but also the legacy ``use_stacking`` promotion of
+    :attr:`~ml.agent.schemas.ClassifyParcelInput.resolved_model` (so a pin of
+    ``"xgb"`` serves the tabular member even alongside ``use_stacking=True``). With
+    no pin, ``inp.resolved_model`` (or its ``voting3`` default) stands.
+
     Args:
         inp: Validated arguments (session id, AOI polygon, year, and the
             ``restrict_to_resolved_classes`` / ``model`` / ``use_stacking`` /
@@ -1174,7 +1183,21 @@ async def run(inp: ClassifyParcelInput, ctx: ToolContext) -> ClassificationResul
         instead of a guessed class -- the model is NOT evaluated before the
         embedding is resolved.
     """
-    requested_model = inp.resolved_model
+    # The USER's pinned model (ctx.crop_model) OUTRANKS the reasoner's argument.
+    # The UI presents the crop-model switch as a hard choice, so it cannot depend
+    # on the LLM choosing to honour a system instruction; enforcing it here, at the
+    # tool boundary, makes the promise real regardless of what the reasoner passed
+    # (or forgot to pass). ``None`` = the user pinned nothing -> the reasoner's
+    # argument (or the ``voting3`` default) stands.
+    reasoner_model = inp.resolved_model
+    requested_model = ctx.crop_model or reasoner_model
+    if ctx.crop_model is not None and requested_model != reasoner_model:
+        logger.info(
+            "classify_new_parcel_user_pin_overrode_reasoner",
+            session_id=str(inp.session_id),
+            reasoner_model=reasoner_model,
+            user_pinned_model=requested_model,
+        )
     logger.info(
         "classify_new_parcel_started",
         session_id=str(inp.session_id),
@@ -1184,6 +1207,7 @@ async def run(inp: ClassifyParcelInput, ctx: ToolContext) -> ClassificationResul
         model=requested_model,
         use_stacking=inp.use_stacking,
         label_space=inp.label_space,
+        user_pinned=ctx.crop_model is not None,
     )
 
     # Search first (persisted, session-scoped), then download (live GEE sampling)
