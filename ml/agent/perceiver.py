@@ -36,7 +36,7 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import Awaitable, Callable
-from typing import Any, Literal
+from typing import Any
 
 import numpy as np
 import structlog
@@ -47,6 +47,7 @@ from ml.agent.refine import RefinementResult
 from ml.agent.schemas import (
     ClassificationResult,
     ClassifyParcelInput,
+    CropModel,
     ExplainPredictionInput,
     Explanation,
     GeoJSONGeometry,
@@ -54,10 +55,6 @@ from ml.agent.schemas import (
 from ml.agent.tools import classify, explain
 
 logger = structlog.get_logger(__name__)
-
-#: Crop serving models selectable for an AOI observation, matching
-#: :attr:`ml.agent.schemas.ClassifyParcelInput.model`.
-CropModel = Literal["xgb", "voting3", "stacking5"]
 
 #: Human-facing Spanish labels for the model that ACTUALLY served an AOI estimate
 #: (``result.served_model``): the champion vote vs. the tabular member it degrades
@@ -68,6 +65,13 @@ _SERVED_MODEL_LABELS: dict[str, str] = {
     "stacking-5": "Stacking-5",
     "xgb-alphaearth": "AlphaEarth + XGBoost",
 }
+
+#: Label of the model that serves the PER-CELL segmentation. Unlike the AOI-level
+#: estimate (whose model the user picks), :func:`ml.agent.segment_aoi.segment_aoi_live`
+#: ALWAYS classifies each cell with the cached XGBoost-AlphaEarth classifier
+#: (``classify._load_classifier``) -- it has no model selector. The segmentation
+#: text must therefore name THIS model, never the one that served the AOI estimate.
+_SEGMENTATION_MODEL_LABEL: str = _SERVED_MODEL_LABELS["xgb-alphaearth"]
 
 #: Classifier sentinels that mean NO model produced a real crop estimate: the AOI
 #: has no cached embedding yet (``needs_gee_sampling``) or the posterior resolved
@@ -327,22 +331,22 @@ class PerceiverLayer:
             self._ctx,
         )
         observation = self._observation_from_classification(result)
-        # Human-facing label of the model that actually served (Spanish, no acronym
-        # soup): the champion vote vs the tabular member it degrades to.
-        served_label = _served_model_label(result.served_model)
 
         # Live per-cell segmentation so the map can PAINT the recognised crops
         # (not just report a dominant class). Best-effort: any failure leaves the
         # AOI-level estimate untouched. Only attempted for a real crop estimate
         # (not the needs_gee_sampling / unresolved sentinels).
-        if result.crop_class not in ("needs_gee_sampling", "unresolved"):
+        if result.crop_class not in _NO_ESTIMATE_SENTINELS:
             segments = await self._segment_aoi(aoi, year)
             if segments:
                 observation.map_segments = segments
+                # Name the model that painted THESE cells, which is always the
+                # tabular classifier -- segment_aoi_live has no model selector, so
+                # it is NOT the model that served the AOI-level estimate above.
                 observation.description += (
                     f" Mapa de cultivos por celda pintado en el mapa: "
                     f"{len(segments)} regiones reconocidas (clasificacion por "
-                    f"celda con {served_label})."
+                    f"celda con {_SEGMENTATION_MODEL_LABEL})."
                 )
 
         logger.info(

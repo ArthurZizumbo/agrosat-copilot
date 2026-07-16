@@ -17,6 +17,7 @@
 //   done / error          -> terminal state
 
 import { defineStore } from "pinia";
+import { CROP_MODELS, LLM_VARIANTS } from "~/types/agent";
 import type {
   AgentEvent,
   CropModel,
@@ -475,5 +476,20 @@ export const useChatStore = defineStore("chat", {
   persist: {
     storage: piniaPluginPersistedstate.localStorage(),
     pick: ["llmVariant", "cropModel"],
+    // Validate the rehydrated tags against the CURRENT unions. The reasoner
+    // variants were renamed in E12 ("qwen35" -> "qwen-onprem" / "qwen-vl"), so a
+    // user who opened the app before that deploy still carries a tag that is no
+    // longer valid. Rehydrated verbatim it would leave the segmented control with
+    // NO active option (nothing matches `variant === opt.value`) and, on a failed
+    // switch, re-persist the dead tag. Unknown values fall back to the defaults.
+    afterHydrate: (ctx) => {
+      const state = ctx.store.$state as ChatState;
+      if (!(LLM_VARIANTS as readonly string[]).includes(state.llmVariant)) {
+        state.llmVariant = "gemini";
+      }
+      if (!(CROP_MODELS as readonly string[]).includes(state.cropModel)) {
+        state.cropModel = "voting3";
+      }
+    },
   },
 });

@@ -380,7 +380,10 @@ async def test_perceiver_block_injected_as_grounding_turn(monkeypatch) -> None:
     """The perceiver ``to_prompt_block`` leads the agent's message history.
 
     The reasoner must reason over the structured TEXT the agent "saw"; the service
-    injects it as a leading ``system`` turn before the user's messages.
+    injects it as a leading ``system`` turn before the user's messages. The block
+    is WRAPPED in a grounding preamble (E12) telling the reasoner to answer from
+    the observation instead of asking for an AOI that is already drawn, so the
+    turn CONTAINS the block verbatim rather than being equal to it.
     """
     service = _service(monkeypatch, _FakePerceiver)
     request = ChatRequest(
@@ -394,7 +397,10 @@ async def test_perceiver_block_injected_as_grounding_turn(monkeypatch) -> None:
     messages = _StubAgent.last_messages
     assert messages is not None
     assert messages[0]["role"] == "system"
-    assert messages[0]["content"] == _OBSERVATION.to_prompt_block()
+    # The observation reaches the reasoner verbatim...
+    assert _OBSERVATION.to_prompt_block() in messages[0]["content"]
+    # ...preceded by the grounding preamble that stops the "draw an AOI" reply.
+    assert messages[0]["content"].startswith("El usuario ya selecciono un area")
     assert messages[1] == {"role": "user", "content": "describe la parcela"}
     # The tenant session id is threaded into the reasoner unchanged.
     assert _StubAgent.last_session_id == _SESSION

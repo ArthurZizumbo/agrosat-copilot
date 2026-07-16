@@ -70,7 +70,7 @@ from ml.agent.llm_routing import (
     make_backend_for_variant_available,
 )
 from ml.agent.perceiver import PerceiverLayer, PerceiverObservation
-from ml.agent.schemas import GeoJSONGeometry
+from ml.agent.schemas import CropModel, GeoJSONGeometry
 
 if TYPE_CHECKING:
     import asyncpg
@@ -90,12 +90,13 @@ _LOCALE_INSTRUCTION: dict[str, str] = {
     "en": "Always answer in English.",
 }
 
-#: Crop-classification models the user can pin for ``classify_new_parcel``
-#: (mirror of :data:`ml.agent.schemas.ClassifyParcelInput.model`). When the
-#: request carries one, a leading ``system`` turn instructs the reasoner to pass
-#: ``model='<value>'`` to the tool, so the choice is honoured WITHOUT hardcoding
-#: the model in the tool itself (the tool keeps its ``voting3`` default).
-CropModel = Literal["voting3", "xgb", "stacking5"]
+#: Crop-classification models the user can pin for ``classify_new_parcel``.
+#: Re-exported from :data:`ml.agent.schemas.CropModel` (the single source of
+#: truth) rather than re-declared, so adding a model does not require editing
+#: this module. When the request carries one, a leading ``system`` turn instructs
+#: the reasoner to pass ``model='<value>'`` to the tool, so the choice is honoured
+#: WITHOUT hardcoding the model in the tool itself (it keeps its ``voting3``
+#: default).
 
 #: System instruction injected (as a leading ``system`` turn, same mechanism as
 #: ``_LOCALE_INSTRUCTION``) when the request pins a crop model. ``{model}`` is the

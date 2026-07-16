@@ -20,10 +20,29 @@ const { switchLlm } = useChat();
 // Auto-dismiss the LLM-switch notice a few seconds after it appears (E12). The
 // notice is transient: it only signals that persisting the choice failed (e.g.
 // the on-prem host is down); the chat keeps working on the previous backend.
+// The pending timer is tracked and cleared before re-arming, so a second failure
+// gets its own full delay instead of being wiped by the first notice's timer.
+const NOTICE_MS = 5000;
+let noticeTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearNoticeTimer() {
+  if (noticeTimer !== null) {
+    clearTimeout(noticeTimer);
+    noticeTimer = null;
+  }
+}
+
 watch(llmSwitchError, (msg) => {
-  if (!msg || !import.meta.client) return;
-  window.setTimeout(() => chatStore.setLlmSwitchError(null), 5000);
+  if (!import.meta.client) return;
+  clearNoticeTimer();
+  if (!msg) return;
+  noticeTimer = setTimeout(() => {
+    noticeTimer = null;
+    chatStore.setLlmSwitchError(null);
+  }, NOTICE_MS);
 });
+
+onBeforeUnmount(clearNoticeTimer);
 
 const isDark = computed({
   get: () => colorMode.value === "dark",

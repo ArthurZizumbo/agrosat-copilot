@@ -26,6 +26,10 @@ export interface Citation {
   source: string;
   scene_id?: string | null;
   parcel_id?: number | null;
+  /** Canonical PASTIS parcel id `"{patch}_{local}"` when the source carries one.
+   *  `parcel_id` above is numeric (it feeds `activeParcelId`), so the local part
+   *  alone is ambiguous across patches; this keeps the real, unique id. */
+  canonical_parcel_id?: string | null;
   aoi_id?: number | null;
   /** ISO dates backing the claim. */
   dates?: string[] | null;
@@ -146,8 +150,15 @@ export type AgentEvent =
  * failing, and the switch surfaces a transient error toast if the POST itself
  * cannot be persisted. The hosted `qwen-api` / `gemma` variants exist server-side
  * but are intentionally NOT exposed in the UI (3-option product decision, E12).
+ *
+ * Declared as a runtime array so the persisted store can VALIDATE a rehydrated
+ * value against it (the tags changed in E12: the pre-E12 `qwen35` still lives in
+ * returning users' localStorage). The type is derived from the array, so the two
+ * can never drift.
  */
-export type LlmVariant = "gemini" | "qwen-onprem" | "qwen-vl";
+export const LLM_VARIANTS = ["gemini", "qwen-onprem", "qwen-vl"] as const;
+
+export type LlmVariant = (typeof LLM_VARIANTS)[number];
 
 // ---------------------------------------------------------------------------
 // Backend request/response payloads (team contract).
@@ -166,9 +177,12 @@ export interface ChatTurn {
 }
 
 /** Crop-classification model the user can pin for `classify_new_parcel`
- *  (mirror of `ml/agent/schemas.py` `ClassifyParcelInput.model`). When set, the
- *  backend injects a system turn telling the reasoner to forward it to the tool. */
-export type CropModel = "voting3" | "xgb" | "stacking5";
+ *  (mirror of `ml/agent/schemas.py` `CropModel`). When set, the backend injects a
+ *  system turn telling the reasoner to forward it to the tool. Runtime array +
+ *  derived type, for the same rehydration guard as `LLM_VARIANTS`. */
+export const CROP_MODELS = ["voting3", "xgb", "stacking5"] as const;
+
+export type CropModel = (typeof CROP_MODELS)[number];
 
 /** Body of POST /chat (mirror of ChatRequest). */
 export interface ChatRequest {

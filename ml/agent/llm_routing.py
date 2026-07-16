@@ -455,11 +455,13 @@ def resolve_route_available(
     1. Resolve the requested variant's route (:func:`resolve_route`).
     2. A ``gemini`` (native SDK) route needs no probe -- the cloud API is the
        always-resolvable degradation target, so it is returned as-is.
-    3. An ``openai_compat`` route (on-prem Qwen / Gemma) is PROBED: when the
-       endpoint is reachable it is used; when it is NOT, the resolver degrades to
-       the ``gemini`` route and flags ``fell_back=True`` so the swap is observable
-       (logged ``llm_route_onprem_unreachable``), never a silent request-time
-       timeout.
+    3. EVERY other route -- ``openai_compat`` (on-prem Qwen / Gemma) and
+       ``ollama`` (the multimodal ``qwen-vl`` host, E12) alike -- is PROBED: when
+       the endpoint is reachable it is used; when it is NOT, the resolver degrades
+       to the ``gemini`` route and flags ``fell_back=True`` so the swap is
+       observable (logged ``llm_route_onprem_unreachable``), never a silent
+       request-time timeout. The probe keys off "not gemini", so a new
+       self-hosted backend type is covered without touching this function.
 
     Args:
         variant: The requested variant tag (one of :data:`VARIANTS`).

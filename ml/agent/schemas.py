@@ -32,6 +32,7 @@ __all__ = [
     "ClassificationResult",
     "ClassifyParcelInput",
     "CompareModelsInput",
+    "CropModel",
     "ExplainPredictionInput",
     "Explanation",
     "GeoJSONGeometry",
@@ -400,6 +401,15 @@ class TileUrl(BaseModel):
 # ---------------------------------------------------------------------------
 # classify_new_parcel
 # ---------------------------------------------------------------------------
+
+#: Serving models selectable for ``classify_new_parcel``. SINGLE SOURCE OF TRUTH
+#: for the crop-model tag: :class:`ClassifyParcelInput.model`, the perceiver's
+#: AOI path and the ``/chat`` request body all reuse this alias instead of
+#: re-declaring the ``Literal`` (the frontend mirror lives in
+#: ``frontend/types/agent.ts``). Adding a model = editing this line only.
+CropModel = Literal["xgb", "voting3", "stacking5"]
+
+
 class ClassifyParcelInput(BaseModel):
     """Arguments for ``classify_new_parcel`` (honest per-parcel crop classifier).
 
@@ -459,7 +469,7 @@ class ClassifyParcelInput(BaseModel):
     aoi: GeoJSONGeometry
     year: int = 2019
     restrict_to_resolved_classes: bool = True
-    model: Literal["xgb", "voting3", "stacking5"] = "voting3"
+    model: CropModel = "voting3"
     use_stacking: bool = False
     label_space: str = DEFAULT_LABEL_SPACE
 

@@ -51,27 +51,31 @@ const CROP_MODEL_LABELS: Record<string, string> = {
   stacking5: "Stacking-5",
 };
 
-/** A running `classify_new_parcel` tool call, if any. When present we swap the
- *  generic "thinking" loader for a model-aware "classifying" message. The model
- *  label comes from the tool argument when the reasoner forwarded one, else from
- *  the user-pinned `cropModel` in the store (default `voting3`). */
-const isClassifying = computed(() =>
-  toolCalls.value.some(
-    (c) => c.tool === "classify_new_parcel" && c.status === "running",
-  ),
+/** The running `classify_new_parcel` tool call, or null. Resolved ONCE (both the
+ *  loader flag and its label derive from it) because `toolCalls` changes on every
+ *  streamed delta, so a second scan of the list would re-run per token. */
+const classifyingCall = computed(
+  () =>
+    toolCalls.value.find(
+      (c) => c.tool === "classify_new_parcel" && c.status === "running",
+    ) ?? null,
 );
 
+/** When a classify call is running we swap the generic "thinking" loader for a
+ *  model-aware "classifying" message. */
+const isClassifying = computed(() => classifyingCall.value !== null);
+
+/** The model label: the tool argument when the reasoner forwarded one, else the
+ *  user-pinned `cropModel` from the store (default `voting3`). */
 const classifyingLabel = computed<string | null>(() => {
-  if (!isClassifying.value) return null;
-  const call = toolCalls.value.find(
-    (c) => c.tool === "classify_new_parcel" && c.status === "running",
-  );
-  const requested = call?.args?.model;
+  const call = classifyingCall.value;
+  if (!call) return null;
+  const requested = call.args?.model;
   const key =
     typeof requested === "string" && requested.length > 0
       ? requested
       : cropModel.value;
-  return CROP_MODEL_LABELS[key] ?? key ?? null;
+  return CROP_MODEL_LABELS[key] ?? key;
 });
 
 /** Loader text shown while busy: model-aware while classifying, else generic. */

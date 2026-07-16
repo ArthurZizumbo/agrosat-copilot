@@ -103,6 +103,26 @@ export interface PredictionParcels extends RealParcels {
 }
 
 /**
+ * Reduce a descriptive model string from an artifact's metadata to the short
+ * proper noun the UI chips expect.
+ *
+ * The builder writes a full sentence ("Voting-3 (tsvit-pheno-v2 + U-TAE +
+ * XGB-AlphaEarth), fold-5 held-out"), but `Finding.served_model` and
+ * `Citation.source` are rendered RAW in a compact chip, and any descriptor there
+ * is untranslated prose shown identically to it/es/en users. Keeping the leading
+ * proper noun ("Voting-3") is both short enough for the chip and language-neutral.
+ *
+ * @param model Raw `metadata.model` string, or null/undefined when absent.
+ * @returns The leading proper noun, or null when there is nothing usable.
+ */
+export function shortModelName(model?: string | null): string | null {
+  if (!model) return null;
+  // Cut at the first descriptor boundary: " (" (parenthetical) or "," (clause).
+  const short = model.split(/\s*[(,]/)[0]?.trim();
+  return short && short.length > 0 ? short : null;
+}
+
+/**
  * Load REAL PASTIS-R parcels annotated with the MODEL'S PREDICTION (out-of-sample
  * fold-5 patch): each parcel carries the predicted crop (`crop_class`), the true
  * crop (`true_class`) and whether the prediction was correct, so the map can
@@ -139,14 +159,21 @@ export async function loadPredictionParcels(): Promise<PredictionParcels | null>
   } catch {
     return null;
   }
-  // The artifact's own metadata declares the model it was built with (Voting-3),
-  // so the citation reflects what is actually painted instead of hardcoding XGBoost.
-  const builtModel = fc.metadata?.model ?? "Voting-3";
+  // The artifact's own metadata declares the model it was built with, so the
+  // citation reflects what is actually painted instead of hardcoding XGBoost.
+  // `metadata.model` is a DESCRIPTIVE sentence ("Voting-3 (tsvit-pheno-v2 + U-TAE
+  // + XGB-AlphaEarth), fold-5 held-out"), but `served_model` / `citation.source`
+  // are rendered raw in a compact chip and must stay a short proper noun -- and a
+  // descriptor here would be untranslated prose shown to it/es/en users alike
+  // (the very bug the hardcoded Spanish descriptors were removed for). So we keep
+  // the leading proper noun only.
+  const builtModel = shortModelName(fc.metadata?.model) ?? "Voting-3";
   const findings = fc.features.map((f, i) => {
     // Finding.parcel_id is numeric (activeParcelId: number). Derive a stable
     // numeric id from the canonical "{patch}_{local}" string (the local instance
-    // part), falling back to the array index; keep the canonical id in the
-    // citation so the real PASTIS id is not lost.
+    // part), falling back to the array index; the canonical id itself is kept in
+    // `citation.canonical_parcel_id` so the real PASTIS id is not lost (the local
+    // part alone repeats across patches).
     const rawId = f.properties.parcel_id;
     const canonicalId = rawId != null ? String(rawId) : String(i);
     let pid: number;
@@ -170,10 +197,11 @@ export async function loadPredictionParcels(): Promise<PredictionParcels | null>
       served_model: builtModel,
       citation: {
         tool_call_id: "demo-pred",
-        // Model proper noun only; the parenthetical descriptor was hardcoded
-        // Spanish shown verbatim to it/en users (FindingCard renders source raw).
+        // Model proper noun only (see `shortModelName`): a descriptor here is
+        // untranslated prose rendered verbatim by FindingCard.
         source: builtModel,
         parcel_id: pid,
+        canonical_parcel_id: canonicalId,
       },
       geometry: f.geometry,
     };
